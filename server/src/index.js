@@ -142,6 +142,11 @@ io.on('connection', (socket) => {
   });
 });
 
+// Crash-proofing: Express 4 async route errors surface as unhandled rejections,
+// which crash Node (>=15) and cause downtime windows on the host. Log instead.
+process.on('unhandledRejection', (err) => console.error('unhandledRejection:', err?.message || err));
+process.on('uncaughtException', (err) => console.error('uncaughtException:', err?.message || err));
+
 const PORT = process.env.PORT || 5000;
 mongoose
   .connect(process.env.MONGO_URI)
