@@ -1,0 +1,23 @@
+# Render.com Blueprint — "New +" > "Blueprint" par yeh repo select karein,
+# phir dashboard mein sirf env var values fill karein.
+services:
+  - type: web
+    name: nayab-glow
+    runtime: node
+    plan: free
+    buildCommand: npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      # Atlas URI yahan WITHOUT tlsAllowInvalidCertificates flag dalein —
+      # woh flag sirf aap ke local PC ki clock ke liye tha, Render par zaroorat nahi.
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: UPLOADTHING_TOKEN
+        sync: false
+      - key: ADMIN_EMAIL
+        value: admin@nayabglow.com
+      - key: ADMIN_PASSWORD
+        sync: false

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 240">
+  <ellipse cx="100" cy="222" rx="50" ry="8" fill="#000" opacity=".06"/>
+  <rect x="88" y="16" width="24" height="22" rx="4" fill="#caa24a"/>
+  <rect x="92" y="38" width="16" height="14" fill="#b58a34"/>
+  <path d="M70 66c0-10 10-16 30-16s30 6 30 16v140c0 8-10 12-30 12s-30-4-30-12V66Z" fill="#e8a93c"/>
+  <path d="M70 66c0-10 10-16 30-16s30 6 30 16v140c0 8-10 12-30 12s-30-4-30-12V66Z" fill="url(#o)" opacity=".5"/>
+  <defs>
+    <linearGradient id="o" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffe9b0"/>
+      <stop offset=".5" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#a86f14"/>
+    </linearGradient>
+  </defs>
+  <rect x="80" y="108" width="40" height="58" rx="4" fill="#f9ecd2" opacity=".95"/>
+  <rect x="86" y="118" width="28" height="5" rx="2.5" fill="#7a5410"/>
+  <rect x="86" y="128" width="22" height="3.5" rx="1.75" fill="#b08b45"/>
+  <rect x="86" y="136" width="26" height="3.5" rx="1.75" fill="#cdb17a"/>
+  <rect x="86" y="150" width="20" height="4" rx="2" fill="#e0446e"/>
+  <circle cx="146" cy="86" r="10" fill="#fbdfe9" opacity=".8"/>
+  <circle cx="52" cy="160" r="7" fill="#fbdfe9" opacity=".7"/>
+</svg>

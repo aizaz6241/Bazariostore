@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 240">
+  <ellipse cx="100" cy="222" rx="50" ry="8" fill="#000" opacity=".06"/>
+  <path d="M92 16h30v10l-8 4v12h-14V30l-8-4V16Z" fill="#d8d8d8"/>
+  <rect x="100" y="16" width="34" height="10" rx="5" fill="#c9c9c9"/>
+  <rect x="97" y="42" width="20" height="12" fill="#e3e3e3"/>
+  <rect x="70" y="54" width="72" height="160" rx="10" fill="#f4f4f2" stroke="#e0e0dd" stroke-width="2"/>
+  <rect x="77" y="62" width="9" height="144" rx="4.5" fill="#fff" opacity=".9"/>
+  <rect x="80" y="96" width="52" height="80" rx="4" fill="#fff" stroke="#e8e8e4"/>
+  <rect x="86" y="106" width="40" height="5.5" rx="2.75" fill="#2f2f2f"/>
+  <rect x="86" y="117" width="30" height="4" rx="2" fill="#8b8b86"/>
+  <rect x="86" y="127" width="36" height="3.5" rx="1.75" fill="#c2c2bc"/>
+  <rect x="86" y="135" width="26" height="3.5" rx="1.75" fill="#c2c2bc"/>
+  <rect x="86" y="150" width="32" height="4" rx="2" fill="#c98e2a"/>
+  <circle cx="152" cy="86" r="10" fill="#fbdfe9" opacity=".8"/>
+  <circle cx="48" cy="156" r="7" fill="#fbdfe9" opacity=".7"/>
+</svg>

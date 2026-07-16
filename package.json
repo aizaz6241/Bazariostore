@@ -1,0 +1,16 @@
+{
+  "name": "nayab-glow",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Official Nayab Glow — MERN e-commerce store (storefront + admin panel)",
+  "scripts": {
+    "build": "npm install --prefix client && npm run build --prefix client && npm install --prefix server",
+    "start": "npm start --prefix server",
+    "seed": "npm run seed --prefix server",
+    "dev:server": "npm run dev --prefix server",
+    "dev:client": "npm run dev --prefix client"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
