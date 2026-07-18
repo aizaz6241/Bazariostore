@@ -740,6 +740,10 @@ h1, h2, h3, h4 { line-height: 1.25; }
 .admin-login-card .muted-sm { display: block; margin-bottom: 18px; }
 .admin-login-card .field { text-align: left; }
 .admin-login-card .btn-primary { margin-top: 6px; border-radius: var(--r-sm); }
+.pw-wrap { position: relative; }
+.pw-wrap input { padding-right: 42px; }
+.pw-eye { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--faint); display: flex; }
+.pw-eye:hover { color: var(--primary); }
 
 .admin { display: flex; min-height: 100vh; background: var(--bg-soft); }
 .admin-side {

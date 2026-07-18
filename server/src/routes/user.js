@@ -36,9 +36,13 @@ router.post('/register', async (req, res) => {
 
 // POST /api/user/login
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body || {};
-  const user = await User.findOne({ email: (email || '').toLowerCase().trim() });
-  if (!user || !user.active || !(await bcrypt.compare(password || '', user.passwordHash))) {
+  const email = String(req.body?.email || '').toLowerCase().trim();
+  const password = String(req.body?.password || '');
+  const user = await User.findOne({ email });
+  // trimmed fallback: mobile keyboards aksar aakhir mein space laga dete hain
+  const ok = user && user.active && ((await bcrypt.compare(password, user.passwordHash)) || (await bcrypt.compare(password.trim(), user.passwordHash)));
+  if (!ok) {
+    console.log(`[user-login-failed] email="${email}"`);
     return res.status(401).json({ message: 'Invalid email or password' });
   }
   res.json({ token: signUser(user), user: publicUser(user) });

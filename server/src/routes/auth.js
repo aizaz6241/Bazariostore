@@ -2,6 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import Admin from '../models/Admin.js';
+import AuditLog from '../models/AuditLog.js';
 import { authAdmin } from '../middleware/auth.js';
 import { permsFor } from '../utils/permissions.js';
 import { audit } from '../utils/audit.js';
@@ -24,11 +25,25 @@ function signAdmin(admin) {
 }
 
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body || {};
-  const admin = await Admin.findOne({ email: (email || '').toLowerCase().trim() });
-  if (!admin || !admin.active || !(await bcrypt.compare(password || '', admin.passwordHash))) {
+  const email = String(req.body?.email || '').toLowerCase().trim();
+  const password = String(req.body?.password || '');
+
+  // failed attempts are logged (email + reason only, never the password) so
+  // "kis wajah se login fail hua" Audit Logs / server logs mein nazar aaye
+  const fail = async (reason) => {
+    console.log(`[admin-login-failed] email="${email}" reason=${reason}`);
+    try {
+      await AuditLog.create({ admin: { id: '', name: '(login attempt)', email }, action: 'login_failed', entity: 'admin', details: { reason } });
+    } catch {}
     return res.status(401).json({ message: 'Invalid email or password' });
-  }
+  };
+
+  const admin = await Admin.findOne({ email });
+  if (!admin) return fail('email_not_found');
+  if (!admin.active) return fail('account_disabled');
+  // mobile keyboards aksar password ke aakhir mein space laga dete hain — trimmed fallback
+  const ok = (await bcrypt.compare(password, admin.passwordHash)) || (await bcrypt.compare(password.trim(), admin.passwordHash));
+  if (!ok) return fail('wrong_password');
   admin.lastLoginAt = new Date();
   await admin.save();
   req.admin = { id: admin._id, name: admin.name, email: admin.email };
