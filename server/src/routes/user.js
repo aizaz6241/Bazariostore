@@ -6,6 +6,7 @@ import User from '../models/User.js';
 import Order from '../models/Order.js';
 import { authUser } from '../middleware/auth.js';
 import { notify } from '../utils/notify.js';
+import { comparePassword, cleanEmail } from '../utils/password.js';
 
 const router = Router();
 
@@ -36,11 +37,11 @@ router.post('/register', async (req, res) => {
 
 // POST /api/user/login
 router.post('/login', async (req, res) => {
-  const email = String(req.body?.email || '').toLowerCase().trim();
+  const email = cleanEmail(req.body?.email);
   const password = String(req.body?.password || '');
   const user = await User.findOne({ email });
-  // trimmed fallback: mobile keyboards aksar aakhir mein space laga dete hain
-  const ok = user && user.active && ((await bcrypt.compare(password, user.passwordHash)) || (await bcrypt.compare(password.trim(), user.passwordHash)));
+  // mobile keyboards spaces / invisible unicode daal dete hain — tolerant match
+  const ok = user && user.active && (await comparePassword(password, user.passwordHash));
   if (!ok) {
     console.log(`[user-login-failed] email="${email}"`);
     return res.status(401).json({ message: 'Invalid email or password' });

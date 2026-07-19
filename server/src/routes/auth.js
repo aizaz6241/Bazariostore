@@ -6,6 +6,7 @@ import AuditLog from '../models/AuditLog.js';
 import { authAdmin } from '../middleware/auth.js';
 import { permsFor } from '../utils/permissions.js';
 import { audit } from '../utils/audit.js';
+import { comparePassword, cleanEmail } from '../utils/password.js';
 
 const router = Router();
 
@@ -25,7 +26,7 @@ function signAdmin(admin) {
 }
 
 router.post('/login', async (req, res) => {
-  const email = String(req.body?.email || '').toLowerCase().trim();
+  const email = cleanEmail(req.body?.email);
   const password = String(req.body?.password || '');
 
   // failed attempts are logged (email + reason only, never the password) so
@@ -41,9 +42,8 @@ router.post('/login', async (req, res) => {
   const admin = await Admin.findOne({ email });
   if (!admin) return fail('email_not_found');
   if (!admin.active) return fail('account_disabled');
-  // mobile keyboards aksar password ke aakhir mein space laga dete hain — trimmed fallback
-  const ok = (await bcrypt.compare(password, admin.passwordHash)) || (await bcrypt.compare(password.trim(), admin.passwordHash));
-  if (!ok) return fail('wrong_password');
+  // mobile keyboards spaces / invisible unicode daal dete hain — tolerant match
+  if (!(await comparePassword(password, admin.passwordHash))) return fail('wrong_password');
   admin.lastLoginAt = new Date();
   await admin.save();
   req.admin = { id: admin._id, name: admin.name, email: admin.email };
