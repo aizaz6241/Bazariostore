@@ -20,6 +20,13 @@ export function passwordCandidates(raw) {
   add(cleaned);
   add(cleaned.trim());
   add(cleaned.replace(/\s+/g, '')); // autocomplete ki beech wali spaces
+  // Android keyboards kabhi pehla harf khud capital kar dete hain — dono case try karo
+  for (const v of [...set]) {
+    if (v[0]) {
+      add(v[0].toLowerCase() + v.slice(1));
+      add(v[0].toUpperCase() + v.slice(1));
+    }
+  }
   return [...set];
 }
 
