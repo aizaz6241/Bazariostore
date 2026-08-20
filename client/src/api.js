@@ -154,3 +154,53 @@ export async function downloadAttachment(url, filename) {
     document.body.removeChild(a);
   }
 }
+
+/**
+ * Compresses mobile camera photos & large images to lightweight web JPEGs (< 600KB)
+ * before uploading, preventing proxy payload limit errors and speeding up mobile uploads
+ */
+export async function compressImage(file, { maxWidth = 1600, maxHeight = 1600, quality = 0.85 } = {}) {
+  if (!file || !file.type || !file.type.startsWith('image/')) {
+    return file;
+  }
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxWidth || height > maxHeight) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) return resolve(file);
+            const safeName = (file.name || 'camera_photo.jpg').replace(/\.[^/.]+$/, '.jpg');
+            const compressedFile = new File([blob], safeName, {
+              type: 'image/jpeg',
+              lastModified: Date.now(),
+            });
+            resolve(compressedFile);
+          },
+          'image/jpeg',
+          quality
+        );
+      };
+      img.onerror = () => resolve(file);
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve(file);
+    reader.readAsDataURL(file);
+  });
+}

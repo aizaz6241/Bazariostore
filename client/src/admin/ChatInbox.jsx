@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { api, fmtDate } from '../api.js';
+import { useEffect, useState, useRef } from 'react';
+import { api, fmtDate, fmtDay, compressImage } from '../api.js';
 import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
 import ChatAttachment from '../components/ChatAttachment.jsx';
@@ -11,51 +11,48 @@ export default function ChatInbox() {
   const [text, setText] = useState('');
   const [file, setFile] = useState(null);
   const [filePreview, setFilePreview] = useState(null);
+  const [replyingTo, setReplyingTo] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const scrollRef = useRef(null);
   const fileInputRef = useRef(null);
+  const textInputRef = useRef(null);
 
   const loadConvos = () => {
-    setLoading(true);
     api('/chat/admin/conversations')
       .then((data) => {
-        setConvos(data);
-        if (!selectedId && data.length && window.innerWidth > 900) {
-          setSelectedId(data[0]._id);
+        setConvos(data || []);
+        if (!selectedId && data?.length) {
+          // don't auto select on mobile screen so list view is visible
+          if (typeof window !== 'undefined' && window.innerWidth > 768) {
+            setSelectedId(data[0]._id);
+          }
         }
       })
       .catch((e) => console.error(e))
       .finally(() => setLoading(false));
   };
 
-  const loadMessages = (id) => {
-    if (!id) return;
-    api(`/chat/admin/conversations/${id}/messages`)
-      .then((res) => {
-        setMessages(res.messages || []);
-        // mark read
-        api(`/chat/admin/conversations/${id}/read`, { method: 'POST' }).catch(() => {});
+  const loadMessages = (cid) => {
+    if (!cid) return;
+    api(`/chat/admin/conversations/${cid}/messages`)
+      .then((data) => {
+        setMessages(data || []);
+        // update unread counter locally
+        setConvos((prev) =>
+          prev.map((c) => (c._id === cid ? { ...c, unreadForAdmin: 0 } : c))
+        );
       })
       .catch((e) => console.error(e));
   };
 
   useEffect(() => {
     loadConvos();
-  }, []);
 
-  useEffect(() => {
-    if (selectedId) loadMessages(selectedId);
-  }, [selectedId]);
-
-  useEffect(() => {
     const socket = getSocket();
-    const token = localStorage.getItem('ng_admin_token');
-    socket.emit('admin:join', { token });
-
-    const onNewMsg = (msg) => {
+    const onNewMessage = (msg) => {
       if (msg.conversation === selectedId) {
         setMessages((prev) => {
           if (prev.some((m) => m._id === msg._id)) return prev;
@@ -65,10 +62,14 @@ export default function ChatInbox() {
       loadConvos();
     };
 
-    socket.on('message:new', onNewMsg);
+    socket.on('message:new', onNewMessage);
     return () => {
-      socket.off('message:new', onNewMsg);
+      socket.off('message:new', onNewMessage);
     };
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (selectedId) loadMessages(selectedId);
   }, [selectedId]);
 
   useEffect(() => {
@@ -100,6 +101,11 @@ export default function ChatInbox() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const handleStartReply = (msg) => {
+    setReplyingTo(msg);
+    textInputRef.current?.focus();
+  };
+
   const handleReply = async (e) => {
     e.preventDefault();
     const clean = text.trim();
@@ -114,8 +120,9 @@ export default function ChatInbox() {
     try {
       if (file) {
         setUploading(true);
+        const fileToUpload = await compressImage(file);
         const fd = new FormData();
-        fd.append('files', file);
+        fd.append('files', fileToUpload);
 
         const uploadRes = await api('/uploads', {
           method: 'POST',
@@ -132,8 +139,18 @@ export default function ChatInbox() {
         setUploading(false);
       }
 
+      const targetReply = replyingTo ? {
+        messageId: replyingTo._id,
+        sender: replyingTo.sender,
+        senderName: replyingTo.sender === 'admin' ? 'You (Admin)' : (replyingTo.senderName || selectedConv?.storeName || 'Seller'),
+        text: replyingTo.text || (replyingTo.attachmentType === 'pdf' ? `📄 ${replyingTo.attachmentName || 'PDF Document'}` : '📷 Image Attachment'),
+        attachmentType: replyingTo.attachmentType || null,
+        attachmentName: replyingTo.attachmentName || '',
+      } : null;
+
       setText('');
       removeFile();
+      setReplyingTo(null);
 
       await api(`/chat/admin/conversations/${selectedId}/reply`, {
         method: 'POST',
@@ -143,6 +160,7 @@ export default function ChatInbox() {
           attachmentType,
           attachmentName,
           attachmentSize,
+          replyTo: targetReply,
         },
       });
       loadConvos();
@@ -180,7 +198,6 @@ export default function ChatInbox() {
 
   return (
     <div className={`admin-chat-layout ${selectedId ? 'mobile-thread-view' : 'mobile-list-view'}`}>
-      {/* Sidebar with seller conversations */}
       <div className="admin-chat-sidebar">
         <div className="admin-chat-sidebar-head">
           <div className="flex justify-between items-center mb-2">
@@ -195,18 +212,13 @@ export default function ChatInbox() {
               onChange={(e) => setQ(e.target.value)}
               placeholder="Search by store or subject..."
             />
-            {q && (
-              <button type="button" onClick={() => setQ('')} className="btn-clear-search">✕</button>
-            )}
+            {q && <button type="button" onClick={() => setQ('')} className="btn-clear-search">✕</button>}
           </div>
         </div>
 
         <div className="admin-convos-list">
-          {loading && <div className="p-4 text-center muted">Loading conversations...</div>}
-
-          {!loading && filteredConvos.length === 0 && (
-            <div className="p-6 text-center muted">No matching conversations found.</div>
-          )}
+          {loading && <div className="p-4 text-center muted">Loading...</div>}
+          {!loading && filteredConvos.length === 0 && <div className="p-6 text-center muted">No conversations.</div>}
 
           {filteredConvos.map((c) => {
             const isSelected = c._id === selectedId;
@@ -214,21 +226,20 @@ export default function ChatInbox() {
             return (
               <div
                 key={c._id}
+                className={`admin-convo-item ${isSelected ? 'selected' : ''} ${hasUnread ? 'has-unread' : ''}`}
                 onClick={() => setSelectedId(c._id)}
-                className={`admin-convo-item ${isSelected ? 'active' : ''} ${hasUnread ? 'unread' : ''}`}
               >
-                <div className="avatar-chip">{c.seller?.storeName?.[0] || c.storeName?.[0] || 'S'}</div>
-                <div className="convo-info">
-                  <div className="convo-top-row">
-                    <b className="convo-name">{c.seller?.storeName || c.storeName}</b>
-                    <span className="convo-time">{fmtDate(c.lastAt)}</span>
+                <div className="convo-avatar">
+                  <span>{(c.storeName || c.seller?.storeName || 'S')[0].toUpperCase()}</span>
+                </div>
+                <div className="convo-body">
+                  <div className="convo-top">
+                    <b className="convo-name">{c.storeName || c.seller?.storeName || 'Unknown Store'}</b>
+                    <small className="convo-time">{fmtDay(c.lastAt)}</small>
                   </div>
-                  <div className="convo-last-msg">{c.lastMessage || 'No messages yet'}</div>
-                  <div className="convo-bottom-row">
-                    <span className={`convo-tag-status ${c.status}`}>
-                      {c.status === 'resolved' ? '✓ Resolved' : '● Open'}
-                    </span>
-                    {hasUnread && <span className="convo-unread-bubble">{c.unreadForAdmin} new</span>}
+                  <div className="convo-sub">
+                    <span className="convo-last-msg">{c.lastMessage || 'No messages yet'}</span>
+                    {hasUnread && <span className="convo-unread-pill">{c.unreadForAdmin}</span>}
                   </div>
                 </div>
               </div>
@@ -237,61 +248,80 @@ export default function ChatInbox() {
         </div>
       </div>
 
-      {/* Chat Thread Panel */}
       <div className="admin-chat-thread">
         {selectedConv ? (
           <>
-            {/* Header */}
             <div className="admin-thread-head">
-              <button
-                type="button"
-                className="chat-mobile-back-btn"
-                onClick={() => setSelectedId(null)}
-                title="Back to conversations list"
-              >
-                <Ic name="arrowLeft" size={16} /> <span>Back</span>
-              </button>
-              <div className="thread-store-info">
-                <h3>🏬 {selectedConv.seller?.storeName || selectedConv.storeName}</h3>
-                <small className="muted">
-                  Owner: {selectedConv.seller?.ownerName || selectedConv.sellerName} • 📞 {selectedConv.seller?.phone || selectedConv.sellerPhone || 'N/A'} • {selectedConv.seller?.email}
-                </small>
+              <div className="ath-left">
+                <button
+                  type="button"
+                  className="mobile-back-btn"
+                  onClick={() => setSelectedId(null)}
+                  title="Back to seller list"
+                >
+                  <Ic name="arrowLeft" size={18} />
+                </button>
+                <div className="ath-info">
+                  <b className="ath-name">{selectedConv.storeName || selectedConv.seller?.storeName}</b>
+                  <div className="ath-meta">
+                    <span>Owner: {selectedConv.sellerName || selectedConv.seller?.ownerName}</span>
+                    <span>•</span>
+                    <span>{selectedConv.sellerEmail || selectedConv.seller?.email}</span>
+                  </div>
+                </div>
               </div>
 
-              <div className="thread-head-actions">
+              <div className="ath-actions">
                 <button
+                  type="button"
+                  className={`btn-status-toggle ${selectedConv.status === 'resolved' ? 'status-resolved' : 'status-open'}`}
                   onClick={handleToggleResolve}
-                  className={`btn-toggle-resolve ${selectedConv.status === 'resolved' ? 'resolved' : ''}`}
                 >
-                  {selectedConv.status === 'resolved' ? '✓ Resolved (Re-open)' : 'Mark as Resolved'}
+                  {selectedConv.status === 'resolved' ? '✅ Resolved (Reopen)' : 'Mark as Resolved'}
                 </button>
               </div>
             </div>
 
-            {/* Messages Feed */}
             <div className="admin-thread-messages">
               {messages.map((m) => {
                 const isAdmin = m.sender === 'admin';
                 return (
                   <div key={m._id} className={`chat-bubble-wrap ${isAdmin ? 'msg-me' : 'msg-them'}`}>
                     <div className="chat-bubble-sender">
-                      {isAdmin ? m.senderName || 'You (Admin)' : `${selectedConv.storeName || 'Seller'}`}
+                      <span>{isAdmin ? m.senderName || 'You (Admin)' : `${selectedConv.storeName || 'Seller'}`}</span>
+                      <button
+                        type="button"
+                        className="chat-reply-trigger-btn"
+                        onClick={() => handleStartReply(m)}
+                        title="Reply to this message"
+                      >
+                        <Ic name="cornerDownRight" size={12} /> Reply
+                      </button>
                     </div>
+
                     <div className="chat-bubble-body">
-                      {/* Attachment if present or text contains image/pdf url */}
+                      {m.replyTo && (
+                        <div className="chat-quoted-msg">
+                          <b className="cqm-author">{m.replyTo.sender === 'admin' ? 'You (Admin)' : (m.replyTo.senderName || 'Seller')}</b>
+                          <span className="cqm-text">
+                            {m.replyTo.text || (m.replyTo.attachmentType === 'pdf' ? `📄 ${m.replyTo.attachmentName || 'PDF Document'}` : '📷 Image Attachment')}
+                          </span>
+                        </div>
+                      )}
+
                       {m.attachment ? (
                         <ChatAttachment msg={m} />
                       ) : (typeof m.text === 'string' && (m.text.startsWith('http') || m.text.startsWith('/uploads/') || m.text.startsWith('img/') || m.text.startsWith('/img/')) && m.text.match(/\.(jpeg|jpg|png|gif|webp|svg|pdf)(\?.*)?$/i)) ? (
                         <ChatAttachment url={m.text} />
                       ) : null}
 
-                      {/* Text */}
                       {m.text && (!m.text.match(/\.(jpeg|jpg|png|gif|webp|svg|pdf)(\?.*)?$/i) || m.attachment) && (
                         <div className="chat-text-content">{m.text}</div>
                       )}
                     </div>
-                    <div className="chat-bubble-time">
-                      {fmtDate(m.createdAt)}
+
+                    <div className="chat-bubble-footer">
+                      <span className="chat-bubble-time">{fmtDate(m.createdAt)}</span>
                     </div>
                   </div>
                 );
@@ -299,60 +329,53 @@ export default function ChatInbox() {
               <div ref={scrollRef} />
             </div>
 
-            {/* Pending Attachment Preview Bar */}
+            {replyingTo && (
+              <div className="chat-replying-bar">
+                <div className="crb-left">
+                  <div className="crb-indicator"></div>
+                  <div className="crb-info">
+                    <span className="crb-title">Replying to <b>{replyingTo.sender === 'admin' ? 'You' : (replyingTo.senderName || 'Seller')}</b></span>
+                    <span className="crb-snippet">
+                      {replyingTo.text || (replyingTo.attachmentType === 'pdf' ? `📄 ${replyingTo.attachmentName || 'PDF Document'}` : '📷 Image Attachment')}
+                    </span>
+                  </div>
+                </div>
+                <button type="button" className="crb-close" onClick={() => setReplyingTo(null)} title="Cancel reply">
+                  <Ic name="x" size={16} />
+                </button>
+              </div>
+            )}
+
             {file && (
               <div className="chat-attachment-preview-bar admin-preview-bar">
                 <div className="preview-file-box">
                   {filePreview ? (
                     <img src={filePreview} alt="Upload preview" className="preview-thumb" />
                   ) : (
-                    <div className="preview-pdf-icon">
-                      <Ic name="fileText" size={24} />
-                      <span>PDF</span>
-                    </div>
+                    <div className="preview-pdf-icon"><Ic name="fileText" size={24} /><span>PDF</span></div>
                   )}
                   <div className="preview-file-details">
                     <b className="preview-file-name">{file.name}</b>
-                    <small className="muted-sm">
-                      {(file.size / 1024).toFixed(1)} KB • {file.type.startsWith('image/') ? 'Image' : 'PDF Document'}
-                    </small>
+                    <small className="muted-sm">{(file.size / 1024).toFixed(1)} KB • {file.type.startsWith('image/') ? 'Image' : 'PDF'}</small>
                   </div>
                 </div>
-                <button type="button" className="btn-remove-preview" onClick={removeFile} title="Remove attachment">
-                  <Ic name="x" size={16} />
-                </button>
+                <button type="button" className="btn-remove-preview" onClick={removeFile} title="Remove"><Ic name="x" size={16} /></button>
               </div>
             )}
 
-            {/* Reply Bar */}
             <form onSubmit={handleReply} className="admin-reply-bar">
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
-                style={{ display: 'none' }}
-              />
-
-              <button
-                type="button"
-                className="chat-attach-btn"
-                onClick={() => fileInputRef.current?.click()}
-                title="Attach Image or PDF"
-                disabled={sending}
-              >
-                <Ic name="paperclip" size={20} stroke={2} />
-              </button>
-
+              <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" style={{ display: 'none' }} />
+              <button type="button" className="chat-attach-btn" onClick={() => fileInputRef.current?.click()} disabled={sending}><Ic name="paperclip" size={20} stroke={2} /></button>
               <input
                 type="text"
+                ref={textInputRef}
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                placeholder={file ? 'Add a caption to attachment...' : `Reply to ${selectedConv.seller?.storeName || selectedConv.storeName}...`}
+                placeholder={file ? 'Add a caption...' : replyingTo ? `Reply to ${replyingTo.sender === 'admin' ? 'your message' : 'Seller'}...` : `Reply to ${selectedConv.seller?.storeName || selectedConv.storeName}...`}
                 disabled={sending}
               />
               <button type="submit" className="btn-primary" disabled={sending || (!text.trim() && !file)}>
-                {sending ? (uploading ? 'Uploading...' : 'Sending...') : <><Ic name="send" size={16} /> Send Reply</>}
+                {sending ? (uploading ? 'Uploading...' : 'Sending...') : <><Ic name="send" size={16} /> Send</>}
               </button>
             </form>
           </>
@@ -360,7 +383,7 @@ export default function ChatInbox() {
           <div className="admin-chat-empty">
             <div className="empty-icon"><Ic name="chat" size={40} /></div>
             <h3>Select a Seller Conversation</h3>
-            <p>Select a seller from the left panel to review inquiries and send real-time support assistance with Image/PDF sharing.</p>
+            <p>Select a seller to review inquiries and send real-time support.</p>
           </div>
         )}
       </div>

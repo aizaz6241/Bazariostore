@@ -32,6 +32,14 @@ const messageSchema = new mongoose.Schema(
     attachmentType: { type: String, enum: ['image', 'pdf', 'file', null], default: null },
     attachmentName: { type: String, default: '' },
     attachmentSize: { type: Number, default: 0 },
+    replyTo: {
+      messageId: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
+      sender: { type: String, default: '' },
+      senderName: { type: String, default: '' },
+      text: { type: String, default: '' },
+      attachmentType: { type: String, default: null },
+      attachmentName: { type: String, default: '' },
+    },
   },
   { timestamps: true }
 );

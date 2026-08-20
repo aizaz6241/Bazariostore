@@ -45,7 +45,7 @@ router.get('/seller/thread', authSeller, async (req, res) => {
 router.post('/seller/send', authSeller, async (req, res) => {
   try {
     const sellerId = req.seller.id;
-    const { text, attachment, attachmentType, attachmentName, attachmentSize } = req.body;
+    const { text, attachment, attachmentType, attachmentName, attachmentSize, replyTo } = req.body;
     const cleanText = (text || '').trim();
     if (!cleanText && !attachment) return res.status(400).json({ message: 'Message or attachment is required' });
 
@@ -82,6 +82,14 @@ router.post('/seller/send', authSeller, async (req, res) => {
       attachmentType: attachmentType || (attachment?.toLowerCase().endsWith('.pdf') ? 'pdf' : attachment ? 'image' : null),
       attachmentName: attachmentName || '',
       attachmentSize: attachmentSize || 0,
+      replyTo: replyTo && replyTo.text || replyTo?.attachmentName ? {
+        messageId: replyTo.messageId || replyTo._id || null,
+        sender: replyTo.sender || '',
+        senderName: replyTo.senderName || '',
+        text: replyTo.text || '',
+        attachmentType: replyTo.attachmentType || null,
+        attachmentName: replyTo.attachmentName || '',
+      } : null,
     });
     await message.save();
 
@@ -142,11 +150,10 @@ router.get('/admin/conversations', authAdmin('chat'), async (req, res) => {
 // GET /api/chat/admin/conversations/:id/messages (Admin gets conversation messages)
 router.get('/admin/conversations/:id/messages', authAdmin('chat'), async (req, res) => {
   try {
-    const conv = await Conversation.findById(req.params.id);
-    if (!conv) return res.status(404).json({ message: 'Conversation not found' });
-
-    const messages = await Message.find({ conversation: conv._id }).sort({ createdAt: 1 }).limit(300);
-    res.json({ conversation: conv, messages });
+    const messages = await Message.find({ conversation: req.params.id }).sort({ createdAt: 1 }).limit(200);
+    // Mark as read for admin
+    await Conversation.findByIdAndUpdate(req.params.id, { unreadForAdmin: 0 });
+    res.json(messages);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -155,7 +162,7 @@ router.get('/admin/conversations/:id/messages', authAdmin('chat'), async (req, r
 // POST /api/chat/admin/conversations/:id/reply (Admin replies to seller)
 router.post('/admin/conversations/:id/reply', authAdmin('chat'), async (req, res) => {
   try {
-    const { text, attachment, attachmentType, attachmentName, attachmentSize } = req.body;
+    const { text, attachment, attachmentType, attachmentName, attachmentSize, replyTo } = req.body;
     const cleanText = (text || '').trim();
     if (!cleanText && !attachment) return res.status(400).json({ message: 'Message or attachment is required' });
 
@@ -182,6 +189,14 @@ router.post('/admin/conversations/:id/reply', authAdmin('chat'), async (req, res
       attachmentType: attachmentType || (attachment?.toLowerCase().endsWith('.pdf') ? 'pdf' : attachment ? 'image' : null),
       attachmentName: attachmentName || '',
       attachmentSize: attachmentSize || 0,
+      replyTo: replyTo && (replyTo.text || replyTo.attachmentName) ? {
+        messageId: replyTo.messageId || replyTo._id || null,
+        sender: replyTo.sender || '',
+        senderName: replyTo.senderName || '',
+        text: replyTo.text || '',
+        attachmentType: replyTo.attachmentType || null,
+        attachmentName: replyTo.attachmentName || '',
+      } : null,
     });
     await message.save();
 

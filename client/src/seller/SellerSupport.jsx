@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { sapi, fmtDate } from '../api.js';
+import { sapi, fmtDate, compressImage } from '../api.js';
 import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
 import ChatAttachment from '../components/ChatAttachment.jsx';
@@ -12,11 +12,13 @@ export default function SellerSupport() {
   const [text, setText] = useState('');
   const [file, setFile] = useState(null);
   const [filePreview, setFilePreview] = useState(null);
+  const [replyingTo, setReplyingTo] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const scrollRef = useRef(null);
   const fileInputRef = useRef(null);
+  const textInputRef = useRef(null);
 
   const loadThread = () => {
     sapi('/chat/seller/thread')
@@ -81,6 +83,11 @@ export default function SellerSupport() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const handleStartReply = (msg) => {
+    setReplyingTo(msg);
+    textInputRef.current?.focus();
+  };
+
   const handleSend = async (e) => {
     e.preventDefault();
     const clean = text.trim();
@@ -93,11 +100,12 @@ export default function SellerSupport() {
     let attachmentSize = 0;
 
     try {
-      // If file selected, upload first
+      // If file selected, compress photo on mobile client first then upload
       if (file) {
         setUploading(true);
+        const fileToUpload = await compressImage(file);
         const fd = new FormData();
-        fd.append('files', file);
+        fd.append('files', fileToUpload);
 
         const uploadRes = await sapi('/uploads', {
           method: 'POST',
@@ -114,9 +122,19 @@ export default function SellerSupport() {
         setUploading(false);
       }
 
-      // Clear input immediately for snappy UX
+      const targetReply = replyingTo ? {
+        messageId: replyingTo._id,
+        sender: replyingTo.sender,
+        senderName: replyingTo.sender === 'seller' ? 'You' : (replyingTo.senderName || 'Super Admin'),
+        text: replyingTo.text || (replyingTo.attachmentType === 'pdf' ? `📄 ${replyingTo.attachmentName || 'PDF Document'}` : '📷 Image Attachment'),
+        attachmentType: replyingTo.attachmentType || null,
+        attachmentName: replyingTo.attachmentName || '',
+      } : null;
+
+      // Clear inputs immediately for snappy UX
       setText('');
       removeFile();
+      setReplyingTo(null);
 
       await sapi('/chat/seller/send', {
         method: 'POST',
@@ -126,6 +144,7 @@ export default function SellerSupport() {
           attachmentType,
           attachmentName,
           attachmentSize,
+          replyTo: targetReply,
         },
       });
     } catch (err) {
@@ -180,9 +199,28 @@ export default function SellerSupport() {
             return (
               <div key={m._id} className={`chat-bubble-wrap ${isMe ? 'msg-me' : 'msg-them'}`}>
                 <div className="chat-bubble-sender">
-                  {isMe ? 'You (Store)' : m.senderName || 'Super Admin'}
+                  <span>{isMe ? 'You (Store)' : m.senderName || 'Super Admin'}</span>
+                  <button
+                    type="button"
+                    className="chat-reply-trigger-btn"
+                    onClick={() => handleStartReply(m)}
+                    title="Reply to this message"
+                  >
+                    <Ic name="cornerDownRight" size={12} /> Reply
+                  </button>
                 </div>
+
                 <div className="chat-bubble-body">
+                  {/* WhatsApp-style Quoted Reply Preview */}
+                  {m.replyTo && (
+                    <div className="chat-quoted-msg">
+                      <b className="cqm-author">{m.replyTo.sender === 'seller' ? 'You' : (m.replyTo.senderName || 'Super Admin')}</b>
+                      <span className="cqm-text">
+                        {m.replyTo.text || (m.replyTo.attachmentType === 'pdf' ? `📄 ${m.replyTo.attachmentName || 'PDF Document'}` : '📷 Image Attachment')}
+                      </span>
+                    </div>
+                  )}
+
                   {/* Attachment if present or text contains image/pdf url */}
                   {m.attachment ? (
                     <ChatAttachment msg={m} />
@@ -195,14 +233,33 @@ export default function SellerSupport() {
                     <div className="chat-text-content">{m.text}</div>
                   )}
                 </div>
-                <div className="chat-bubble-time">
-                  {fmtDate(m.createdAt)}
+
+                <div className="chat-bubble-footer">
+                  <span className="chat-bubble-time">{fmtDate(m.createdAt)}</span>
                 </div>
               </div>
             );
           })}
           <div ref={scrollRef} />
         </div>
+
+        {/* WhatsApp-style Replying-To Bar */}
+        {replyingTo && (
+          <div className="chat-replying-bar">
+            <div className="crb-left">
+              <div className="crb-indicator"></div>
+              <div className="crb-info">
+                <span className="crb-title">Replying to <b>{replyingTo.sender === 'seller' ? 'You' : (replyingTo.senderName || 'Super Admin')}</b></span>
+                <span className="crb-snippet">
+                  {replyingTo.text || (replyingTo.attachmentType === 'pdf' ? `📄 ${replyingTo.attachmentName || 'PDF Document'}` : '📷 Image Attachment')}
+                </span>
+              </div>
+            </div>
+            <button type="button" className="crb-close" onClick={() => setReplyingTo(null)} title="Cancel reply">
+              <Ic name="x" size={16} />
+            </button>
+          </div>
+        )}
 
         {/* Pending Attachment Preview Bar */}
         {file && (
@@ -251,9 +308,10 @@ export default function SellerSupport() {
 
           <input
             type="text"
+            ref={textInputRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={file ? 'Add a caption or message...' : 'Type message or attach Image / PDF...'}
+            placeholder={file ? 'Add a caption or message...' : replyingTo ? `Reply to ${replyingTo.sender === 'seller' ? 'your message' : 'Admin'}...` : 'Type message or attach Image / PDF...'}
             disabled={sending}
           />
 
