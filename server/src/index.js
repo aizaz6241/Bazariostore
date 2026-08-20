@@ -82,6 +82,49 @@ if (fs.existsSync(clientDist)) {
     res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(path.join(clientDist, 'index.html'));
   });
+} else {
+  // Pure API Server Landing Page (when frontend is deployed separately on Netlify)
+  app.get('/', (req, res) => {
+    res.setHeader('Content-Type', 'text/html');
+    res.send(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <title>Bazario API & Socket Server</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+          .card { background: #1e293b; border: 1px solid #334155; border-radius: 16px; padding: 36px 28px; max-width: 500px; width: 100%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); text-align: center; }
+          .badge { display: inline-flex; align-items: center; gap: 6px; background: #064e3b; color: #34d399; font-size: 13px; font-weight: 700; padding: 6px 14px; border-radius: 20px; margin-bottom: 20px; border: 1px solid #059669; }
+          .dot { width: 8px; height: 8px; background: #10b981; border-radius: 50%; display: inline-block; }
+          h1 { margin: 0 0 10px; font-size: 26px; font-weight: 800; color: #fff; }
+          p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin: 0 0 24px; }
+          .links { display: flex; flex-direction: column; gap: 10px; }
+          .btn { background: #2563eb; color: #fff; text-decoration: none; padding: 12px; border-radius: 8px; font-weight: 600; font-size: 14px; }
+          .btn:hover { background: #1d4ed8; }
+          .btn-sec { background: #334155; color: #cbd5e1; }
+          .btn-sec:hover { background: #475569; color: #fff; }
+          .meta { margin-top: 24px; font-size: 12px; color: #64748b; border-top: 1px solid #334155; padding-top: 16px; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="badge"><span class="dot"></span> Backend Engine Live & Healthy</div>
+          <h1>🚀 Bazario Marketplace API</h1>
+          <p>The backend REST API and Real-Time WebSockets server are active on Render. Connect your Netlify frontend via <code>VITE_API_URL</code>.</p>
+          <div class="links">
+            <a href="/api/health" class="btn">🔍 Health Check (/api/health)</a>
+            <a href="/api/products" class="btn btn-sec">📦 Products API (/api/products)</a>
+          </div>
+          <div class="meta">
+            Connected to Database • Mode: Production
+          </div>
+        </div>
+      </body>
+      </html>
+    `);
+  });
 }
 
 const server = http.createServer(app);
