@@ -43,8 +43,34 @@ export default function SellerDashboard() {
           <p>Welcome back, <b>{data?.seller?.storeName}</b>! Here is your real-time performance summary.</p>
         </div>
         <div className="seller-quick-actions">
+          <button type="button" onClick={() => setAppModalOpen(true)} className="seller-btn-app-install">
+            <Ic name="download" size={16} /> Install Seller App
+          </button>
           <Link to="/seller/products" className="seller-btn-pri"><Ic name="plus" size={16} /> Add Product</Link>
           <Link to="/seller/support" className="seller-btn-sec"><Ic name="chat" size={16} /> Support Chat</Link>
+        </div>
+      </div>
+
+      {/* Featured Mobile App Card Banner */}
+      <div className="seller-app-dashboard-banner">
+        <div className="sadb-left">
+          <div className="sadb-icon-badge">📱</div>
+          <div className="sadb-text">
+            <b>Bazario Merchant Mobile App (Android &amp; iOS)</b>
+            <p>Get instant sound alerts on every new order, fulfill shipments faster, and chat with Admin on the go.</p>
+          </div>
+        </div>
+        <div className="sadb-actions">
+          <button type="button" className="btn-sadb-install" onClick={() => setAppModalOpen(true)}>
+            <Ic name="download" size={15} /> ⚡ 1-Click Install App
+          </button>
+          <a
+            href="/downloads/bazario-seller.apk"
+            download="bazario-seller.apk"
+            className="btn-sadb-apk"
+          >
+            <Ic name="package" size={15} /> Download APK
+          </a>
         </div>
       </div>
 
@@ -245,6 +271,9 @@ export default function SellerDashboard() {
           </table>
         </div>
       </div>
+
+      {/* Seller Central App Setup & APK Installer Modal */}
+      <SellerAppModal isOpen={appModalOpen} onClose={() => setAppModalOpen(false)} />
     </div>
   );
 }

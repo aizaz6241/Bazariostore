@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { sapi } from '../api.js';
 import Ic from '../components/Icons.jsx';
+import SellerAppModal from '../components/SellerAppModal.jsx';
 
 export default function SellerSettings() {
   const { seller, setSeller } = useOutletContext();
+  const [appModalOpen, setAppModalOpen] = useState(false);
   const [form, setForm] = useState({
     storeName: '',
     ownerName: '',
@@ -323,6 +325,57 @@ export default function SellerSettings() {
           </form>
         </div>
       </div>
+
+      {/* ─── Mobile App & PWA Installation Card ─────────────────── */}
+      <div className="seller-card settings-form" style={{ marginTop: 24 }}>
+        <div className="settings-section">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <h3>📱 Bazario Merchant Mobile App</h3>
+            <span className="app-badge-new">OFFICIAL APP</span>
+          </div>
+
+          <p style={{ fontSize: 13, color: '#64748b', marginBottom: 16 }}>
+            Set up the official Bazario Seller App on your Android or iPhone device for push notifications, instant order management, and live chat.
+          </p>
+
+          <div className="app-settings-grid">
+            <div className="app-settings-item">
+              <div className="asi-icon">🤖</div>
+              <div className="asi-content">
+                <b>Android Mobile App (APK &amp; PWA)</b>
+                <span>1-Click direct install or standalone APK package.</span>
+              </div>
+              <button
+                type="button"
+                className="seller-btn-pri"
+                style={{ padding: '8px 14px', fontSize: 12 }}
+                onClick={() => setAppModalOpen(true)}
+              >
+                <Ic name="download" size={14} /> Android Setup
+              </button>
+            </div>
+
+            <div className="app-settings-item">
+              <div className="asi-icon">🍎</div>
+              <div className="asi-content">
+                <b>iPhone &amp; iPad (iOS Safari)</b>
+                <span>Add directly to your iOS Home Screen in 2 simple taps.</span>
+              </div>
+              <button
+                type="button"
+                className="seller-btn-sec"
+                style={{ padding: '8px 14px', fontSize: 12 }}
+                onClick={() => setAppModalOpen(true)}
+              >
+                <Ic name="eye" size={14} /> iOS Guide
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Seller Central App Setup & APK Installer Modal */}
+      <SellerAppModal isOpen={appModalOpen} onClose={() => setAppModalOpen(false)} />
     </div>
   );
 }

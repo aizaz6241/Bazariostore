@@ -5,6 +5,7 @@ import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
 import FloatingChatWidget from '../components/FloatingChatWidget.jsx';
 import NotificationToast from '../components/NotificationToast.jsx';
+import SellerAppModal from '../components/SellerAppModal.jsx';
 import { playNotificationSound } from '../utils/audio.js';
 
 const SELLER_NAV = [
@@ -25,6 +26,7 @@ export default function SellerLayout() {
   const navigate = useNavigate();
   const token = localStorage.getItem('ng_seller_token');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [appModalOpen, setAppModalOpen] = useState(false);
   const [seller, setSeller] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('ng_seller') || 'null');
@@ -186,13 +188,22 @@ export default function SellerLayout() {
         </nav>
 
         <div className="seller-sidebar-footer">
+          <button
+            type="button"
+            onClick={() => setAppModalOpen(true)}
+            className="seller-install-app-sidebar-btn"
+          >
+            <Ic name="download" size={16} />
+            <span>Install Seller App</span>
+            <span className="app-badge-new">NEW</span>
+          </button>
           <Link to={`/shop?seller=${seller?._id}`} target="_blank" className="view-storefront-btn">
             <Ic name="eye" size={16} /> View Storefront
           </Link>
-          <Link to="/admin/login" className="view-storefront-btn" style={{ background: '#334155', color: '#fff', marginTop: 6 }}>
+          <Link to="/admin/login" className="view-storefront-btn" style={{ background: '#334155', color: '#fff', marginTop: 4 }}>
             <Ic name="shield" size={16} /> Admin Portal
           </Link>
-          <button onClick={logout} className="seller-logout-btn" style={{ marginTop: 8 }}>
+          <button onClick={logout} className="seller-logout-btn" style={{ marginTop: 6 }}>
             <Ic name="logout" size={16} /> Sign Out
           </button>
         </div>
@@ -213,6 +224,15 @@ export default function SellerLayout() {
           </div>
 
           <div className="seller-top-right">
+            <button
+              type="button"
+              onClick={() => setAppModalOpen(true)}
+              className="seller-app-pill-btn"
+              title="Install Bazario App on Android / iOS"
+            >
+              <Ic name="download" size={14} />
+              <span>Install App</span>
+            </button>
             <Link to="/seller/support" className="seller-help-link">
               <Ic name="chat" size={16} /> <span className="help-text">Chat with Admin</span>
               {unreadChat > 0 && <span className="unread-dot-bubble">{unreadChat}</span>}
@@ -277,6 +297,9 @@ export default function SellerLayout() {
 
       {/* Global Floating Chat Bubble Widget */}
       <FloatingChatWidget role="seller" currentSeller={seller} />
+
+      {/* Seller App Setup & APK Installer Modal */}
+      <SellerAppModal isOpen={appModalOpen} onClose={() => setAppModalOpen(false)} />
     </div>
   );
 }
