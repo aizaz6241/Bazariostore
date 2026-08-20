@@ -7,7 +7,9 @@ import ChatAttachment from '../components/ChatAttachment.jsx';
 import ChatMessageBubble from '../components/ChatMessageBubble.jsx';
 
 export default function SellerSupport() {
-  const { seller, setUnreadChat } = useOutletContext();
+  const context = useOutletContext() || {};
+  const seller = context.seller || null;
+  const setUnreadChat = context.setUnreadChat || (() => {});
   const [conv, setConv] = useState(null);
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
@@ -24,11 +26,12 @@ export default function SellerSupport() {
   const loadThread = () => {
     sapi('/chat/seller/thread')
       .then((res) => {
-        setConv(res.conversation);
-        setMessages(res.messages || []);
+        if (!res) return;
+        setConv(res.conversation || null);
+        setMessages(Array.isArray(res.messages) ? res.messages : []);
         // Mark read
         sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
-        if (setUnreadChat) setUnreadChat(0);
+        if (typeof setUnreadChat === 'function') setUnreadChat(0);
       })
       .catch((e) => console.error(e))
       .finally(() => setLoading(false));
@@ -37,20 +40,31 @@ export default function SellerSupport() {
   useEffect(() => {
     loadThread();
 
-    const socket = getSocket();
+    let socket;
+    try {
+      socket = getSocket();
+    } catch (e) {
+      console.warn('Socket warning:', e);
+    }
+
     const onNewMessage = (msg) => {
+      if (!msg) return;
       setMessages((prev) => {
-        if (prev.some((m) => m._id === msg._id)) return prev;
+        if (!Array.isArray(prev)) return [msg];
+        if (prev.some((m) => m?._id === msg?._id)) return prev;
         return [...prev, msg];
       });
-      // Mark read if seller has open chat window
       sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
-      if (setUnreadChat) setUnreadChat(0);
+      if (typeof setUnreadChat === 'function') setUnreadChat(0);
     };
 
-    socket.on('message:new', onNewMessage);
+    if (socket) {
+      socket.on('message:new', onNewMessage);
+    }
     return () => {
-      socket.off('message:new', onNewMessage);
+      if (socket) {
+        socket.off('message:new', onNewMessage);
+      }
     };
   }, []);
 

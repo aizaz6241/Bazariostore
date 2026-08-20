@@ -52,20 +52,32 @@ export default function ChatInbox() {
   useEffect(() => {
     loadConvos();
 
-    const socket = getSocket();
+    let socket;
+    try {
+      socket = getSocket();
+    } catch (e) {
+      console.warn('Socket warning:', e);
+    }
+
     const onNewMessage = (msg) => {
+      if (!msg) return;
       if (msg.conversation === selectedId) {
         setMessages((prev) => {
-          if (prev.some((m) => m._id === msg._id)) return prev;
+          if (!Array.isArray(prev)) return [msg];
+          if (prev.some((m) => m?._id === msg?._id)) return prev;
           return [...prev, msg];
         });
       }
       loadConvos();
     };
 
-    socket.on('message:new', onNewMessage);
+    if (socket) {
+      socket.on('message:new', onNewMessage);
+    }
     return () => {
-      socket.off('message:new', onNewMessage);
+      if (socket) {
+        socket.off('message:new', onNewMessage);
+      }
     };
   }, [selectedId]);
 
