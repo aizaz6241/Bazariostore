@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, fmtDay, money } from '../api.js';
 import Ic from '../components/Icons.jsx';
+import CurrencyConverterWidget from '../components/CurrencyConverterWidget.jsx';
 
 const STATUS_COLOR = { pending: 'chip-orange', approved: 'chip-green', rejected: 'chip-red' };
 
@@ -399,17 +400,14 @@ export default function AdminWithdrawals() {
                   </select>
                 </label>
 
-                <label>
-                  <span>Amount (₹) *</span>
-                  <input
-                    type="number"
-                    min="1"
-                    placeholder="e.g. 500"
-                    value={adjustForm.amount}
-                    onChange={(e) => setAdjustForm((f) => ({ ...f, amount: e.target.value }))}
-                    required
+                <div className="field-full my-2">
+                  <CurrencyConverterWidget
+                    usdValue={adjustForm.amount}
+                    onUsdChange={(val) => setAdjustForm((f) => ({ ...f, amount: val }))}
+                    title="Manual Adjustment Converter (INR / EUR / AED to USD)"
+                    mode={adjustForm.type === 'credit' ? 'deposit' : 'withdraw'}
                   />
-                </label>
+                </div>
 
                 <label>
                   <span>Reason / Note <span className="muted-sm">(seller chat mein dikhega)</span></span>

@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { sapi, fmtDay, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import CurrencySelector from '../components/CurrencySelector.jsx';
+import CurrencyConverterWidget from '../components/CurrencyConverterWidget.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 
 const STATUS_COLOR = {
@@ -374,27 +375,25 @@ export default function SellerWallet() {
         <div className="card form-card mb-4">
           <h3>💰 Add Funds to Merchant Wallet</h3>
           <p className="muted-sm mb-3">
-            Submit a deposit request to add funds into your Available Balance ({currentCurrency.code} {currentCurrency.symbol}).
+            Submit a deposit request to add funds into your Available Balance (USD $). You can use the live currency converter below to calculate from INR or other local currencies.
           </p>
+
           <form onSubmit={handleDeposit} className="form-grid">
             <div className="field field-full">
-              <label>Deposit Amount ({currentCurrency.symbol}) *</label>
-              <input
-                type="number"
-                min={1}
-                step="any"
-                value={depForm.amount}
-                onChange={setDep('amount')}
-                placeholder={`e.g. 500 (${currentCurrency.code})`}
-                required
+              <CurrencyConverterWidget
+                usdValue={depForm.amount}
+                onUsdChange={(val) => setDepForm((prev) => ({ ...prev, amount: val }))}
+                title="Deposit Currency Converter (INR / EUR / GBP / AED to USD)"
+                mode="deposit"
               />
             </div>
+
             <div className="field field-full">
               <label>Payment Reference / Transaction ID <span className="muted-sm">(optional)</span></label>
               <input
                 value={depForm.depositRef}
                 onChange={setDep('depositRef')}
-                placeholder="Bank transfer / Wire reference number"
+                placeholder="Bank transfer / Wire reference number / UPI Ref ID"
               />
             </div>
             <div className="field field-full">
@@ -402,12 +401,12 @@ export default function SellerWallet() {
               <input
                 value={depForm.depositNote}
                 onChange={setDep('depositNote')}
-                placeholder="Any additional information"
+                placeholder="e.g. Deposited via Bank Transfer / UPI / Card"
               />
             </div>
             <div className="field field-full">
-              <button type="submit" className="seller-btn-pri" disabled={submitting}>
-                {submitting ? 'Submitting...' : '💰 Submit Deposit Request'}
+              <button type="submit" className="seller-btn-pri" disabled={submitting || !depForm.amount}>
+                {submitting ? 'Submitting...' : `💰 Submit Deposit Request ($${Number(depForm.amount || 0).toFixed(2)} USD)`}
               </button>
             </div>
           </form>
@@ -421,21 +420,16 @@ export default function SellerWallet() {
         <div className="card form-card mb-4">
           <h3>💸 Withdraw Funds from Merchant Wallet</h3>
           <p className="muted-sm mb-3">
-            Request a payout from your Available Balance directly to your Bank Account ({currentCurrency.code} {currentCurrency.symbol}).
+            Request a payout from your Available Balance directly to your Bank Account (Available: ${Number(bal).toFixed(2)} USD).
           </p>
 
           <form onSubmit={handleWithdraw} className="form-grid">
             <div className="field field-full">
-              <label>Withdrawal Amount ({currentCurrency.symbol}) * — Available: {formatMoney(bal)}</label>
-              <input
-                type="number"
-                min={1}
-                max={bal}
-                step="any"
-                value={wdForm.amount}
-                onChange={setWd('amount')}
-                placeholder={`Max ${formatMoney(bal)}`}
-                required
+              <CurrencyConverterWidget
+                usdValue={wdForm.amount}
+                onUsdChange={(val) => setWdForm((prev) => ({ ...prev, amount: val }))}
+                title="Payout Currency Converter (USD to INR / EUR / GBP / AED)"
+                mode="withdraw"
               />
             </div>
 
@@ -449,23 +443,24 @@ export default function SellerWallet() {
             </div>
             <div className="field">
               <label>Bank Name *</label>
-              <input value={wdForm.bankName} onChange={setWd('bankName')} placeholder="e.g. Chase, HDFC, Barclays, HSBC" required />
+              <input value={wdForm.bankName} onChange={setWd('bankName')} placeholder="e.g. State Bank of India, HDFC, Chase, Barclays" required />
             </div>
             <div className="field">
               <label>Routing / SWIFT / IFSC Code</label>
               <input
                 value={wdForm.ifscCode}
                 onChange={setWd('ifscCode')}
-                placeholder="e.g. CHASUS33 / HDFC0001"
+                placeholder="e.g. SBIN0001234 / CHASUS33"
                 style={{ textTransform: 'uppercase' }}
               />
             </div>
 
             <div className="field field-full">
-              <button type="submit" className="seller-btn-pri" disabled={submitting || bal < 1}>
-                {submitting ? 'Submitting...' : `💸 Submit Withdrawal Request`}
+              <button type="submit" className="seller-btn-pri" disabled={submitting || bal < 1 || !wdForm.amount || Number(wdForm.amount) > bal}>
+                {submitting ? 'Submitting...' : `💸 Submit Withdrawal Request ($${Number(wdForm.amount || 0).toFixed(2)} USD)`}
               </button>
               {bal < 1 && <small className="muted-sm mt-1 block">Insufficient available balance to withdraw.</small>}
+              {Number(wdForm.amount) > bal && <small className="muted-sm mt-1 block" style={{ color: '#dc2626' }}>Withdrawal amount cannot exceed available balance (${Number(bal).toFixed(2)} USD).</small>}
             </div>
           </form>
         </div>
