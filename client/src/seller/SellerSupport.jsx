@@ -4,6 +4,7 @@ import { sapi, fmtDate, compressImage } from '../api.js';
 import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
 import ChatAttachment from '../components/ChatAttachment.jsx';
+import ChatMessageBubble from '../components/ChatMessageBubble.jsx';
 
 export default function SellerSupport() {
   const { seller, setUnreadChat } = useOutletContext();
@@ -197,47 +198,13 @@ export default function SellerSupport() {
           {messages.map((m) => {
             const isMe = m.sender === 'seller';
             return (
-              <div key={m._id} className={`chat-bubble-wrap ${isMe ? 'msg-me' : 'msg-them'}`}>
-                <div className="chat-bubble-sender">
-                  <span>{isMe ? 'You (Store)' : m.senderName || 'Super Admin'}</span>
-                  <button
-                    type="button"
-                    className="chat-reply-trigger-btn"
-                    onClick={() => handleStartReply(m)}
-                    title="Reply to this message"
-                  >
-                    <Ic name="cornerDownRight" size={12} /> Reply
-                  </button>
-                </div>
-
-                <div className="chat-bubble-body">
-                  {/* WhatsApp-style Quoted Reply Preview */}
-                  {m.replyTo && (
-                    <div className="chat-quoted-msg">
-                      <b className="cqm-author">{m.replyTo.sender === 'seller' ? 'You' : (m.replyTo.senderName || 'Super Admin')}</b>
-                      <span className="cqm-text">
-                        {m.replyTo.text || (m.replyTo.attachmentType === 'pdf' ? `📄 ${m.replyTo.attachmentName || 'PDF Document'}` : '📷 Image Attachment')}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Attachment if present or text contains image/pdf url */}
-                  {m.attachment ? (
-                    <ChatAttachment msg={m} />
-                  ) : (typeof m.text === 'string' && (m.text.startsWith('http') || m.text.startsWith('/uploads/') || m.text.startsWith('img/') || m.text.startsWith('/img/')) && m.text.match(/\.(jpeg|jpg|png|gif|webp|svg|pdf)(\?.*)?$/i)) ? (
-                    <ChatAttachment url={m.text} />
-                  ) : null}
-
-                  {/* Message Text */}
-                  {m.text && (!m.text.match(/\.(jpeg|jpg|png|gif|webp|svg|pdf)(\?.*)?$/i) || m.attachment) && (
-                    <div className="chat-text-content">{m.text}</div>
-                  )}
-                </div>
-
-                <div className="chat-bubble-footer">
-                  <span className="chat-bubble-time">{fmtDate(m.createdAt)}</span>
-                </div>
-              </div>
+              <ChatMessageBubble
+                key={m._id}
+                msg={m}
+                isMe={isMe}
+                myRole="seller"
+                onReply={handleStartReply}
+              />
             );
           })}
           <div ref={scrollRef} />

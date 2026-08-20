@@ -96,10 +96,10 @@ router.delete('/:key', authSellerOrAdmin, async (req, res) => {
     if (process.env.UPLOADTHING_TOKEN) {
       await deleteKeys([key]);
     }
-    const localFile = path.join(localUploadsDir, key);
-    if (fs.existsSync(localFile)) {
-      fs.unlinkSync(localFile);
-    }
+    const localFile1 = path.join(serverUploadsDir, key);
+    const localFile2 = path.join(rootUploadsDir, key);
+    if (fs.existsSync(localFile1)) fs.unlinkSync(localFile1);
+    if (fs.existsSync(localFile2)) fs.unlinkSync(localFile2);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ message: e.message });
