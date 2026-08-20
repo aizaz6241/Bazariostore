@@ -7035,12 +7035,22 @@ textarea:focus {
 
 .chat-bubble-wrap.msg-me {
   justify-content: flex-end;
-  flex-direction: row;
 }
 
 .chat-bubble-wrap.msg-them {
   justify-content: flex-start;
-  flex-direction: row-reverse;
+}
+
+.chat-bubble-wrap.msg-me .chat-hover-reply-btn {
+  order: -1;
+  margin-right: 6px;
+  margin-left: 0;
+}
+
+.chat-bubble-wrap.msg-them .chat-hover-reply-btn {
+  order: 1;
+  margin-left: 6px;
+  margin-right: 0;
 }
 
 .chat-bubble-inner {
@@ -7049,11 +7059,11 @@ textarea:focus {
   border-radius: 14px;
   padding: 9px 13px;
   width: fit-content;
-  max-width: min(88%, 540px);
-  min-width: 120px;
+  max-width: min(85%, 520px);
+  min-width: 90px;
   box-sizing: border-box;
   word-break: break-word;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
@@ -7104,7 +7114,7 @@ textarea:focus {
   line-height: 1;
 }
 
-/* Floating Hover Reply Button */
+/* Floating Hover Reply Button for Desktop */
 .chat-hover-reply-btn {
   background: #ffffff;
   border: 1px solid #cbd5e1;
@@ -7120,7 +7130,6 @@ textarea:focus {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease;
-  margin: 0 6px;
   flex-shrink: 0;
 }
 
@@ -7218,6 +7227,23 @@ textarea:focus {
 
 .msg-me .cqm-text {
   color: #e2e8f0;
+}
+
+/* Mobile Responsiveness Improvements */
+@media (max-width: 768px) {
+  .chat-hover-reply-btn {
+    display: none !important;
+  }
+  .chat-bubble-inner {
+    max-width: 88% !important;
+    padding: 8px 11px !important;
+  }
+  .chat-text-content {
+    font-size: 13px !important;
+  }
+  .cqm-text {
+    max-width: 190px !important;
+  }
 }
 
 /* Active Replying-To Bar above Chat Input */
