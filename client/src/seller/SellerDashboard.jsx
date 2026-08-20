@@ -140,7 +140,7 @@ export default function SellerDashboard() {
         <div className="seller-card chart-card">
           <div className="seller-card-head">
             <h3>📈 Daily Sales Revenue Trend (Last 14 Days)</h3>
-            <span className="badge-pill">PKR Revenue</span>
+            <span className="badge-pill">USD Revenue ($)</span>
           </div>
           <div className="sales-bar-chart">
             {salesByDay.map((day, idx) => {
