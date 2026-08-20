@@ -1992,8 +1992,39 @@ h1, h2, h3, h4 { line-height: 1.25; }
 .seller-auth-links { margin-top: 12px; display: flex; justify-content: space-between; font-weight: 600; color: #0284c7; }
 
 /* Seller Layout (Sidebar + Header + Body) */
-.seller-portal { display: flex; min-height: 100vh; background: #f1f5f9; }
-.seller-sidebar { width: 260px; background: #0f172a; color: #fff; display: flex; flex-direction: column; flex-shrink: 0; }
+.seller-portal {
+  display: flex;
+  min-height: 100vh;
+  background: #f1f5f9;
+  position: relative;
+}
+
+.seller-sidebar {
+  width: 265px;
+  background: #0f172a;
+  color: #ffffff;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  z-index: 90;
+  border-right: 1px solid #1e293b;
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
+}
+
+.seller-sidebar::-webkit-scrollbar {
+  width: 4px;
+}
+.seller-sidebar::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
 .seller-brand { padding: 20px 16px; border-bottom: 1px solid #1e293b; }
 .seller-logo-title { display: flex; align-items: baseline; gap: 6px; margin-bottom: 12px; }
 .seller-logo-title .amazon-name { font-size: 22px; font-weight: 800; color: #fff; }
