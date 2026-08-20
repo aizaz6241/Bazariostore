@@ -8,7 +8,7 @@ export default function MobileBottomNav() {
   const path = location.pathname;
 
   // Don't show bottom nav inside full screen admin portal or seller portal subpages where sidebars exist
-  if (path.startsWith('/admin')) {
+  if (path.startsWith('/admin') || path.startsWith('/seller')) {
     return null;
   }
 

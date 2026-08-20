@@ -200,6 +200,30 @@ export default function SellerLayout() {
 
       {/* Main Content Area */}
       <div className="seller-main-wrap">
+        <header className="seller-top-bar">
+          <div className="seller-top-left">
+            <button className="mobile-hamburger-btn" onClick={() => setMobileSidebarOpen(true)} aria-label="Toggle Menu">
+              <Ic name="menu" size={22} />
+            </button>
+            <span className={`store-active-indicator ${seller?.status === 'frozen' || seller?.status === 'suspended' ? 'status-frozen' : ''}`}>
+              <span className="pulse-dot"></span> Store Status: <b style={{ textTransform: 'uppercase' }}>{seller?.status || 'Active'}</b>
+            </span>
+            <span className="seller-sep hide-on-mobile">|</span>
+            <span className="seller-owner-name hide-on-mobile">Owner: <b>{seller?.ownerName}</b></span>
+          </div>
+
+          <div className="seller-top-right">
+            <Link to="/seller/support" className="seller-help-link">
+              <Ic name="chat" size={16} /> <span className="help-text">Chat with Admin</span>
+              {unreadChat > 0 && <span className="unread-dot-bubble">{unreadChat}</span>}
+            </Link>
+            <div className="seller-user-pill">
+              <span className="seller-user-initial">{seller?.ownerName?.[0] || 'U'}</span>
+              <span className="hide-on-mobile">{seller?.email}</span>
+            </div>
+          </div>
+        </header>
+
         {/* Top Compliance & Status Announcement Banners */}
         {(seller?.status === 'frozen' || seller?.status === 'suspended') && (
           <div className="seller-compliance-banner banner-frozen">
@@ -238,30 +262,6 @@ export default function SellerLayout() {
             </Link>
           </div>
         )}
-
-        <header className="seller-top-bar">
-          <div className="seller-top-left">
-            <button className="mobile-hamburger-btn" onClick={() => setMobileSidebarOpen(true)} aria-label="Toggle Menu">
-              <Ic name="menu" size={22} />
-            </button>
-            <span className={`store-active-indicator ${seller?.status === 'frozen' || seller?.status === 'suspended' ? 'status-frozen' : ''}`}>
-              <span className="pulse-dot"></span> Store Status: <b style={{ textTransform: 'uppercase' }}>{seller?.status || 'Active'}</b>
-            </span>
-            <span className="seller-sep hide-on-mobile">|</span>
-            <span className="seller-owner-name hide-on-mobile">Owner: <b>{seller?.ownerName}</b></span>
-          </div>
-
-          <div className="seller-top-right">
-            <Link to="/seller/support" className="seller-help-link">
-              <Ic name="chat" size={16} /> <span className="help-text">Chat with Admin</span>
-              {unreadChat > 0 && <span className="unread-dot-bubble">{unreadChat}</span>}
-            </Link>
-            <div className="seller-user-pill">
-              <span className="seller-user-initial">{seller?.ownerName?.[0] || 'U'}</span>
-              <span className="hide-on-mobile">{seller?.email}</span>
-            </div>
-          </div>
-        </header>
 
         <div className="seller-content-body">
           <Outlet context={{ seller, setSeller, setUnreadChat, isFrozen: seller?.status === 'frozen' || seller?.status === 'suspended' }} />

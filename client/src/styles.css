@@ -2405,10 +2405,35 @@ h1, h2, h3, h4 { line-height: 1.25; }
 .inspect-orders-list { display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow-y: auto; }
 .inspect-order-row { display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px; font-size: 12.5px; }
 
-/* Responsive adjustments */
+/* Responsive adjustments for Seller & Admin */
 @media (max-width: 900px) {
-  .seller-portal { flex-direction: column; }
-  .seller-sidebar { width: 100%; }
+  .seller-portal {
+    flex-direction: row;
+    position: relative;
+    overflow-x: hidden;
+  }
+  .seller-sidebar {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    width: 280px !important;
+    max-width: 85vw !important;
+    z-index: 1000 !important;
+    transform: translateX(-100%) !important;
+    transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    box-shadow: 6px 0 25px rgba(0, 0, 0, 0.4) !important;
+    overflow-y: auto !important;
+  }
+  .seller-sidebar.mobile-open {
+    transform: translateX(0) !important;
+  }
+  .seller-main-wrap {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
   .seller-kpi-grid { grid-template-columns: 1fr 1fr; }
   .seller-charts-row { grid-template-columns: 1fr; }
   .admin-chat-layout { grid-template-columns: 1fr; height: auto; }
