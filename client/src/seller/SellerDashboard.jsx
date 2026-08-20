@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { sapi, money, fmtDate } from '../api.js';
+import { sapi, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import SellerAppModal from '../components/SellerAppModal.jsx';
+import CurrencySelector from '../components/CurrencySelector.jsx';
+import { useCurrency } from '../context/CurrencyContext.jsx';
 
 export default function SellerDashboard() {
+  const { formatMoney, currentCurrency } = useCurrency();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
@@ -45,8 +48,9 @@ export default function SellerDashboard() {
           <p>Welcome back, <b>{data?.seller?.storeName}</b>! Here is your real-time performance summary.</p>
         </div>
         <div className="seller-quick-actions">
+          <CurrencySelector compact />
           <Link to="/seller/wallet" className="seller-btn-wallet">
-            <Ic name="banknote" size={16} /> My Wallet ({money(stats?.availableBalance || data?.seller?.wallet?.balance)})
+            <Ic name="banknote" size={16} /> My Wallet ({formatMoney(stats?.availableBalance || data?.seller?.wallet?.balance)})
           </Link>
           <button type="button" onClick={() => setAppModalOpen(true)} className="seller-btn-app-install">
             <Ic name="download" size={16} /> Install App
@@ -65,15 +69,15 @@ export default function SellerDashboard() {
           <div className="swh-info">
             <span className="swh-title">Available Merchant Wallet Balance</span>
             <div className="swh-balance-row">
-              <span className="swh-amount">{money(stats?.availableBalance || data?.seller?.wallet?.balance)}</span>
+              <span className="swh-amount">{formatMoney(stats?.availableBalance || data?.seller?.wallet?.balance)}</span>
               {(stats?.processingFund > 0 || data?.seller?.wallet?.processingFund > 0) && (
                 <span className="swh-proc-badge" title="Funds locked in active order processing">
-                  🔒 {money(stats?.processingFund || data?.seller?.wallet?.processingFund)} Processing
+                  🔒 {formatMoney(stats?.processingFund || data?.seller?.wallet?.processingFund)} Processing
                 </span>
               )}
               {(stats?.totalProfitEarned > 0 || data?.seller?.wallet?.totalProfitEarned > 0) && (
                 <span className="swh-profit-badge" title="Cumulative 20% order profits earned">
-                  +{money(stats?.totalProfitEarned || data?.seller?.wallet?.totalProfitEarned)} Profit Earned
+                  +{formatMoney(stats?.totalProfitEarned || data?.seller?.wallet?.totalProfitEarned)} Profit Earned
                 </span>
               )}
             </div>
@@ -136,7 +140,7 @@ export default function SellerDashboard() {
             <span className="kpi-title">Available Wallet Balance</span>
             <span className="kpi-icon-wrap green"><Ic name="banknote" size={20} /></span>
           </div>
-          <div className="kpi-value">{money(stats?.availableBalance || data?.seller?.wallet?.balance)}</div>
+          <div className="kpi-value">{formatMoney(stats?.availableBalance || data?.seller?.wallet?.balance)}</div>
           <div className="kpi-footer text-green">
             <Link to="/seller/wallet" style={{ color: 'inherit', textDecoration: 'none', fontWeight: 600 }}>
               Withdraw / View Wallet →
@@ -150,7 +154,7 @@ export default function SellerDashboard() {
             <span className="kpi-title">In-Flight Processing Funds</span>
             <span className="kpi-icon-wrap orange"><Ic name="lock" size={20} /></span>
           </div>
-          <div className="kpi-value text-amber">{money(stats?.processingFund || data?.seller?.wallet?.processingFund)}</div>
+          <div className="kpi-value text-amber">{formatMoney(stats?.processingFund || data?.seller?.wallet?.processingFund)}</div>
           <div className="kpi-footer text-orange">
             <span>Locked for confirmed active orders</span>
           </div>
@@ -162,7 +166,7 @@ export default function SellerDashboard() {
             <span className="kpi-title">20% Profit Margins Earned</span>
             <span className="kpi-icon-wrap blue"><Ic name="sparkle" size={20} /></span>
           </div>
-          <div className="kpi-value text-green">+{money(stats?.totalProfitEarned || data?.seller?.wallet?.totalProfitEarned)}</div>
+          <div className="kpi-value text-green">+{formatMoney(stats?.totalProfitEarned || data?.seller?.wallet?.totalProfitEarned)}</div>
           <div className="kpi-footer text-blue">
             <span>Accumulated 20% order margins</span>
           </div>
@@ -185,7 +189,7 @@ export default function SellerDashboard() {
       <div className="seller-secondary-metrics">
         <div className="sec-metric">
           <span className="sec-lbl">Gross Store Sales</span>
-          <b className="sec-val">{money(stats?.grossRevenue)}</b>
+          <b className="sec-val">{formatMoney(stats?.grossRevenue)}</b>
         </div>
         <div className="sec-metric">
           <span className="sec-lbl">Active Products Listed</span>
@@ -211,14 +215,14 @@ export default function SellerDashboard() {
         <div className="seller-card chart-card">
           <div className="seller-card-head">
             <h3>📈 Daily Sales Revenue Trend (Last 14 Days)</h3>
-            <span className="badge-pill">USD Revenue ($)</span>
+            <span className="badge-pill">{currentCurrency.code} ({currentCurrency.symbol})</span>
           </div>
           <div className="sales-bar-chart">
             {salesByDay.map((day, idx) => {
               const heightPercent = Math.max(8, Math.round((day.revenue / maxDayRev) * 100));
               return (
-                <div key={idx} className="chart-bar-col" title={`${day.rawDate}: ${money(day.revenue)} (${day.orders} orders)`}>
-                  <div className="bar-hover-val">{day.revenue > 0 ? money(day.revenue) : ''}</div>
+                <div key={idx} className="chart-bar-col" title={`${day.rawDate}: ${formatMoney(day.revenue)} (${day.orders} orders)`}>
+                  <div className="bar-hover-val">{day.revenue > 0 ? formatMoney(day.revenue) : ''}</div>
                   <div className="bar-track">
                     <div
                       className="bar-fill"
@@ -248,7 +252,7 @@ export default function SellerDashboard() {
                   <b className="top-prod-name">{p.name}</b>
                   <small className="muted">{p.qty} units sold</small>
                 </div>
-                <div className="top-prod-rev">{money(p.revenue)}</div>
+                <div className="top-prod-rev">{formatMoney(p.revenue)}</div>
               </div>
             ))}
           </div>
@@ -302,7 +306,7 @@ export default function SellerDashboard() {
                       <span>{ord.shippingAddress?.fullName || 'Customer'}</span>
                       <small className="muted block">{ord.shippingAddress?.city || ''}</small>
                     </td>
-                    <td><b>{money(sellerTot)}</b></td>
+                    <td><b>{formatMoney(sellerTot)}</b></td>
                     <td>
                       <span className={`status-tag status-${status}`}>{status.replace(/_/g, ' ')}</span>
                     </td>

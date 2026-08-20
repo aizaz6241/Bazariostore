@@ -47,7 +47,52 @@ export async function downloadFile(path, filename) {
   setTimeout(() => URL.revokeObjectURL(urlBlob), 5000);
 }
 
-export const money = (n) => '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+export const CURRENCY_SYMBOLS = {
+  USD: '$',
+  INR: '₹',
+  EUR: '€',
+  GBP: '£',
+  AED: 'AED ',
+  CAD: 'CA$',
+  AUD: 'A$',
+};
+
+export const DEFAULT_CURRENCY_RATES = {
+  USD: 1.0,
+  INR: 83.50,
+  EUR: 0.92,
+  GBP: 0.79,
+  AED: 3.67,
+  CAD: 1.36,
+  AUD: 1.52,
+};
+
+export function getActiveCurrency() {
+  try {
+    return localStorage.getItem('bazario_currency') || 'USD';
+  } catch {
+    return 'USD';
+  }
+}
+
+export function getCurrencyRate(code = getActiveCurrency()) {
+  try {
+    const cached = localStorage.getItem('bazario_currency_rates');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (parsed && parsed[code]) return parsed[code];
+    }
+  } catch {}
+  return DEFAULT_CURRENCY_RATES[code] || 1.0;
+}
+
+export const money = (n, customCode) => {
+  const code = customCode || getActiveCurrency();
+  const symbol = CURRENCY_SYMBOLS[code] || '$';
+  const rate = getCurrencyRate(code);
+  const converted = Number(n || 0) * rate;
+  return symbol + Number(converted).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
 
 export const fmtDate = (d) =>
   new Date(d).toLocaleString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });

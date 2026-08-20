@@ -4,6 +4,7 @@ import { useCart } from '../cart.jsx';
 import { useAuth } from '../auth.jsx';
 import { useContent } from '../content.jsx';
 import Ic from './Icons.jsx';
+import CurrencySelector from './CurrencySelector.jsx';
 
 function TopBar() {
   const { content } = useContent();
@@ -20,6 +21,15 @@ function TopBar() {
               <Ic name={p.icon || 'truck'} size={15} /> {p.text}
             </span>
           ))}
+        </div>
+        <div className="topbar-right" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <CurrencySelector compact />
+          <Link to="/seller/login" className="topbar-link topbar-seller-link">
+            <Ic name="tag" size={14} /> Sell on Bazario
+          </Link>
+          <Link to="/track-order" className="topbar-link">
+            <Ic name="truck" size={14} /> Track Order
+          </Link>
         </div>
       </div>
     </div>
@@ -43,44 +53,41 @@ function Header() {
   const { categories } = useContent();
   const navigate = useNavigate();
   const [q, setQ] = useState('');
-  const [cat, setCat] = useState('');
+  const [cat, setCat] = useState('All');
+  const loc = useLocation();
 
-  const submit = (e) => {
+  useEffect(() => {
+    const p = new URLSearchParams(loc.search);
+    setQ(p.get('q') || '');
+    setCat(p.get('category') || 'All');
+  }, [loc.search]);
+
+  const search = (e) => {
     e.preventDefault();
-    const params = new URLSearchParams();
-    if (q.trim()) params.set('q', q.trim());
-    if (cat) params.set('category', cat);
-    navigate('/shop?' + params.toString());
+    const p = new URLSearchParams();
+    if (q.trim()) p.set('q', q.trim());
+    if (cat && cat !== 'All') p.set('category', cat);
+    navigate(`/shop?${p.toString()}`);
   };
 
   return (
-    <header className="header">
+    <header className="header amazon-header">
       <div className="container header-in">
-        <Logo />
-
-        {/* Location selector */}
-        <div className="header-deliver-to">
-          <Ic name="mapPin" size={18} />
-          <div>
-            <small>Deliver to</small>
-            <b>Worldwide</b>
+        {/* Brand / Logo */}
+        <Link to="/" className="brand amazon-brand" aria-label="Bazario Home">
+          <div className="amazon-logo-group">
+            <span className="brand-name prime-bold" style={{ color: '#fff', fontWeight: 900, fontSize: 28 }}>Bazario</span>
+            <span className="brand-dot" style={{ color: '#f59e0b', fontSize: 10, fontWeight: 700 }}>.store</span>
+            <span className="brand-slogan-sub">GLOBAL MARKETPLACE</span>
           </div>
-        </div>
+        </Link>
 
-        {/* Amazon search bar with category picker */}
-        <form className="searchbar amazon-search-style" onSubmit={submit}>
-          <div className="search-cat">
-            <select value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Category">
-              <option value="">All Departments</option>
-              {categories.map((c) => (
-                <option key={c.slug} value={c.slug}>{c.name}</option>
-              ))}
-            </select>
-          </div>
+        {/* Amazon-style Big Search Bar */}
+        <form onSubmit={search} className="search-bar amazon-search-bar">
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search Amazon Marketplace (e.g. iPhone, Sony, Nike, Laptops)..."
+            placeholder="Search Bazario Marketplace (e.g. iPhone, Sony, Nike, Laptops)..."
           />
           <button type="submit" className="search-btn" aria-label="Search">
             <Ic name="search" size={19} />
@@ -89,6 +96,9 @@ function Header() {
 
         {/* Header Right Actions */}
         <div className="header-actions">
+          {/* Global Currency Selector in Header */}
+          <CurrencySelector compact />
+
           {/* User Account */}
           <div className="nav-drop header-account-drop">
             <Link to={user ? '/account' : '/login'} className="header-account">

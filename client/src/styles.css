@@ -6068,5 +6068,199 @@ textarea:focus {
   }
 }
 
+/* =========================================================================
+   GLOBAL REAL-TIME MULTI-CURRENCY SELECTOR & DROPDOWN STYLES
+   ========================================================================= */
+
+.currency-selector-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.currency-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.currency-select-trigger:hover,
+.currency-select-trigger.open {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.currency-select-trigger.compact {
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 6px;
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.curr-flag {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.curr-code {
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.curr-symbol {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.curr-chevron {
+  color: #94a3b8;
+  transition: transform 0.2s ease;
+}
+
+.curr-chevron.rotate {
+  transform: rotate(180deg);
+}
+
+.currency-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 250px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  overflow: hidden;
+  animation: currDropdownFade 0.15s ease-out;
+}
+
+@keyframes currDropdownFade {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.currency-dropdown-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  font-size: 11px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.currency-dropdown-header small {
+  color: #16a34a;
+  font-weight: 600;
+  font-size: 10px;
+}
+
+.currency-list {
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.currency-option-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease;
+}
+
+.currency-option-item:hover {
+  background: #f1f5f9;
+}
+
+.currency-option-item.selected {
+  background: #eff6ff;
+}
+
+.co-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.co-flag {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.co-meta {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.co-code {
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.co-sym {
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.co-name {
+  font-size: 10.5px;
+  color: #64748b;
+}
+
+.co-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.co-rate {
+  font-size: 10px;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.currency-option-item.selected .co-rate {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.co-check {
+  color: #2563eb;
+}
+
+
 
 

@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { sapi, money, fmtDate } from '../api.js';
+import { sapi, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
+import { useCurrency } from '../context/CurrencyContext.jsx';
 
 const STATUS_TABS = ['all', 'pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'];
 
 export default function SellerOrders() {
+  const { formatMoney } = useCurrency();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('all');
@@ -186,15 +188,15 @@ export default function SellerOrders() {
                       <div className="seller-order-financial-pill">
                         <div className="sof-row">
                           <span className="sof-lbl">Order Value:</span>
-                          <b>{money(total)}</b>
+                          <b>{formatMoney(total)}</b>
                         </div>
                         <div className="sof-row text-profit">
                           <span className="sof-lbl">+20% Profit:</span>
-                          <b>+{money(profit)}</b>
+                          <b>+{formatMoney(profit)}</b>
                         </div>
                         <div className="sof-row text-return">
                           <span className="sof-lbl">Payout Return:</span>
-                          <b>{money(totalReturn)}</b>
+                          <b>{formatMoney(totalReturn)}</b>
                         </div>
                       </div>
                     </td>
@@ -265,19 +267,19 @@ export default function SellerOrders() {
                 <div className="osp-grid">
                   <div className="osp-item">
                     <small>Order Amount</small>
-                    <b>{money(selectedOrd.sellerTotal)}</b>
+                    <b>{formatMoney(selectedOrd.sellerTotal)}</b>
                   </div>
                   <div className="osp-item">
                     <small>20% Profit Margin</small>
-                    <b style={{ color: '#16a34a' }}>+{money(selectedOrd.sellerProfit || (selectedOrd.sellerTotal * 0.20))}</b>
+                    <b style={{ color: '#16a34a' }}>+{formatMoney(selectedOrd.sellerProfit || (selectedOrd.sellerTotal * 0.20))}</b>
                   </div>
                   <div className="osp-item highlight">
                     <small>Total Credited on Delivery</small>
-                    <b style={{ color: '#2563eb' }}>{money(selectedOrd.sellerReturn || (selectedOrd.sellerTotal * 1.20))}</b>
+                    <b style={{ color: '#2563eb' }}>{formatMoney(selectedOrd.sellerReturn || (selectedOrd.sellerTotal * 1.20))}</b>
                   </div>
                 </div>
                 <p className="osp-note">
-                  💡 When marked <b>Delivered</b>, ${((selectedOrd.sellerTotal || 0) * 1.20).toFixed(2)} (Principal + 20% Profit) will be automatically credited to your available balance.
+                  💡 When marked <b>Delivered</b>, {formatMoney((selectedOrd.sellerTotal || 0) * 1.20)} (Principal + 20% Profit) will be automatically credited to your available balance.
                 </p>
               </div>
 

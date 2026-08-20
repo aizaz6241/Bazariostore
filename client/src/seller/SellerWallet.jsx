@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { sapi, money, fmtDay, fmtDate } from '../api.js';
+import { sapi, fmtDay, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
+import CurrencySelector from '../components/CurrencySelector.jsx';
+import { useCurrency } from '../context/CurrencyContext.jsx';
 
 const STATUS_COLOR = {
   pending: 'chip-orange',
@@ -21,6 +23,7 @@ const TYPE_BADGE = {
 
 export default function SellerWallet() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { formatMoney, currentCurrency } = useCurrency();
   const [wallet, setWallet] = useState(null);
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -101,7 +104,7 @@ export default function SellerWallet() {
     setMsg('');
     const amt = Number(wdForm.amount);
     if (!amt || amt < 1) return setErr('Please enter an amount (minimum $1)');
-    if (amt > (wallet?.balance || 0)) return setErr(`Insufficient balance. Available: ${money(wallet?.balance)}`);
+    if (amt > (wallet?.balance || 0)) return setErr(`Insufficient balance. Available: ${formatMoney(wallet?.balance)}`);
     if (method === 'bank' && (!wdForm.accountNumber || !wdForm.bankName)) return setErr('Bank details are incomplete');
     setSubmitting(true);
     try {
@@ -138,10 +141,13 @@ export default function SellerWallet() {
 
   return (
     <div className="seller-page">
-      <div className="seller-page-header">
+      <div className="seller-page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h2>💼 Merchant Wallet &amp; Financial Ledger</h2>
-          <p>Manage your available balance, in-flight processing funds, and 20% order profit earnings.</p>
+          <p>Manage your available balance, in-flight processing funds, and 20% order profit earnings in <b>{currentCurrency.code} ({currentCurrency.symbol})</b>.</p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <CurrencySelector />
         </div>
       </div>
 
@@ -156,7 +162,7 @@ export default function SellerWallet() {
             <span className="sw-kpi-title">Available Balance</span>
             <div className="sw-kpi-icon"><Ic name="banknote" size={22} /></div>
           </div>
-          <div className="sw-kpi-val">{money(bal)}</div>
+          <div className="sw-kpi-val">{formatMoney(bal)}</div>
           <small className="sw-kpi-sub">Ready for immediate withdrawal</small>
         </div>
 
@@ -166,7 +172,7 @@ export default function SellerWallet() {
             <span className="sw-kpi-title">Processing Funds</span>
             <div className="sw-kpi-icon" style={{ color: '#d97706', background: '#fef3c7' }}><Ic name="lock" size={20} /></div>
           </div>
-          <div className="sw-kpi-val text-amber">{money(processingFund)}</div>
+          <div className="sw-kpi-val text-amber">{formatMoney(processingFund)}</div>
           <small className="sw-kpi-sub">Locked for active confirmed orders</small>
         </div>
 
@@ -176,7 +182,7 @@ export default function SellerWallet() {
             <span className="sw-kpi-title">20% Profit Earned</span>
             <div className="sw-kpi-icon" style={{ color: '#16a34a', background: '#dcfce7' }}><Ic name="tag" size={20} /></div>
           </div>
-          <div className="sw-kpi-val text-green">+{money(totalProfitEarned)}</div>
+          <div className="sw-kpi-val text-green">+{formatMoney(totalProfitEarned)}</div>
           <small className="sw-kpi-sub">Net profit margins accumulated</small>
         </div>
 
@@ -186,7 +192,7 @@ export default function SellerWallet() {
             <span className="sw-kpi-title">Total Payout Volume</span>
             <div className="sw-kpi-icon" style={{ color: '#2563eb', background: '#dbeafe' }}><Ic name="checkCircle" size={20} /></div>
           </div>
-          <div className="sw-kpi-val">{money(totalEarned)}</div>
+          <div className="sw-kpi-val">{formatMoney(totalEarned)}</div>
           <small className="sw-kpi-sub">Lifetime principal + profit released</small>
         </div>
       </div>
@@ -318,14 +324,14 @@ export default function SellerWallet() {
                       </td>
                       <td>
                         {r.principalAmount ? (
-                          <span>{money(r.principalAmount)}</span>
+                          <span>{formatMoney(r.principalAmount)}</span>
                         ) : (
                           <span className="muted-sm">—</span>
                         )}
                       </td>
                       <td>
                         {r.profitAmount > 0 ? (
-                          <b style={{ color: '#16a34a' }}>+{money(r.profitAmount)}</b>
+                          <b style={{ color: '#16a34a' }}>+{formatMoney(r.profitAmount)}</b>
                         ) : (
                           <span className="muted-sm">—</span>
                         )}
@@ -337,12 +343,12 @@ export default function SellerWallet() {
                             color: isLock || isWithdrawal ? '#dc2626' : '#16a34a',
                           }}
                         >
-                          {isLock || isWithdrawal ? '-' : '+'}{money(r.amount)}
+                          {isLock || isWithdrawal ? '-' : '+'}{formatMoney(r.amount)}
                         </b>
                       </td>
                       <td>
                         {r.balanceAfter !== null && r.balanceAfter !== undefined ? (
-                          <b style={{ color: '#0f172a' }}>{money(r.balanceAfter)}</b>
+                          <b style={{ color: '#0f172a' }}>{formatMoney(r.balanceAfter)}</b>
                         ) : (
                           <span className="muted-sm">—</span>
                         )}
@@ -368,18 +374,18 @@ export default function SellerWallet() {
         <div className="card form-card mb-4">
           <h3>💰 Add Funds to Merchant Wallet</h3>
           <p className="muted-sm mb-3">
-            Submit a deposit request to add funds into your Available Balance.
+            Submit a deposit request to add funds into your Available Balance ({currentCurrency.code} {currentCurrency.symbol}).
           </p>
           <form onSubmit={handleDeposit} className="form-grid">
             <div className="field field-full">
-              <label>Deposit Amount ($) *</label>
+              <label>Deposit Amount ({currentCurrency.symbol}) *</label>
               <input
                 type="number"
                 min={1}
                 step="any"
                 value={depForm.amount}
                 onChange={setDep('amount')}
-                placeholder="e.g. 500"
+                placeholder={`e.g. 500 (${currentCurrency.code})`}
                 required
               />
             </div>
@@ -415,12 +421,12 @@ export default function SellerWallet() {
         <div className="card form-card mb-4">
           <h3>💸 Withdraw Funds from Merchant Wallet</h3>
           <p className="muted-sm mb-3">
-            Request a payout from your Available Balance directly to your Bank Account.
+            Request a payout from your Available Balance directly to your Bank Account ({currentCurrency.code} {currentCurrency.symbol}).
           </p>
 
           <form onSubmit={handleWithdraw} className="form-grid">
             <div className="field field-full">
-              <label>Withdrawal Amount ($) * — Available: {money(bal)}</label>
+              <label>Withdrawal Amount ({currentCurrency.symbol}) * — Available: {formatMoney(bal)}</label>
               <input
                 type="number"
                 min={1}
@@ -428,7 +434,7 @@ export default function SellerWallet() {
                 step="any"
                 value={wdForm.amount}
                 onChange={setWd('amount')}
-                placeholder={`Max ${money(bal)}`}
+                placeholder={`Max ${formatMoney(bal)}`}
                 required
               />
             </div>
@@ -443,14 +449,14 @@ export default function SellerWallet() {
             </div>
             <div className="field">
               <label>Bank Name *</label>
-              <input value={wdForm.bankName} onChange={setWd('bankName')} placeholder="e.g. Chase, Bank of America, HSBC" required />
+              <input value={wdForm.bankName} onChange={setWd('bankName')} placeholder="e.g. Chase, HDFC, Barclays, HSBC" required />
             </div>
             <div className="field">
-              <label>Routing / SWIFT Code</label>
+              <label>Routing / SWIFT / IFSC Code</label>
               <input
                 value={wdForm.ifscCode}
                 onChange={setWd('ifscCode')}
-                placeholder="e.g. CHASUS33"
+                placeholder="e.g. CHASUS33 / HDFC0001"
                 style={{ textTransform: 'uppercase' }}
               />
             </div>

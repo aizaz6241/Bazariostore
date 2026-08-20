@@ -5,6 +5,7 @@ import App from './App.jsx';
 import { CartProvider } from './cart.jsx';
 import { AuthProvider } from './auth.jsx';
 import { ContentProvider } from './content.jsx';
+import { CurrencyProvider } from './context/CurrencyContext.jsx';
 import './styles.css';
 
 // Register PWA Service Worker
@@ -24,13 +25,15 @@ if ('serviceWorker' in navigator) {
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
-      <ContentProvider>
-        <AuthProvider>
-          <CartProvider>
-            <App />
-          </CartProvider>
-        </AuthProvider>
-      </ContentProvider>
+      <CurrencyProvider>
+        <ContentProvider>
+          <AuthProvider>
+            <CartProvider>
+              <App />
+            </CartProvider>
+          </AuthProvider>
+        </ContentProvider>
+      </CurrencyProvider>
     </BrowserRouter>
   </React.StrictMode>
 );
