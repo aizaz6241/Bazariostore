@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useNavigate, Link } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, Link, Navigate } from 'react-router-dom';
 import { sapi } from '../api.js';
 import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
@@ -55,10 +55,7 @@ export default function SellerLayout() {
   };
 
   useEffect(() => {
-    if (!token) {
-      navigate('/seller/login');
-      return;
-    }
+    if (!token) return;
 
     refreshSeller();
 
@@ -131,9 +128,9 @@ export default function SellerLayout() {
       socket.off('wallet:update', onWalletUpdate);
       socket.off('order:new', onOrderNew);
     };
-  }, [token, navigate, seller?._id]);
+  }, [token, seller?._id]);
 
-  if (!token) return null;
+  if (!token) return <Navigate to="/seller/login" replace />;
 
   const logout = () => {
     localStorage.removeItem('ng_seller_token');

@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { sapi, money, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
+import SellerAppModal from '../components/SellerAppModal.jsx';
 
 export default function SellerDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
+  const [appModalOpen, setAppModalOpen] = useState(false);
 
   const loadData = () => {
     setLoading(true);
