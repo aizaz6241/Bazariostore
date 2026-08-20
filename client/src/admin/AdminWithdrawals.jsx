@@ -1,12 +1,8 @@
 import { useEffect, useState } from 'react';
-import { api, fmtDay } from '../api.js';
+import { api, fmtDay, money } from '../api.js';
 import Ic from '../components/Icons.jsx';
 
 const STATUS_COLOR = { pending: 'chip-orange', approved: 'chip-green', rejected: 'chip-red' };
-
-function money(n) {
-  return `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
 
 export default function AdminWithdrawals() {
   const [requests, setRequests] = useState([]);

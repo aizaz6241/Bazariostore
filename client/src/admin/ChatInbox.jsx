@@ -23,7 +23,7 @@ export default function ChatInbox() {
     api('/chat/admin/conversations')
       .then((data) => {
         setConvos(data);
-        if (!selectedId && data.length) {
+        if (!selectedId && data.length && window.innerWidth > 900) {
           setSelectedId(data[0]._id);
         }
       })
@@ -184,17 +184,20 @@ export default function ChatInbox() {
       <div className="admin-chat-sidebar">
         <div className="admin-chat-sidebar-head">
           <div className="flex justify-between items-center mb-2">
-            <b>Seller Support Inquiries</b>
+            <b style={{ fontSize: 14 }}>Seller Support Inquiries</b>
             <span className="badge-pill">{convos.length} sellers</span>
           </div>
-          <div className="search-field-sm">
-            <Ic name="search" size={14} />
+          <div className="admin-search-box search-field-sm">
+            <Ic name="search" size={15} />
             <input
               type="text"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search sellers..."
+              placeholder="Search by store or subject..."
             />
+            {q && (
+              <button type="button" onClick={() => setQ('')} className="btn-clear-search">✕</button>
+            )}
           </div>
         </div>
 
@@ -246,7 +249,7 @@ export default function ChatInbox() {
                 onClick={() => setSelectedId(null)}
                 title="Back to conversations list"
               >
-                <Ic name="arrowLeft" size={16} /> Back
+                <Ic name="arrowLeft" size={16} /> <span>Back</span>
               </button>
               <div className="thread-store-info">
                 <h3>🏬 {selectedConv.seller?.storeName || selectedConv.storeName}</h3>
