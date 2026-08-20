@@ -65,16 +65,16 @@ export default function ChatWidget() {
       {open && (
         <div className="chatw-panel">
           <div className="chatw-head">
-            <div className="chatw-avatar">N</div>
+            <div className="chatw-avatar">B</div>
             <div>
-              <b>{cw.title || 'Nayab Glow Support'}</b>
+              <b>{cw.title || 'Bazario Customer Support'}</b>
               <small>{cw.subtitle || 'We usually reply within a few minutes'}</small>
             </div>
             <button className="chatw-close" onClick={() => setOpen(false)} aria-label="Close chat"><Ic name="x" size={16} /></button>
           </div>
           <div className="chatw-body" ref={listRef}>
             <div className="chatw-msg chatw-admin">
-              <p>{cw.welcome || 'Assalam o Alaikum! 👋 Welcome to Official Nayab Glow. How can we help you today?'}</p>
+              <p>{cw.welcome || 'Assalam o Alaikum! 👋 Welcome to Bazario. How can we help you today?'}</p>
             </div>
             {messages.map((m) => (
               <div key={m._id} className={'chatw-msg ' + (m.sender === 'customer' ? 'chatw-mine' : 'chatw-admin')}>

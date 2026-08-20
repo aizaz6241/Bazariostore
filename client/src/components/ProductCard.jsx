@@ -11,23 +11,48 @@ export default function ProductCard({ p }) {
   const [liked, setLiked] = useState(false);
   const badge = badgeFor(p);
   const out = p.stock <= 0;
+  const sellerName = p.sellerName || p.seller?.storeName || 'Bazario Verified';
+  const discountPercent = p.oldPrice > p.price ? Math.round(((p.oldPrice - p.price) / p.oldPrice) * 100) : 0;
 
   return (
     <div className={'pcard' + (out ? ' pcard-out' : '')}>
       <Link to={`/product/${p.slug}`} className="pcard-img">
-        {badge && <span className={`pbadge pbadge-${badge.cls}`}>{badge.text}</span>}
-        <img src={p.image} alt={p.name} loading="lazy" />
+        {discountPercent > 0 && <span className="discount-tag-badge">{discountPercent}% OFF</span>}
+        {badge && !discountPercent && <span className={`pbadge pbadge-${badge.cls}`}>{badge.text}</span>}
+        <img src={p.image || p.images?.[0]?.url || '/img/products/serum.svg'} alt={p.name} loading="lazy" />
       </Link>
+
       <div className="pcard-body">
+        {/* Sold By Tag */}
+        <div className="pcard-seller-tag">
+          <span className="seller-sold-label">Sold by:</span>{' '}
+          <Link
+            to={`/shop?seller=${p.seller?._id || p.seller || ''}`}
+            className="seller-store-link"
+            title={`View all products from ${sellerName}`}
+          >
+            <b>{sellerName}</b> <span className="verified-check">✓</span>
+          </Link>
+        </div>
+
         <Link to={`/product/${p.slug}`} className="pcard-name">{p.name}</Link>
-        <div className="pcard-price">
-          {p.oldPrice && <s>{money(p.oldPrice)}</s>}
-          <b>{money(p.price)}</b>
-        </div>
+
         <div className="pcard-rating">
-          <Stars value={p.rating} />
-          <span>({p.numReviews})</span>
+          <Stars value={p.rating || 4.8} />
+          <span className="review-count">({p.numReviews || 18})</span>
         </div>
+
+        <div className="pcard-price">
+          <b>{money(p.price)}</b>
+          {p.oldPrice && <s>{money(p.oldPrice)}</s>}
+        </div>
+
+        {/* Prime / Express Badge */}
+        <div className="prime-express-pill">
+          <span className="prime-text">prime</span>
+          <span className="express-text">Express Delivery</span>
+        </div>
+
         <div className="pcard-actions">
           <button className="btn-add" onClick={() => add(p)} disabled={out}>
             {out ? 'OUT OF STOCK' : 'ADD TO CART'}

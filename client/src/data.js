@@ -1,11 +1,8 @@
 export const PROVINCES = [
-  'Punjab',
-  'Sindh',
-  'Khyber Pakhtunkhwa',
-  'Balochistan',
-  'Islamabad Capital Territory',
-  'Azad Jammu & Kashmir',
-  'Gilgit-Baltistan',
+  'Alabama', 'Alaska', 'Arizona', 'California', 'Colorado', 'Florida',
+  'Georgia', 'Illinois', 'Michigan', 'New York', 'Ohio', 'Pennsylvania',
+  'Texas', 'Washington', 'Ontario', 'Quebec', 'British Columbia',
+  'England', 'Scotland', 'Wales', 'Other',
 ];
 
 export const STATUS_STEPS = ['pending', 'confirmed', 'processing', 'packed', 'shipped', 'out_for_delivery', 'delivered'];
@@ -26,10 +23,10 @@ export const ALL_STATUSES = [...STATUS_STEPS, 'cancelled', 'refunded'];
 
 export const PAYMENT_LABELS = {
   cod: 'Cash on Delivery',
-  easypaisa: 'Easypaisa',
-  jazzcash: 'JazzCash',
   credit_card: 'Credit Card',
   debit_card: 'Debit Card',
+  stripe: 'Stripe',
+  paypal: 'PayPal',
 };
 
 export const PRODUCT_LABELS = {

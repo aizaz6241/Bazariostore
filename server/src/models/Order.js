@@ -17,16 +17,24 @@ const orderSchema = new mongoose.Schema(
   {
     orderNumber: { type: String, unique: true },
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
-    guestId: String, // chat widget guest id, links conversation to order
+    guestId: String,
+    seller: { type: mongoose.Schema.Types.ObjectId, ref: 'Seller', default: null }, // for single-seller orders or primary seller
+    placedBy: { type: String, enum: ['customer', 'admin', 'staff'], default: 'customer' },
+    placedByAdminName: { type: String, default: '' },
     items: [
       {
         product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product' },
+        seller: { type: mongoose.Schema.Types.ObjectId, ref: 'Seller' },
+        sellerName: { type: String, default: 'Seller Store' },
         name: String,
         image: String,
         size: String,
         variant: String,
         price: Number,
+        costPrice: { type: Number, default: 0 },
         qty: Number,
+        itemStatus: { type: String, enum: STATUSES, default: 'pending' },
+        trackingNumber: { type: String, default: '' },
       },
     ],
     contact: { email: String, phone: String, newsletter: { type: Boolean, default: false } },
@@ -64,6 +72,7 @@ const orderSchema = new mongoose.Schema(
     statusHistory: [{ status: String, note: String, at: { type: Date, default: Date.now }, by: String }],
     refundId: { type: mongoose.Schema.Types.ObjectId, ref: 'Refund', default: null },
     stockRestored: { type: Boolean, default: false },
+    adminNotes: { type: String, default: '' },
   },
   { timestamps: true }
 );

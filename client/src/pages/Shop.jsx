@@ -15,6 +15,7 @@ export default function Shop() {
   const q = params.get('q') || '';
   const label = params.get('label') || params.get('badge') || '';
   const sort = params.get('sort') || '';
+  const seller = params.get('seller') || '';
 
   useEffect(() => {
     setLoading(true);
@@ -32,35 +33,51 @@ export default function Shop() {
   };
 
   const catName = categories.find((c) => c.slug === category)?.name || 'Products';
-  const title = q
+  const sellerName = products[0]?.sellerName || products[0]?.seller?.storeName;
+
+  const title = seller && sellerName
+    ? `Storefront: ${sellerName}`
+    : q
     ? `Search results for "${q}"`
     : label === 'new'
-      ? 'New Arrivals'
-      : label === 'sale'
-        ? 'Offers & Sale'
-        : category
-          ? catName
-          : 'All Products';
+    ? 'New Arrivals'
+    : label === 'sale'
+    ? 'Deals & Sale'
+    : category
+    ? catName
+    : 'All Marketplace Products';
 
   return (
     <>
       <div className="page-head">
         <div className="container">
-          <Breadcrumb trail={[{ label: 'Shop', to: '/shop' }, ...(category ? [{ label: catName }] : [])]} />
+          <Breadcrumb trail={[{ label: 'Shop', to: '/shop' }, ...(category ? [{ label: catName }] : []), ...(seller && sellerName ? [{ label: sellerName }] : [])]} />
           <h1 className="page-title">{title}</h1>
+          {seller && sellerName && (
+            <p className="seller-shop-subtitle">
+              Verified Marketplace Merchant • Fast Prime Dispatch • Authentic Products Guarantee
+            </p>
+          )}
         </div>
       </div>
 
       <div className="container section-sm">
+        {seller && (
+          <div className="seller-filter-alert">
+            <span>Showing products exclusively from <b>{sellerName || 'this seller'}</b></span>
+            <button onClick={() => setParam('seller', '')} className="btn-clear-filter">✕ View All Marketplace Sellers</button>
+          </div>
+        )}
+
         <div className="shop-chips">
-          <button className={'chip' + (!category ? ' chip-on' : '')} onClick={() => setParam('category', '')}>All</button>
+          <button className={'chip' + (!category ? ' chip-on' : '')} onClick={() => setParam('category', '')}>All Categories</button>
           {categories.map((c) => (
             <button
               key={c.slug}
               className={'chip' + (category === c.slug ? ' chip-on' : '')}
               onClick={() => setParam('category', c.slug)}
             >
-              {c.name.replace(' Products', '').replace(' (Perfumes)', '')}
+              {c.name}
             </button>
           ))}
         </div>
@@ -70,9 +87,9 @@ export default function Shop() {
           <label>
             Sort by:{' '}
             <select value={sort} onChange={(e) => setParam('sort', e.target.value)}>
-              <option value="">Newest</option>
+              <option value="">Featured / Newest</option>
               <option value="popular">Best Selling</option>
-              <option value="rating">Top Rated</option>
+              <option value="rating">Highest Customer Rating</option>
               <option value="price-asc">Price: Low to High</option>
               <option value="price-desc">Price: High to Low</option>
             </select>

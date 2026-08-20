@@ -8,6 +8,9 @@ const productSchema = new mongoose.Schema(
     slug: { type: String, required: true, unique: true },
     brand: String,
     category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', index: true },
+    seller: { type: mongoose.Schema.Types.ObjectId, ref: 'Seller', index: true },
+    sellerName: { type: String, default: 'Amazon Global Official' },
+    sellerSlug: { type: String, default: 'official' },
     price: { type: Number, required: true },
     oldPrice: Number,
     costs: {
@@ -43,6 +46,8 @@ const productSchema = new mongoose.Schema(
     howToUse: String,
     ingredients: String,
     sizes: [{ label: String, price: Number }],
+    primeEligible: { type: Boolean, default: true },
+    freeDelivery: { type: Boolean, default: true },
   },
   { timestamps: true }
 );

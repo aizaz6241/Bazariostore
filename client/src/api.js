@@ -1,5 +1,8 @@
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
+
 async function request(path, opts = {}, token) {
-  const res = await fetch('/api' + path, {
+  const url = (API_BASE ? `${API_BASE}/api` : '/api') + path;
+  const res = await fetch(url, {
     method: opts.method || 'GET',
     headers: {
       ...(opts.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
@@ -19,12 +22,16 @@ async function request(path, opts = {}, token) {
 // admin-token requests (also used for public storefront reads)
 export const api = (path, opts = {}) => request(path, opts, localStorage.getItem('ng_admin_token'));
 
+// seller-token requests
+export const sapi = (path, opts = {}) => request(path, opts, localStorage.getItem('ng_seller_token'));
+
 // customer-token requests
 export const uapi = (path, opts = {}) => request(path, opts, localStorage.getItem('ng_user_token'));
 
 // authenticated file download (reports export)
 export async function downloadFile(path, filename) {
-  const res = await fetch('/api' + path, {
+  const url = (API_BASE ? `${API_BASE}/api` : '/api') + path;
+  const res = await fetch(url, {
     headers: { Authorization: `Bearer ${localStorage.getItem('ng_admin_token')}` },
   });
   if (!res.ok) {
@@ -32,20 +39,20 @@ export async function downloadFile(path, filename) {
     throw new Error(data.message || 'Download failed');
   }
   const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
+  const urlBlob = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
+  a.href = urlBlob;
   a.download = filename;
   a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  setTimeout(() => URL.revokeObjectURL(urlBlob), 5000);
 }
 
-export const money = (n) => 'Rs.' + Number(n || 0).toLocaleString('en-PK');
+export const money = (n) => '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export const fmtDate = (d) =>
-  new Date(d).toLocaleString('en-PK', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-export const fmtDay = (d) => new Date(d).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' });
+export const fmtDay = (d) => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
 // UploadThing url -> key (urls look like https://<app>.ufs.sh/f/<key> or utfs.io/f/<key>)
 export const utKeyFromUrl = (url) => (url && url.includes('/f/') ? url.split('/f/')[1].split('?')[0] : null);

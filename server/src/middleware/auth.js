@@ -5,23 +5,66 @@ function bearer(req) {
   return h.startsWith('Bearer ') ? h.slice(7) : null;
 }
 
-// Admin auth; optionally requires a specific permission
+// Admin auth; supports both authAdmin('perm') and authAdmin directly as middleware
 export function authAdmin(permission = null) {
-  return (req, res, next) => {
-    const token = bearer(req);
-    if (!token) return res.status(401).json({ message: 'Not authorized' });
-    try {
-      const payload = jwt.verify(token, process.env.JWT_SECRET);
-      if (payload.t !== 'admin') return res.status(401).json({ message: 'Not authorized' });
-      req.admin = payload;
-      if (permission && payload.role !== 'super_admin' && !(payload.permissions || []).includes(permission)) {
-        return res.status(403).json({ message: 'You do not have permission for this action' });
-      }
-      next();
-    } catch {
-      return res.status(401).json({ message: 'Session expired, please login again' });
+  if (permission && typeof permission === 'object' && permission.headers) {
+    // Used directly as middleware: authAdmin(req, res, next)
+    const req = permission;
+    const res = arguments[1];
+    const next = arguments[2];
+    return verifyAdminToken(null, req, res, next);
+  }
+  return (req, res, next) => verifyAdminToken(permission, req, res, next);
+}
+
+function verifyAdminToken(permission, req, res, next) {
+  const token = bearer(req);
+  if (!token) return res.status(401).json({ message: 'Not authorized' });
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    if (payload.t !== 'admin') return res.status(401).json({ message: 'Not authorized' });
+    req.admin = payload;
+    if (permission && payload.role !== 'super_admin' && !(payload.permissions || []).includes(permission)) {
+      return res.status(403).json({ message: 'You do not have permission for this action' });
     }
-  };
+    next();
+  } catch {
+    return res.status(401).json({ message: 'Session expired, please login again' });
+  }
+}
+
+// Seller auth (required for vendor portal)
+export function authSeller(req, res, next) {
+  const token = bearer(req);
+  if (!token) return res.status(401).json({ message: 'Seller authorization required' });
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    if (payload.t !== 'seller') return res.status(401).json({ message: 'Seller access required' });
+    req.seller = payload;
+    next();
+  } catch {
+    return res.status(401).json({ message: 'Session expired, please login again' });
+  }
+}
+
+// Seller OR Admin auth (allows Admin to inspect/perform actions on behalf of sellers)
+export function authSellerOrAdmin(req, res, next) {
+  const token = bearer(req);
+  if (!token) return res.status(401).json({ message: 'Authorization required' });
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    if (payload.t === 'seller') {
+      req.seller = payload;
+      return next();
+    }
+    if (payload.t === 'admin') {
+      req.admin = payload;
+      return next();
+    }
+    return res.status(401).json({ message: 'Unauthorized' });
+  } catch {
+    return res.status(401).json({ message: 'Session expired, please login again' });
+  }
 }
 
 // Customer auth (required)

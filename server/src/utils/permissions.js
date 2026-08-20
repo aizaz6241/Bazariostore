@@ -1,4 +1,5 @@
 export const PERMISSIONS = [
+  'sellers',
   'products',
   'categories',
   'orders',
@@ -18,17 +19,19 @@ export const PERMISSIONS = [
 export const ROLE_DEFAULTS = {
   super_admin: [...PERMISSIONS],
   admin: PERMISSIONS.filter((p) => p !== 'staff'),
-  manager: ['products', 'categories', 'orders', 'discounts', 'shipping', 'inventory', 'reports', 'content'],
-  support: ['orders', 'refunds', 'chat'],
+  manager: ['sellers', 'products', 'categories', 'orders', 'discounts', 'shipping', 'inventory', 'reports', 'content'],
+  support: ['sellers', 'orders', 'refunds', 'chat'],
+  order_manager: ['sellers', 'orders', 'refunds', 'shipping'],
   inventory: ['products', 'inventory', 'reports'],
 };
 
 export const ROLE_LABELS = {
-  super_admin: 'Super Admin',
-  admin: 'Admin',
-  manager: 'Manager',
-  support: 'Customer Support',
-  inventory: 'Inventory Manager',
+  super_admin: 'Super Admin / Owner',
+  admin: 'Administrator',
+  manager: 'Store Manager',
+  support: 'Support Agent',
+  order_manager: 'Order Fulfillment Manager',
+  inventory: 'Inventory Specialist',
 };
 
 export function permsFor(admin) {

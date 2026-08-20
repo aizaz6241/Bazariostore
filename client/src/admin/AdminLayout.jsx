@@ -3,23 +3,16 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { api, fmtDate } from '../api.js';
 import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
+import FloatingChatWidget from '../components/FloatingChatWidget.jsx';
+import NotificationToast from '../components/NotificationToast.jsx';
+import { playNotificationSound } from '../utils/audio.js';
 
 const NAV = [
   { to: '/admin', icon: 'grid', label: 'Dashboard', end: true },
-  { to: '/admin/orders', icon: 'package', label: 'Orders', perm: 'orders' },
-  { to: '/admin/refunds', icon: 'refresh', label: 'Refunds', perm: 'refunds' },
-  { to: '/admin/products', icon: 'tag', label: 'Products', perm: 'products' },
-  { to: '/admin/categories', icon: 'list', label: 'Categories', perm: 'categories' },
-  { to: '/admin/discounts', icon: 'gift', label: 'Discounts', perm: 'discounts' },
-  { to: '/admin/inventory', icon: 'box', label: 'Inventory', perm: 'inventory' },
-  { to: '/admin/shipping', icon: 'truck', label: 'Shipping', perm: 'shipping' },
-  { to: '/admin/finance', icon: 'banknote', label: 'Finance', perm: 'finance' },
-  { to: '/admin/reports', icon: 'eye', label: 'Reports', perm: 'reports' },
-  { to: '/admin/chat', icon: 'chat', label: 'Support Chat', perm: 'chat' },
-  { to: '/admin/content', icon: 'sparkle', label: 'Website Content', perm: 'content' },
-  { to: '/admin/staff', icon: 'user', label: 'Staff & Roles', perm: 'staff' },
-  { to: '/admin/audit', icon: 'clock', label: 'Audit Logs', perm: 'audit' },
-  { to: '/admin/settings', icon: 'shield', label: 'Settings', perm: 'settings' },
+  { to: '/admin/sellers', icon: 'package', label: 'Sellers & Vendors', perm: 'sellers' },
+  { to: '/admin/withdrawals', icon: 'banknote', label: 'Withdrawal Requests', perm: 'finance' },
+  { to: '/admin/chat', icon: 'chat', label: 'Seller Support Desk', perm: 'chat' },
+  { to: '/admin/staff', icon: 'user', label: 'Staff & Team', perm: 'staff' },
 ];
 
 export default function AdminLayout() {
@@ -34,10 +27,18 @@ export default function AdminLayout() {
   })();
   const can = (perm) => !perm || admin.role === 'super_admin' || (admin.permissions || []).includes(perm);
 
-  const [notice, setNotice] = useState(null);
+  const [toasts, setToasts] = useState([]);
   const [notif, setNotif] = useState({ items: [], unread: 0 });
   const [bellOpen, setBellOpen] = useState(false);
   const bellRef = useRef(null);
+
+  const addToast = (toast) => {
+    const id = Date.now() + Math.random().toString(36).slice(2, 6);
+    setToasts((prev) => [...prev.slice(-4), { ...toast, id }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 6500);
+  };
 
   const loadNotif = () => api('/notifications').then(setNotif).catch(() => {});
 
@@ -51,17 +52,44 @@ export default function AdminLayout() {
     const join = () => socket.emit('admin:join', { token });
     join();
     socket.on('connect', join);
+
     const onOrder = (o) => {
-      setNotice({ text: `New order ${o.orderNumber} — ${o.name || 'Customer'} (${o.city || ''})`, id: o._id });
-      setTimeout(() => setNotice(null), 6000);
+      playNotificationSound('order');
+      addToast({
+        type: 'order',
+        title: '🛒 New Order Received!',
+        body: `Order ${o.orderNumber} — ${o.name || 'Customer'} (${o.city || ''})`,
+        link: `/admin/orders/${o._id}`,
+      });
     };
-    const onNotify = (n) => setNotif((prev) => ({ items: [n, ...prev.items].slice(0, 50), unread: prev.unread + 1 }));
+
+    const onNotify = (n) => {
+      const soundType = n.type === 'deposit' ? 'deposit' : n.type === 'withdrawal' ? 'withdrawal' : n.type === 'order' ? 'order' : 'default';
+      playNotificationSound(soundType);
+      addToast({
+        type: n.type || 'system',
+        title: n.title || 'New Notification',
+        body: n.body || '',
+        link: n.link || '/admin',
+      });
+      setNotif((prev) => ({ items: [n, ...prev.items].slice(0, 50), unread: prev.unread + 1 }));
+    };
+
+    const onNewMsg = (m) => {
+      if (m.sender === 'seller') {
+        playNotificationSound('chat');
+      }
+    };
+
     socket.on('order:new', onOrder);
     socket.on('notify', onNotify);
+    socket.on('message:new', onNewMsg);
+
     return () => {
       socket.off('connect', join);
       socket.off('order:new', onOrder);
       socket.off('notify', onNotify);
+      socket.off('message:new', onNewMsg);
     };
   }, [token, navigate]);
 
@@ -88,9 +116,9 @@ export default function AdminLayout() {
     <div className="admin">
       <aside className="admin-side">
         <div className="admin-logo">
-          <span className="logo-script">Official</span>
-          <span className="logo-name">NAYAB GLOW</span>
-          <small>Admin Panel</small>
+          <span className="logo-script">Bazario</span>
+          <span className="logo-name">ADMIN HUB</span>
+          <small>Super Admin Control Center</small>
         </div>
         <nav>
           {NAV.filter((n) => can(n.perm)).map((n) => (
@@ -98,13 +126,16 @@ export default function AdminLayout() {
           ))}
         </nav>
         <div className="admin-side-bottom">
-          <Link to="/" target="_blank"><Ic name="eye" size={16} /> View Store</Link>
+          <Link to="/seller" target="_blank"><Ic name="tag" size={16} /> Seller Central</Link>
+          <Link to="/" target="_blank"><Ic name="eye" size={16} /> Customer Storefront</Link>
           <button onClick={logout}><Ic name="logout" size={16} /> Logout</button>
         </div>
       </aside>
       <div className="admin-main">
         <header className="admin-top">
-          <b>Store Management</b>
+          <div className="admin-top-title">
+            <b>Platform Governance & Multi-Vendor Hub</b>
+          </div>
           <span className="admin-top-right">
             <span className="bell-wrap" ref={bellRef}>
               <button className="bell" onClick={() => { setBellOpen(!bellOpen); }} aria-label="Notifications">
@@ -142,11 +173,15 @@ export default function AdminLayout() {
           <Outlet context={{ admin, can }} />
         </div>
       </div>
-      {notice && (
-        <button className="admin-notice" onClick={() => navigate(`/admin/orders/${notice.id}`)}>
-          <Ic name="package" size={17} /> {notice.text}
-        </button>
-      )}
+
+      {/* Global Floating Live Notification Toast Banner Stack */}
+      <NotificationToast
+        toasts={toasts}
+        onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))}
+      />
+
+      {/* Floating Chat Widget for Super Admin */}
+      <FloatingChatWidget role="admin" />
     </div>
   );
 }

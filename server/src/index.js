@@ -28,16 +28,17 @@ import uploadRoutes from './routes/uploads.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/user.js';
 import chatRoutes from './routes/chat.js';
+import sellerRoutes from './routes/sellers.js';
 
 import { Conversation, Message } from './models/Chat.js';
-import { nextSeq } from './models/System.js';
+import Seller from './models/Seller.js';
 import { notify } from './utils/notify.js';
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '5mb' }));
 
-app.get('/api/health', (req, res) => res.json({ ok: true, name: 'Official Nayab Glow API' }));
+app.get('/api/health', (req, res) => res.json({ ok: true, name: 'Bazario Multi-Vendor Marketplace API' }));
 app.use('/api/products', productRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/orders', orderRoutes);
@@ -57,14 +58,17 @@ app.use('/api/uploads', uploadRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/sellers', sellerRoutes);
 
-// Production: serve the built React app from this same server (single URL hosting)
+// Static uploads serving (local fallback)
+const uploadsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+app.use('/uploads', express.static(uploadsDir));
+
+// Production: serve built React frontend from same single port
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
 if (fs.existsSync(clientDist)) {
-  // hashed assets change filename on every build -> cache forever;
-  // index.html must ALWAYS be revalidated warna mobile browsers purana
-  // version dikhate rehte hain (stale UI + stale JS)
   app.use(
     express.static(clientDist, {
       setHeaders: (res, filePath) => {
@@ -85,87 +89,133 @@ const io = new Server(server, { cors: { origin: '*' } });
 app.set('io', io);
 
 io.on('connection', (socket) => {
-  // Customer joins their room. Logged-in customers pass user info so chat shows
-  // their real name; guests get a sequential Guest #10xx number.
-  socket.on('customer:join', async ({ guestId, user }) => {
-    if (!guestId) return;
-    socket.join(`conv:${guestId}`);
-    socket.data.guestId = guestId;
+  // Seller joins their support room
+  socket.on('seller:join', ({ token, sellerId }) => {
     try {
-      let conv = await Conversation.findOne({ guestId });
-      if (!conv) {
-        // two sockets (React StrictMode) can race to create the same conversation
-        conv = await Conversation.create({ guestId, guestNumber: await nextSeq('guest') }).catch(async (e) => {
-          if (e.code === 11000) return Conversation.findOne({ guestId });
-          throw e;
-        });
-      } else if (!conv.guestNumber) {
-        conv.guestNumber = await nextSeq('guest');
-        await conv.save();
+      let id = sellerId;
+      if (token) {
+        const payload = jwt.verify(token, process.env.JWT_SECRET);
+        if (payload.t === 'seller') id = payload.id;
       }
-      if (user?.name) {
-        conv.name = user.name;
-        if (user.email) conv.email = user.email;
-        if (user.phone) conv.phone = user.phone;
-        await conv.save();
+      if (id) {
+        socket.join(`seller:${id}`);
+        socket.data.sellerId = id;
+        socket.data.isSeller = true;
       }
     } catch (e) {
-      console.error('customer:join error:', e.message);
+      console.error('seller:join error:', e.message);
     }
   });
 
+  // Admin or Staff joins the admin room
   socket.on('admin:join', ({ token }) => {
     try {
       const payload = jwt.verify(token, process.env.JWT_SECRET);
-      if (payload.t !== 'admin') return;
-      socket.data.isAdmin = true;
-      socket.join('admins');
+      if (payload.t === 'admin') {
+        socket.data.isAdmin = true;
+        socket.data.adminId = payload.id;
+        socket.join('admins');
+      }
     } catch {
       /* invalid token */
     }
   });
 
-  socket.on('message:send', async (payload, cb) => {
+  // Real-time message exchange between Seller and Admin
+  socket.on('seller:message', async (payload, cb) => {
     try {
-      const { guestId, text, sender } = payload || {};
+      const { sellerId, text, attachment } = payload || {};
       const clean = (text || '').trim().slice(0, 2000);
-      if (!guestId || !clean) return;
-      const from = sender === 'admin' && socket.data.isAdmin ? 'admin' : 'customer';
-      let conv = await Conversation.findOne({ guestId });
-      if (!conv) conv = await Conversation.create({ guestId, guestNumber: await nextSeq('guest') });
-      conv.lastMessage = clean;
-      conv.lastAt = new Date();
-      if (from === 'customer') conv.unreadForAdmin += 1;
-      else conv.unreadForCustomer += 1;
-      await conv.save();
-      const msg = await Message.create({ conversation: conv._id, guestId, sender: from, text: clean });
-      const out = { _id: msg._id, guestId, sender: from, text: msg.text, createdAt: msg.createdAt };
-      io.to(`conv:${guestId}`).emit('message:new', out);
-      io.to('admins').emit('message:new', out);
-      if (from === 'customer' && conv.unreadForAdmin === 1) {
-        const who = conv.name?.trim() || `Guest #${conv.guestNumber || ''}`;
-        notify(app, { type: 'chat', title: 'New chat message', body: `${who}: ${clean.slice(0, 60)}`, link: '/admin/chat' });
+      if (!sellerId || (!clean && !attachment)) return;
+
+      const seller = await Seller.findById(sellerId);
+      if (!seller) return;
+
+      let conv = await Conversation.findOne({ seller: sellerId });
+      if (!conv) {
+        conv = new Conversation({
+          seller: seller._id,
+          storeName: seller.storeName,
+          sellerName: seller.ownerName,
+          sellerEmail: seller.email,
+          sellerPhone: seller.phone || '',
+          subject: 'General Seller Support & Operations',
+        });
       }
+
+      conv.lastMessage = clean || 'Sent an attachment';
+      conv.lastSender = 'seller';
+      conv.lastAt = new Date();
+      conv.unreadForAdmin = (conv.unreadForAdmin || 0) + 1;
+      conv.status = 'open';
+      await conv.save();
+
+      const msg = new Message({
+        conversation: conv._id,
+        seller: seller._id,
+        sender: 'seller',
+        senderName: seller.storeName,
+        text: clean,
+        attachment: attachment || null,
+      });
+      await msg.save();
+
+      const out = {
+        _id: msg._id,
+        conversation: conv._id,
+        seller: seller._id,
+        sender: 'seller',
+        senderName: seller.storeName,
+        text: msg.text,
+        attachment: msg.attachment,
+        createdAt: msg.createdAt,
+      };
+
+      io.to(`seller:${sellerId}`).emit('message:new', out);
+      io.to('admins').emit('message:new', out);
+
+      notify(app, {
+        type: 'chat',
+        title: `Message from ${seller.storeName}`,
+        body: clean.slice(0, 60),
+        link: '/admin/chat',
+      });
+
       cb?.(out);
     } catch (e) {
-      console.error('chat error:', e.message);
+      console.error('seller:message error:', e.message);
     }
   });
 });
 
-// Crash-proofing: Express 4 async route errors surface as unhandled rejections,
-// which crash Node (>=15) and cause downtime windows on the host. Log instead.
 process.on('unhandledRejection', (err) => console.error('unhandledRejection:', err?.message || err));
 process.on('uncaughtException', (err) => console.error('uncaughtException:', err?.message || err));
 
 const PORT = process.env.PORT || 5000;
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log('MongoDB connected');
-    server.listen(PORT, () => console.log(`Nayab Glow API running on http://localhost:${PORT}`));
-  })
-  .catch((err) => {
-    console.error('MongoDB connection failed:', err.message);
-    process.exit(1);
-  });
+
+// Start HTTP & Socket server immediately
+server.listen(PORT, () => {
+  console.log(`=======================================================`);
+  console.log(`🚀 Amazon Multi-Vendor Marketplace Live at http://localhost:${PORT}`);
+  console.log(`🛒 Storefront:      http://localhost:${PORT}`);
+  console.log(`🏬 Seller Central:  http://localhost:${PORT}/seller`);
+  console.log(`👑 Super Admin:     http://localhost:${PORT}/admin`);
+  console.log(`=======================================================`);
+});
+
+// Asynchronous MongoDB connection
+async function connectDB() {
+  let mongoUri = process.env.MONGO_URI;
+  if (!mongoUri || mongoUri.includes('<db_username>')) {
+    mongoUri = 'mongodb://127.0.0.1:27017/amazon_ecommerce';
+  }
+
+  try {
+    await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 4000 });
+    console.log('✅ MongoDB connected successfully to database');
+  } catch (err) {
+    console.log('MongoDB info:', err.message);
+  }
+}
+
+connectDB();

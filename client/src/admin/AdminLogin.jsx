@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
-import { Logo } from '../components/StoreLayout.jsx';
 import Ic from '../components/Icons.jsx';
 
 export default function AdminLogin() {
@@ -35,9 +34,11 @@ export default function AdminLogin() {
   return (
     <div className="admin-login-page">
       <form className="card admin-login-card" onSubmit={submit}>
-        <Logo />
-        <h2>Admin Panel</h2>
-        <p className="muted-sm">Sign in to manage your store</p>
+        <div style={{ textAlign: 'center', marginBottom: 20 }}>
+          <span style={{ fontSize: 28, fontWeight: 900, color: '#f59e0b', letterSpacing: '-1px' }}>Bazario</span>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: 2, marginTop: 2 }}>ADMIN PANEL</div>
+        </div>
+        <p className="muted-sm" style={{ textAlign: 'center', marginBottom: 20 }}>Sign in to manage your platform</p>
         {error && <div className="alert-error"><Ic name="x" size={14} /> {error}</div>}
         <div className="field">
           <label>Email</label>
@@ -45,7 +46,7 @@ export default function AdminLogin() {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="admin@nayabglow.com"
+            placeholder="admin@yourdomain.com"
             autoComplete="username"
             autoCapitalize="none"
             spellCheck={false}
@@ -67,9 +68,6 @@ export default function AdminLogin() {
               <Ic name="eye" size={17} />
             </button>
           </div>
-          {show && password && /\s/.test(password) && (
-            <small className="field-err">Warning: password mein space hai — check kar lein</small>
-          )}
         </div>
         <button className="btn-primary btn-block" disabled={busy}>{busy ? 'Signing in…' : 'SIGN IN'}</button>
       </form>

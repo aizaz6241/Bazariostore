@@ -2,7 +2,9 @@ import mongoose from 'mongoose';
 
 const notificationSchema = new mongoose.Schema(
   {
-    type: { type: String, default: 'system' }, // order | payment | refund | customer | stock | chat | system
+    recipientType: { type: String, enum: ['admin', 'seller'], default: 'admin' },
+    seller: { type: mongoose.Schema.Types.ObjectId, ref: 'Seller', default: null },
+    type: { type: String, default: 'system' }, // order | payment | deposit | withdrawal | refund | customer | stock | chat | system
     title: String,
     body: String,
     link: String,

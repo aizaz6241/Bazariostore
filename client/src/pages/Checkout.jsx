@@ -135,7 +135,7 @@ export default function Checkout() {
           contact: { email: form.email.trim(), phone: form.phone.trim(), newsletter: form.newsletter },
           shippingAddress: {
             fullName: form.fullName, street: form.street, apartment: form.apartment,
-            city: form.city, state: form.state, postalCode: form.postalCode, country: 'Pakistan',
+            city: form.city, state: form.state, postalCode: form.postalCode, country: form.country || 'Worldwide',
           },
           shippingMethodId: shipId || null,
           couponCode: coupon,
@@ -201,7 +201,6 @@ export default function Checkout() {
                     <div className="field">
                       <label>Phone Number <em>*</em></label>
                       <div className={'phone-wrap' + (errors.phone ? ' invalid' : '')}>
-                        <span className="phone-cc">🇵🇰 +92 <Ic name="chevDown" size={11} /></span>
                         <input value={form.phone} onChange={set('phone')} placeholder="Enter your phone number" />
                       </div>
                       {errors.phone && <small className="field-err">{errors.phone}</small>}
@@ -243,7 +242,7 @@ export default function Checkout() {
                   </div>
                   <div className="field" style={{ maxWidth: 260 }}>
                     <label>Country <em>*</em></label>
-                    <select value="Pakistan" disabled><option>Pakistan</option></select>
+                    <input value={form.country || ''} onChange={set('country')} placeholder="Enter your country" />
                   </div>
                 </div>
 
@@ -332,8 +331,8 @@ export default function Checkout() {
                 <div className="card form-card">
                   <h3>Review & Confirm</h3>
                   <div className="review-grid">
-                    <div><small>Contact</small><b>{form.email}</b><b>+92 {form.phone}</b></div>
-                    <div><small>Ship to</small><b>{form.fullName}</b><b>{form.street}{form.apartment ? ', ' + form.apartment : ''}</b><b>{form.city}, {form.state} {form.postalCode}, Pakistan</b></div>
+                    <div><small>Contact</small><b>{form.email}</b><b>{form.phone}</b></div>
+                    <div><small>Ship to</small><b>{form.fullName}</b><b>{form.street}{form.apartment ? ', ' + form.apartment : ''}</b><b>{form.city}, {form.state} {form.postalCode}, {form.country}</b></div>
                     <div><small>Delivery</small><b>{quote?.shipping?.name} ({quote?.shipping?.eta})</b></div>
                     <div><small>Payment</small><b><Ic name="banknote" size={15} /> {PAYMENT_LABELS[payKey] || payKey}</b></div>
                   </div>
@@ -392,10 +391,10 @@ export default function Checkout() {
             <div className="card side-features">
               {[
                 { icon: 'badgeCheck', t: '100% Original Products', s: 'Authentic & Genuine' },
-                { icon: 'truck', t: 'Fast Delivery', s: 'Across Pakistan' },
-                { icon: 'banknote', t: 'Cash on Delivery', s: 'Pay When You Receive' },
-                { icon: 'refresh', t: 'Easy Returns', s: '7 Days Return Policy' },
-                { icon: 'shield', t: 'Secure Payments', s: '100% Protected' },
+                { icon: 'truck', t: 'Fast Worldwide Delivery', s: 'Express Shipping Available' },
+                { icon: 'banknote', t: 'Secure Payments', s: 'Multiple Payment Options' },
+                { icon: 'refresh', t: 'Easy Returns', s: '14-Day Return Policy' },
+                { icon: 'shield', t: 'Buyer Protection', s: '100% Money-Back Guarantee' },
               ].map((f) => (
                 <div className="side-feature" key={f.t}>
                   <i><Ic name={f.icon} size={20} /></i>

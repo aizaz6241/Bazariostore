@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import Product from './models/Product.js';
 import Category from './models/Category.js';
 import Admin from './models/Admin.js';
+import Seller from './models/Seller.js';
 import Order from './models/Order.js';
 import Refund from './models/Refund.js';
 import Discount from './models/Discount.js';
@@ -11,420 +12,745 @@ import ShippingMethod from './models/ShippingMethod.js';
 import Expense from './models/Expense.js';
 import Notification from './models/Notification.js';
 import AuditLog from './models/AuditLog.js';
-import { StockHistory, IncomingStock } from './models/StockHistory.js';
+import { Conversation, Message } from './models/Chat.js';
 import { Counter, setSetting } from './models/System.js';
 
-const img = (n) => `/img/products/${n}.svg`;
-
 const CATS = [
-  { name: 'Skincare Products', slug: 'skincare', img: 'serum' },
-  { name: 'Makeup Products', slug: 'makeup', img: 'lipstick' },
-  { name: 'Body Products', slug: 'body', img: 'jar' },
-  { name: 'Hair Products', slug: 'hair', img: 'oil' },
-  { name: 'Fragrances (Perfumes)', slug: 'fragrance', img: 'perfume' },
-  { name: 'Bath & Shower Products', slug: 'bath', img: 'cleanser' },
-  { name: 'Nail Care Products', slug: 'nails', img: 'nails' },
-  { name: "Men's Grooming", slug: 'men', img: 'exfoliant' },
-  { name: 'Beauty Accessories', slug: 'brush', img: 'brush', realSlug: 'accessories' },
+  { name: 'Mobiles & Tablets', slug: 'mobiles', icon: 'phone', img: 'https://images.unsplash.com/photo-1598327105666-5b89351aff97?w=600&auto=format&fit=crop&q=80' },
+  { name: 'Laptops & Computers', slug: 'laptops', icon: 'package', img: 'https://images.unsplash.com/photo-1496181133206-80ce9b88a853?w=600&auto=format&fit=crop&q=80' },
+  { name: 'Electronics & Audio', slug: 'electronics', icon: 'headset', img: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=600&auto=format&fit=crop&q=80' },
+  { name: 'Fashion & Apparel', slug: 'fashion', icon: 'sparkle', img: 'https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?w=600&auto=format&fit=crop&q=80' },
+  { name: 'Watches & Wearables', slug: 'watches', icon: 'clock', img: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80' },
+  { name: 'Beauty & Fragrances', slug: 'beauty', icon: 'sparkle', img: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=600&auto=format&fit=crop&q=80' },
+  { name: 'Home & Kitchen', slug: 'home', icon: 'home', img: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=600&auto=format&fit=crop&q=80' },
+  { name: 'Sports & Fitness', slug: 'sports', icon: 'gift', img: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=600&auto=format&fit=crop&q=80' },
 ];
 
-const defaults = {
-  howToUse:
-    'Apply a small amount to clean, dry skin. Massage gently until fully absorbed. Use morning and evening for best results. Always patch test before first use.',
-  ingredients:
-    'Aqua (Water), Glycerin, Butylene Glycol, Panthenol, Sodium Hyaluronate, Phenoxyethanol, Ethylhexylglycerin. Full ingredient list is printed on the product packaging.',
-};
+export async function runSeed() {
+  console.log('Seeding Amazon Multi-Vendor Marketplace database...');
 
-const HL = {
-  hydrate: [
-    { icon: 'drop', label: 'Deep Hydration' },
-    { icon: 'sparkle', label: 'Plumps & Smooths' },
-    { icon: 'feather', label: 'Lightweight Formula' },
-    { icon: 'skin', label: 'All Skin Types' },
-  ],
-  glow: [
-    { icon: 'sparkle', label: 'Healthy Glow' },
-    { icon: 'drop', label: 'Nourishing' },
-    { icon: 'feather', label: 'Fast Absorbing' },
-    { icon: 'skin', label: 'Daily Use' },
-  ],
-  wear: [
-    { icon: 'sparkle', label: 'High Pigment' },
-    { icon: 'clock', label: 'Long Wear' },
-    { icon: 'feather', label: 'Comfortable' },
-    { icon: 'shield', label: '100% Original' },
-  ],
-};
-
-// base product list — transform() fills costs/stock/sku/spec/seo automatically
-const P = [
-  {
-    name: 'The Ordinary Hyaluronic Acid 2% + B5 Serum', slug: 'the-ordinary-hyaluronic-acid-2-b5-serum', brand: 'The Ordinary',
-    cat: 'skincare', price: 2350, oldPrice: 2950, labels: ['featured', 'sale', 'best'], rating: 4.5, numReviews: 120, sold: 245, img: 'serum',
-    gallery: ['serum', 'jar', 'essence', 'serum-dark'], stock: 60,
-    short: 'A hydrating serum that provides deep hydration and helps to plump, smooth, and improve the overall texture of your skin.',
-    desc: 'The Ordinary Hyaluronic Acid 2% + B5 is a hydrating serum that helps to hydrate the skin, smooth fine lines, and improve skin elasticity. With a combination of low, medium, and high molecular weight hyaluronic acid, it penetrates multiple layers of the skin for long-lasting hydration.',
-    bullets: ['Provides intense hydration', 'Plumps and smooths the skin', 'Reduces the appearance of fine lines', 'Lightweight and fast-absorbing', 'Suitable for all skin types'],
-    highlights: HL.hydrate, sizes: [{ label: '30ml', price: 2350 }, { label: '60ml', price: 3950 }], weight: '30ml',
-  },
-  {
-    name: 'Maybelline Fit Me Matte + Poreless Foundation', slug: 'maybelline-fit-me-matte-poreless-foundation', brand: 'Maybelline',
-    cat: 'makeup', price: 1850, labels: ['featured', 'hot'], rating: 4.5, numReviews: 98, sold: 180, img: 'foundation', stock: 85,
-    short: 'Matte, poreless foundation for a natural, seamless finish that lasts all day.',
-    desc: 'Maybelline Fit Me Matte + Poreless Foundation mattifies and refines pores for a natural, seamless finish. Its lightweight formula blends effortlessly and controls shine for up to 12 hours.',
-    bullets: ['Matte, poreless finish', 'Controls shine for 12 hours', 'Blends effortlessly', 'Available for all skin tones'],
-    highlights: HL.wear, weight: '30ml', variants: [{ name: 'Shade', options: ['110 Porcelain', '128 Warm Nude', '220 Natural Beige', '310 Sun Beige'] }],
-  },
-  {
-    name: 'Huda Beauty Liquid Matte Lipstick', slug: 'huda-beauty-liquid-matte-lipstick', brand: 'Huda Beauty',
-    cat: 'makeup', price: 1650, labels: ['featured', 'new'], rating: 4.5, numReviews: 75, sold: 132, img: 'lipstick', stock: 70,
-    short: 'Ultra-comfortable liquid matte lipstick with intense colour payoff.',
-    desc: 'Huda Beauty Liquid Matte delivers intense colour payoff with a lightweight, ultra-comfortable formula that doesn’t dry out your lips. One swipe gives a bold, velvety matte finish that lasts.',
-    bullets: ['Intense one-swipe colour', 'Velvety matte finish', 'Transfer-proof formula', 'Comfortable all-day wear'],
-    highlights: HL.wear, weight: '5ml', variants: [{ name: 'Color', options: ['Bombshell', 'Trendsetter', 'Venus', 'Icon'] }],
-  },
-  {
-    name: "L'Oréal Paris Elvive Extraordinary Oil", slug: 'loreal-paris-elvive-extraordinary-oil', brand: "L'Oréal Paris",
-    cat: 'hair', price: 1950, labels: ['featured', 'new'], rating: 4.5, numReviews: 65, sold: 110, img: 'oil', stock: 55,
-    short: 'Nourishing hair oil for silky, shiny hair without weighing it down.',
-    desc: "L'Oréal Paris Elvive Extraordinary Oil is enriched with 6 flower oils to nourish hair deeply, leaving it silky, shiny and soft without weighing it down. Perfect for dull, dry hair.",
-    bullets: ['Enriched with 6 flower oils', 'Instant shine and softness', 'Non-greasy formula', 'For all hair types'],
-    highlights: HL.glow, weight: '100ml',
-  },
-  {
-    name: 'COSRX Advanced Snail 96 Mucin Essence', slug: 'cosrx-advanced-snail-96-mucin-essence', brand: 'COSRX',
-    cat: 'skincare', price: 2450, labels: ['featured', 'hot'], rating: 4, numReviews: 110, sold: 205, img: 'essence', stock: 40,
-    short: 'Lightweight essence with 96% snail mucin to repair and hydrate skin.',
-    desc: 'COSRX Advanced Snail 96 Mucin Power Essence is formulated with 96% snail secretion filtrate to repair damaged skin, boost hydration, and improve skin elasticity for a healthy glow.',
-    bullets: ['96% snail secretion filtrate', 'Repairs and soothes skin', 'Boosts hydration and glow', 'Fast-absorbing texture'],
-    highlights: HL.glow, weight: '100ml',
-  },
-  {
-    name: "Victoria's Secret Pure Seduction (250ml)", slug: 'victorias-secret-pure-seduction-250ml', brand: "Victoria's Secret",
-    cat: 'fragrance', price: 1650, oldPrice: 2200, labels: ['featured', 'sale'], rating: 4, numReviews: 84, sold: 96, img: 'perfume', stock: 30,
-    short: 'A juicy blend of red plum and freesia in a refreshing body mist.',
-    desc: "Victoria's Secret Pure Seduction Fragrance Mist is a juicy blend of red plum and freesia that keeps you feeling fresh and irresistible all day long.",
-    bullets: ['Juicy plum & freesia notes', 'Light, refreshing mist', 'Perfect for everyday wear', '250ml full size'],
-    highlights: HL.glow, weight: '250ml',
-  },
-  {
-    name: 'Swiss Beauty Eyeshadow Palette 10 Color', slug: 'swiss-beauty-eyeshadow-palette-10-color', brand: 'Swiss Beauty',
-    cat: 'makeup', price: 1250, labels: ['featured', 'new'], rating: 4, numReviews: 71, sold: 88, img: 'palette', stock: 45,
-    short: 'Highly pigmented 10-colour palette with matte and shimmer shades.',
-    desc: 'Swiss Beauty 10 Color Eyeshadow Palette features a mix of highly pigmented matte and shimmer shades that blend smoothly for endless day-to-night looks.',
-    bullets: ['10 versatile shades', 'Matte + shimmer finishes', 'Highly pigmented', 'Blends smoothly'],
-    highlights: HL.wear, weight: '120g',
-  },
-  {
-    name: 'CeraVe Hydrating Cleanser', slug: 'cerave-hydrating-cleanser', brand: 'CeraVe',
-    cat: 'skincare', price: 1950, labels: ['featured', 'best'], rating: 4.5, numReviews: 98, sold: 150, img: 'cleanser', stock: 65,
-    short: 'Gentle hydrating cleanser with ceramides and hyaluronic acid.',
-    desc: 'CeraVe Hydrating Facial Cleanser gently cleanses while restoring the skin barrier with 3 essential ceramides and hyaluronic acid. Ideal for normal to dry skin.',
-    bullets: ['3 essential ceramides', 'With hyaluronic acid', 'Non-foaming, gentle formula', 'For normal to dry skin'],
-    highlights: HL.hydrate, weight: '236ml',
-  },
-  {
-    name: 'The Ordinary Niacinamide 10% + Zinc 1%', slug: 'the-ordinary-niacinamide-10-zinc-1', brand: 'The Ordinary',
-    cat: 'skincare', price: 2150, labels: ['best'], rating: 4.5, numReviews: 120, sold: 230, img: 'serum', stock: 75,
-    short: 'High-strength serum to reduce blemishes and balance oil.',
-    desc: 'The Ordinary Niacinamide 10% + Zinc 1% reduces the appearance of blemishes and congestion while balancing visible sebum activity for clearer-looking skin.',
-    bullets: ['Reduces blemishes', 'Balances oil production', 'Minimises pores', 'Brightens skin tone'],
-    highlights: HL.glow, weight: '30ml',
-  },
-  {
-    name: 'Minimalist Vitamin C 10% Serum', slug: 'minimalist-vitamin-c-10-serum', brand: 'Minimalist',
-    cat: 'skincare', price: 2450, labels: [], rating: 4, numReviews: 86, sold: 140, img: 'serum-dark', stock: 50,
-    short: 'Stable vitamin C serum for glowing, even-toned skin.',
-    desc: 'Minimalist 10% Vitamin C Face Serum brightens dull skin, fades dark spots and boosts collagen for a naturally radiant, even-toned complexion.',
-    bullets: ['Brightens dull skin', 'Fades dark spots', 'Boosts collagen', 'Non-irritating formula'],
-    highlights: HL.glow, weight: '30ml',
-  },
-  {
-    name: 'Laneige Lip Sleeping Mask', slug: 'laneige-lip-sleeping-mask', brand: 'Laneige',
-    cat: 'skincare', price: 1850, labels: ['hot'], rating: 4, numReviews: 77, sold: 120, img: 'jar', stock: 35,
-    short: 'Overnight lip mask for soft, supple lips by morning.',
-    desc: 'Laneige Lip Sleeping Mask melts away dead skin cells overnight with its Berry Fruit Complex, leaving lips soft, smooth and supple by morning.',
-    bullets: ['Overnight lip treatment', 'Berry fruit complex', 'Removes dead skin gently', 'Soft, supple lips by morning'],
-    highlights: HL.hydrate, weight: '20g',
-  },
-  {
-    name: "Paula's Choice 2% BHA Liquid Exfoliant", slug: 'paulas-choice-2-bha-liquid-exfoliant', brand: "Paula's Choice",
-    cat: 'skincare', price: 3250, labels: ['best'], rating: 4.5, numReviews: 65, sold: 95, img: 'exfoliant', stock: 25,
-    short: 'Cult-favourite leave-on exfoliant for unclogged, smooth skin.',
-    desc: "Paula's Choice Skin Perfecting 2% BHA Liquid Exfoliant unclogs pores, smooths wrinkles, and evens skin tone with gentle salicylic acid exfoliation.",
-    bullets: ['Unclogs and minimises pores', 'Smooths fine lines', 'Evens skin tone', 'Gentle leave-on formula'],
-    highlights: HL.glow, weight: '118ml',
-  },
-  {
-    name: 'Nivea Soft Moisturizing Cream', slug: 'nivea-soft-moisturizing-cream', brand: 'Nivea',
-    cat: 'body', price: 1050, labels: ['hot'], rating: 4.5, numReviews: 140, sold: 260, img: 'jar', stock: 120,
-    short: 'Light moisturizing cream with jojoba oil and vitamin E.',
-    desc: 'Nivea Soft is a refreshing, fast-absorbing moisturizing cream with jojoba oil and vitamin E for face, hands and body — soft skin every day.',
-    bullets: ['With jojoba oil & vitamin E', 'Fast absorbing', 'For face, hands & body', 'Everyday moisture'],
-    highlights: HL.hydrate, weight: '200ml',
-  },
-  {
-    name: 'Dove Deeply Nourishing Body Wash', slug: 'dove-deeply-nourishing-body-wash', brand: 'Dove',
-    cat: 'bath', price: 1150, labels: [], rating: 4.5, numReviews: 105, sold: 190, img: 'cleanser', stock: 90,
-    short: 'Creamy body wash that nourishes deep into the skin.',
-    desc: 'Dove Deeply Nourishing Body Wash with NutriumMoisture technology gently cleanses and nourishes deep into the surface layers of the skin for softness that lasts.',
-    bullets: ['NutriumMoisture technology', 'Gentle daily cleansing', 'Softer, smoother skin', 'Mild & caring formula'],
-    highlights: HL.hydrate, weight: '250ml',
-  },
-  {
-    name: 'Essence Gel Nail Colour Set', slug: 'essence-gel-nail-colour-set', brand: 'Essence',
-    cat: 'nails', price: 950, labels: ['new'], rating: 4, numReviews: 52, sold: 75, img: 'nails', stock: 4,
-    short: 'Gel-finish nail colours with high shine and long wear.',
-    desc: 'Essence Gel Nail Colour delivers a salon-style gel finish with high shine and long-lasting wear — no UV lamp needed.',
-    bullets: ['Gel-look finish', 'High shine', 'Long-lasting wear', 'No UV lamp needed'],
-    highlights: HL.wear, weight: '8ml x 2', variants: [{ name: 'Color', options: ['Rose Pink', 'Coral Crush', 'Nude Beige'] }],
-  },
-  {
-    name: 'Beardo Beard Growth Oil for Men', slug: 'beardo-beard-growth-oil-for-men', brand: 'Beardo',
-    cat: 'men', price: 1250, labels: ['limited'], rating: 4, numReviews: 48, sold: 66, img: 'oil', stock: 8,
-    short: 'Nourishing beard oil for fuller, softer beard growth.',
-    desc: 'Beardo Beard Growth Oil nourishes facial hair and the skin underneath, promoting fuller, softer and healthier beard growth.',
-    bullets: ['Promotes fuller growth', 'Softens beard hair', 'Nourishes skin underneath', 'Non-sticky formula'],
-    highlights: HL.glow, weight: '30ml',
-  },
-  {
-    name: 'Pro Blending Makeup Brush Set (12pc)', slug: 'pro-blending-makeup-brush-set-12pc', brand: 'Nayab Glow',
-    cat: 'accessories', price: 1450, oldPrice: 1850, labels: ['sale'], rating: 4.5, numReviews: 60, sold: 85, img: 'brush', stock: 0,
-    short: 'Professional 12-piece brush set for flawless application.',
-    desc: 'A professional 12-piece makeup brush set with ultra-soft synthetic bristles for flawless blending, contouring and detailing.',
-    bullets: ['12 professional brushes', 'Ultra-soft bristles', 'Cruelty-free synthetic hair', 'For face & eye makeup'],
-    highlights: HL.wear, weight: '350g',
-  },
-];
-
-const SITE_CONTENT = {
-  topbar: {
-    welcome: 'Welcome to Official Nayab Glow',
-    promos: [
-      { icon: 'badgeCheck', text: '100% Original Products' },
-      { icon: 'truck', text: 'Fast Delivery Across Pakistan' },
-      { icon: 'banknote', text: 'Cash on Delivery Available' },
-    ],
-  },
-  logo: { script: 'Official', name: 'NAYAB GLOW', tagline: 'Enhance Your Natural Beauty' },
-  hero: {
-    slides: [
-      { a: 'Reveal Your', b: 'Natural Glow', sub: 'Premium Beauty & Personal Care Products for a More Beautiful You', imgs: [img('oil'), img('serum'), img('jar'), img('perfume')] },
-      { a: 'Glow With', b: 'Confidence', sub: '100% Original International Brands, Delivered to Your Doorstep', imgs: [img('palette'), img('lipstick'), img('foundation'), img('essence')] },
-      { a: 'Beauty That', b: 'Feels Like You', sub: 'Skincare, Makeup & More — Cash on Delivery Across Pakistan', imgs: [img('cleanser'), img('serum-dark'), img('nails'), img('brush')] },
-    ],
-    features: [
-      { icon: 'badgeCheck', l1: '100% Original', l2: 'Products' },
-      { icon: 'truck', l1: 'Fast Delivery', l2: 'Across Pakistan' },
-      { icon: 'shield', l1: 'Secure', l2: 'Payments' },
-      { icon: 'headset', l1: '24/7 Customer', l2: 'Support' },
-    ],
-    button: 'SHOP NOW',
-  },
-  sections: { categoriesTitle: 'SHOP BY CATEGORY', featuredTitle: 'FEATURED PRODUCTS', brandsTitle: 'TOP BRANDS WE DEAL IN' },
-  promoRow: {
-    left: { small: 'UP TO', big: '30% OFF', span: 'ON SELECTED ITEMS', btn: 'SHOP NOW', img: img('brush') },
-    middle: [
-      { icon: 'badgeCheck', t: '100% Original', s: 'Products' },
-      { icon: 'tag', t: 'Affordable', s: 'Prices' },
-      { icon: 'truck', t: 'Fast Delivery', s: 'Across Pakistan' },
-      { icon: 'banknote', t: 'Cash on', s: 'Delivery' },
-      { icon: 'refresh', t: 'Easy Return', s: 'Policy' },
-    ],
-    right: { big: 'NEW ARRIVALS', span: 'Check Out Our Latest Products', btn: 'SHOP NOW', img: img('perfume'), img2: img('essence') },
-  },
-  brands: [
-    { name: "L'ORÉAL", sub: 'PARIS', cls: 'b-loreal' },
-    { name: 'MAYBELLINE', sub: 'NEW YORK', cls: 'b-maybelline' },
-    { name: 'The', sub: 'Ordinary.', cls: 'b-ordinary' },
-    { name: 'COSRX', sub: '', cls: 'b-cosrx' },
-    { name: 'LANEIGE', sub: '', cls: 'b-laneige' },
-    { name: 'Huda', sub: 'BEAUTY', cls: 'b-huda' },
-    { name: 'Neutrogena', sub: '', cls: 'b-neutrogena' },
-    { name: "POND'S", sub: '', cls: 'b-ponds' },
-    { name: 'Dove', sub: '', cls: 'b-dove' },
-  ],
-  trustStrip: [
-    { icon: 'badgeCheck', title: '100% Original', sub: 'Authentic Products' },
-    { icon: 'truck', title: 'Fast Delivery', sub: 'Across Pakistan' },
-    { icon: 'banknote', title: 'Cash on Delivery', sub: 'Pay When You Receive' },
-    { icon: 'refresh', title: 'Easy Returns', sub: '7 Days Return Policy' },
-    { icon: 'shield', title: 'Secure Payments', sub: '100% Protected' },
-  ],
-  footer: {
-    whyTitle: 'WHY CHOOSE OFFICIAL NAYAB GLOW?',
-    why: [
-      '100% Original & Authentic Products',
-      'Best Quality at Affordable Prices',
-      'Fast & Safe Delivery All Over Pakistan',
-      'Secure Payment Options',
-      '24/7 Friendly Customer Support',
-    ],
-    contact: { location: 'Pakistan', email: 'support@officialnayabglow.com', phone: '+92 300 1234567', hours: 'Mon - Sat / 10:00 AM - 8:00 PM' },
-    copyright: '© 2026 Official Nayab Glow. All Rights Reserved.',
-  },
-  social: { facebook: '#', instagram: '#', tiktok: '#', youtube: '#', whatsapp: '#' },
-  chatWidget: {
-    title: 'Nayab Glow Support',
-    subtitle: 'We usually reply within a few minutes',
-    welcome: 'Assalam o Alaikum! 👋 Welcome to Official Nayab Glow. How can we help you today?',
-  },
-  pages: {
-    'shipping-policy': {
-      title: 'Shipping Policy',
-      body: 'Hum poore Pakistan mein delivery karte hain.\n\nStandard Delivery: 3-5 business days (FREE on all orders).\nExpress Delivery: 1-2 business days (Rs.199).\n\nOrder dispatch hone ke baad aap ko tracking details SMS/email par mil jati hain, aur aap Track Order page se har waqt status check kar sakte hain.',
+  // 1. Super Admin & Staff
+  const adminPass = await bcrypt.hash('admin123', 10);
+  await Admin.deleteMany({});
+  const admins = await Admin.insertMany([
+    {
+      name: 'Super Admin (Owner)',
+      email: 'admin@amazon.com',
+      passwordHash: adminPass,
+      role: 'super_admin',
+      title: 'Platform Owner & CEO',
+      phone: '+92 300 1234567',
+      permissions: ['sellers', 'products', 'categories', 'orders', 'refunds', 'discounts', 'shipping', 'inventory', 'finance', 'reports', 'chat', 'content', 'settings', 'staff', 'audit'],
+      active: true,
     },
-    'returns-policy': {
-      title: 'Returns & Refund Policy',
-      body: 'Agar aap kisi product se mutmain nahi hain to delivery ke 7 din ke andar unopened products return kar sakte hain.\n\nRefund process: return receive hone ke baad 3-5 business days mein aap ka refund process ho jata hai.\n\nRefund request ke liye apne account ke Order History se "Request Refund" use karein ya chat support par rabta karein.',
+    {
+      name: 'Sara Khan (Support Lead)',
+      email: 'support@amazon.com',
+      passwordHash: adminPass,
+      role: 'support',
+      title: 'Seller & Customer Support Executive',
+      phone: '+92 301 9876543',
+      permissions: ['sellers', 'orders', 'refunds', 'chat'],
+      active: true,
     },
-    terms: {
-      title: 'Terms & Conditions',
-      body: 'Official Nayab Glow se kharidari karte huay aap in sharait se ittefaq karte hain:\n\n1. Tamam products 100% original hain.\n2. Prices mein tabdeeli ka haq mehfooz hai.\n3. Order confirmation ke liye phone par rabta kiya ja sakta hai.\n4. Ghalat address ki soorat mein delivery ka waqt barh sakta hai.',
+    {
+      name: 'Bilal Ahmed (Logistics)',
+      email: 'orders@amazon.com',
+      passwordHash: adminPass,
+      role: 'order_manager',
+      title: 'Fulfillment & Dispatch Lead',
+      phone: '+92 302 5556677',
+      permissions: ['sellers', 'orders', 'refunds', 'shipping'],
+      active: true,
     },
-    privacy: {
-      title: 'Privacy Policy',
-      body: 'Aap ki personal information hamare paas mehfooz hai. Hum aap ka data kisi third party ke saath share nahi karte.\n\nHum sirf order process karne ke liye aap ka naam, address aur phone number use karte hain. Payment details hamare server par store nahi hoti.',
+  ]);
+  console.log(`Seeded ${admins.length} admins & staff members`);
+
+  // 2. Sellers / Vendors
+  const sellerPass = await bcrypt.hash('seller123', 10);
+  await Seller.deleteMany({});
+  const sellers = await Seller.insertMany([
+    {
+      storeName: 'TechZone Gadgets',
+      ownerName: 'Hamza Tariq',
+      email: 'seller1@tech.com',
+      passwordHash: sellerPass,
+      phone: '+92 321 4455667',
+      storeSlug: 'techzone-gadgets',
+      logo: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=200&auto=format&fit=crop&q=80',
+      description: 'Authorized retailer for premium smartphones, laptops, wireless audio, and gaming gear.',
+      address: { street: 'Hafeez Centre, Main Boulevard', city: 'Lahore', state: 'Punjab', country: 'Pakistan' },
+      bankDetails: { accountTitle: 'TechZone Enterprise', accountNumber: '01234567890123', bankName: 'Meezan Bank' },
+      commissionRate: 8,
+      status: 'active',
+      rating: 4.9,
+      numReviews: 84,
+      totalSales: 485000,
+      totalOrders: 62,
     },
-    faqs: {
-      title: 'FAQs',
-      body: 'Q: Kya tamam products original hain?\nA: Ji haan, hum sirf 100% original products deal karte hain.\n\nQ: Delivery kitne din mein hoti hai?\nA: Standard delivery 3-5 business days, express 1-2 business days.\n\nQ: Payment kaise karun?\nA: Cash on Delivery available hai — order milne par payment karein.\n\nQ: Order track kaise karun?\nA: Track Order page par apna order number ya phone number enter karein.',
+    {
+      storeName: 'Urban Vogue Fashion',
+      ownerName: 'Ayesha Malik',
+      email: 'seller2@fashion.com',
+      passwordHash: sellerPass,
+      phone: '+92 333 7788990',
+      storeSlug: 'urban-vogue-fashion',
+      logo: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=200&auto=format&fit=crop&q=80',
+      description: 'Trendy streetwear, premium jackets, sneakers, and modern apparel for men and women.',
+      address: { street: 'Dolmen Mall, Clifton', city: 'Karachi', state: 'Sindh', country: 'Pakistan' },
+      bankDetails: { accountTitle: 'Urban Vogue Studio', accountNumber: '98765432109876', bankName: 'Bank Alfalah' },
+      commissionRate: 10,
+      status: 'active',
+      rating: 4.8,
+      numReviews: 56,
+      totalSales: 295000,
+      totalOrders: 48,
     },
-  },
-  checkout: {
-    loginBar: 'Have an account?',
-    privacyTitle: 'We Protect Your Privacy',
-    privacyText: 'Your personal information is safe with us. We never share your details with anyone.',
-  },
-};
+    {
+      storeName: 'Apex Living & Home',
+      ownerName: 'Usman Farooq',
+      email: 'seller3@home.com',
+      passwordHash: sellerPass,
+      phone: '+92 345 1122334',
+      storeSlug: 'apex-living-home',
+      logo: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?w=200&auto=format&fit=crop&q=80',
+      description: 'Modern kitchen appliances, air fryers, ergonomic lighting, and smart home decor.',
+      address: { street: 'Centaurus Mall, F-8', city: 'Islamabad', state: 'Federal', country: 'Pakistan' },
+      bankDetails: { accountTitle: 'Apex Living Pvt Ltd', accountNumber: '45678901234567', bankName: 'HBL' },
+      commissionRate: 12,
+      status: 'active',
+      rating: 4.7,
+      numReviews: 39,
+      totalSales: 185000,
+      totalOrders: 31,
+    },
+    {
+      storeName: 'Glow & Aura Cosmetics',
+      ownerName: 'Zainab Noor',
+      email: 'seller4@beauty.com',
+      passwordHash: sellerPass,
+      phone: '+92 312 9988776',
+      storeSlug: 'glow-aura-cosmetics',
+      logo: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=200&auto=format&fit=crop&q=80',
+      description: '100% authentic international skincare serums, fragrances, luxury perfumes, and beauty essentials.',
+      address: { street: 'Mall of Lahore, Cantt', city: 'Lahore', state: 'Punjab', country: 'Pakistan' },
+      bankDetails: { accountTitle: 'Glow Aura Official', accountNumber: '33445566778899', bankName: 'Standard Chartered' },
+      commissionRate: 10,
+      status: 'active',
+      rating: 4.9,
+      numReviews: 92,
+      totalSales: 340000,
+      totalOrders: 75,
+    },
+  ]);
+  console.log(`Seeded ${sellers.length} verified sellers`);
 
-function transform(p, catMap) {
-  const purchase = Math.round(p.price * 0.55);
-  return {
-    name: p.name,
-    slug: p.slug,
-    brand: p.brand,
-    category: catMap[p.cat === 'accessories' ? 'accessories' : p.cat],
-    price: p.price,
-    oldPrice: p.oldPrice,
-    costs: { purchase, delivery: 60, packaging: 25, tax: Math.round(p.price * 0.05), other: 0 },
-    stock: p.stock ?? 80,
-    reservedStock: 0,
-    lowStockThreshold: 5,
-    sku: 'NG-' + p.slug.split('-').map((w) => w[0]).join('').toUpperCase().slice(0, 6) + '-' + String(p.price).slice(0, 2),
-    weight: p.weight || '',
-    dimensions: p.dimensions || '',
-    labels: p.labels || [],
-    tags: [p.brand, p.cat, ...p.name.split(' ').slice(0, 2)].map((t) => t.toLowerCase()),
-    seoTitle: `${p.name} — Buy Online in Pakistan | Official Nayab Glow`,
-    seoDescription: p.short,
-    active: true,
-    image: img(p.img),
-    images: [{ url: img(p.img), key: null }, ...(p.gallery || []).slice(1).map((g) => ({ url: img(g), key: null }))],
-    gallery: (p.gallery || [p.img, p.img, p.img, p.img]).map(img),
-    rating: p.rating,
-    numReviews: p.numReviews,
-    sold: p.sold,
-    shortDescription: p.short,
-    description: p.desc,
-    bullets: p.bullets,
-    highlights: p.highlights,
-    specifications: [
-      { key: 'Brand', value: p.brand },
-      { key: 'Category', value: p.cat },
-      { key: 'Size / Weight', value: p.weight || '—' },
-      { key: 'Authenticity', value: '100% Original' },
-    ],
-    variants: p.variants || [],
-    sizes: p.sizes || [],
-    ...defaults,
-  };
-}
-
-async function run() {
-  await mongoose.connect(process.env.MONGO_URI);
-  console.log('Connected to MongoDB');
-
-  // super admin
-  const email = (process.env.ADMIN_EMAIL || 'admin@nayabglow.com').toLowerCase();
-  const passwordHash = await bcrypt.hash(process.env.ADMIN_PASSWORD || 'admin123', 10);
-  await Admin.updateOne(
-    { email },
-    { $set: { email, passwordHash, name: 'Nayab Glow Admin', role: 'super_admin', active: true } },
-    { upsert: true }
-  );
-  console.log(`Super admin ready: ${email}`);
-
-  // categories
+  // 3. Categories
   await Category.deleteMany({});
-  const cats = await Category.insertMany(
+  const categories = await Category.insertMany(
     CATS.map((c, i) => ({
       name: c.name,
-      slug: c.realSlug || c.slug,
-      image: { url: img(c.img), key: null },
+      slug: c.slug,
+      image: { url: c.img, key: null },
       active: true,
       sortOrder: i,
     }))
   );
-  const catMap = Object.fromEntries(cats.map((c) => [c.slug, c._id]));
-  console.log(`Seeded ${cats.length} categories`);
+  const catMap = Object.fromEntries(categories.map((c) => [c.slug, c._id]));
+  console.log(`Seeded ${categories.length} categories`);
 
-  // products
+  // 4. Products with Multi-Vendor assignment and cost breakdown
+  const sTech = sellers[0];
+  const sFashion = sellers[1];
+  const sHome = sellers[2];
+  const sBeauty = sellers[3];
+
+  const rawProducts = [
+    // TechZone Products
+    {
+      name: 'Apple iPhone 15 Pro Max (256GB Natural Titanium)',
+      slug: 'apple-iphone-15-pro-max-256gb',
+      brand: 'Apple',
+      category: catMap['mobiles'],
+      seller: sTech._id,
+      sellerName: sTech.storeName,
+      sellerSlug: sTech.storeSlug,
+      price: 435000,
+      oldPrice: 465000,
+      costs: { purchase: 395000, delivery: 500, packaging: 300, tax: 2000, other: 0 },
+      stock: 15,
+      sku: 'APL-IP15PM-256',
+      rating: 4.9,
+      numReviews: 128,
+      sold: 45,
+      labels: ['featured', 'hot', 'best'],
+      image: 'https://images.unsplash.com/photo-1695048133142-1a20484d2569?w=700&auto=format&fit=crop&q=80',
+      images: [
+        { url: 'https://images.unsplash.com/photo-1695048133142-1a20484d2569?w=700&auto=format&fit=crop&q=80', key: null },
+        { url: 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?w=700&auto=format&fit=crop&q=80', key: null },
+      ],
+      shortDescription: 'Flagship Apple iPhone with A17 Pro chip, Grade 5 Titanium design, and 5x optical zoom camera.',
+      description: 'The iPhone 15 Pro Max is forged in titanium and features the groundbreaking Apple A17 Pro chip, a customizable Action button, and the most powerful iPhone camera system ever.',
+      bullets: ['A17 Pro chip with 6-core GPU', 'Titanium design with textured matte glass back', '48MP Main camera with 5x Telephoto', 'Super Retina XDR OLED Display with ProMotion 120Hz', 'USB-C with USB 3 speeds up to 10Gb/s'],
+      specifications: [{ key: 'Storage', value: '256GB' }, { key: 'RAM', value: '8GB' }, { key: 'Battery', value: '4422 mAh' }, { key: 'Warranty', value: '1 Year Apple Official' }],
+      variants: [{ name: 'Color', options: ['Natural Titanium', 'Blue Titanium', 'Black Titanium', 'White Titanium'] }],
+    },
+    {
+      name: 'Sony WH-1000XM5 Wireless Noise-Canceling Headphones',
+      slug: 'sony-wh-1000xm5-wireless-headphones',
+      brand: 'Sony',
+      category: catMap['electronics'],
+      seller: sTech._id,
+      sellerName: sTech.storeName,
+      sellerSlug: sTech.storeSlug,
+      price: 89500,
+      oldPrice: 99000,
+      costs: { purchase: 74000, delivery: 300, packaging: 150, tax: 500, other: 0 },
+      stock: 24,
+      sku: 'SNY-WH1000XM5-BLK',
+      rating: 4.8,
+      numReviews: 95,
+      sold: 38,
+      labels: ['best', 'sale'],
+      image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=700&auto=format&fit=crop&q=80',
+      images: [{ url: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=700&auto=format&fit=crop&q=80', key: null }],
+      shortDescription: 'Industry-leading noise cancellation with two processors and 8 microphones for crystal clear audio.',
+      description: 'The Sony WH-1000XM5 headphones rewrite the rules for distraction-free listening with industry-leading noise cancelation and magnificent high-resolution sound quality.',
+      bullets: ['Industry-leading noise canceling with Auto NC Optimizer', 'Up to 30-hour battery life with quick charging', 'Ultra-comfortable, lightweight design in soft fit leather', 'Multipoint connection allows swift device switching'],
+      specifications: [{ key: 'Battery Life', value: '30 Hours' }, { key: 'Bluetooth', value: '5.2' }, { key: 'Weight', value: '250g' }],
+    },
+    {
+      name: 'Samsung Galaxy Watch 6 Classic (47mm Bluetooth)',
+      slug: 'samsung-galaxy-watch-6-classic-47mm',
+      brand: 'Samsung',
+      category: catMap['watches'],
+      seller: sTech._id,
+      sellerName: sTech.storeName,
+      sellerSlug: sTech.storeSlug,
+      price: 68000,
+      oldPrice: 75000,
+      costs: { purchase: 56000, delivery: 250, packaging: 100, tax: 400, other: 0 },
+      stock: 18,
+      sku: 'SAM-GW6C-47MM',
+      rating: 4.7,
+      numReviews: 64,
+      sold: 29,
+      labels: ['hot'],
+      image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=700&auto=format&fit=crop&q=80',
+      images: [{ url: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=700&auto=format&fit=crop&q=80', key: null }],
+      shortDescription: 'Timeless stainless steel smartwatch with rotating bezel and advanced health tracking.',
+      description: 'Galaxy Watch6 Classic features a slim rotating bezel, larger display, and comprehensive sleep coaching and ECG heart health monitoring.',
+      bullets: ['Rotating physical bezel', 'Advanced Sleep Coaching & ECG', 'Sapphire Crystal glass display', 'Water resistant 5ATM + IP68'],
+      specifications: [{ key: 'Size', value: '47mm' }, { key: 'Display', value: 'Super AMOLED' }, { key: 'Waterproof', value: '50m' }],
+    },
+    {
+      name: 'MacBook Air 15-inch M3 Chip (16GB / 512GB SSD)',
+      slug: 'macbook-air-15-inch-m3-chip-512gb',
+      brand: 'Apple',
+      category: catMap['laptops'],
+      seller: sTech._id,
+      sellerName: sTech.storeName,
+      sellerSlug: sTech.storeSlug,
+      price: 385000,
+      oldPrice: 410000,
+      costs: { purchase: 345000, delivery: 600, packaging: 400, tax: 1500, other: 0 },
+      stock: 8,
+      sku: 'APL-MBA15-M3-512',
+      rating: 4.9,
+      numReviews: 76,
+      sold: 21,
+      labels: ['featured', 'best'],
+      image: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=700&auto=format&fit=crop&q=80',
+      images: [{ url: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=700&auto=format&fit=crop&q=80', key: null }],
+      shortDescription: 'Impossibly thin and fast 15-inch Liquid Retina display laptop powered by Apple M3 silicon.',
+      description: 'With a spacious 15.3-inch Liquid Retina display, the M3 chip brings even greater capabilities to the world’s most popular laptop, with up to 18 hours of battery life.',
+      bullets: ['Apple M3 8-core CPU with 10-core GPU', '15.3-inch Liquid Retina display with 500 nits', 'Up to 18 hours battery life', '1080p FaceTime HD camera & 6-speaker sound system'],
+      specifications: [{ key: 'Processor', value: 'Apple M3' }, { key: 'Memory', value: '16GB Unified' }, { key: 'Storage', value: '512GB SSD' }],
+    },
+
+    // Urban Vogue Fashion Products
+    {
+      name: 'Premium Bomber Leather Jacket (Midnight Black)',
+      slug: 'premium-bomber-leather-jacket-black',
+      brand: 'Urban Vogue',
+      category: catMap['fashion'],
+      seller: sFashion._id,
+      sellerName: sFashion.storeName,
+      sellerSlug: sFashion.storeSlug,
+      price: 14500,
+      oldPrice: 19500,
+      costs: { purchase: 8500, delivery: 200, packaging: 150, tax: 100, other: 0 },
+      stock: 35,
+      sku: 'UV-BMB-JKT-BLK',
+      rating: 4.8,
+      numReviews: 42,
+      sold: 55,
+      labels: ['hot', 'sale'],
+      image: 'https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?w=700&auto=format&fit=crop&q=80',
+      images: [{ url: 'https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?w=700&auto=format&fit=crop&q=80', key: null }],
+      shortDescription: 'Handcrafted genuine lambskin leather bomber jacket with satin lining and heavy-duty YKK zippers.',
+      description: 'A timeless silhouette tailored for modern style. Crafted from soft, durable premium genuine leather that ages gracefully over time.',
+      bullets: ['100% genuine lambskin leather', 'Durable YKK brass metal zippers', 'Ribbed cuffs and waistband', 'Interior dual stash pockets'],
+      specifications: [{ key: 'Material', value: 'Genuine Leather' }, { key: 'Fit', value: 'Regular Fit' }, { key: 'Care', value: 'Specialist Leather Clean' }],
+      sizes: [{ label: 'Small', price: 14500 }, { label: 'Medium', price: 14500 }, { label: 'Large', price: 14500 }, { label: 'XL', price: 15500 }],
+    },
+    {
+      name: 'Nike Air Max 270 React Running Sneakers',
+      slug: 'nike-air-max-270-react-sneakers',
+      brand: 'Nike',
+      category: catMap['fashion'],
+      seller: sFashion._id,
+      sellerName: sFashion.storeName,
+      sellerSlug: sFashion.storeSlug,
+      price: 26500,
+      oldPrice: 32000,
+      costs: { purchase: 18500, delivery: 250, packaging: 100, tax: 200, other: 0 },
+      stock: 28,
+      sku: 'NKE-AM270-WHT',
+      rating: 4.9,
+      numReviews: 68,
+      sold: 49,
+      labels: ['featured', 'best'],
+      image: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=700&auto=format&fit=crop&q=80',
+      images: [{ url: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=700&auto=format&fit=crop&q=80', key: null }],
+      shortDescription: 'Iconic max air unit in the heel delivers unrivaled all-day comfort with lightweight foam response.',
+      description: 'Nike Air Max 270 React brings artistic flair to sportswear with layered materials and bold color contrasts backed by the largest heel Air unit.',
+      bullets: ['Max Air 270 unit delivers all-day cushion', 'Nike React foam for a smooth, responsive ride', 'Woven and synthetic fabric upper', 'Rubber outsole with durable traction'],
+      sizes: [{ label: 'US 8', price: 26500 }, { label: 'US 9', price: 26500 }, { label: 'US 10', price: 26500 }, { label: 'US 11', price: 26500 }],
+    },
+    {
+      name: 'Heavyweight Oversized Cotton Hoodie (Oatmeal Beige)',
+      slug: 'heavyweight-oversized-cotton-hoodie-beige',
+      brand: 'Urban Vogue',
+      category: catMap['fashion'],
+      seller: sFashion._id,
+      sellerName: sFashion.storeName,
+      sellerSlug: sFashion.storeSlug,
+      price: 5490,
+      oldPrice: 7500,
+      costs: { purchase: 2800, delivery: 150, packaging: 80, tax: 50, other: 0 },
+      stock: 45,
+      sku: 'UV-OVS-HD-BGE',
+      rating: 4.7,
+      numReviews: 38,
+      sold: 82,
+      labels: ['sale'],
+      image: 'https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=700&auto=format&fit=crop&q=80',
+      images: [{ url: 'https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=700&auto=format&fit=crop&q=80', key: null }],
+      shortDescription: '450 GSM luxury brushed fleece hoodie with double-layer hood and kangaroo pouch.',
+      description: 'Crafted from ultra-soft 450 GSM organic French terry fleece, tailored for a clean relaxed aesthetic.',
+      bullets: ['450 GSM 100% Combed Cotton', 'Pre-shrunk fabric to preserve fit', 'Kangaroo pocket with reinforced stitching', 'Double-lined deep hood'],
+      sizes: [{ label: 'Small', price: 5490 }, { label: 'Medium', price: 5490 }, { label: 'Large', price: 5490 }, { label: 'XL', price: 5490 }],
+    },
+
+    // Apex Living & Home Products
+    {
+      name: 'Ninja Professional 1000W Countertop Blender',
+      slug: 'ninja-professional-1000w-blender',
+      brand: 'Ninja',
+      category: catMap['home'],
+      seller: sHome._id,
+      sellerName: sHome.storeName,
+      sellerSlug: sHome.storeSlug,
+      price: 28500,
+      oldPrice: 34000,
+      costs: { purchase: 21000, delivery: 400, packaging: 200, tax: 250, other: 0 },
+      stock: 20,
+      sku: 'NJA-BL610-1000W',
+      rating: 4.8,
+      numReviews: 54,
+      sold: 33,
+      labels: ['best', 'featured'],
+      image: 'https://images.unsplash.com/photo-1570222094114-d054a817e56b?w=700&auto=format&fit=crop&q=80',
+      images: [{ url: 'https://images.unsplash.com/photo-1570222094114-d054a817e56b?w=700&auto=format&fit=crop&q=80', key: null }],
+      shortDescription: '1000 watts of professional performance power to crush ice, whole fruits, and frozen veggies in seconds.',
+      description: 'The Ninja Professional Blender features Total Crushing technology with 6-blade assembly to pulverize ice into snow for smoothies and frozen drinks.',
+      bullets: ['1000-watt motor base', '72 oz. Total Crushing Pitcher', 'BPA-free & dishwasher-safe parts', '3 Speeds, Pulse & Single Serve functions'],
+      specifications: [{ key: 'Power', value: '1000 Watts' }, { key: 'Capacity', value: '72 oz (2.1 Liters)' }, { key: 'Voltage', value: '220-240V' }],
+    },
+    {
+      name: 'Philips XXL Digital Smart Air Fryer (7.2L Capacity)',
+      slug: 'philips-xxl-digital-smart-air-fryer',
+      brand: 'Philips',
+      category: catMap['home'],
+      seller: sHome._id,
+      sellerName: sHome.storeName,
+      sellerSlug: sHome.storeSlug,
+      price: 49500,
+      oldPrice: 58000,
+      costs: { purchase: 38000, delivery: 500, packaging: 300, tax: 400, other: 0 },
+      stock: 14,
+      sku: 'PHL-AF-XXL-72L',
+      rating: 4.9,
+      numReviews: 72,
+      sold: 41,
+      labels: ['hot', 'sale'],
+      image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=700&auto=format&fit=crop&q=80',
+      images: [{ url: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=700&auto=format&fit=crop&q=80', key: null }],
+      shortDescription: 'Twin TurboStar technology removes fat from food while frying with little to no added oil.',
+      description: 'Cook for the whole family with 7.2L family-sized capacity, digital touch screen presets, and Fat Removal technology for crispy, healthy meals.',
+      bullets: ['Rapid Air Technology with 90% less fat', 'Digital display with 7 preset cooking programs', 'QuickClean basket with non-stick mesh', 'Automatic shut-off & keep warm function'],
+      specifications: [{ key: 'Capacity', value: '7.2 Liters / 1.4kg' }, { key: 'Power', value: '2225W' }, { key: 'Warranty', value: '2 Years Official' }],
+    },
+
+    // Glow & Aura Beauty Products
+    {
+      name: 'The Ordinary Niacinamide 10% + Zinc 1% (60ml)',
+      slug: 'the-ordinary-niacinamide-10-zinc-1-60ml',
+      brand: 'The Ordinary',
+      category: catMap['beauty'],
+      seller: sBeauty._id,
+      sellerName: sBeauty.storeName,
+      sellerSlug: sBeauty.storeSlug,
+      price: 3250,
+      oldPrice: 3950,
+      costs: { purchase: 1950, delivery: 100, packaging: 50, tax: 30, other: 0 },
+      stock: 50,
+      sku: 'ORD-NIA-60ML',
+      rating: 4.8,
+      numReviews: 140,
+      sold: 110,
+      labels: ['best', 'hot'],
+      image: 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?w=700&auto=format&fit=crop&q=80',
+      images: [{ url: 'https://images.unsplash.com/photo-1620916566398-39f1143ab7be?w=700&auto=format&fit=crop&q=80', key: null }],
+      shortDescription: 'High-strength vitamin and mineral blemish formula to reduce sebum congestion and even skin tone.',
+      description: 'Niacinamide (Vitamin B3) is indicated to reduce the appearance of skin blemishes and congestion, supported by Zinc salt of pyrrolidone carboxylic acid.',
+      bullets: ['10% Niacinamide + 1% Zinc PCA', 'Balances oil activity and minimizes pores', 'Improves skin smoothness and barrier strength', 'Cruelty-free and vegan formulation'],
+      specifications: [{ key: 'Volume', value: '60ml' }, { key: 'Skin Type', value: 'All Skin Types / Oily' }, { key: 'Made In', value: 'Canada' }],
+    },
+    {
+      name: 'Dior Sauvage Eau De Parfum (100ml For Men)',
+      slug: 'dior-sauvage-eau-de-parfum-100ml',
+      brand: 'Dior',
+      category: catMap['beauty'],
+      seller: sBeauty._id,
+      sellerName: sBeauty.storeName,
+      sellerSlug: sBeauty.storeSlug,
+      price: 42000,
+      oldPrice: 48000,
+      costs: { purchase: 32000, delivery: 300, packaging: 200, tax: 350, other: 0 },
+      stock: 16,
+      sku: 'DIR-SVG-EDP-100',
+      rating: 4.9,
+      numReviews: 89,
+      sold: 62,
+      labels: ['featured', 'best'],
+      image: 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=700&auto=format&fit=crop&q=80',
+      images: [{ url: 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=700&auto=format&fit=crop&q=80', key: null }],
+      shortDescription: 'Noble and powerful fragrance blend of Calabrian bergamot, sensual Papua vanilla, and spicy amberwood.',
+      description: 'Dior Sauvage Eau de Parfum radiates sensual and mysterious facets. Calabrian bergamot adds a juicy, peppery freshness enveloped in smoky accents of vanilla absolute.',
+      bullets: ['100% Original Authentic Import', 'Top notes: Calabrian Bergamot, Pepper', 'Heart notes: Sichuan Pepper, Lavender, Pink Pepper', 'Base notes: Ambroxan, Cedar, Labdanum, Vanilla'],
+      specifications: [{ key: 'Concentration', value: 'Eau de Parfum (EDP)' }, { key: 'Volume', value: '100ml' }, { key: 'Origin', value: 'France' }],
+    },
+  ];
+
   await Product.deleteMany({});
-  await Product.insertMany(P.map((p) => transform(p, catMap)));
-  console.log(`Seeded ${P.length} products`);
+  const seededProducts = await Product.insertMany(rawProducts);
+  console.log(`Seeded ${seededProducts.length} multi-vendor products`);
 
-  // shipping methods
+  // 5. Shipping methods
   await ShippingMethod.deleteMany({});
   await ShippingMethod.insertMany([
-    { name: 'Standard Delivery', description: 'Nationwide standard delivery', cost: 0, etaText: '3-5 business days', active: true, sortOrder: 0 },
-    { name: 'Express Delivery', description: 'Priority courier delivery', cost: 199, etaText: '1-2 business days', active: true, sortOrder: 1 },
-    { name: 'Same Day Delivery (Lahore)', description: 'Same-day within Lahore city', cost: 349, etaText: 'Today (order before 2 PM)', zones: ['Lahore'], active: false, sortOrder: 2 },
+    { name: 'Amazon Prime Express Delivery', description: 'Next-day fast delivery across major cities', cost: 199, etaText: '1-2 business days', active: true, sortOrder: 0 },
+    { name: 'Standard Nationwide Delivery', description: 'Reliable doorstep delivery nationwide', cost: 0, etaText: '3-5 business days', active: true, sortOrder: 1 },
+    { name: 'Same Day Express Delivery', description: 'Order before 2 PM for same day delivery in Lahore, Karachi, Islamabad', cost: 350, etaText: 'Today Evening', active: true, sortOrder: 2 },
   ]);
-  console.log('Seeded shipping methods');
 
-  // discounts / coupons
+  // 6. Discounts / Coupons
   await Discount.deleteMany({});
   await Discount.insertMany([
-    { name: 'Glow Discount 20%', code: 'GLOW20', type: 'percentage', value: 20, scope: 'all', active: true },
-    { name: 'Glow Discount 10%', code: 'GLOW10', type: 'percentage', value: 10, scope: 'all', active: true },
-    { name: 'Free Shipping Coupon', code: 'FREESHIP', type: 'free_shipping', scope: 'all', minPurchase: 2000, active: true },
-    { name: 'Rs.150 off on Rs.5,000+', code: '', type: 'fixed', value: 150, scope: 'all', minPurchase: 5000, active: true },
+    { name: 'Welcome Deal 15% OFF', code: 'AMAZON15', type: 'percentage', value: 15, scope: 'all', active: true },
+    { name: 'Mega Flash Sale 25% OFF', code: 'MEGA25', type: 'percentage', value: 25, scope: 'all', minPurchase: 5000, active: true },
+    { name: 'Free Express Shipping', code: 'FREESHIP', type: 'free_shipping', scope: 'all', minPurchase: 3000, active: true },
   ]);
-  console.log('Seeded discounts');
 
-  // settings + content
+  // 7. Seed Orders
+  await Order.deleteMany({});
+  const sampleOrders = [
+    {
+      orderNumber: 'ORD-1001',
+      seller: sTech._id,
+      placedBy: 'customer',
+      contact: { email: 'customer@gmail.com', phone: '+92 300 9988776' },
+      shippingAddress: { fullName: 'Ahmad Khan', street: 'House 42, Street 8, Phase 5, DHA', city: 'Lahore', state: 'Punjab', postalCode: '54000', country: 'Pakistan' },
+      shipping: { name: 'Amazon Prime Express Delivery', cost: 199, eta: '1-2 business days' },
+      items: [
+        {
+          product: seededProducts[1]._id,
+          seller: sTech._id,
+          sellerName: sTech.storeName,
+          name: seededProducts[1].name,
+          image: seededProducts[1].image,
+          price: seededProducts[1].price,
+          costPrice: seededProducts[1].costs.purchase,
+          qty: 1,
+          itemStatus: 'delivered',
+          trackingNumber: 'TRK-98214-PK',
+        },
+      ],
+      subtotal: 89500,
+      total: 89699,
+      paymentMethod: 'credit_card',
+      paymentStatus: 'paid',
+      status: 'delivered',
+      createdAt: new Date(Date.now() - 4 * 86400000),
+    },
+    {
+      orderNumber: 'ORD-1002',
+      seller: sFashion._id,
+      placedBy: 'customer',
+      contact: { email: 'bilal.customer@yahoo.com', phone: '+92 321 8877665' },
+      shippingAddress: { fullName: 'Bilal Siddiqui', street: 'Apartment 4B, Clifton Block 2', city: 'Karachi', state: 'Sindh', postalCode: '75600', country: 'Pakistan' },
+      shipping: { name: 'Standard Nationwide Delivery', cost: 0, eta: '3-5 business days' },
+      items: [
+        {
+          product: seededProducts[4]._id,
+          seller: sFashion._id,
+          sellerName: sFashion.storeName,
+          name: seededProducts[4].name,
+          image: seededProducts[4].image,
+          price: seededProducts[4].price,
+          costPrice: seededProducts[4].costs.purchase,
+          qty: 1,
+          itemStatus: 'shipped',
+          trackingNumber: 'TRK-77192-PK',
+        },
+      ],
+      subtotal: 14500,
+      total: 14500,
+      paymentMethod: 'cod',
+      paymentStatus: 'pending',
+      status: 'shipped',
+      createdAt: new Date(Date.now() - 2 * 86400000),
+    },
+    {
+      orderNumber: 'ORD-1003',
+      seller: sHome._id,
+      placedBy: 'admin',
+      placedByAdminName: 'Super Admin (Owner)',
+      contact: { email: 'tariq.home@gmail.com', phone: '+92 333 1122445' },
+      shippingAddress: { fullName: 'Tariq Mehmood', street: 'Sector F-7/2, House 15', city: 'Islamabad', state: 'Federal', postalCode: '44000', country: 'Pakistan' },
+      shipping: { name: 'Standard Nationwide Delivery', cost: 0, eta: '3-5 business days' },
+      items: [
+        {
+          product: seededProducts[7]._id,
+          seller: sHome._id,
+          sellerName: sHome.storeName,
+          name: seededProducts[7].name,
+          image: seededProducts[7].image,
+          price: seededProducts[7].price,
+          costPrice: seededProducts[7].costs.purchase,
+          qty: 1,
+          itemStatus: 'processing',
+        },
+      ],
+      subtotal: 28500,
+      total: 28500,
+      paymentMethod: 'cod',
+      paymentStatus: 'pending',
+      status: 'processing',
+      adminNotes: 'Order manually placed by Admin for corporate client',
+      createdAt: new Date(Date.now() - 1 * 86400000),
+    },
+    {
+      orderNumber: 'ORD-1004',
+      seller: sBeauty._id,
+      placedBy: 'customer',
+      contact: { email: 'ayesha.beauty@gmail.com', phone: '+92 312 3344556' },
+      shippingAddress: { fullName: 'Ayesha Raza', street: 'Gulberg III, Street 12', city: 'Lahore', state: 'Punjab', postalCode: '54660', country: 'Pakistan' },
+      shipping: { name: 'Amazon Prime Express Delivery', cost: 199, eta: '1-2 business days' },
+      items: [
+        {
+          product: seededProducts[10]._id,
+          seller: sBeauty._id,
+          sellerName: sBeauty.storeName,
+          name: seededProducts[10].name,
+          image: seededProducts[10].image,
+          price: seededProducts[10].price,
+          costPrice: seededProducts[10].costs.purchase,
+          qty: 1,
+          itemStatus: 'processing',
+        },
+      ],
+      subtotal: 42000,
+      total: 42199,
+      paymentMethod: 'credit_card',
+      paymentStatus: 'paid',
+      status: 'processing',
+      createdAt: new Date(),
+    },
+  ];
+  await Order.insertMany(sampleOrders);
+  console.log(`Seeded ${sampleOrders.length} multi-vendor orders`);
+
+  // 8. Support Chat Conversations between Sellers and Admin
+  await Conversation.deleteMany({});
+  await Message.deleteMany({});
+
+  const chat1 = new Conversation({
+    seller: sTech._id,
+    storeName: sTech.storeName,
+    sellerName: sTech.ownerName,
+    sellerEmail: sTech.email,
+    sellerPhone: sTech.phone,
+    subject: 'Bulk Inventory Approval for iPhone 15 Pro Max',
+    status: 'open',
+    priority: 'high',
+    lastMessage: 'Hello Admin, we just restocked 15 more units of iPhone 15 Pro Max. Please verify our inventory.',
+    lastSender: 'seller',
+    lastAt: new Date(Date.now() - 3600000),
+    unreadForAdmin: 1,
+    unreadForSeller: 0,
+  });
+  await chat1.save();
+
+  await Message.insertMany([
+    {
+      conversation: chat1._id,
+      seller: sTech._id,
+      sender: 'seller',
+      senderName: sTech.storeName,
+      text: 'Salam Admin team, we want to inquire about the weekly payout settlement schedule.',
+      createdAt: new Date(Date.now() - 7200000),
+    },
+    {
+      conversation: chat1._id,
+      seller: sTech._id,
+      sender: 'admin',
+      senderName: 'Sara Khan (Support Lead)',
+      text: 'Waleikum Assalam Hamza! Weekly vendor payouts are processed every Monday directly to your registered Meezan Bank account.',
+      createdAt: new Date(Date.now() - 5400000),
+    },
+    {
+      conversation: chat1._id,
+      seller: sTech._id,
+      sender: 'seller',
+      senderName: sTech.storeName,
+      text: 'Hello Admin, we just restocked 15 more units of iPhone 15 Pro Max. Please verify our inventory.',
+      createdAt: new Date(Date.now() - 3600000),
+    },
+  ]);
+
+  const chat2 = new Conversation({
+    seller: sFashion._id,
+    storeName: sFashion.storeName,
+    sellerName: sFashion.ownerName,
+    sellerEmail: sFashion.email,
+    sellerPhone: sFashion.phone,
+    subject: 'Winter Collection Promo & Flash Sale Participation',
+    status: 'open',
+    priority: 'normal',
+    lastMessage: 'Sure Ayesha, we have added your leather jackets to the Mega Flash Sale banner!',
+    lastSender: 'admin',
+    lastAt: new Date(Date.now() - 1800000),
+    unreadForAdmin: 0,
+    unreadForSeller: 1,
+  });
+  await chat2.save();
+
+  await Message.insertMany([
+    {
+      conversation: chat2._id,
+      seller: sFashion._id,
+      sender: 'seller',
+      senderName: sFashion.storeName,
+      text: 'Hi Admin, can our leather jackets be featured on the homepage 25% OFF banner for this weekend?',
+      createdAt: new Date(Date.now() - 3600000),
+    },
+    {
+      conversation: chat2._id,
+      seller: sFashion._id,
+      sender: 'admin',
+      senderName: 'Super Admin (Owner)',
+      text: 'Sure Ayesha, we have added your leather jackets to the Mega Flash Sale banner!',
+      createdAt: new Date(Date.now() - 1800000),
+    },
+  ]);
+  console.log('Seeded Seller-Admin support chat threads');
+
+  // 9. Site Content & Settings
+  const SITE_CONTENT = {
+    topbar: {
+      welcome: 'Welcome to Amazon Global Marketplace — Pakistan’s Premier Multi-Vendor Store',
+      promos: [
+        { icon: 'badgeCheck', text: '100% Genuine Verified Sellers' },
+        { icon: 'truck', text: 'Amazon Prime 1-2 Day Express Delivery' },
+        { icon: 'banknote', text: 'Cash on Delivery & Secure Cards' },
+        { icon: 'refresh', text: 'Easy 14-Day Hassle-Free Returns' },
+      ],
+    },
+    logo: { script: 'Amazon', name: 'MARKETPLACE', tagline: 'Earth’s Biggest Selection' },
+    hero: {
+      slides: [
+        {
+          a: 'Mega Electronics &',
+          b: 'Flagship Mobiles',
+          sub: 'Explore Top Verified Sellers with Prime Express Delivery across Pakistan',
+          badge: 'Up to 35% OFF',
+          imgs: [
+            'https://images.unsplash.com/photo-1695048133142-1a20484d2569?w=600&auto=format&fit=crop&q=80',
+            'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=600&auto=format&fit=crop&q=80',
+            'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80',
+            'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=600&auto=format&fit=crop&q=80',
+          ],
+        },
+        {
+          a: 'Urban Fashion &',
+          b: 'Winter Streetwear',
+          sub: 'Genuine Leather, Sneakers, Hoodies & Apparel from Top Verified Boutiques',
+          badge: 'New Season Deals',
+          imgs: [
+            'https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?w=600&auto=format&fit=crop&q=80',
+            'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=600&auto=format&fit=crop&q=80',
+            'https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=600&auto=format&fit=crop&q=80',
+          ],
+        },
+      ],
+      features: [
+        { icon: 'badgeCheck', l1: '100% Genuine', l2: 'Verified Sellers' },
+        { icon: 'truck', l1: 'Express Prime', l2: '1-2 Day Dispatch' },
+        { icon: 'shield', l1: 'Buyer Protection', l2: 'Money Back Guarantee' },
+        { icon: 'headset', l1: '24/7 Support', l2: 'Live Chat Support' },
+      ],
+      button: 'EXPLORE DEALS',
+    },
+    sections: {
+      categoriesTitle: 'BROWSE BY CATEGORIES',
+      featuredTitle: 'TOP DEALS & BEST SELLERS',
+      brandsTitle: 'POPULAR VERIFIED SELLERS & BRANDS',
+    },
+  };
+
   await setSetting('payments', {
     cod: { enabled: true },
-    easypaisa: { enabled: false, merchantId: '', storeId: '', apiKey: '' },
-    jazzcash: { enabled: false, merchantId: '', password: '', integritySalt: '' },
-    credit_card: { enabled: false, gateway: '', merchantId: '', apiKey: '', apiSecret: '' },
-    debit_card: { enabled: false, gateway: '', merchantId: '', apiKey: '', apiSecret: '' },
+    credit_card: { enabled: true },
+    debit_card: { enabled: true },
+    easypaisa: { enabled: true },
+    jazzcash: { enabled: true },
   });
-  await setSetting('store', { taxRate: 12, lowStockThreshold: 5 });
+  await setSetting('store', { taxRate: 5, lowStockThreshold: 5 });
   await setSetting('siteContent', SITE_CONTENT);
-  console.log('Seeded settings + site content');
 
-  // guest chat numbering starts at #1001
-  await Counter.updateOne({ _id: 'guest' }, { $setOnInsert: { seq: 1000 } }, { upsert: true });
+  await Counter.updateOne({ _id: 'order' }, { $setOnInsert: { seq: 1005 } }, { upsert: true });
 
-  // clean transactional data for a fresh start
-  await Promise.all([
-    Order.deleteMany({}),
-    Refund.deleteMany({}),
-    Expense.deleteMany({}),
-    Notification.deleteMany({}),
-    AuditLog.deleteMany({}),
-    StockHistory.deleteMany({}),
-    IncomingStock.deleteMany({}),
-  ]);
-  console.log('Cleared old orders/refunds/logs');
-
-  await mongoose.disconnect();
-  console.log('Done.');
+  console.log('Amazon Multi-Vendor Marketplace seed completed successfully!');
 }
 
-run().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+// If invoked directly from command line (node src/seed.js)
+if (process.argv[1]?.endsWith('seed.js')) {
+  let mongoUri = process.env.MONGO_URI;
+  if (!mongoUri || mongoUri.includes('<db_username>')) {
+    mongoUri = 'mongodb://127.0.0.1:27017/amazon_ecommerce';
+  }
+  mongoose
+    .connect(mongoUri)
+    .then(async () => {
+      await runSeed();
+      await mongoose.disconnect();
+      process.exit(0);
+    })
+    .catch(async (e) => {
+      console.warn('Seed connection error:', e.message);
+      process.exit(0);
+    });
+}

@@ -124,8 +124,23 @@ router.post('/', softUser, async (req, res) => {
       );
     }
 
-    notify(req.app, { type: 'order', title: 'New order received', body: `${order.orderNumber} — ${addr.fullName} (${addr.city}) — Rs.${order.total}`, link: `/admin/orders/${order._id}` });
+    notify(req.app, { type: 'order', title: 'New order received', body: `${order.orderNumber} — ${addr.fullName} (${addr.city}) — ₹${order.total}`, link: `/admin/orders/${order._id}` });
     req.app.get('io')?.to('admins').emit('order:new', { _id: order._id, orderNumber: order.orderNumber, total: order.total, name: addr.fullName, city: addr.city });
+
+    // Notify individual sellers who own items in this order
+    const sellerIds = [...new Set(items.map((i) => i.seller?.toString()).filter(Boolean))];
+    for (const sId of sellerIds) {
+      const sItems = items.filter((i) => i.seller?.toString() === sId);
+      notify(req.app, {
+        recipientType: 'seller',
+        sellerId: sId,
+        type: 'order',
+        title: `📦 New Order #${order.orderNumber}`,
+        body: `You received an order for ${sItems.length} item(s)! Customer: ${addr.fullName}`,
+        link: '/seller/orders',
+      });
+      req.app.get('io')?.to(`seller:${sId}`).emit('order:new', { _id: order._id, orderNumber: order.orderNumber, total: order.total, itemsCount: sItems.length });
+    }
 
     res.status(201).json(order);
   } catch (e) {
