@@ -87,27 +87,41 @@ export default function SellerDashboard() {
 
       {/* KPI Metric Cards */}
       <div className="seller-kpi-grid">
-        {/* Gross Revenue */}
+        {/* Available Wallet Balance */}
         <div className="seller-kpi-card revenue-card">
           <div className="kpi-header">
-            <span className="kpi-title">Gross Revenue (Total Sales)</span>
+            <span className="kpi-title">Available Wallet Balance</span>
             <span className="kpi-icon-wrap green"><Ic name="banknote" size={20} /></span>
           </div>
-          <div className="kpi-value">{money(stats?.grossRevenue)}</div>
+          <div className="kpi-value">{money(stats?.availableBalance || data?.seller?.wallet?.balance)}</div>
           <div className="kpi-footer text-green">
-            <span>↑ All-time gross product sales</span>
+            <Link to="/seller/wallet" style={{ color: 'inherit', textDecoration: 'none', fontWeight: 600 }}>
+              Withdraw / View Wallet →
+            </Link>
           </div>
         </div>
 
-        {/* Net Profit */}
+        {/* Processing Funds Locked */}
+        <div className="seller-kpi-card pending-card">
+          <div className="kpi-header">
+            <span className="kpi-title">In-Flight Processing Funds</span>
+            <span className="kpi-icon-wrap orange"><Ic name="lock" size={20} /></span>
+          </div>
+          <div className="kpi-value text-amber">{money(stats?.processingFund || data?.seller?.wallet?.processingFund)}</div>
+          <div className="kpi-footer text-orange">
+            <span>Locked for confirmed active orders</span>
+          </div>
+        </div>
+
+        {/* 20% Profit Earned */}
         <div className="seller-kpi-card profit-card">
           <div className="kpi-header">
-            <span className="kpi-title">Net Profit (Take Home)</span>
+            <span className="kpi-title">20% Profit Margins Earned</span>
             <span className="kpi-icon-wrap blue"><Ic name="sparkle" size={20} /></span>
           </div>
-          <div className="kpi-value">{money(stats?.netProfit)}</div>
+          <div className="kpi-value text-green">+{money(stats?.totalProfitEarned || data?.seller?.wallet?.totalProfitEarned)}</div>
           <div className="kpi-footer text-blue">
-            <span>After product cost & {data?.seller?.commissionRate || 10}% fee</span>
+            <span>Accumulated 20% order margins</span>
           </div>
         </div>
 
@@ -119,19 +133,7 @@ export default function SellerDashboard() {
           </div>
           <div className="kpi-value">{stats?.totalOrders || 0}</div>
           <div className="kpi-footer">
-            <span>{stats?.totalItemsSold || 0} total units sold</span>
-          </div>
-        </div>
-
-        {/* Pending Shipments */}
-        <div className="seller-kpi-card pending-card">
-          <div className="kpi-header">
-            <span className="kpi-title">Pending Fulfillment</span>
-            <span className="kpi-icon-wrap orange"><Ic name="truck" size={20} /></span>
-          </div>
-          <div className="kpi-value">{stats?.pendingOrders || 0}</div>
-          <div className="kpi-footer text-orange">
-            <span>{stats?.pendingOrders > 0 ? 'Requires your immediate packing/dispatch' : 'All orders fulfilled'}</span>
+            <span>{stats?.pendingOrders || 0} pending fulfillment</span>
           </div>
         </div>
       </div>
@@ -139,20 +141,20 @@ export default function SellerDashboard() {
       {/* Secondary Metrics Bar */}
       <div className="seller-secondary-metrics">
         <div className="sec-metric">
+          <span className="sec-lbl">Gross Store Sales</span>
+          <b className="sec-val">{money(stats?.grossRevenue)}</b>
+        </div>
+        <div className="sec-metric">
           <span className="sec-lbl">Active Products Listed</span>
           <b className="sec-val">{stats?.totalProducts || 0}</b>
         </div>
         <div className="sec-metric">
-          <span className="sec-lbl">Platform Commission ({data?.seller?.commissionRate || 10}%)</span>
-          <b className="sec-val text-red">{money(stats?.platformCommission)}</b>
-        </div>
-        <div className="sec-metric">
-          <span className="sec-lbl">Product Wholesale Cost</span>
-          <b className="sec-val">{money(stats?.totalCost)}</b>
-        </div>
-        <div className="sec-metric">
           <span className="sec-lbl">Customer Rating</span>
           <b className="sec-val text-yellow">⭐ {data?.seller?.rating || '4.9'} / 5.0</b>
+        </div>
+        <div className="sec-metric">
+          <span className="sec-lbl">Units Dispatched</span>
+          <b className="sec-val">{stats?.totalItemsSold || 0}</b>
         </div>
         <div className="sec-metric">
           <span className="sec-lbl">Customer Refunds</span>

@@ -55,8 +55,10 @@ const sellerSchema = new mongoose.Schema(
     lastLoginAt: Date,
     // Wallet system
     wallet: {
-      balance: { type: Number, default: 0 },           // available to withdraw
-      totalEarned: { type: Number, default: 0 },       // lifetime earnings
+      balance: { type: Number, default: 0 },           // available to withdraw (current balance)
+      processingFund: { type: Number, default: 0 },    // in-flight locked processing funds for confirmed orders
+      totalProfitEarned: { type: Number, default: 0 }, // 20% cumulative profits earned
+      totalEarned: { type: Number, default: 0 },       // lifetime earnings released
       totalDeposited: { type: Number, default: 0 },    // total deposited/credited
       pendingDeposit: { type: Number, default: 0 },    // pending deposit requests
       pendingWithdrawal: { type: Number, default: 0 }, // pending withdrawal requests

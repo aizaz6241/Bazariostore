@@ -373,11 +373,12 @@ export default function Sellers() {
         <table className="admin-table">
           <thead>
             <tr>
-              <th>Store & Owner</th>
-              <th>Login Email & Phone</th>
-              <th>Commission Fee</th>
+              <th>Store &amp; Owner</th>
+              <th>Login Email &amp; Phone</th>
+              <th>Commission</th>
               <th>Products</th>
               <th>Total Sales</th>
+              <th>Wallet &amp; Processing</th>
               <th>Rating</th>
               <th>Status</th>
               <th>Actions</th>
@@ -386,12 +387,12 @@ export default function Sellers() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan="8" className="text-center py-8 muted">Loading sellers directory...</td>
+                <td colSpan="9" className="text-center py-8 muted">Loading sellers directory...</td>
               </tr>
             )}
             {!loading && filtered.length === 0 && (
               <tr>
-                <td colSpan="8" className="text-center py-8 muted">No sellers found.</td>
+                <td colSpan="9" className="text-center py-8 muted">No sellers found.</td>
               </tr>
             )}
             {filtered.map((s) => (
@@ -414,6 +415,17 @@ export default function Sellers() {
                 </td>
                 <td><b>{s.productCount || 0}</b> items</td>
                 <td><b>{money(s.lifetimeSales)}</b></td>
+                <td>
+                  <div style={{ fontSize: 11.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <div><span className="muted">Avail:</span> <b style={{ color: '#0f172a' }}>{money(s.wallet?.balance || 0)}</b></div>
+                    {s.wallet?.processingFund > 0 && (
+                      <div><span className="muted">Locked:</span> <b style={{ color: '#d97706' }}>{money(s.wallet?.processingFund)}</b></div>
+                    )}
+                    {s.wallet?.totalProfitEarned > 0 && (
+                      <div><span className="muted">Profit:</span> <b style={{ color: '#16a34a' }}>+{money(s.wallet?.totalProfitEarned)}</b></div>
+                    )}
+                  </div>
+                </td>
                 <td>⭐ {s.rating || '4.8'}</td>
                 <td>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>

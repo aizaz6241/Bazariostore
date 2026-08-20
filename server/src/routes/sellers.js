@@ -8,6 +8,8 @@ import Refund from '../models/Refund.js';
 import Category from '../models/Category.js';
 import SellerCoupon from '../models/SellerCoupon.js';
 import SellerShippingMethod from '../models/SellerShipping.js';
+import Withdrawal from '../models/Withdrawal.js';
+import { Conversation, Message } from '../models/Chat.js';
 import { authAdmin, authSeller, authSellerOrAdmin } from '../middleware/auth.js';
 import { nextSeq } from '../models/System.js';
 import { notify } from '../utils/notify.js';
@@ -234,6 +236,7 @@ router.get('/dashboard', authSeller, async (req, res) => {
         commissionRate: seller.commissionRate,
         rating: seller.rating,
         status: seller.status,
+        wallet: seller.wallet || {},
       },
       stats: {
         grossRevenue,
@@ -246,6 +249,10 @@ router.get('/dashboard', authSeller, async (req, res) => {
         totalProducts,
         lowStockCount: lowStockProducts.length,
         refundCount,
+        availableBalance: seller.wallet?.balance || 0,
+        processingFund: seller.wallet?.processingFund || 0,
+        totalProfitEarned: seller.wallet?.totalProfitEarned || 0,
+        totalEarned: seller.wallet?.totalEarned || 0,
       },
       salesByDay,
       topProducts,
@@ -356,6 +363,219 @@ router.delete('/products/:id', authSeller, async (req, res) => {
 // 4. SELLER ORDER MANAGEMENT
 // ----------------------------------------------------
 
+// ----------------------------------------------------
+// FINANCIAL SETTLEMENT HELPERS (PROCESSING FUND & 20% PROFIT)
+// ----------------------------------------------------
+
+/**
+ * 1. Lock Order Processing Fund:
+ * When seller or admin confirms an order, deducts item total amount from available balance
+ * and moves it into seller.wallet.processingFund.
+ */
+export async function lockSellerOrderFund(app, sellerId, order) {
+  const seller = await Seller.findById(sellerId);
+  if (!seller) return { totalToLock: 0, itemsLocked: 0 };
+
+  seller.wallet = seller.wallet || {};
+  let totalToLock = 0;
+  let itemsLocked = 0;
+
+  order.items.forEach((it) => {
+    if (it.seller && it.seller.toString() === sellerId.toString()) {
+      if (!it.processingLocked && !it.payoutSettled) {
+        const itemVal = (it.price || 0) * (it.qty || 1);
+        it.processingLocked = true;
+        it.lockedAmount = itemVal;
+        it.profitRate = 20; // 20% profit margin
+        it.profitAmount = Number((itemVal * 0.20).toFixed(2));
+        totalToLock += itemVal;
+        itemsLocked++;
+      }
+    }
+  });
+
+  if (totalToLock > 0) {
+    // Deduct from available balance & add to processing fund
+    seller.wallet.balance = (seller.wallet.balance || 0) - totalToLock;
+    seller.wallet.processingFund = (seller.wallet.processingFund || 0) + totalToLock;
+    await seller.save();
+
+    // Create ledger transaction
+    await Withdrawal.create({
+      type: 'order_processing_lock',
+      seller: seller._id,
+      storeName: seller.storeName,
+      amount: totalToLock,
+      principalAmount: totalToLock,
+      profitAmount: Number((totalToLock * 0.20).toFixed(2)),
+      profitRate: 20,
+      order: order._id,
+      orderNumber: order.orderNumber,
+      status: 'completed',
+      balanceAfter: seller.wallet.balance,
+      processingFundAfter: seller.wallet.processingFund,
+      adminNote: `Order #${order.orderNumber} Confirmed — $${totalToLock.toFixed(2)} moved to Processing Fund (20% Profit on Delivery: +$${(totalToLock * 0.20).toFixed(2)})`,
+      processedAt: new Date(),
+    });
+
+    if (app) {
+      notify(app, {
+        recipientType: 'seller',
+        sellerId: seller._id.toString(),
+        type: 'order',
+        title: `⚡ Order #${order.orderNumber} Confirmed`,
+        body: `$${totalToLock.toFixed(2)} moved to Processing Fund. You will earn +$${(totalToLock * 0.20).toFixed(2)} (20% profit) upon delivery! Total return: $${(totalToLock * 1.20).toFixed(2)}.`,
+        link: '/seller/orders',
+      });
+
+      app.get('io')?.to(`seller:${seller._id}`).emit('wallet:update', {
+        balance: seller.wallet.balance,
+        processingFund: seller.wallet.processingFund,
+      });
+    }
+  }
+
+  return { totalToLock, itemsLocked };
+}
+
+/**
+ * 2. Release Delivered Order Fund (Principal + 20% Profit):
+ * When order is delivered, releases locked processing fund + 20% profit directly into available balance!
+ */
+export async function releaseSellerOrderDelivered(app, sellerId, order) {
+  const seller = await Seller.findById(sellerId);
+  if (!seller) return { totalPrincipal: 0, totalProfit: 0, totalPayout: 0, settledItems: 0 };
+
+  seller.wallet = seller.wallet || {};
+  let totalPrincipal = 0;
+  let totalProfit = 0;
+  let totalPayout = 0;
+  let settledItems = 0;
+
+  order.items.forEach((it) => {
+    if (it.seller && it.seller.toString() === sellerId.toString()) {
+      if (!it.payoutSettled) {
+        const itemVal = it.lockedAmount || (it.price || 0) * (it.qty || 1);
+        const itemProfit = it.profitAmount || Number((itemVal * 0.20).toFixed(2));
+        const itemReturn = itemVal + itemProfit;
+
+        it.payoutSettled = true;
+        it.settledAt = new Date();
+        it.lockedAmount = itemVal;
+        it.profitAmount = itemProfit;
+
+        totalPrincipal += itemVal;
+        totalProfit += itemProfit;
+        totalPayout += itemReturn;
+        settledItems++;
+      }
+    }
+  });
+
+  if (totalPayout > 0) {
+    // Release from processing fund
+    seller.wallet.processingFund = Math.max(0, (seller.wallet.processingFund || 0) - totalPrincipal);
+    // Credit full payout ($100 principal + $20 profit = $120) to available balance
+    seller.wallet.balance = (seller.wallet.balance || 0) + totalPayout;
+    seller.wallet.totalProfitEarned = (seller.wallet.totalProfitEarned || 0) + totalProfit;
+    seller.wallet.totalEarned = (seller.wallet.totalEarned || 0) + totalPayout;
+    await seller.save();
+
+    // Create ledger transaction
+    await Withdrawal.create({
+      type: 'order_delivered_release',
+      seller: seller._id,
+      storeName: seller.storeName,
+      amount: totalPayout,
+      principalAmount: totalPrincipal,
+      profitAmount: totalProfit,
+      profitRate: 20,
+      order: order._id,
+      orderNumber: order.orderNumber,
+      status: 'completed',
+      balanceAfter: seller.wallet.balance,
+      processingFundAfter: seller.wallet.processingFund,
+      adminNote: `Order #${order.orderNumber} Delivered — $${totalPrincipal.toFixed(2)} Processing Fund released + $${totalProfit.toFixed(2)} Profit (20%) credited! Total: +$${totalPayout.toFixed(2)}`,
+      processedAt: new Date(),
+    });
+
+    if (app) {
+      notify(app, {
+        recipientType: 'seller',
+        sellerId: seller._id.toString(),
+        type: 'order',
+        title: `🎉 Order #${order.orderNumber} Delivered & Settled!`,
+        body: `+$${totalPayout.toFixed(2)} credited to your wallet! ($${totalPrincipal.toFixed(2)} processing release + $${totalProfit.toFixed(2)} 20% profit).`,
+        link: '/seller/wallet',
+      });
+
+      app.get('io')?.to(`seller:${seller._id}`).emit('wallet:update', {
+        balance: seller.wallet.balance,
+        processingFund: seller.wallet.processingFund,
+        totalProfitEarned: seller.wallet.totalProfitEarned,
+      });
+    }
+  }
+
+  return { totalPrincipal, totalProfit, totalPayout, settledItems };
+}
+
+/**
+ * 3. Release Cancelled Order Fund:
+ * Returns locked processing fund back to available balance without profit/loss.
+ */
+export async function releaseSellerOrderCancelled(app, sellerId, order) {
+  const seller = await Seller.findById(sellerId);
+  if (!seller) return;
+
+  seller.wallet = seller.wallet || {};
+  let totalToRefund = 0;
+
+  order.items.forEach((it) => {
+    if (it.seller && it.seller.toString() === sellerId.toString()) {
+      if (it.processingLocked && !it.payoutSettled) {
+        totalToRefund += it.lockedAmount || (it.price || 0) * (it.qty || 1);
+        it.processingLocked = false;
+        it.lockedAmount = 0;
+        it.profitAmount = 0;
+      }
+    }
+  });
+
+  if (totalToRefund > 0) {
+    seller.wallet.processingFund = Math.max(0, (seller.wallet.processingFund || 0) - totalToRefund);
+    seller.wallet.balance = (seller.wallet.balance || 0) + totalToRefund;
+    await seller.save();
+
+    await Withdrawal.create({
+      type: 'order_cancelled_release',
+      seller: seller._id,
+      storeName: seller.storeName,
+      amount: totalToRefund,
+      principalAmount: totalToRefund,
+      profitAmount: 0,
+      order: order._id,
+      orderNumber: order.orderNumber,
+      status: 'completed',
+      balanceAfter: seller.wallet.balance,
+      processingFundAfter: seller.wallet.processingFund,
+      adminNote: `Order #${order.orderNumber} Cancelled — $${totalToRefund.toFixed(2)} returned to Available Balance from Processing Fund`,
+      processedAt: new Date(),
+    });
+
+    if (app) {
+      app.get('io')?.to(`seller:${seller._id}`).emit('wallet:update', {
+        balance: seller.wallet.balance,
+        processingFund: seller.wallet.processingFund,
+      });
+    }
+  }
+}
+
+// ----------------------------------------------------
+// 4. SELLER ORDER MANAGEMENT
+// ----------------------------------------------------
+
 // GET /api/sellers/orders
 router.get('/orders', authSeller, async (req, res) => {
   try {
@@ -367,14 +587,61 @@ router.get('/orders', authSeller, async (req, res) => {
     const formatted = orders.map((ord) => {
       const sellerItems = ord.items.filter((it) => it.seller && it.seller.toString() === req.seller.id.toString());
       const sellerTotal = sellerItems.reduce((acc, it) => acc + (it.price || 0) * (it.qty || 1), 0);
+      const sellerProfit = Number((sellerTotal * 0.20).toFixed(2));
+      const sellerReturn = Number((sellerTotal * 1.20).toFixed(2));
+      const isLocked = sellerItems.some((it) => it.processingLocked);
+      const isSettled = sellerItems.every((it) => it.payoutSettled);
+
       return {
         ...ord.toObject(),
         sellerItems,
         sellerTotal,
+        sellerProfit,
+        sellerReturn,
+        isLocked,
+        isSettled,
       };
     });
 
     res.json(formatted);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/sellers/orders/:id/confirm (Dedicated 1-Click Order Confirm Action)
+router.post('/orders/:id/confirm', authSeller, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+
+    let updatedAny = false;
+    order.items.forEach((it) => {
+      if (it.seller && it.seller.toString() === req.seller.id.toString()) {
+        it.itemStatus = 'confirmed';
+        updatedAny = true;
+      }
+    });
+
+    if (!updatedAny) return res.status(403).json({ message: 'No items belonging to you found in this order' });
+
+    // Lock processing funds
+    await lockSellerOrderFund(req.app, req.seller.id, order);
+
+    const allStatuses = order.items.map((it) => it.itemStatus || order.status);
+    if (allStatuses.every((s) => s === 'confirmed')) {
+      order.status = 'confirmed';
+    }
+
+    order.statusHistory.push({
+      status: 'confirmed',
+      note: `Confirmed by seller (${req.seller.storeName}) — Funds moved to Processing`,
+      at: new Date(),
+      by: req.seller.storeName,
+    });
+
+    await order.save();
+    res.json({ ok: true, order });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -397,6 +664,15 @@ router.put('/orders/:id/status', authSeller, async (req, res) => {
     });
 
     if (!updatedAny) return res.status(403).json({ message: 'No items belonging to you found in this order' });
+
+    // Financial settlement triggers
+    if (status === 'confirmed' || status === 'processing') {
+      await lockSellerOrderFund(req.app, req.seller.id, order);
+    } else if (status === 'delivered') {
+      await releaseSellerOrderDelivered(req.app, req.seller.id, order);
+    } else if (status === 'cancelled') {
+      await releaseSellerOrderCancelled(req.app, req.seller.id, order);
+    }
 
     // If all items share same status, update parent order status
     const allStatuses = order.items.map((it) => it.itemStatus || order.status);
@@ -673,8 +949,6 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
 // ─────────────────────────────────────────────────────────────
 // WALLET & WITHDRAWAL SYSTEM
 // ─────────────────────────────────────────────────────────────
-import Withdrawal from '../models/Withdrawal.js';
-import { Conversation, Message } from '../models/Chat.js';
 
 // Helper: auto-send system chat message to admin for wallet requests
 async function sendWalletChatNotification(app, seller, reqDoc) {
@@ -755,11 +1029,14 @@ router.get('/wallet', authSeller, async (req, res) => {
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
     const w = seller.wallet || {};
-    const requests = await Withdrawal.find({ seller: seller._id }).sort({ createdAt: -1 }).limit(50);
+    const requests = await Withdrawal.find({ seller: seller._id }).sort({ createdAt: -1 }).limit(100);
 
     res.json({
       wallet: {
         balance: w.balance || 0,
+        processingFund: w.processingFund || 0,
+        totalProfitEarned: w.totalProfitEarned || 0,
+        totalEarned: w.totalEarned || 0,
         totalDeposited: w.totalDeposited || 0,
         totalWithdrawn: w.totalWithdrawn || 0,
         pendingDeposit: w.pendingDeposit || 0,

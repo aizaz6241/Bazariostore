@@ -5373,3 +5373,243 @@ textarea:focus {
   }
 }
 
+/* =========================================================================
+   SELLER FINANCIAL PROCESSING FUND & 20% PROFIT SETTLEMENT STYLES
+   ========================================================================= */
+
+/* Financial Pill in Orders Table */
+.seller-order-financial-pill {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 135px;
+}
+.sof-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+}
+.sof-lbl {
+  color: #64748b;
+  font-weight: 500;
+}
+.sof-row.text-profit b {
+  color: #16a34a;
+  font-weight: 700;
+}
+.sof-row.text-return b {
+  color: #2563eb;
+  font-weight: 800;
+  font-size: 12px;
+}
+
+/* 1-Click Quick Confirm Button */
+.btn-quick-confirm {
+  background: #2563eb;
+  color: #ffffff;
+  border: none;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.btn-quick-confirm:hover {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
+.btn-quick-confirm:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Processing & Settled Tags */
+.processing-fund-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  color: #b45309;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  padding: 2px 6px;
+  border-radius: 6px;
+  margin-top: 3px;
+}
+.settled-fund-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  color: #166534;
+  background: #dcfce7;
+  border: 1px solid #bbf7d0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  margin-top: 3px;
+}
+
+/* Modal Financial Settlement Preview */
+.order-settlement-preview-box {
+  background: #f8fafc;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.osp-head {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 10px;
+}
+.osp-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  background: #ffffff;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+.osp-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.osp-item small {
+  font-size: 10.5px;
+  color: #64748b;
+  font-weight: 600;
+}
+.osp-item b {
+  font-size: 13px;
+  color: #0f172a;
+}
+.osp-note {
+  margin: 10px 0 0 0;
+  font-size: 11.5px;
+  color: #475569;
+  line-height: 1.4;
+}
+
+/* Wallet 4-KPI Grid */
+.seller-wallet-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.sw-kpi-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px 18px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+.sw-kpi-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.sw-kpi-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.sw-kpi-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sw-kpi-val {
+  font-size: 24px;
+  font-weight: 900;
+  color: #0f172a;
+  letter-spacing: -0.5px;
+}
+.sw-kpi-val.text-amber {
+  color: #d97706;
+}
+.sw-kpi-val.text-green {
+  color: #16a34a;
+}
+.sw-kpi-sub {
+  display: block;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+/* Ledger Filter Pills */
+.ledger-filter-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.lfp-btn {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.lfp-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+.lfp-btn.active {
+  background: #0f172a;
+  color: #ffffff;
+  border-color: #0f172a;
+}
+
+.ledger-type-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .seller-wallet-kpi-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 500px) {
+  .seller-wallet-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+  .osp-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+

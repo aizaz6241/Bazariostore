@@ -1,20 +1,30 @@
 import { useEffect, useState } from 'react';
-import { sapi, fmtDay } from '../api.js';
+import { sapi, money, fmtDay, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
 
-const STATUS_COLOR = { pending: 'chip-orange', approved: 'chip-green', rejected: 'chip-red' };
-const TYPE_ICON = { deposit: '💰', withdrawal: '💸' };
+const STATUS_COLOR = {
+  pending: 'chip-orange',
+  approved: 'chip-green',
+  rejected: 'chip-red',
+  completed: 'chip-green',
+};
 
-function money(n) {
-  return `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+const TYPE_BADGE = {
+  deposit: { label: 'Deposit', color: '#16a34a', bg: '#dcfce7', icon: '💰' },
+  withdrawal: { label: 'Withdrawal', color: '#dc2626', bg: '#fee2e2', icon: '💸' },
+  order_processing_lock: { label: 'Order Processing Lock', color: '#d97706', bg: '#fef3c7', icon: '🔒' },
+  order_delivered_release: { label: 'Delivered Payout (+20% Profit)', color: '#2563eb', bg: '#dbeafe', icon: '🎉' },
+  order_cancelled_release: { label: 'Cancelled Order Refund', color: '#64748b', bg: '#f1f5f9', icon: '↩️' },
+  adjustment: { label: 'Admin Adjustment', color: '#7c3aed', bg: '#ede9fe', icon: '⚙️' },
+};
 
 export default function SellerWallet() {
   const [wallet, setWallet] = useState(null);
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('deposit'); // 'deposit' | 'withdraw'
-  const [method, setMethod] = useState('upi');
+  const [tab, setTab] = useState('ledger'); // 'ledger' | 'deposit' | 'withdraw'
+  const [ledgerFilter, setLedgerFilter] = useState('all'); // 'all' | 'orders' | 'deposits' | 'withdrawals'
+  const [method, setMethod] = useState('bank');
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -23,7 +33,12 @@ export default function SellerWallet() {
   const [depForm, setDepForm] = useState({ amount: '', depositRef: '', depositNote: '' });
   // Withdrawal form
   const [wdForm, setWdForm] = useState({
-    amount: '', upiId: '', accountTitle: '', accountNumber: '', bankName: '', ifscCode: '',
+    amount: '',
+    upiId: '',
+    accountTitle: '',
+    accountNumber: '',
+    bankName: '',
+    ifscCode: '',
   });
 
   const load = () => {
@@ -36,22 +51,25 @@ export default function SellerWallet() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   const setDep = (k) => (e) => setDepForm((f) => ({ ...f, [k]: e.target.value }));
   const setWd = (k) => (e) => setWdForm((f) => ({ ...f, [k]: e.target.value }));
 
   const handleDeposit = async (e) => {
     e.preventDefault();
-    setErr(''); setMsg('');
-    if (!depForm.amount || Number(depForm.amount) < 1) return setErr('Amount enter karein (minimum ₹1)');
+    setErr('');
+    setMsg('');
+    if (!depForm.amount || Number(depForm.amount) < 1) return setErr('Please enter an amount (minimum $1)');
     setSubmitting(true);
     try {
       await sapi('/sellers/wallet/deposit', {
         method: 'POST',
         body: { amount: Number(depForm.amount), depositRef: depForm.depositRef, depositNote: depForm.depositNote },
       });
-      setMsg('✅ Deposit request submit ho gayi! Admin se chat mein bhi notification gaya hai. Approval ke baad wallet mein add ho jaayega.');
+      setMsg('✅ Deposit request submitted successfully! Funds will be credited after admin verification.');
       setDepForm({ amount: '', depositRef: '', depositNote: '' });
       load();
     } catch (e) {
@@ -63,19 +81,19 @@ export default function SellerWallet() {
 
   const handleWithdraw = async (e) => {
     e.preventDefault();
-    setErr(''); setMsg('');
+    setErr('');
+    setMsg('');
     const amt = Number(wdForm.amount);
-    if (!amt || amt < 1) return setErr('Amount enter karein (minimum ₹1)');
+    if (!amt || amt < 1) return setErr('Please enter an amount (minimum $1)');
     if (amt > (wallet?.balance || 0)) return setErr(`Insufficient balance. Available: ${money(wallet?.balance)}`);
-    if (method === 'upi' && !wdForm.upiId) return setErr('UPI ID required hai');
-    if (method === 'bank' && (!wdForm.accountNumber || !wdForm.bankName || !wdForm.ifscCode)) return setErr('Bank details incomplete hain');
+    if (method === 'bank' && (!wdForm.accountNumber || !wdForm.bankName)) return setErr('Bank details are incomplete');
     setSubmitting(true);
     try {
       await sapi('/sellers/wallet/withdraw', {
         method: 'POST',
         body: { amount: amt, method, ...wdForm },
       });
-      setMsg('✅ Withdrawal request submit ho gayi! Admin approve karne ke baad 2-3 business days mein process hogi. Chat mein bhi notification gaya hai.');
+      setMsg('✅ Withdrawal request submitted! Admin will process within 2-3 business days.');
       setWdForm({ amount: '', upiId: '', accountTitle: '', accountNumber: '', bankName: '', ifscCode: '' });
       load();
     } catch (e) {
@@ -85,258 +103,341 @@ export default function SellerWallet() {
     }
   };
 
-  if (loading) return <div className="seller-loading">Loading wallet...</div>;
+  if (loading) return <div className="seller-loading">Loading wallet &amp; financial ledger...</div>;
 
   const bal = wallet?.balance || 0;
+  const processingFund = wallet?.processingFund || 0;
+  const totalProfitEarned = wallet?.totalProfitEarned || 0;
+  const totalEarned = wallet?.totalEarned || 0;
   const deposited = wallet?.totalDeposited || 0;
   const withdrawn = wallet?.totalWithdrawn || 0;
-  const pendDep = wallet?.pendingDeposit || 0;
-  const pendWd = wallet?.pendingWithdrawal || 0;
 
-  const depositReqs = requests.filter((r) => r.type === 'deposit');
-  const withdrawReqs = requests.filter((r) => r.type === 'withdrawal');
+  const filteredLedger = requests.filter((r) => {
+    if (ledgerFilter === 'all') return true;
+    if (ledgerFilter === 'orders') return r.type.startsWith('order_');
+    if (ledgerFilter === 'deposits') return r.type === 'deposit';
+    if (ledgerFilter === 'withdrawals') return r.type === 'withdrawal';
+    return true;
+  });
 
   return (
     <div className="seller-page">
       <div className="seller-page-header">
         <div>
-          <h2>💼 My Wallet</h2>
-          <p>Wallet mein paise add karein ya withdraw karein. Dono requests admin se approve hoti hain.</p>
+          <h2>💼 Merchant Wallet &amp; Financial Ledger</h2>
+          <p>Manage your available balance, in-flight processing funds, and 20% order profit earnings.</p>
         </div>
       </div>
 
       {msg && <div className="alert-success mb-3">{msg}</div>}
       {err && <div className="alert-error mb-3">⚠️ {err}</div>}
 
-      {/* Balance Cards */}
-      <div className="wallet-grid">
-        <div className="wallet-card wallet-main">
-          <div className="wallet-icon"><Ic name="banknote" size={28} /></div>
-          <div>
-            <div className="wallet-amount">{money(bal)}</div>
-            <div className="wallet-label">Available Balance</div>
-            <div className="muted-sm">Withdraw karne ke liye available</div>
+      {/* 4 Core Financial KPI Cards */}
+      <div className="seller-wallet-kpi-grid">
+        {/* 1. Available Balance */}
+        <div className="sw-kpi-card card-available">
+          <div className="sw-kpi-head">
+            <span className="sw-kpi-title">Available Balance</span>
+            <div className="sw-kpi-icon"><Ic name="banknote" size={22} /></div>
           </div>
+          <div className="sw-kpi-val">{money(bal)}</div>
+          <small className="sw-kpi-sub">Ready for immediate withdrawal</small>
         </div>
-        <div className="wallet-card">
-          <div className="wallet-icon" style={{ color: '#059669' }}><Ic name="tag" size={22} /></div>
-          <div>
-            <div className="wallet-amount-sm">{money(deposited)}</div>
-            <div className="wallet-label">Total Deposited</div>
+
+        {/* 2. Processing Funds (In-Flight) */}
+        <div className="sw-kpi-card card-processing">
+          <div className="sw-kpi-head">
+            <span className="sw-kpi-title">Processing Funds</span>
+            <div className="sw-kpi-icon" style={{ color: '#d97706', background: '#fef3c7' }}><Ic name="lock" size={20} /></div>
           </div>
+          <div className="sw-kpi-val text-amber">{money(processingFund)}</div>
+          <small className="sw-kpi-sub">Locked for active confirmed orders</small>
         </div>
-        <div className="wallet-card">
-          <div className="wallet-icon" style={{ color: '#7c3aed' }}><Ic name="check" size={22} /></div>
-          <div>
-            <div className="wallet-amount-sm">{money(withdrawn)}</div>
-            <div className="wallet-label">Total Withdrawn</div>
+
+        {/* 3. 20% Profit Earned */}
+        <div className="sw-kpi-card card-profit">
+          <div className="sw-kpi-head">
+            <span className="sw-kpi-title">20% Profit Earned</span>
+            <div className="sw-kpi-icon" style={{ color: '#16a34a', background: '#dcfce7' }}><Ic name="tag" size={20} /></div>
           </div>
+          <div className="sw-kpi-val text-green">+{money(totalProfitEarned)}</div>
+          <small className="sw-kpi-sub">Net profit margins accumulated</small>
         </div>
-        <div className="wallet-card">
-          <div className="wallet-icon" style={{ color: '#d97706' }}><Ic name="clock" size={22} /></div>
-          <div>
-            <div className="wallet-amount-sm" style={{ fontSize: 16 }}>
-              {pendDep > 0 && <div className="muted-sm">Dep: {money(pendDep)}</div>}
-              {pendWd > 0 && <div className="muted-sm">Wd: {money(pendWd)}</div>}
-              {pendDep === 0 && pendWd === 0 && <span>—</span>}
-            </div>
-            <div className="wallet-label">Pending</div>
+
+        {/* 4. Total Lifetime Earnings Released */}
+        <div className="sw-kpi-card card-total">
+          <div className="sw-kpi-head">
+            <span className="sw-kpi-title">Total Payout Volume</span>
+            <div className="sw-kpi-icon" style={{ color: '#2563eb', background: '#dbeafe' }}><Ic name="checkCircle" size={20} /></div>
           </div>
+          <div className="sw-kpi-val">{money(totalEarned)}</div>
+          <small className="sw-kpi-sub">Lifetime principal + profit released</small>
         </div>
       </div>
 
-      {/* Action Tabs */}
+      {/* Action Navigation Tabs */}
       <div className="wallet-action-tabs">
+        <button
+          className={`wallet-action-tab ${tab === 'ledger' ? 'active' : ''}`}
+          onClick={() => { setTab('ledger'); setMsg(''); setErr(''); }}
+        >
+          📊 Financial Ledger &amp; Payouts
+        </button>
         <button
           className={`wallet-action-tab ${tab === 'deposit' ? 'active' : ''}`}
           onClick={() => { setTab('deposit'); setMsg(''); setErr(''); }}
         >
-          💰 Deposit Request
+          💰 Deposit Funds
         </button>
         <button
           className={`wallet-action-tab ${tab === 'withdraw' ? 'active' : ''}`}
           onClick={() => { setTab('withdraw'); setMsg(''); setErr(''); }}
         >
-          💸 Withdrawal Request
+          💸 Withdraw Funds
         </button>
       </div>
 
-      {/* DEPOSIT FORM */}
+      {/* ─────────────────────────────────────────────────────────────
+          TAB 1: FINANCIAL LEDGER & TRANSACTION HISTORY
+          ───────────────────────────────────────────────────────────── */}
+      {tab === 'ledger' && (
+        <div className="seller-card">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>📜 Financial Transaction Ledger</h3>
+              <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#64748b' }}>
+                Complete audit trail of Order Processing locks, 20% Profit releases, Deposits, and Withdrawals.
+              </p>
+            </div>
+
+            {/* Filter Pills */}
+            <div className="ledger-filter-pills">
+              <button
+                type="button"
+                className={`lfp-btn ${ledgerFilter === 'all' ? 'active' : ''}`}
+                onClick={() => setLedgerFilter('all')}
+              >
+                All ({requests.length})
+              </button>
+              <button
+                type="button"
+                className={`lfp-btn ${ledgerFilter === 'orders' ? 'active' : ''}`}
+                onClick={() => setLedgerFilter('orders')}
+              >
+                Order Settlements ({requests.filter((r) => r.type.startsWith('order_')).length})
+              </button>
+              <button
+                type="button"
+                className={`lfp-btn ${ledgerFilter === 'deposits' ? 'active' : ''}`}
+                onClick={() => setLedgerFilter('deposits')}
+              >
+                Deposits ({requests.filter((r) => r.type === 'deposit').length})
+              </button>
+              <button
+                type="button"
+                className={`lfp-btn ${ledgerFilter === 'withdrawals' ? 'active' : ''}`}
+                onClick={() => setLedgerFilter('withdrawals')}
+              >
+                Withdrawals ({requests.filter((r) => r.type === 'withdrawal').length})
+              </button>
+            </div>
+          </div>
+
+          <div className="seller-table-wrap">
+            <table className="seller-table">
+              <thead>
+                <tr>
+                  <th>Date &amp; Time</th>
+                  <th>Transaction Type</th>
+                  <th>Order / Ref</th>
+                  <th>Principal</th>
+                  <th>+20% Profit</th>
+                  <th>Total Amount</th>
+                  <th>Balance After</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredLedger.length === 0 && (
+                  <tr>
+                    <td colSpan="8" className="text-center py-8 muted">No transactions found matching this filter.</td>
+                  </tr>
+                )}
+                {filteredLedger.map((r) => {
+                  const badge = TYPE_BADGE[r.type] || { label: r.type, color: '#64748b', bg: '#f1f5f9', icon: '📄' };
+                  const isLock = r.type === 'order_processing_lock';
+                  const isDelivered = r.type === 'order_delivered_release';
+                  const isDeposit = r.type === 'deposit';
+                  const isWithdrawal = r.type === 'withdrawal';
+
+                  return (
+                    <tr key={r._id}>
+                      <td>
+                        <span style={{ fontSize: 12, fontWeight: 600 }}>{fmtDate(r.createdAt || r.processedAt)}</span>
+                      </td>
+                      <td>
+                        <span
+                          className="ledger-type-chip"
+                          style={{ color: badge.color, background: badge.bg, border: `1px solid ${badge.color}30` }}
+                        >
+                          {badge.icon} {badge.label}
+                        </span>
+                      </td>
+                      <td>
+                        {r.orderNumber ? (
+                          <b>#{r.orderNumber}</b>
+                        ) : r.depositRef ? (
+                          <span className="muted-sm">Ref: {r.depositRef}</span>
+                        ) : (
+                          <span className="muted-sm">—</span>
+                        )}
+                      </td>
+                      <td>
+                        {r.principalAmount ? (
+                          <span>{money(r.principalAmount)}</span>
+                        ) : (
+                          <span className="muted-sm">—</span>
+                        )}
+                      </td>
+                      <td>
+                        {r.profitAmount > 0 ? (
+                          <b style={{ color: '#16a34a' }}>+{money(r.profitAmount)}</b>
+                        ) : (
+                          <span className="muted-sm">—</span>
+                        )}
+                      </td>
+                      <td>
+                        <b
+                          style={{
+                            fontSize: 14,
+                            color: isLock || isWithdrawal ? '#dc2626' : '#16a34a',
+                          }}
+                        >
+                          {isLock || isWithdrawal ? '-' : '+'}{money(r.amount)}
+                        </b>
+                      </td>
+                      <td>
+                        {r.balanceAfter !== null && r.balanceAfter !== undefined ? (
+                          <b style={{ color: '#0f172a' }}>{money(r.balanceAfter)}</b>
+                        ) : (
+                          <span className="muted-sm">—</span>
+                        )}
+                      </td>
+                      <td>
+                        <span className={`status-chip ${STATUS_COLOR[r.status] || ''}`}>
+                          {r.status?.toUpperCase()}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          TAB 2: DEPOSIT FUNDS
+          ───────────────────────────────────────────────────────────── */}
       {tab === 'deposit' && (
         <div className="card form-card mb-4">
-          <h3>💰 Deposit Request</h3>
+          <h3>💰 Add Funds to Merchant Wallet</h3>
           <p className="muted-sm mb-3">
-            Wallet mein paise add karne ke liye request karein. Admin approve karega phir balance mein add ho jaayega.
-            <br/>Aapki request admin ke chat mein <b>automatically</b> notification ke taur par bhi jayegi.
+            Submit a deposit request to add funds into your Available Balance.
           </p>
           <form onSubmit={handleDeposit} className="form-grid">
             <div className="field field-full">
-              <label>Amount (₹) *</label>
+              <label>Deposit Amount ($) *</label>
               <input
                 type="number"
                 min={1}
+                step="any"
                 value={depForm.amount}
                 onChange={setDep('amount')}
-                placeholder="e.g. 5000"
+                placeholder="e.g. 500"
+                required
               />
             </div>
             <div className="field field-full">
-              <label>Payment Reference / UTR Number <span className="muted-sm">(optional but recommended)</span></label>
+              <label>Payment Reference / Transaction ID <span className="muted-sm">(optional)</span></label>
               <input
                 value={depForm.depositRef}
                 onChange={setDep('depositRef')}
-                placeholder="Aapne jo payment ki hai uska UTR ya reference number"
+                placeholder="Bank transfer / Wire reference number"
               />
             </div>
             <div className="field field-full">
-              <label>Note <span className="muted-sm">(optional)</span></label>
+              <label>Notes for Admin <span className="muted-sm">(optional)</span></label>
               <input
                 value={depForm.depositNote}
                 onChange={setDep('depositNote')}
-                placeholder="Koi bhi zaruri information admin ke liye"
+                placeholder="Any additional information"
               />
             </div>
             <div className="field field-full">
-              <button type="submit" className="btn-primary" disabled={submitting}>
+              <button type="submit" className="seller-btn-pri" disabled={submitting}>
                 {submitting ? 'Submitting...' : '💰 Submit Deposit Request'}
               </button>
             </div>
           </form>
-
-          {/* Deposit History */}
-          {depositReqs.length > 0 && (
-            <div className="mt-4">
-              <h4>Deposit History</h4>
-              <table className="admin-table">
-                <thead><tr><th>Date</th><th>Type / Ref</th><th>Amount</th><th>Status</th><th>Admin Note</th></tr></thead>
-                <tbody>
-                  {depositReqs.map((r) => (
-                    <tr key={r._id}>
-                      <td>{fmtDay(r.createdAt)}</td>
-                      <td>
-                        {r.isManualAdjustment ? (
-                          <span className="badge-pill" style={{ background: '#dbeafe', color: '#1e40af' }}>Direct Credit</span>
-                        ) : (
-                          <span className="muted-sm">{r.depositRef || 'Deposit Request'}</span>
-                        )}
-                      </td>
-                      <td>
-                        <b>{money(r.amount)}</b>
-                        {r.approvedAmount !== null && r.approvedAmount !== undefined && r.approvedAmount !== r.amount && r.status === 'approved' && (
-                          <small className="text-green block font-bold" style={{ fontSize: 11 }}>
-                            Credited: {money(r.approvedAmount)}
-                          </small>
-                        )}
-                      </td>
-                      <td><span className={`status-chip ${STATUS_COLOR[r.status] || ''}`}>{r.status?.toUpperCase()}</span></td>
-                      <td className="muted-sm">{r.adminNote || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
         </div>
       )}
 
-      {/* WITHDRAWAL FORM */}
+      {/* ─────────────────────────────────────────────────────────────
+          TAB 3: WITHDRAW FUNDS
+          ───────────────────────────────────────────────────────────── */}
       {tab === 'withdraw' && (
         <div className="card form-card mb-4">
-          <h3>💸 Withdrawal Request</h3>
+          <h3>💸 Withdraw Funds from Merchant Wallet</h3>
           <p className="muted-sm mb-3">
-            Wallet se paise nikalne ke liye request karein. Admin approve karega phir 2-3 business days mein transfer hoga.
-            <br/>Request admin ke chat mein <b>automatically</b> notification ke taur par bhi jayegi.
+            Request a payout from your Available Balance directly to your Bank Account.
           </p>
-          <div className="method-toggle mb-3">
-            <button type="button" className={`method-btn ${method === 'upi' ? 'active' : ''}`} onClick={() => setMethod('upi')}>
-              📱 UPI Transfer
-            </button>
-            <button type="button" className={`method-btn ${method === 'bank' ? 'active' : ''}`} onClick={() => setMethod('bank')}>
-              🏦 Bank Transfer
-            </button>
-          </div>
+
           <form onSubmit={handleWithdraw} className="form-grid">
             <div className="field field-full">
-              <label>Withdrawal Amount (₹) * — Available: {money(bal)}</label>
+              <label>Withdrawal Amount ($) * — Available: {money(bal)}</label>
               <input
                 type="number"
                 min={1}
                 max={bal}
+                step="any"
                 value={wdForm.amount}
                 onChange={setWd('amount')}
                 placeholder={`Max ${money(bal)}`}
+                required
               />
             </div>
 
-            {method === 'upi' && (
-              <div className="field field-full">
-                <label>UPI ID *</label>
-                <input
-                  value={wdForm.upiId}
-                  onChange={setWd('upiId')}
-                  placeholder="yourname@paytm / phone@gpay / upi@phonepe"
-                />
-                <small className="muted-sm">Supports: PhonePe, Google Pay, Paytm, BHIM, etc.</small>
-              </div>
-            )}
-
-            {method === 'bank' && (
-              <>
-                <div className="field">
-                  <label>Account Holder Name *</label>
-                  <input value={wdForm.accountTitle} onChange={setWd('accountTitle')} placeholder="Full name as per bank" />
-                </div>
-                <div className="field">
-                  <label>Account Number *</label>
-                  <input value={wdForm.accountNumber} onChange={setWd('accountNumber')} placeholder="Bank account number" />
-                </div>
-                <div className="field">
-                  <label>Bank Name *</label>
-                  <input value={wdForm.bankName} onChange={setWd('bankName')} placeholder="e.g. HDFC Bank, SBI, ICICI, Axis" />
-                </div>
-                <div className="field">
-                  <label>IFSC Code *</label>
-                  <input
-                    value={wdForm.ifscCode}
-                    onChange={setWd('ifscCode')}
-                    placeholder="e.g. HDFC0001234"
-                    style={{ textTransform: 'uppercase' }}
-                  />
-                </div>
-              </>
-            )}
+            <div className="field">
+              <label>Account Holder Name *</label>
+              <input value={wdForm.accountTitle} onChange={setWd('accountTitle')} placeholder="Full name as per bank" required />
+            </div>
+            <div className="field">
+              <label>Account Number / IBAN *</label>
+              <input value={wdForm.accountNumber} onChange={setWd('accountNumber')} placeholder="Bank account number or IBAN" required />
+            </div>
+            <div className="field">
+              <label>Bank Name *</label>
+              <input value={wdForm.bankName} onChange={setWd('bankName')} placeholder="e.g. Chase, Bank of America, HSBC" required />
+            </div>
+            <div className="field">
+              <label>Routing / SWIFT Code</label>
+              <input
+                value={wdForm.ifscCode}
+                onChange={setWd('ifscCode')}
+                placeholder="e.g. CHASUS33"
+                style={{ textTransform: 'uppercase' }}
+              />
+            </div>
 
             <div className="field field-full">
-              <button type="submit" className="btn-primary" disabled={submitting || bal < 1}>
+              <button type="submit" className="seller-btn-pri" disabled={submitting || bal < 1}>
                 {submitting ? 'Submitting...' : `💸 Submit Withdrawal Request`}
               </button>
-              {bal < 1 && <small className="muted-sm mt-1 block">Wallet balance nahi hai. Pehle deposit karein.</small>}
+              {bal < 1 && <small className="muted-sm mt-1 block">Insufficient available balance to withdraw.</small>}
             </div>
           </form>
-
-          {/* Withdrawal History */}
-          {withdrawReqs.length > 0 && (
-            <div className="mt-4">
-              <h4>Withdrawal History</h4>
-              <table className="admin-table">
-                <thead>
-                  <tr><th>Date</th><th>Amount</th><th>Method</th><th>To</th><th>Status</th><th>Admin Note</th></tr>
-                </thead>
-                <tbody>
-                  {withdrawReqs.map((r) => (
-                    <tr key={r._id}>
-                      <td>{fmtDay(r.createdAt)}</td>
-                      <td><b>{money(r.amount)}</b></td>
-                      <td>{r.method?.toUpperCase()}</td>
-                      <td className="muted-sm">{r.method === 'upi' ? r.upiId : `${r.bankName} ••••${r.accountNumber?.slice(-4)}`}</td>
-                      <td><span className={`status-chip ${STATUS_COLOR[r.status] || ''}`}>{r.status?.toUpperCase()}</span></td>
-                      <td className="muted-sm">{r.adminNote || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
         </div>
       )}
     </div>

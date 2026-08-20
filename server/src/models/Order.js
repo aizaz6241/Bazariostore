@@ -35,6 +35,13 @@ const orderSchema = new mongoose.Schema(
         qty: Number,
         itemStatus: { type: String, enum: STATUSES, default: 'pending' },
         trackingNumber: { type: String, default: '' },
+        // Processing Fund & 20% Profit Settlement tracking
+        processingLocked: { type: Boolean, default: false },
+        lockedAmount: { type: Number, default: 0 },
+        profitRate: { type: Number, default: 20 }, // 20% profit margin
+        profitAmount: { type: Number, default: 0 },
+        payoutSettled: { type: Boolean, default: false },
+        settledAt: { type: Date, default: null },
       },
     ],
     contact: { email: String, phone: String, newsletter: { type: Boolean, default: false } },

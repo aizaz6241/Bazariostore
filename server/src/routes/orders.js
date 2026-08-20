@@ -10,6 +10,7 @@ import { quoteCart } from '../services/discounts.js';
 import { initiatePayment, getPaymentConfig } from '../services/payments.js';
 import { audit } from '../utils/audit.js';
 import { notify } from '../utils/notify.js';
+import { lockSellerOrderFund, releaseSellerOrderDelivered, releaseSellerOrderCancelled } from './sellers.js';
 
 const router = Router();
 
@@ -238,9 +239,25 @@ router.patch('/:id/status', authAdmin('orders'), async (req, res) => {
   if (!order) return res.status(404).json({ message: 'Order not found' });
   const prev = order.status;
 
+  // 1. Order Cancelled
   if (status === 'cancelled' && prev !== 'cancelled') {
     await restockOrder(order, 'order_cancelled', req.admin.name);
+    // Release locked processing funds back to each seller
+    const sellerIds = [...new Set(order.items.map((i) => i.seller?.toString()).filter(Boolean))];
+    for (const sId of sellerIds) {
+      await releaseSellerOrderCancelled(req.app, sId, order);
+    }
   }
+
+  // 2. Order Confirmed / Processing by Admin
+  if ((status === 'confirmed' || status === 'processing') && (prev === 'pending')) {
+    const sellerIds = [...new Set(order.items.map((i) => i.seller?.toString()).filter(Boolean))];
+    for (const sId of sellerIds) {
+      await lockSellerOrderFund(req.app, sId, order);
+    }
+  }
+
+  // 3. Order Delivered by Admin
   if (status === 'delivered' && prev !== 'delivered') {
     for (const it of order.items) {
       await Product.updateOne({ _id: it.product }, { $inc: { reservedStock: -it.qty, sold: it.qty } });
@@ -248,9 +265,20 @@ router.patch('/:id/status', authAdmin('orders'), async (req, res) => {
     if (order.paymentMethod === 'cod' && order.paymentStatus !== 'paid') {
       order.paymentStatus = 'paid';
       order.payment = { ...(order.payment?.toObject?.() || order.payment || {}), status: 'paid', paidAt: new Date() };
-      notify(req.app, { type: 'payment', title: 'Payment received (COD)', body: `${order.orderNumber} — Rs.${order.total}`, link: `/admin/orders/${order._id}` });
+      notify(req.app, { type: 'payment', title: 'Payment received (COD)', body: `${order.orderNumber} — $${order.total}`, link: `/admin/orders/${order._id}` });
+    }
+
+    // Release locked processing fund + 20% profit payout to each seller
+    const sellerIds = [...new Set(order.items.map((i) => i.seller?.toString()).filter(Boolean))];
+    for (const sId of sellerIds) {
+      await releaseSellerOrderDelivered(req.app, sId, order);
     }
   }
+
+  // Update itemStatus on all items to match parent status
+  order.items.forEach((it) => {
+    it.itemStatus = status;
+  });
 
   order.status = status;
   order.statusHistory.push({ status, note: note || '', by: req.admin.name });

@@ -2,12 +2,37 @@ import mongoose from 'mongoose';
 
 const withdrawalSchema = new mongoose.Schema(
   {
-    // 'deposit' = seller chahta hai wallet mein paise add hon
-    // 'withdrawal' = seller chahta hai wallet se paise nikalen
-    type: { type: String, enum: ['deposit', 'withdrawal'], required: true, default: 'withdrawal' },
+    // Transaction types:
+    // 'deposit' = seller requests funds added
+    // 'withdrawal' = seller requests payout
+    // 'order_processing_lock' = funds locked from available balance to processing fund on order confirmation
+    // 'order_delivered_release' = locked funds + 20% profit credited to available balance on delivery
+    // 'order_cancelled_release' = locked funds returned to available balance on order cancellation
+    // 'adjustment' = admin manual credit/debit
+    type: {
+      type: String,
+      enum: [
+        'deposit',
+        'withdrawal',
+        'order_processing_lock',
+        'order_delivered_release',
+        'order_cancelled_release',
+        'adjustment',
+      ],
+      required: true,
+      default: 'withdrawal',
+    },
     seller: { type: mongoose.Schema.Types.ObjectId, ref: 'Seller', required: true },
     storeName: { type: String },
-    amount: { type: Number, required: true, min: 1 },
+    amount: { type: Number, required: true },
+    // Order Reference (if linked to an order)
+    order: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },
+    orderNumber: { type: String, default: '' },
+    principalAmount: { type: Number, default: 0 },
+    profitAmount: { type: Number, default: 0 },
+    profitRate: { type: Number, default: 20 },
+    balanceAfter: { type: Number, default: null },
+    processingFundAfter: { type: Number, default: null },
     // Actual amount credited/debited by admin (if different from requested amount)
     approvedAmount: { type: Number, default: null },
     isManualAdjustment: { type: Boolean, default: false },
@@ -24,7 +49,7 @@ const withdrawalSchema = new mongoose.Schema(
     depositRef: { type: String, default: '' },
     depositNote: { type: String, default: '' },
     // Status
-    status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+    status: { type: String, enum: ['pending', 'approved', 'rejected', 'completed'], default: 'pending' },
     adminNote: { type: String, default: '' },
     processedAt: { type: Date },
     processedBy: { type: String },
@@ -37,3 +62,4 @@ const withdrawalSchema = new mongoose.Schema(
 );
 
 export default mongoose.model('Withdrawal', withdrawalSchema);
+

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { sapi, money, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
 
-const STATUS_TABS = ['all', 'pending', 'processing', 'packed', 'shipped', 'delivered', 'cancelled'];
+const STATUS_TABS = ['all', 'pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'];
 
 export default function SellerOrders() {
   const [orders, setOrders] = useState([]);
@@ -12,6 +12,8 @@ export default function SellerOrders() {
   const [trackingNum, setTrackingNum] = useState('');
   const [newStatus, setNewStatus] = useState('shipped');
   const [updating, setUpdating] = useState(false);
+  const [confirmingId, setConfirmingId] = useState(null);
+  const [actionMsg, setActionMsg] = useState('');
 
   const loadOrders = () => {
     setLoading(true);
@@ -25,11 +27,33 @@ export default function SellerOrders() {
     loadOrders();
   }, []);
 
+  const handleQuickConfirm = async (ord) => {
+    setConfirmingId(ord._id);
+    setActionMsg('');
+    try {
+      await sapi(`/sellers/orders/${ord._id}/confirm`, { method: 'POST' });
+      setActionMsg(`✅ Order #${ord.orderNumber} confirmed! $${(ord.sellerTotal || 0).toFixed(2)} moved to Processing Fund.`);
+      loadOrders();
+    } catch (err) {
+      alert('Confirmation failed: ' + err.message);
+    } finally {
+      setConfirmingId(null);
+    }
+  };
+
   const openFulfill = (ord) => {
     setSelectedOrd(ord);
     const item = ord.sellerItems?.[0];
-    setTrackingNum(item?.trackingNumber || `TRK-${Math.floor(10000 + Math.random() * 90000)}-IN`);
-    setNewStatus(item?.itemStatus === 'pending' ? 'processing' : item?.itemStatus === 'processing' ? 'shipped' : 'delivered');
+    setTrackingNum(item?.trackingNumber || `TRK-${Math.floor(10000 + Math.random() * 90000)}`);
+    setNewStatus(
+      item?.itemStatus === 'pending'
+        ? 'confirmed'
+        : item?.itemStatus === 'confirmed'
+        ? 'processing'
+        : item?.itemStatus === 'processing'
+        ? 'shipped'
+        : 'delivered'
+    );
   };
 
   const handleUpdateStatus = async (e) => {
@@ -63,10 +87,17 @@ export default function SellerOrders() {
     <div className="seller-orders-page">
       <div className="seller-page-header">
         <div>
-          <h2>📦 Order Fulfillment & Dispatch</h2>
-          <p>Review customer orders for your store, print packing slips, and update courier tracking.</p>
+          <h2>📦 Order Fulfillment &amp; Dispatch</h2>
+          <p>Review customer orders, lock processing funds on confirmation, and earn 20% profit on delivery.</p>
         </div>
       </div>
+
+      {actionMsg && (
+        <div className="seller-action-alert" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', padding: '12px 16px', borderRadius: 8, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13.5 }}>
+          <span>{actionMsg}</span>
+          <button onClick={() => setActionMsg('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#166534', fontWeight: 800 }}>✕</button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="seller-tabs-bar">
@@ -95,8 +126,8 @@ export default function SellerOrders() {
                 <th>Order #</th>
                 <th>Order Date</th>
                 <th>Items Ordered</th>
-                <th>Customer Details & Shipping Address</th>
-                <th>Your Payout Total</th>
+                <th>Customer &amp; Address</th>
+                <th>Financial Settlement (20% Profit)</th>
                 <th>Payment</th>
                 <th>Status</th>
                 <th>Actions</th>
@@ -117,6 +148,12 @@ export default function SellerOrders() {
                 const items = ord.sellerItems || [];
                 const currentStatus = items[0]?.itemStatus || ord.status;
                 const tracking = items[0]?.trackingNumber;
+                const total = ord.sellerTotal || 0;
+                const profit = ord.sellerProfit || Number((total * 0.20).toFixed(2));
+                const totalReturn = ord.sellerReturn || Number((total * 1.20).toFixed(2));
+                const isPending = currentStatus === 'pending';
+                const isDelivered = currentStatus === 'delivered';
+                const isProcessing = ['confirmed', 'processing', 'packed', 'shipped', 'out_for_delivery'].includes(currentStatus);
 
                 return (
                   <tr key={ord._id}>
@@ -146,7 +183,20 @@ export default function SellerOrders() {
                       </div>
                     </td>
                     <td>
-                      <b className="text-lg">{money(ord.sellerTotal)}</b>
+                      <div className="seller-order-financial-pill">
+                        <div className="sof-row">
+                          <span className="sof-lbl">Order Value:</span>
+                          <b>{money(total)}</b>
+                        </div>
+                        <div className="sof-row text-profit">
+                          <span className="sof-lbl">+20% Profit:</span>
+                          <b>+{money(profit)}</b>
+                        </div>
+                        <div className="sof-row text-return">
+                          <span className="sof-lbl">Payout Return:</span>
+                          <b>{money(totalReturn)}</b>
+                        </div>
+                      </div>
                     </td>
                     <td>
                       <span className={`payment-pill payment-${ord.paymentStatus}`}>
@@ -157,12 +207,31 @@ export default function SellerOrders() {
                       <span className={`status-tag status-${currentStatus}`}>
                         {currentStatus.replace(/_/g, ' ')}
                       </span>
+                      {isProcessing && (
+                        <span className="processing-fund-tag">🔒 Fund Locked</span>
+                      )}
+                      {isDelivered && (
+                        <span className="settled-fund-tag">🎉 Settled</span>
+                      )}
                       {tracking && <small className="tracking-text block">TRK: {tracking}</small>}
                     </td>
                     <td>
-                      <button onClick={() => openFulfill(ord)} className="btn-sm-action">
-                        Update Status →
-                      </button>
+                      <div className="order-actions-cell" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {isPending && (
+                          <button
+                            type="button"
+                            onClick={() => handleQuickConfirm(ord)}
+                            className="btn-quick-confirm"
+                            disabled={confirmingId === ord._id}
+                          >
+                            <Ic name="checkCircle" size={14} />
+                            {confirmingId === ord._id ? 'Locking Fund...' : '⚡ Confirm Order'}
+                          </button>
+                        )}
+                        <button onClick={() => openFulfill(ord)} className="btn-sm-action">
+                          Update Status →
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -188,6 +257,30 @@ export default function SellerOrders() {
                 <p><b>Items:</b> {selectedOrd.sellerItems?.map((i) => `${i.qty}x ${i.name}`).join(', ')}</p>
               </div>
 
+              {/* Financial Settlement Breakdown Box */}
+              <div className="order-settlement-preview-box">
+                <div className="osp-head">
+                  <span>💰 Financial Settlement Details (20% Profit Rate)</span>
+                </div>
+                <div className="osp-grid">
+                  <div className="osp-item">
+                    <small>Order Amount</small>
+                    <b>{money(selectedOrd.sellerTotal)}</b>
+                  </div>
+                  <div className="osp-item">
+                    <small>20% Profit Margin</small>
+                    <b style={{ color: '#16a34a' }}>+{money(selectedOrd.sellerProfit || (selectedOrd.sellerTotal * 0.20))}</b>
+                  </div>
+                  <div className="osp-item highlight">
+                    <small>Total Credited on Delivery</small>
+                    <b style={{ color: '#2563eb' }}>{money(selectedOrd.sellerReturn || (selectedOrd.sellerTotal * 1.20))}</b>
+                  </div>
+                </div>
+                <p className="osp-note">
+                  💡 When marked <b>Delivered</b>, ${((selectedOrd.sellerTotal || 0) * 1.20).toFixed(2)} (Principal + 20% Profit) will be automatically credited to your available balance.
+                </p>
+              </div>
+
               <label>
                 <span>Fulfillment Status *</span>
                 <select
@@ -195,12 +288,12 @@ export default function SellerOrders() {
                   onChange={(e) => setNewStatus(e.target.value)}
                   required
                 >
-                  <option value="confirmed">Confirmed</option>
-                  <option value="processing">Processing & Packing</option>
+                  <option value="confirmed">Confirmed (Move to Processing Fund)</option>
+                  <option value="processing">Processing &amp; Packing</option>
                   <option value="packed">Packed (Ready for Courier Pickup)</option>
                   <option value="shipped">Shipped / In Transit</option>
-                  <option value="delivered">Delivered to Customer</option>
-                  <option value="cancelled">Cancelled</option>
+                  <option value="delivered">Delivered to Customer (Release $ + 20% Profit 🎉)</option>
+                  <option value="cancelled">Cancelled (Return Locked Fund)</option>
                 </select>
               </label>
 
@@ -210,14 +303,14 @@ export default function SellerOrders() {
                   type="text"
                   value={trackingNum}
                   onChange={(e) => setTrackingNum(e.target.value)}
-                  placeholder="e.g. TCS-98214-PK, LEOPARDS-88123"
+                  placeholder="e.g. TRK-98214-US, FEDEX-88123"
                 />
               </label>
 
               <div className="modal-actions">
                 <button type="button" onClick={() => setSelectedOrd(null)} className="btn-cancel">Cancel</button>
                 <button type="submit" className="seller-btn-pri" disabled={updating}>
-                  {updating ? 'Saving...' : 'Update Fulfillment Status'}
+                  {updating ? 'Saving...' : 'Update & Process Status'}
                 </button>
               </div>
             </form>
