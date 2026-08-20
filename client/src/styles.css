@@ -7022,83 +7022,198 @@ textarea:focus {
    WHATSAPP / INSTAGRAM STYLE CHAT REPLIES & QUOTED MESSAGES
    ========================================================================= */
 
-.chat-bubble-sender {
+.chat-bubble-wrap {
+  position: relative;
+  touch-action: pan-y;
+  user-select: text;
+  margin-bottom: 10px;
+  width: 100%;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 11.5px;
-  font-weight: 700;
-  margin-bottom: 4px;
 }
 
-.chat-reply-trigger-btn {
-  background: transparent;
-  border: none;
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  opacity: 0.7;
-  padding: 2px 4px;
-  border-radius: 4px;
-  transition: all 0.15s ease;
+.chat-bubble-wrap.msg-me {
+  justify-content: flex-end;
+  flex-direction: row;
 }
 
-.chat-bubble-wrap:hover .chat-reply-trigger-btn,
-.chat-reply-trigger-btn:hover {
-  opacity: 1;
-  background: rgba(0, 0, 0, 0.06);
-  color: #0f172a;
+.chat-bubble-wrap.msg-them {
+  justify-content: flex-start;
+  flex-direction: row-reverse;
 }
 
-.msg-me .chat-reply-trigger-btn {
-  color: rgba(255, 255, 255, 0.85);
+.chat-bubble-inner {
+  position: relative;
+  z-index: 2;
+  border-radius: 14px;
+  padding: 9px 13px;
+  width: fit-content;
+  max-width: min(88%, 540px);
+  min-width: 120px;
+  box-sizing: border-box;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
-.msg-me .chat-reply-trigger-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
+.msg-me .chat-bubble-inner {
+  background: #0f172a;
   color: #ffffff;
+  border-bottom-right-radius: 4px;
 }
 
-/* Quoted Reply Box inside Message Bubble */
-.chat-quoted-msg {
-  background: rgba(0, 0, 0, 0.05);
-  border-left: 3.5px solid #2563eb;
-  border-radius: 6px;
-  padding: 6px 8px;
-  margin-bottom: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12px;
-  line-height: 1.3;
+.msg-them .chat-bubble-inner {
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid #e2e8f0;
+  border-bottom-left-radius: 4px;
 }
 
-.msg-me .chat-quoted-msg {
-  background: rgba(0, 0, 0, 0.15);
-  border-left-color: #93c5fd;
-}
-
-.cqm-author {
+/* Sender title inside bubble for incoming messages */
+.chat-bubble-author-title {
   font-size: 11px;
   font-weight: 800;
   color: #2563eb;
+  margin-bottom: 3px;
+  line-height: 1.2;
 }
 
-.msg-me .cqm-author {
-  color: #bfdbfe;
+.msg-me .chat-bubble-author-title {
+  color: #93c5fd;
+}
+
+.chat-text-content {
+  font-size: 13.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.chat-bubble-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 3px;
+}
+
+.chat-bubble-time {
+  font-size: 10px;
+  opacity: 0.65;
+  line-height: 1;
+}
+
+/* Floating Hover Reply Button */
+.chat-hover-reply-btn {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease;
+  margin: 0 6px;
+  flex-shrink: 0;
+}
+
+.chat-bubble-wrap:hover .chat-hover-reply-btn {
+  opacity: 0.85;
+  pointer-events: auto;
+}
+
+.chat-hover-reply-btn:hover {
+  opacity: 1;
+  transform: scale(1.12);
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+/* WhatsApp Clickable Quoted Message Box inside Bubble */
+.chat-quoted-msg {
+  display: flex;
+  align-items: stretch;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  margin-bottom: 6px;
+  overflow: hidden;
+  position: relative;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.chat-quoted-msg.clickable {
+  cursor: pointer;
+}
+
+.chat-quoted-msg.clickable:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.msg-me .chat-quoted-msg {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.msg-me .chat-quoted-msg.clickable:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.cqm-left-bar {
+  width: 3.5px;
+  background: #2563eb;
+  flex-shrink: 0;
+}
+
+.msg-me .cqm-left-bar {
+  background: #60a5fa;
+}
+
+.cqm-content {
+  padding: 5px 8px;
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cqm-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #2563eb;
+}
+
+.msg-me .cqm-header {
+  color: #93c5fd;
+}
+
+.cqm-reply-icon {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.cqm-author {
+  font-weight: 800;
 }
 
 .cqm-text {
+  font-size: 11.5px;
   color: #334155;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 280px;
+  max-width: 300px;
 }
 
 .msg-me .cqm-text {
@@ -7184,122 +7299,6 @@ textarea:focus {
   color: #0f172a;
 }
 
-/* =========================================================================
-   SWIPE-TO-REPLY & ALWAYS-VISIBLE ACTION BUTTON
-   ========================================================================= */
-
-.chat-bubble-wrap {
-  position: relative;
-  touch-action: pan-y;
-  user-select: text;
-  margin-bottom: 12px;
-  width: 100%;
-  box-sizing: border-box;
-  display: flex;
-}
-
-.chat-bubble-wrap.msg-me {
-  justify-content: flex-end;
-}
-
-.chat-bubble-wrap.msg-them {
-  justify-content: flex-start;
-}
-
-.chat-bubble-inner {
-  position: relative;
-  z-index: 2;
-  border-radius: 14px;
-  padding: 10px 14px;
-  width: fit-content;
-  max-width: min(90%, 540px);
-  min-width: 140px;
-  box-sizing: border-box;
-  word-break: break-word;
-  overflow-wrap: break-word;
-}
-
-.msg-me .chat-bubble-inner {
-  background: #0f172a;
-  color: #ffffff;
-  border-bottom-right-radius: 4px;
-  margin-left: auto;
-  margin-right: 0;
-}
-
-.msg-them .chat-bubble-inner {
-  background: #ffffff;
-  color: #0f172a;
-  border: 1px solid #e2e8f0;
-  border-bottom-left-radius: 4px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-  margin-right: auto;
-  margin-left: 0;
-}
-
-.chat-bubble-sender {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 11px;
-  font-weight: 700;
-  margin-bottom: 4px;
-  min-width: 0;
-}
-
-.cbs-name {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 180px;
-}
-
-.chat-text-content {
-  font-size: 13.5px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  margin-top: 2px;
-}
-
-/* Always-Visible Reply Action Button on Bubble */
-.bubble-reply-action-btn {
-  background: rgba(0, 0, 0, 0.06);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  color: #334155;
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  border-radius: 12px;
-  transition: all 0.15s ease;
-  line-height: 1;
-}
-
-.bubble-reply-action-btn:hover {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: #ffffff;
-  transform: scale(1.04);
-}
-
-.msg-me .bubble-reply-action-btn {
-  background: rgba(255, 255, 255, 0.16);
-  border-color: rgba(255, 255, 255, 0.25);
-  color: #f8fafc;
-}
-
-.msg-me .bubble-reply-action-btn:hover {
-  background: #2563eb;
-  border-color: #60a5fa;
-  color: #ffffff;
-}
-
 /* Swipe-to-Reply Animated Background Indicator */
 .swipe-reply-indicator {
   position: absolute;
@@ -7339,12 +7338,30 @@ textarea:focus {
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
 }
 
-.cqm-header {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 2px;
+/* Flash Highlight Animation for clicked quoted message */
+@keyframes msgFlashGlow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.8);
+    transform: scale(1);
+  }
+  25% {
+    box-shadow: 0 0 0 8px rgba(37, 99, 235, 0.45);
+    transform: scale(1.03);
+  }
+  50% {
+    box-shadow: 0 0 0 14px rgba(37, 99, 235, 0.2);
+    transform: scale(1.02);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+    transform: scale(1);
+  }
 }
+
+.msg-highlight-flash .chat-bubble-inner {
+  animation: msgFlashGlow 1.8s cubic-bezier(0.25, 1, 0.5, 1) !important;
+}
+
 
 
 
