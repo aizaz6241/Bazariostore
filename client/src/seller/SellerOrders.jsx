@@ -3,7 +3,15 @@ import { sapi, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 
-const STATUS_TABS = ['all', 'pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'];
+const STATUS_TABS = [
+  { key: 'all', label: 'All Orders', icon: 'package' },
+  { key: 'pending', label: 'Pending Fulfillment', icon: 'clock' },
+  { key: 'confirmed', label: 'Confirmed (Locked)', icon: 'checkCircle' },
+  { key: 'processing', label: 'Processing', icon: 'box' },
+  { key: 'shipped', label: 'Shipped / In Transit', icon: 'truck' },
+  { key: 'delivered', label: 'Delivered (+20% Settled)', icon: 'sparkle' },
+  { key: 'cancelled', label: 'Cancelled / Refunded', icon: 'x' },
+];
 
 export default function SellerOrders() {
   const { formatMoney } = useCurrency();
@@ -33,11 +41,11 @@ export default function SellerOrders() {
     setConfirmingId(ord._id);
     setActionMsg('');
     try {
-      await sapi(`/sellers/orders/${ord._id}/confirm`, { method: 'POST' });
-      setActionMsg(`✅ Order #${ord.orderNumber} confirmed! $${(ord.sellerTotal || 0).toFixed(2)} moved to Processing Fund.`);
+      const res = await sapi(`/sellers/orders/${ord._id}/confirm`, { method: 'POST' });
+      setActionMsg(`✅ Order #${ord.orderNumber} confirmed! $${res.lockedAmount.toFixed(2)} locked in processing funds.`);
       loadOrders();
     } catch (err) {
-      alert('Confirmation failed: ' + err.message);
+      alert('Error confirming order: ' + err.message);
     } finally {
       setConfirmingId(null);
     }
@@ -45,17 +53,9 @@ export default function SellerOrders() {
 
   const openFulfill = (ord) => {
     setSelectedOrd(ord);
-    const item = ord.sellerItems?.[0];
-    setTrackingNum(item?.trackingNumber || `TRK-${Math.floor(10000 + Math.random() * 90000)}`);
-    setNewStatus(
-      item?.itemStatus === 'pending'
-        ? 'confirmed'
-        : item?.itemStatus === 'confirmed'
-        ? 'processing'
-        : item?.itemStatus === 'processing'
-        ? 'shipped'
-        : 'delivered'
-    );
+    const sellerItems = ord.sellerItems || [];
+    setTrackingNum(sellerItems[0]?.trackingNumber || '');
+    setNewStatus(sellerItems[0]?.itemStatus || 'shipped');
   };
 
   const handleUpdateStatus = async (e) => {
@@ -64,16 +64,13 @@ export default function SellerOrders() {
     setUpdating(true);
     try {
       await sapi(`/sellers/orders/${selectedOrd._id}/status`, {
-        method: 'PUT',
-        body: {
-          status: newStatus,
-          trackingNumber: trackingNum,
-        },
+        method: 'PATCH',
+        body: { status: newStatus, trackingNumber: trackingNum },
       });
       setSelectedOrd(null);
       loadOrders();
     } catch (err) {
-      alert('Error updating status: ' + err.message);
+      alert(err.message || 'Failed to update order');
     } finally {
       setUpdating(false);
     }
@@ -101,22 +98,26 @@ export default function SellerOrders() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="seller-tabs-bar">
-        {STATUS_TABS.map((t) => (
-          <button
-            key={t}
-            className={`seller-tab-btn ${tab === t ? 'active' : ''}`}
-            onClick={() => setTab(t)}
-          >
-            {t === 'all' ? 'All Orders' : t.replace(/_/g, ' ')}
-            {t !== 'all' && (
-              <span className="tab-count">
-                {orders.filter((o) => (o.sellerItems?.[0]?.itemStatus || o.status) === t).length}
-              </span>
-            )}
-          </button>
-        ))}
+      {/* Interactive Status Filter Pills */}
+      <div className="seller-status-pills-scroll">
+        <div className="seller-status-pills-bar">
+          {STATUS_TABS.map((t) => {
+            const count = t.key === 'all' ? orders.length : orders.filter((o) => (o.sellerItems?.[0]?.itemStatus || o.status) === t.key).length;
+            const isActive = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                className={`order-status-pill-btn ${isActive ? 'active' : ''}`}
+                onClick={() => setTab(t.key)}
+              >
+                <Ic name={t.icon} size={15} />
+                <span className="osp-text">{t.label}</span>
+                <span className="osp-count">{count}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Orders Table */}
@@ -143,7 +144,13 @@ export default function SellerOrders() {
               )}
               {!loading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan="8" className="text-center py-8 muted">No orders found in this status.</td>
+                  <td colSpan="8">
+                    <div className="table-empty-box">
+                      <div className="empty-icon-circle">📦</div>
+                      <h4>No orders in this category</h4>
+                      <p>There are currently no customer orders matching the <b>"{tab.replace(/_/g, ' ')}"</b> filter.</p>
+                    </div>
+                  </td>
                 </tr>
               )}
               {filtered.map((ord) => {

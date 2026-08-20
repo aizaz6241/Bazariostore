@@ -278,10 +278,17 @@ export default function ChatInbox() {
                       {isAdmin ? m.senderName || 'You (Admin)' : `${selectedConv.storeName || 'Seller'}`}
                     </div>
                     <div className="chat-bubble-body">
-                      {/* Attachment */}
-                      {m.attachment && <ChatAttachment msg={m} />}
+                      {/* Attachment if present or text contains image/pdf url */}
+                      {m.attachment ? (
+                        <ChatAttachment msg={m} />
+                      ) : (typeof m.text === 'string' && (m.text.startsWith('http') || m.text.startsWith('/uploads/') || m.text.startsWith('img/') || m.text.startsWith('/img/')) && m.text.match(/\.(jpeg|jpg|png|gif|webp|svg|pdf)(\?.*)?$/i)) ? (
+                        <ChatAttachment url={m.text} />
+                      ) : null}
+
                       {/* Text */}
-                      {m.text && <div className="chat-text-content">{m.text}</div>}
+                      {m.text && (!m.text.match(/\.(jpeg|jpg|png|gif|webp|svg|pdf)(\?.*)?$/i) || m.attachment) && (
+                        <div className="chat-text-content">{m.text}</div>
+                      )}
                     </div>
                     <div className="chat-bubble-time">
                       {fmtDate(m.createdAt)}

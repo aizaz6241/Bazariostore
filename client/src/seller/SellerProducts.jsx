@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { sapi, money } from '../api.js';
+import { sapi } from '../api.js';
 import Ic from '../components/Icons.jsx';
+import { useCurrency } from '../context/CurrencyContext.jsx';
 
 export default function SellerProducts() {
   const { seller } = useOutletContext() || {};
+  const { formatMoney, currentCurrency } = useCurrency();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -286,8 +288,15 @@ export default function SellerProducts() {
               )}
               {!loading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan="9" className="text-center py-8 muted">
-                    No products found. Click <b>"Add New Product"</b> to create your first listing!
+                  <td colSpan="9">
+                    <div className="table-empty-box">
+                      <div className="empty-icon-circle">📦</div>
+                      <h4>No products found</h4>
+                      <p>No products match your current search or filter criteria. Create your first product listing to start selling!</p>
+                      <button type="button" onClick={openAdd} className="seller-btn-pri btn-sm" style={{ marginTop: 8 }}>
+                        <Ic name="plus" size={15} /> Add New Product
+                      </button>
+                    </div>
                   </td>
                 </tr>
               )}
@@ -315,12 +324,12 @@ export default function SellerProducts() {
                     </td>
                     <td>{p.category?.name || 'Uncategorized'}</td>
                     <td>
-                      <b>{money(p.price)}</b>
-                      {p.oldPrice > p.price && <small className="old-price-del block">{money(p.oldPrice)}</small>}
+                      <b>{formatMoney(p.price)}</b>
+                      {p.oldPrice > p.price && <small className="old-price-del block">{formatMoney(p.oldPrice)}</small>}
                     </td>
-                    <td>{money(cost)}</td>
+                    <td>{formatMoney(cost)}</td>
                     <td>
-                      <b className={profit >= 0 ? 'text-green' : 'text-red'}>{money(profit)}</b>
+                      <b className={profit >= 0 ? 'text-green' : 'text-red'}>{formatMoney(profit)}</b>
                     </td>
                     <td>
                       <span className={`stock-badge ${isOut ? 'out' : isLow ? 'low' : 'ok'}`}>
@@ -482,9 +491,9 @@ export default function SellerProducts() {
 
                 <div className="form-grid-layout">
                   <div className="form-field">
-                    <label className="field-label">Customer Selling Price (₹) *</label>
+                    <label className="field-label">Customer Selling Price ({currentCurrency.symbol}) *</label>
                     <div className="currency-input-wrap">
-                      <span className="currency-symbol">₹</span>
+                      <span className="currency-symbol">{currentCurrency.symbol}</span>
                       <input
                         type="number"
                         step="any"
@@ -501,13 +510,13 @@ export default function SellerProducts() {
 
                   <div className="form-field">
                     <div className="flex justify-between items-center">
-                      <label className="field-label">Original / Compare Price (₹)</label>
+                      <label className="field-label">Original / Compare Price ({currentCurrency.symbol})</label>
                       {discountPercent > 0 && (
                         <span className="discount-live-badge">-{discountPercent}% OFF</span>
                       )}
                     </div>
                     <div className="currency-input-wrap">
-                      <span className="currency-symbol">₹</span>
+                      <span className="currency-symbol">{currentCurrency.symbol}</span>
                       <input
                         type="number"
                         step="any"
@@ -522,9 +531,9 @@ export default function SellerProducts() {
                   </div>
 
                   <div className="form-field">
-                    <label className="field-label">Your Wholesale Cost Price (₹) *</label>
+                    <label className="field-label">Your Wholesale Cost Price ({currentCurrency.symbol}) *</label>
                     <div className="currency-input-wrap">
-                      <span className="currency-symbol">₹</span>
+                      <span className="currency-symbol">{currentCurrency.symbol}</span>
                       <input
                         type="number"
                         step="any"
@@ -543,7 +552,7 @@ export default function SellerProducts() {
                     <label className="field-label">Platform Commission Fee</label>
                     <div className="readonly-box">
                       <b>{commRate}%</b>
-                      <span className="muted-sm">({curPrice > 0 ? money(platformFee) : '₹0.00'} per unit)</span>
+                      <span className="muted-sm">({curPrice > 0 ? formatMoney(platformFee) : formatMoney(0)} per unit)</span>
                     </div>
                   </div>
                 </div>
@@ -552,7 +561,7 @@ export default function SellerProducts() {
                 <div className={`live-profit-card ${netProfit < 0 ? 'loss' : profitMargin >= 25 ? 'great' : 'ok'}`}>
                   <div className="profit-col">
                     <span className="profit-title">Estimated Net Profit / Unit</span>
-                    <b className="profit-value">{curPrice > 0 ? money(netProfit) : '₹0.00'}</b>
+                    <b className="profit-value">{curPrice > 0 ? formatMoney(netProfit) : formatMoney(0)}</b>
                   </div>
                   <div className="profit-col">
                     <span className="profit-title">Estimated Profit Margin</span>

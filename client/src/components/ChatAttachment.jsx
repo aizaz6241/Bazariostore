@@ -9,28 +9,44 @@ function formatBytes(bytes) {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-export default function ChatAttachment({ msg }) {
+export default function ChatAttachment({ msg, url: directUrl, type: directType, name: directName, size: directSize }) {
   const [imageModalOpen, setImageModalOpen] = useState(false);
   const [pdfModalOpen, setPdfModalOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [imgError, setImgError] = useState(false);
 
-  if (!msg.attachment) return null;
+  const rawUrl =
+    directUrl ||
+    msg?.attachment ||
+    (typeof msg?.text === 'string' &&
+    (msg.text.startsWith('http') || msg.text.startsWith('/uploads/') || msg.text.startsWith('uploads/') || msg.text.startsWith('img/') || msg.text.startsWith('/img/')) &&
+    msg.text.match(/\.(jpeg|jpg|png|gif|webp|svg|pdf)(\?.*)?$/i)
+      ? msg.text
+      : null);
 
-  const rawUrl = msg.attachment;
+  if (!rawUrl) return null;
+
   const fullUrl = resolveMediaUrl(rawUrl);
 
   const isPdf =
-    msg.attachmentType === 'pdf' ||
+    directType === 'pdf' ||
+    msg?.attachmentType === 'pdf' ||
     rawUrl.toLowerCase().endsWith('.pdf') ||
     rawUrl.toLowerCase().includes('.pdf?') ||
-    (msg.attachmentName && msg.attachmentName.toLowerCase().endsWith('.pdf'));
+    (msg?.attachmentName && msg.attachmentName.toLowerCase().endsWith('.pdf')) ||
+    (directName && directName.toLowerCase().endsWith('.pdf'));
 
-  const filename = msg.attachmentName || rawUrl.split('/').pop().split('?')[0] || (isPdf ? 'Document.pdf' : 'Attachment.png');
+  const filename =
+    directName ||
+    msg?.attachmentName ||
+    rawUrl.split('/').pop().split('?')[0] ||
+    (isPdf ? 'Document.pdf' : 'Image.jpg');
+
+  const fileSize = directSize || msg?.attachmentSize || 0;
 
   const handleDownload = async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+    e?.preventDefault?.();
+    e?.stopPropagation?.();
     setDownloading(true);
     try {
       await downloadAttachment(fullUrl, filename);
@@ -56,7 +72,7 @@ export default function ChatAttachment({ msg }) {
           <div className="pdf-info-wrap">
             <div className="pdf-filename" title={filename}>{filename}</div>
             <div className="pdf-meta">
-              {msg.attachmentSize ? <span>{formatBytes(msg.attachmentSize)} &bull; </span> : null}
+              {fileSize ? <span>{formatBytes(fileSize)} &bull; </span> : null}
               <span>PDF Document</span>
             </div>
           </div>
@@ -91,7 +107,7 @@ export default function ChatAttachment({ msg }) {
                 <div className="pdf-modal-title">
                   <span className="pdf-badge">PDF</span>
                   <span className="pdf-modal-name" title={filename}>{filename}</span>
-                  {msg.attachmentSize ? <span className="pdf-modal-size">({formatBytes(msg.attachmentSize)})</span> : null}
+                  {fileSize ? <span className="pdf-modal-size">({formatBytes(fileSize)})</span> : null}
                 </div>
 
                 <div className="pdf-modal-actions">
@@ -152,23 +168,38 @@ export default function ChatAttachment({ msg }) {
     <>
       <div className="chat-image-wrap">
         {!imgError ? (
-          <img
-            src={fullUrl}
-            alt={filename}
-            className="chat-img-thumb"
-            onClick={() => setImageModalOpen(true)}
-            onError={() => setImgError(true)}
-            loading="lazy"
-          />
+          <div className="chat-img-container" onClick={() => setImageModalOpen(true)}>
+            <img
+              src={fullUrl}
+              alt={filename}
+              className="chat-img-thumb"
+              onError={() => setImgError(true)}
+              loading="lazy"
+            />
+            <div className="chat-img-overlay">
+              <div className="cio-btn"><Ic name="eye" size={15} /> <span>Zoom</span></div>
+              <button
+                type="button"
+                className="cio-dl-btn"
+                onClick={handleDownload}
+                title="Download image"
+              >
+                <Ic name="download" size={14} />
+              </button>
+            </div>
+          </div>
         ) : (
           <div className="chat-img-fallback" onClick={() => setImageModalOpen(true)}>
             <Ic name="image" size={24} />
-            <span>{filename}</span>
+            <div className="cif-info">
+              <span className="cif-name">{filename}</span>
+              <small className="cif-hint">Click to open or download</small>
+            </div>
+            <button type="button" className="cif-dl" onClick={handleDownload} title="Download">
+              <Ic name="download" size={15} />
+            </button>
           </div>
         )}
-        <div className="chat-img-overlay" onClick={() => setImageModalOpen(true)}>
-          <Ic name="eye" size={16} /> <span>View Full</span>
-        </div>
       </div>
 
       {/* Lightbox Modal */}

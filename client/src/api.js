@@ -110,7 +110,15 @@ export function resolveMediaUrl(url) {
   if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('blob:')) {
     return url;
   }
-  const base = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
+  let base = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
+  if (!base) {
+    if (typeof window !== 'undefined') {
+      const host = window.location.hostname;
+      if (host.includes('vercel.app') || host.includes('bazario') || host.includes('render.com') || host !== 'localhost') {
+        base = 'https://bazario-backend-clsx.onrender.com';
+      }
+    }
+  }
   if (!base) return url;
   return url.startsWith('/') ? `${base}${url}` : `${base}/${url}`;
 }
