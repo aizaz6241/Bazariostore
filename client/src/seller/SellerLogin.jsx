@@ -43,13 +43,13 @@ export default function SellerLogin() {
         {/* Role / Portal Switcher Tabs */}
         <div className="login-portal-tabs" style={{ marginBottom: 20 }}>
           <Link to="/login" className="portal-tab">
-            <Ic name="user" size={14} /> Customer
+            <Ic name="user" size={15} /> Customer
           </Link>
           <Link to="/seller/login" className="portal-tab active">
-            <Ic name="store" size={14} /> Seller Hub
+            <Ic name="tag" size={15} /> Seller Hub
           </Link>
           <Link to="/admin/login" className="portal-tab">
-            <Ic name="shield" size={14} /> Admin
+            <Ic name="shield" size={15} /> Super Admin
           </Link>
         </div>
 

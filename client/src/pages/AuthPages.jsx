@@ -22,6 +22,7 @@ export function Login() {
   const [params] = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -41,41 +42,85 @@ export function Login() {
   };
 
   return (
-    <AuthShell title="Sign In" sub="Choose your account portal to sign in">
+    <AuthShell title="Sign In" sub="Select your account portal to continue">
       {/* Role / Portal Switcher Tabs */}
       <div className="login-portal-tabs">
         <Link to="/login" className="portal-tab active">
-          <Ic name="user" size={14} /> Customer
+          <Ic name="user" size={15} /> Customer
         </Link>
         <Link to="/seller/login" className="portal-tab">
-          <Ic name="store" size={14} /> Seller Hub
+          <Ic name="tag" size={15} /> Seller Hub
         </Link>
         <Link to="/admin/login" className="portal-tab">
-          <Ic name="shield" size={14} /> Admin
+          <Ic name="shield" size={15} /> Super Admin
         </Link>
       </div>
 
-      <form onSubmit={submit}>
+      <form onSubmit={submit} className="auth-form-clean">
         {error && <div className="alert-error"><Ic name="x" size={14} /> {error}</div>}
-        <div className="field"><label>Email</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoFocus /></div>
-        <div className="field"><label>Password</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" /></div>
-        <button className="btn-primary btn-block" disabled={busy}>{busy ? 'Signing in…' : 'SIGN IN AS CUSTOMER'}</button>
+        <div className="field">
+          <label>Email Address</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            required
+            autoFocus
+          />
+        </div>
+        <div className="field">
+          <label>Password</label>
+          <div className="pw-wrap" style={{ position: 'relative' }}>
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+            />
+            <button
+              type="button"
+              className="pw-eye"
+              onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}
+            >
+              <Ic name="eye" size={16} />
+            </button>
+          </div>
+        </div>
+        <button className="btn-primary btn-block btn-auth-submit" disabled={busy}>
+          {busy ? 'Signing in…' : 'SIGN IN AS CUSTOMER →'}
+        </button>
       </form>
+
       <div className="auth-links">
         <Link to="/forgot-password">Forgot password?</Link>
-        <span>New customer? <Link to="/register">Create an account</Link></span>
+        <span>New customer? <Link to="/register" style={{ fontWeight: 700 }}>Create an account</Link></span>
       </div>
 
-      <div className="auth-role-shortcuts">
-        <p className="shortcuts-lbl">Are you a Merchant or Platform Administrator?</p>
-        <div className="shortcuts-grid">
-          <Link to="/seller/login" className="btn-role-shortcut">
-            <Ic name="store" size={14} /> Seller Central Login
-          </Link>
-          <Link to="/admin/login" className="btn-role-shortcut admin">
-            <Ic name="shield" size={14} /> Super Admin Login
-          </Link>
-        </div>
+      {/* Direct Quick Portal Cards */}
+      <div className="login-portals-grid">
+        <Link to="/seller/login" className="portal-quick-card seller-card-link">
+          <div className="pqc-icon-wrap seller">
+            <Ic name="tag" size={18} />
+          </div>
+          <div className="pqc-meta">
+            <b>Seller Central</b>
+            <span>Manage Store & Orders →</span>
+          </div>
+        </Link>
+
+        <Link to="/admin/login" className="portal-quick-card admin-card-link">
+          <div className="pqc-icon-wrap admin">
+            <Ic name="shield" size={18} />
+          </div>
+          <div className="pqc-meta">
+            <b>Super Admin</b>
+            <span>Platform Governance →</span>
+          </div>
+        </Link>
       </div>
     </AuthShell>
   );

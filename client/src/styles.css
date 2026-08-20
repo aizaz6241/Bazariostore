@@ -939,24 +939,65 @@ h1, h2, h3, h4 { line-height: 1.25; }
 /* mobile bottom nav appears */
 @media (max-width: 768px) {
   .mobile-nav {
-    position: fixed; bottom: 0; left: 0; right: 0; z-index: 380;
-    display: grid; grid-template-columns: repeat(5, 1fr);
-    background: #fff; border-top: 1px solid var(--line);
-    box-shadow: 0 -6px 20px rgba(29, 29, 31, 0.08);
-    padding: 7px 6px calc(7px + env(safe-area-inset-bottom));
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 380;
+    display: grid !important;
+    grid-template-columns: repeat(4, 1fr) !important;
+    background: #ffffff;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.07);
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    align-items: center;
+    justify-content: space-around;
   }
   .mobile-nav a {
-    display: flex; flex-direction: column; align-items: center; gap: 3px;
-    font-size: 10px; font-weight: 500; color: var(--gray); padding: 4px 2px;
-    border-radius: 10px; position: relative; transition: 0.15s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: #64748b;
+    padding: 6px 2px;
+    border-radius: 8px;
+    position: relative;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    text-decoration: none;
   }
-  .mobile-nav a.active { color: var(--primary); background: var(--pink-50); }
+  .mobile-nav a.active {
+    color: #2563eb !important;
+    background: #eff6ff !important;
+  }
+  .mobile-nav a svg {
+    transition: transform 0.2s ease;
+  }
+  .mobile-nav a:active svg {
+    transform: scale(0.9);
+  }
   .mn-badge {
-    position: absolute; top: 0; left: calc(50% + 6px); min-width: 16px; height: 16px;
-    border-radius: 8px; background: var(--primary); color: #fff; font-style: normal;
-    font-size: 9.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 4px;
+    position: absolute;
+    top: 2px;
+    left: calc(50% + 4px);
+    min-width: 17px;
+    height: 17px;
+    border-radius: 9px;
+    background: #ef4444;
+    color: #ffffff;
+    font-style: normal;
+    font-size: 10px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+    border: 2px solid #ffffff;
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
   }
-  .footer { padding-bottom: 66px; }
+  .footer { padding-bottom: 72px; }
   .chatw { right: 14px; bottom: 76px; }
   .toast { bottom: 150px; }
   .success-page .btn-primary, .success-page .btn-outline { width: 100%; }
@@ -1755,6 +1796,157 @@ h1, h2, h3, h4 { line-height: 1.25; }
   padding: 4px 10px;
   border-radius: 6px;
   cursor: pointer;
+}
+
+/* =========================================================================
+   PORTAL SWITCHER TABS & QUICK ACCESS CARDS (CUSTOMER / SELLER / ADMIN)
+   ========================================================================= */
+
+.login-portal-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 10px;
+  gap: 4px;
+  margin-bottom: 22px;
+  border: 1px solid #e2e8f0;
+}
+
+.portal-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-decoration: none;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.portal-tab:hover {
+  color: #0f172a;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.portal-tab.active {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.portal-tab.active svg {
+  color: #2563eb;
+}
+
+/* Quick Role Portal Cards */
+.login-portals-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.portal-quick-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  text-decoration: none;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1.5px solid transparent;
+}
+
+.portal-quick-card.seller-card-link {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.portal-quick-card.seller-card-link:hover {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.2);
+}
+
+.portal-quick-card.admin-card-link {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.portal-quick-card.admin-card-link:hover {
+  background: #f1f5f9;
+  border-color: #0f172a;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.15);
+}
+
+.pqc-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pqc-icon-wrap.seller {
+  background: #f59e0b;
+  color: #0f172a;
+}
+
+.pqc-icon-wrap.admin {
+  background: #0f172a;
+  color: #ffffff;
+}
+
+.pqc-meta {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.pqc-meta b {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.pqc-meta span {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #64748b;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btn-auth-submit {
+  padding: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  border-radius: 8px;
+  font-size: 13px;
+  transition: all 0.2s ease;
+  margin-top: 8px;
+}
+
+@media (max-width: 480px) {
+  .login-portals-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
 }
 
 /* =========================================================================
