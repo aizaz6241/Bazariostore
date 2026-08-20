@@ -216,7 +216,7 @@ export default function SellerLayout() {
             <button className="mobile-hamburger-btn" onClick={() => setMobileSidebarOpen(true)} aria-label="Toggle Menu">
               <Ic name="menu" size={22} />
             </button>
-            <span className={`store-active-indicator ${seller?.status === 'frozen' || seller?.status === 'suspended' ? 'status-frozen' : ''}`}>
+            <span className={`store-active-indicator hide-on-mobile ${seller?.status === 'frozen' || seller?.status === 'suspended' ? 'status-frozen' : ''}`}>
               <span className="pulse-dot"></span> Store Status: <b style={{ textTransform: 'uppercase' }}>{seller?.status || 'Active'}</b>
             </span>
             <span className="seller-sep hide-on-mobile">|</span>
@@ -231,16 +231,17 @@ export default function SellerLayout() {
             <Link to="/seller/wallet" className="seller-topbar-wallet-pill" title="Merchant Wallet & Financial Ledger">
               <div className="stwp-icon"><Ic name="banknote" size={16} /></div>
               <div className="stwp-body">
-                <span className="stwp-lbl">Wallet</span>
+                <span className="stwp-lbl hide-on-mobile">Wallet</span>
                 <b className="stwp-val">{formatMoney(seller?.wallet?.balance || 0)}</b>
               </div>
               {(seller?.wallet?.processingFund > 0) && (
-                <span className="stwp-proc" title="Locked in Order Processing">
+                <span className="stwp-proc hide-on-mobile" title="Locked in Order Processing">
                   🔒 {formatMoney(seller.wallet.processingFund)}
                 </span>
               )}
             </Link>
 
+            {/* Install App Button */}
             <button
               type="button"
               onClick={() => setAppModalOpen(true)}
@@ -251,14 +252,15 @@ export default function SellerLayout() {
               <span className="hide-on-mobile">Install App</span>
             </button>
 
-            <Link to="/seller/support" className="seller-help-link">
-              <Ic name="chat" size={16} /> <span className="help-text hide-on-mobile">Support Chat</span>
+            {/* Desktop Only Links */}
+            <Link to="/seller/support" className="seller-help-link hide-on-mobile">
+              <Ic name="chat" size={16} /> <span className="help-text">Support Chat</span>
               {unreadChat > 0 && <span className="unread-dot-bubble">{unreadChat}</span>}
             </Link>
 
-            <Link to="/seller/settings" className="seller-user-pill" title="Store & Account Settings" style={{ textDecoration: 'none' }}>
+            <Link to="/seller/settings" className="seller-user-pill hide-on-mobile" title="Store & Account Settings" style={{ textDecoration: 'none' }}>
               <span className="seller-user-initial">{seller?.ownerName?.[0] || 'U'}</span>
-              <span className="hide-on-mobile">{seller?.email}</span>
+              <span>{seller?.email}</span>
               <Ic name="gear" size={14} />
             </Link>
           </div>
