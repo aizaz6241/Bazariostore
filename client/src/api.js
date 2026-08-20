@@ -119,8 +119,9 @@ export function resolveMediaUrl(url) {
       }
     }
   }
-  if (!base) return url;
-  return url.startsWith('/') ? `${base}${url}` : `${base}/${url}`;
+  const cleanPath = url.startsWith('/') ? url : `/${url}`;
+  if (!base) return cleanPath;
+  return `${base}${cleanPath}`;
 }
 
 /**

@@ -8,11 +8,10 @@ import { uploadBuffers, deleteKeys } from '../services/uploads.js';
 
 const router = Router();
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const localUploadsDir = path.join(__dirname, '../../uploads');
-if (!fs.existsSync(localUploadsDir)) {
-  fs.mkdirSync(localUploadsDir, { recursive: true });
-}
+const serverUploadsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../uploads');
+const rootUploadsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../uploads');
+if (!fs.existsSync(serverUploadsDir)) fs.mkdirSync(serverUploadsDir, { recursive: true });
+if (!fs.existsSync(rootUploadsDir)) fs.mkdirSync(rootUploadsDir, { recursive: true });
 
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -66,8 +65,12 @@ router.post('/', authSellerOrAdmin, upload.array('files', 5), async (req, res) =
       for (const f of req.files) {
         const ext = path.extname(f.originalname) || (f.mimetype === 'application/pdf' ? '.pdf' : '.png');
         const filename = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}${ext}`;
-        const filepath = path.join(localUploadsDir, filename);
-        fs.writeFileSync(filepath, f.buffer);
+        try {
+          fs.writeFileSync(path.join(serverUploadsDir, filename), f.buffer);
+          fs.writeFileSync(path.join(rootUploadsDir, filename), f.buffer);
+        } catch (e) {
+          console.error('Error writing local upload:', e);
+        }
 
         results.push({
           url: `/uploads/${filename}`,

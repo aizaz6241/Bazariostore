@@ -60,10 +60,13 @@ app.use('/api/user', userRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/sellers', sellerRoutes);
 
-// Static uploads serving (local fallback)
-const uploadsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../uploads');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-app.use('/uploads', express.static(uploadsDir));
+// Static uploads serving (both server/uploads and root/uploads)
+const serverUploadsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../uploads');
+const rootUploadsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../uploads');
+if (!fs.existsSync(serverUploadsDir)) fs.mkdirSync(serverUploadsDir, { recursive: true });
+if (!fs.existsSync(rootUploadsDir)) fs.mkdirSync(rootUploadsDir, { recursive: true });
+app.use('/uploads', express.static(serverUploadsDir));
+app.use('/uploads', express.static(rootUploadsDir));
 
 // Production: serve built React frontend from same single port
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
