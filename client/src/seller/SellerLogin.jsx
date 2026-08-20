@@ -7,8 +7,10 @@ export default function SellerLogin() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
+  const [forgotModalOpen, setForgotModalOpen] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -53,7 +55,12 @@ export default function SellerLogin() {
           </Link>
         </div>
 
-        {err && <div className="seller-auth-error"><Ic name="shield" size={16} /> {err}</div>}
+        {err && (
+          <div className="seller-auth-error">
+            <Ic name="shield" size={16} />
+            <span>{err}</span>
+          </div>
+        )}
 
         <form onSubmit={submit} className="seller-auth-form">
           <label>
@@ -69,15 +76,47 @@ export default function SellerLogin() {
           </label>
 
           <label>
-            <span>Password</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              autoComplete="current-password"
-            />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <span>Password</span>
+              <button
+                type="button"
+                onClick={() => setForgotModalOpen(true)}
+                style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0 }}
+              >
+                Forgot password?
+              </button>
+            </div>
+            <div style={{ position: 'relative' }}>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                required
+                autoComplete="current-password"
+                style={{ paddingRight: 40 }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{
+                  position: 'absolute',
+                  right: 10,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  color: '#64748b',
+                  cursor: 'pointer',
+                  padding: 4,
+                  display: 'flex',
+                  alignItems: 'center',
+                }}
+                title={showPassword ? 'Hide password' : 'Show password'}
+              >
+                <Ic name="eye" size={16} />
+              </button>
+            </div>
           </label>
 
           <button type="submit" className="seller-auth-btn" disabled={loading}>
@@ -93,6 +132,46 @@ export default function SellerLogin() {
           </div>
         </div>
       </div>
+
+      {/* Forgot Password Modal */}
+      {forgotModalOpen && (
+        <div className="admin-modal-overlay" onClick={() => setForgotModalOpen(false)}>
+          <div className="admin-modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <div className="modal-top">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 20 }}>🔑</span>
+                <h3>Seller Password Recovery</h3>
+              </div>
+              <button onClick={() => setForgotModalOpen(false)} className="close-btn"><Ic name="x" size={20} /></button>
+            </div>
+
+            <div style={{ padding: '4px 0 16px 0', fontSize: 13.5, color: '#334155', lineHeight: 1.6 }}>
+              <p style={{ marginTop: 0 }}>
+                Agar aap apna <b>Seller Login Password</b> bhool gaye hain, to <b>Super Admin</b> aapka password foran reset kar sakta hai.
+              </p>
+
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px', margin: '14px 0' }}>
+                <b style={{ color: '#0f172a', display: 'block', marginBottom: 6 }}>🔒 Super Admin Password Reset Steps:</b>
+                <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: '#475569' }}>
+                  <li>Super Admin panel mein <b>Multi-Vendor Seller Management</b> (`/admin/sellers`) open karein.</li>
+                  <li>Aapke store ke samne <b>"Reset Password"</b> button par click karein.</li>
+                  <li>Naya password enter ya generate karke save karein.</li>
+                </ol>
+              </div>
+
+              <p style={{ margin: '10px 0 0 0', fontSize: 12.5, color: '#64748b' }}>
+                📞 Support Email: <code>admin@bazario.com</code> | Help Desk 24/7
+              </p>
+            </div>
+
+            <div className="modal-bottom-actions">
+              <button type="button" onClick={() => setForgotModalOpen(false)} className="btn-primary" style={{ width: '100%' }}>
+                Got It, Thanks!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -56,3 +56,47 @@ export const fmtDay = (d) => new Date(d).toLocaleDateString('en-US', { day: 'num
 
 // UploadThing url -> key (urls look like https://<app>.ufs.sh/f/<key> or utfs.io/f/<key>)
 export const utKeyFromUrl = (url) => (url && url.includes('/f/') ? url.split('/f/')[1].split('?')[0] : null);
+
+/**
+ * Resolves relative /uploads/ media paths to full backend server URLs
+ */
+export function resolveMediaUrl(url) {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('blob:')) {
+    return url;
+  }
+  const base = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
+  if (!base) return url;
+  return url.startsWith('/') ? `${base}${url}` : `${base}/${url}`;
+}
+
+/**
+ * Direct file/attachment download trigger
+ */
+export async function downloadAttachment(url, filename) {
+  if (!url) return;
+  const fullUrl = resolveMediaUrl(url);
+  try {
+    const res = await fetch(fullUrl, { mode: 'cors' });
+    if (!res.ok) throw new Error('Fetch failed');
+    const blob = await res.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename || fullUrl.split('/').pop().split('?')[0] || 'attachment';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 2000);
+  } catch (e) {
+    // Fallback if CORS or direct URL
+    const a = document.createElement('a');
+    a.href = fullUrl;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.download = filename || 'attachment';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+}
