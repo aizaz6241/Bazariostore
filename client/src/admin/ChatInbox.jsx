@@ -24,15 +24,16 @@ export default function ChatInbox() {
   const loadConvos = () => {
     api('/chat/admin/conversations')
       .then((data) => {
-        setConvos(data || []);
-        if (!selectedId && data?.length) {
+        const list = Array.isArray(data) ? data : [];
+        setConvos(list);
+        if (!selectedId && list.length) {
           // don't auto select on mobile screen so list view is visible
           if (typeof window !== 'undefined' && window.innerWidth > 768) {
-            setSelectedId(data[0]._id);
+            setSelectedId(list[0]._id);
           }
         }
       })
-      .catch((e) => console.error(e))
+      .catch((e) => console.error('Admin convos error:', e))
       .finally(() => setLoading(false));
   };
 
@@ -40,13 +41,14 @@ export default function ChatInbox() {
     if (!cid) return;
     api(`/chat/admin/conversations/${cid}/messages`)
       .then((data) => {
-        setMessages(data || []);
+        const msgList = Array.isArray(data) ? data : (data?.messages || []);
+        setMessages(msgList);
         // update unread counter locally
         setConvos((prev) =>
-          prev.map((c) => (c._id === cid ? { ...c, unreadForAdmin: 0 } : c))
+          Array.isArray(prev) ? prev.map((c) => (c._id === cid ? { ...c, unreadForAdmin: 0 } : c)) : []
         );
       })
-      .catch((e) => console.error(e));
+      .catch((e) => console.error('Admin load messages error:', e));
   };
 
   useEffect(() => {
@@ -200,9 +202,9 @@ export default function ChatInbox() {
     }
   };
 
-  const selectedConv = convos.find((c) => c._id === selectedId);
+  const selectedConv = Array.isArray(convos) ? convos.find((c) => c._id === selectedId) : null;
 
-  const filteredConvos = convos.filter((c) => {
+  const filteredConvos = (Array.isArray(convos) ? convos : []).filter((c) => {
     if (!q) return true;
     const name = (c.seller?.storeName || c.storeName || '').toLowerCase();
     const sub = (c.subject || '').toLowerCase();
@@ -215,7 +217,7 @@ export default function ChatInbox() {
         <div className="admin-chat-sidebar-head">
           <div className="flex justify-between items-center mb-2">
             <b style={{ fontSize: 14 }}>Seller Support Inquiries</b>
-            <span className="badge-pill">{convos.length} sellers</span>
+            <span className="badge-pill">{filteredConvos.length} sellers</span>
           </div>
           <div className="admin-search-box search-field-sm">
             <Ic name="search" size={15} />
@@ -236,6 +238,7 @@ export default function ChatInbox() {
           {filteredConvos.map((c) => {
             const isSelected = c._id === selectedId;
             const hasUnread = (c.unreadForAdmin || 0) > 0;
+            const storeTitle = c.storeName || c.seller?.storeName || 'Unknown Store';
             return (
               <div
                 key={c._id}
@@ -243,12 +246,12 @@ export default function ChatInbox() {
                 onClick={() => setSelectedId(c._id)}
               >
                 <div className="convo-avatar">
-                  <span>{(c.storeName || c.seller?.storeName || 'S')[0].toUpperCase()}</span>
+                  <span>{(storeTitle[0] || 'S').toUpperCase()}</span>
                 </div>
                 <div className="convo-body">
                   <div className="convo-top">
-                    <b className="convo-name">{c.storeName || c.seller?.storeName || 'Unknown Store'}</b>
-                    <small className="convo-time">{fmtDay(c.lastAt)}</small>
+                    <b className="convo-name">{storeTitle}</b>
+                    <small className="convo-time">{c.lastAt ? fmtDay(c.lastAt) : ''}</small>
                   </div>
                   <div className="convo-sub">
                     <span className="convo-last-msg">{c.lastMessage || 'No messages yet'}</span>
@@ -275,11 +278,11 @@ export default function ChatInbox() {
                   <Ic name="arrowLeft" size={18} />
                 </button>
                 <div className="ath-info">
-                  <b className="ath-name">{selectedConv.storeName || selectedConv.seller?.storeName}</b>
+                  <b className="ath-name">{selectedConv.storeName || selectedConv.seller?.storeName || 'Seller Support Thread'}</b>
                   <div className="ath-meta">
-                    <span>Owner: {selectedConv.sellerName || selectedConv.seller?.ownerName}</span>
+                    <span>Owner: {selectedConv.sellerName || selectedConv.seller?.ownerName || 'Verified Vendor'}</span>
                     <span>•</span>
-                    <span>{selectedConv.sellerEmail || selectedConv.seller?.email}</span>
+                    <span>{selectedConv.sellerEmail || selectedConv.seller?.email || 'Registered Merchant'}</span>
                   </div>
                 </div>
               </div>
