@@ -217,10 +217,11 @@ export default function SellerLayout() {
               <Ic name="chat" size={16} /> <span className="help-text">Chat with Admin</span>
               {unreadChat > 0 && <span className="unread-dot-bubble">{unreadChat}</span>}
             </Link>
-            <div className="seller-user-pill">
+            <Link to="/seller/settings" className="seller-user-pill" title="Store & Account Settings" style={{ textDecoration: 'none' }}>
               <span className="seller-user-initial">{seller?.ownerName?.[0] || 'U'}</span>
               <span className="hide-on-mobile">{seller?.email}</span>
-            </div>
+              <Ic name="gear" size={14} />
+            </Link>
           </div>
         </header>
 

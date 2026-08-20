@@ -18,6 +18,12 @@ export default function SellerSettings() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
 
+  // Password change state
+  const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwMsg, setPwMsg] = useState({ type: '', text: '' });
+  const [showPw, setShowPw] = useState(false);
+
   useEffect(() => {
     if (seller) {
       setForm({
@@ -51,18 +57,49 @@ export default function SellerSettings() {
     }
   };
 
+  const handlePasswordChange = async (e) => {
+    e.preventDefault();
+    setPwMsg({ type: '', text: '' });
+
+    if (pwForm.newPassword !== pwForm.confirmPassword) {
+      setPwMsg({ type: 'error', text: 'New passwords do not match. Please recheck.' });
+      return;
+    }
+    if (pwForm.newPassword.length < 6) {
+      setPwMsg({ type: 'error', text: 'New password must be at least 6 characters long.' });
+      return;
+    }
+
+    setPwSaving(true);
+    try {
+      const res = await sapi('/sellers/me/change-password', {
+        method: 'POST',
+        body: {
+          currentPassword: pwForm.currentPassword,
+          newPassword: pwForm.newPassword,
+        },
+      });
+      setPwMsg({ type: 'success', text: res.message || 'Password changed successfully! ✅' });
+      setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (err) {
+      setPwMsg({ type: 'error', text: err.message || 'Failed to change password.' });
+    } finally {
+      setPwSaving(false);
+    }
+  };
+
   return (
     <div className="seller-settings-page">
       <div className="seller-page-header">
         <div>
-          <h2>⚙️ Store Settings & Bank Payout Details</h2>
-          <p>Update your business storefront branding, contact information, and bank account for weekly payouts.</p>
+          <h2>⚙️ Store Settings & Profile Management</h2>
+          <p>Manage your storefront branding, payout bank account, business address, and security password.</p>
         </div>
       </div>
 
       {msg && <div className="seller-success-alert">{msg}</div>}
 
-      <form onSubmit={handleSave} className="seller-card settings-form">
+      <form onSubmit={handleSave} className="seller-card settings-form" style={{ marginBottom: 24 }}>
         <div className="settings-section">
           <h3>🏬 Storefront Information</h3>
           <div className="form-grid-2">
@@ -191,10 +228,101 @@ export default function SellerSettings() {
 
         <div className="settings-footer">
           <button type="submit" className="seller-btn-pri" disabled={saving}>
-            {saving ? 'Saving...' : 'Save Settings'}
+            {saving ? 'Saving...' : 'Save Storefront Profile'}
           </button>
         </div>
       </form>
+
+      {/* ─── Security & Password Change Card ────────────────────── */}
+      <div className="seller-card settings-form">
+        <div className="settings-section">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+            <h3>🔒 Security & Password Settings</h3>
+            <button
+              type="button"
+              onClick={() => setShowPw(!showPw)}
+              style={{ background: 'transparent', border: 'none', color: '#0284c7', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              <Ic name="eye" size={15} /> {showPw ? 'Hide Passwords' : 'Show Passwords'}
+            </button>
+          </div>
+
+          <p style={{ fontSize: 13, color: '#64748b', marginBottom: 16 }}>
+            Keep your vendor account secure by updating your password regularly.
+          </p>
+
+          {pwMsg.text && (
+            <div
+              style={{
+                padding: '10px 14px',
+                borderRadius: 8,
+                marginBottom: 16,
+                fontSize: 13,
+                fontWeight: 600,
+                background: pwMsg.type === 'success' ? '#dcfce7' : '#fee2e2',
+                color: pwMsg.type === 'success' ? '#166534' : '#991b1b',
+                border: `1px solid ${pwMsg.type === 'success' ? '#bbf7d0' : '#fecaca'}`,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <Ic name={pwMsg.type === 'success' ? 'badgeCheck' : 'alert'} size={16} />
+              {pwMsg.text}
+            </div>
+          )}
+
+          <form onSubmit={handlePasswordChange}>
+            <div className="form-grid-2">
+              <label className="full-col">
+                <span>Current Account Password</span>
+                <input
+                  type={showPw ? 'text' : 'password'}
+                  value={pwForm.currentPassword}
+                  onChange={(e) => setPwForm({ ...pwForm, currentPassword: e.target.value })}
+                  placeholder="Enter your existing password"
+                  required
+                />
+              </label>
+
+              <label>
+                <span>New Password</span>
+                <input
+                  type={showPw ? 'text' : 'password'}
+                  value={pwForm.newPassword}
+                  onChange={(e) => setPwForm({ ...pwForm, newPassword: e.target.value })}
+                  placeholder="At least 6 characters"
+                  required
+                  minLength={6}
+                />
+              </label>
+
+              <label>
+                <span>Confirm New Password</span>
+                <input
+                  type={showPw ? 'text' : 'password'}
+                  value={pwForm.confirmPassword}
+                  onChange={(e) => setPwForm({ ...pwForm, confirmPassword: e.target.value })}
+                  placeholder="Re-enter new password"
+                  required
+                  minLength={6}
+                />
+              </label>
+            </div>
+
+            <div className="settings-footer" style={{ marginTop: 20 }}>
+              <button
+                type="submit"
+                className="seller-btn-pri"
+                style={{ background: '#0f172a', color: '#fff' }}
+                disabled={pwSaving}
+              >
+                <Ic name="shield" size={15} /> {pwSaving ? 'Updating Password...' : 'Update Password'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
     </div>
   );
 }

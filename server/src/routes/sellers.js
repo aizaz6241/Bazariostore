@@ -105,6 +105,34 @@ router.put('/me', authSeller, async (req, res) => {
   }
 });
 
+// POST /api/sellers/me/change-password (Seller updates their own password)
+router.post('/me/change-password', authSeller, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Current password and new password are required' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'New password must be at least 6 characters long' });
+    }
+
+    const seller = await Seller.findById(req.seller.id);
+    if (!seller) return res.status(404).json({ message: 'Seller not found' });
+
+    const match = await bcrypt.compare(currentPassword, seller.passwordHash);
+    if (!match) {
+      return res.status(400).json({ message: 'Current password is incorrect' });
+    }
+
+    seller.passwordHash = await bcrypt.hash(newPassword, 10);
+    await seller.save();
+
+    res.json({ ok: true, message: 'Password updated successfully! ✅' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // ----------------------------------------------------
 // 2. SELLER DASHBOARD & ANALYTICS
 // ----------------------------------------------------
@@ -1473,6 +1501,26 @@ router.put('/:id', authAdmin('sellers'), async (req, res) => {
     const safeSeller = seller.toObject();
     delete safeSeller.passwordHash;
     res.json(safeSeller);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/sellers/:id/reset-password (Admin resets seller password)
+router.post('/:id/reset-password', authAdmin('sellers'), async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ message: 'New password must be at least 6 characters long' });
+    }
+    const seller = await Seller.findById(req.params.id);
+    if (!seller) return res.status(404).json({ message: 'Seller not found' });
+
+    seller.passwordHash = await bcrypt.hash(newPassword, 10);
+    await seller.save();
+
+    audit(req, 'reset_password', 'seller', seller._id, `Admin reset password for vendor: ${seller.storeName} (${seller.email})`);
+    res.json({ ok: true, message: `Password reset successfully for ${seller.storeName}!` });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

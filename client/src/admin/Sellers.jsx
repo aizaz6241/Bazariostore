@@ -56,6 +56,16 @@ export default function Sellers() {
   const [warnMessage, setWarnMessage] = useState('');
   const [submittingComp, setSubmittingComp] = useState(false);
 
+  // Admin Reset Seller Password Modal
+  const [resetModalOpen, setResetModalOpen] = useState(false);
+  const [resetSeller, setResetSeller] = useState(null);
+  const [newSellerPassword, setNewSellerPassword] = useState('');
+  const [confirmSellerPassword, setConfirmSellerPassword] = useState('');
+  const [resettingPw, setResettingPw] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState('');
+  const [resetError, setResetError] = useState('');
+  const [showAdminSellerPw, setShowAdminSellerPw] = useState(false);
+
   const loadSellers = () => {
     setLoading(true);
     api('/sellers')
@@ -127,6 +137,57 @@ export default function Sellers() {
       alert('Error: ' + err.message);
     } finally {
       setSubmittingComp(false);
+    }
+  };
+
+  const handleOpenResetPassword = (seller) => {
+    setResetSeller(seller);
+    setNewSellerPassword('');
+    setConfirmSellerPassword('');
+    setResetSuccess('');
+    setResetError('');
+    setShowAdminSellerPw(false);
+    setResetModalOpen(true);
+  };
+
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';
+    let res = '';
+    for (let i = 0; i < 10; i++) {
+      res += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setNewSellerPassword(res);
+    setConfirmSellerPassword(res);
+    setShowAdminSellerPw(true);
+  };
+
+  const handleResetPasswordSubmit = async (e) => {
+    e.preventDefault();
+    if (!resetSeller) return;
+    if (newSellerPassword !== confirmSellerPassword) {
+      setResetError('Passwords do not match. Please recheck.');
+      return;
+    }
+    if (newSellerPassword.length < 6) {
+      setResetError('Password must be at least 6 characters long.');
+      return;
+    }
+    setResettingPw(true);
+    setResetError('');
+    setResetSuccess('');
+    try {
+      const res = await api(`/sellers/${resetSeller._id}/reset-password`, {
+        method: 'POST',
+        body: { newPassword: newSellerPassword },
+      });
+      setResetSuccess(res.message || 'Password reset successfully! ✅');
+      setTimeout(() => {
+        setResetModalOpen(false);
+      }, 1800);
+    } catch (err) {
+      setResetError(err.message || 'Failed to reset seller password.');
+    } finally {
+      setResettingPw(false);
     }
   };
 
@@ -405,6 +466,26 @@ export default function Sellers() {
                       title="Inspect Seller Dashboard"
                     >
                       <Ic name="eye" size={14} /> View Dashboard
+                    </button>
+                    <button
+                      onClick={() => handleOpenResetPassword(s)}
+                      className="btn-action-warn"
+                      title="Change or reset seller login password"
+                      style={{
+                        background: '#f8fafc',
+                        color: '#0f172a',
+                        border: '1px solid #cbd5e1',
+                        fontWeight: 600,
+                        fontSize: 12,
+                        padding: '5px 9px',
+                        borderRadius: 6,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <Ic name="shield" size={13} /> Reset Password
                     </button>
                     <button
                       onClick={() => handleOpenPlaceOrder(s)}
@@ -912,6 +993,103 @@ export default function Sellers() {
                 </form>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Admin Reset Seller Password Modal ────────────────────── */}
+      {resetModalOpen && resetSeller && (
+        <div className="admin-modal-overlay" onClick={() => setResetModalOpen(false)}>
+          <div className="admin-modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div className="modal-top">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 20 }}>🔑</span>
+                <h3>Reset Password: <b>{resetSeller.storeName}</b></h3>
+              </div>
+              <button onClick={() => setResetModalOpen(false)} className="close-btn"><Ic name="x" size={20} /></button>
+            </div>
+
+            {resetError && <div className="modal-err-banner">{resetError}</div>}
+            {resetSuccess && (
+              <div style={{ background: '#dcfce7', border: '1px solid #86efac', color: '#166534', padding: '10px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, marginBottom: 14 }}>
+                {resetSuccess}
+              </div>
+            )}
+
+            <form onSubmit={handleResetPasswordSubmit} className="admin-modal-form">
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 14px', marginBottom: 16 }}>
+                <small className="muted" style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 700 }}>
+                  Seller Account Details
+                </small>
+                <div style={{ fontSize: 13, color: '#0f172a', marginTop: 4 }}>
+                  <b>Owner:</b> {resetSeller.ownerName} &bull; <b>Email:</b> <code>{resetSeller.email}</code>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b' }}>
+                  New Password *
+                </label>
+                <button
+                  type="button"
+                  onClick={generateRandomPassword}
+                  style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#2563eb', padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  ⚡ Generate Random Password
+                </button>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <input
+                  type={showAdminSellerPw ? 'text' : 'password'}
+                  value={newSellerPassword}
+                  onChange={(e) => setNewSellerPassword(e.target.value)}
+                  placeholder="Enter new password (min 6 characters)"
+                  required
+                  minLength={6}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                />
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 6, color: '#1e293b' }}>
+                  Confirm New Password *
+                </label>
+                <input
+                  type={showAdminSellerPw ? 'text' : 'password'}
+                  value={confirmSellerPassword}
+                  onChange={(e) => setConfirmSellerPassword(e.target.value)}
+                  placeholder="Confirm new password"
+                  required
+                  minLength={6}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16 }}>
+                <input
+                  type="checkbox"
+                  id="showAdminSellerPw"
+                  checked={showAdminSellerPw}
+                  onChange={(e) => setShowAdminSellerPw(e.target.checked)}
+                />
+                <label htmlFor="showAdminSellerPw" style={{ fontSize: 12, color: '#64748b', cursor: 'pointer' }}>
+                  Show password in plain text
+                </label>
+              </div>
+
+              <div className="modal-bottom-actions">
+                <button type="button" onClick={() => setResetModalOpen(false)} className="btn-cancel">Cancel</button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={resettingPw}
+                  style={{ background: '#0f172a', borderColor: '#0f172a' }}
+                >
+                  {resettingPw ? 'Updating...' : '🔒 Reset Seller Password'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
