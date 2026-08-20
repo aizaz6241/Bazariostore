@@ -41,16 +41,41 @@ export function Login() {
   };
 
   return (
-    <AuthShell title="Login" sub="Apne account mein sign in karein">
+    <AuthShell title="Sign In" sub="Choose your account portal to sign in">
+      {/* Role / Portal Switcher Tabs */}
+      <div className="login-portal-tabs">
+        <Link to="/login" className="portal-tab active">
+          <Ic name="user" size={14} /> Customer
+        </Link>
+        <Link to="/seller/login" className="portal-tab">
+          <Ic name="store" size={14} /> Seller Hub
+        </Link>
+        <Link to="/admin/login" className="portal-tab">
+          <Ic name="shield" size={14} /> Admin
+        </Link>
+      </div>
+
       <form onSubmit={submit}>
         {error && <div className="alert-error"><Ic name="x" size={14} /> {error}</div>}
         <div className="field"><label>Email</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoFocus /></div>
         <div className="field"><label>Password</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" /></div>
-        <button className="btn-primary btn-block" disabled={busy}>{busy ? 'Signing in…' : 'LOGIN'}</button>
+        <button className="btn-primary btn-block" disabled={busy}>{busy ? 'Signing in…' : 'SIGN IN AS CUSTOMER'}</button>
       </form>
       <div className="auth-links">
         <Link to="/forgot-password">Forgot password?</Link>
-        <span>New here? <Link to="/register">Create an account</Link></span>
+        <span>New customer? <Link to="/register">Create an account</Link></span>
+      </div>
+
+      <div className="auth-role-shortcuts">
+        <p className="shortcuts-lbl">Are you a Merchant or Platform Administrator?</p>
+        <div className="shortcuts-grid">
+          <Link to="/seller/login" className="btn-role-shortcut">
+            <Ic name="store" size={14} /> Seller Central Login
+          </Link>
+          <Link to="/admin/login" className="btn-role-shortcut admin">
+            <Ic name="shield" size={14} /> Super Admin Login
+          </Link>
+        </div>
       </div>
     </AuthShell>
   );

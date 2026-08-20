@@ -40,6 +40,19 @@ export default function SellerLogin() {
           <p className="seller-auth-sub">Manage your products, orders, revenue &amp; growth</p>
         </div>
 
+        {/* Role / Portal Switcher Tabs */}
+        <div className="login-portal-tabs" style={{ marginBottom: 20 }}>
+          <Link to="/login" className="portal-tab">
+            <Ic name="user" size={14} /> Customer
+          </Link>
+          <Link to="/seller/login" className="portal-tab active">
+            <Ic name="store" size={14} /> Seller Hub
+          </Link>
+          <Link to="/admin/login" className="portal-tab">
+            <Ic name="shield" size={14} /> Admin
+          </Link>
+        </div>
+
         {err && <div className="seller-auth-error"><Ic name="shield" size={16} /> {err}</div>}
 
         <form onSubmit={submit} className="seller-auth-form">
@@ -73,9 +86,10 @@ export default function SellerLogin() {
         </form>
 
         <div className="seller-auth-footer">
-          <p>Don't have a seller account? Contact the platform administrator to get your vendor account created.</p>
-          <div className="seller-auth-links">
-            <Link to="/">← Back to Storefront</Link>
+          <p>Don't have a seller account? Contact the platform administrator to get your vendor account onboarded.</p>
+          <div className="seller-auth-links" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+            <Link to="/">← Back to Store</Link>
+            <Link to="/admin/login" style={{ color: '#2563eb', fontWeight: 600 }}>👑 Admin Login →</Link>
           </div>
         </div>
       </div>

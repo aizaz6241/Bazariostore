@@ -24,6 +24,7 @@ const SELLER_NAV = [
 export default function SellerLayout() {
   const navigate = useNavigate();
   const token = localStorage.getItem('ng_seller_token');
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [seller, setSeller] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('ng_seller') || 'null');
@@ -140,12 +141,18 @@ export default function SellerLayout() {
 
   return (
     <div className="seller-portal">
+      {/* Mobile Drawer Overlay Backdrop */}
+      {mobileSidebarOpen && (
+        <div className="mobile-drawer-backdrop" onClick={() => setMobileSidebarOpen(false)}></div>
+      )}
+
       {/* Seller Sidebar */}
-      <aside className="seller-sidebar">
+      <aside className={`seller-sidebar ${mobileSidebarOpen ? 'mobile-open' : ''}`}>
         <div className="seller-brand">
           <div className="seller-logo-title">
             <span className="amazon-name" style={{ letterSpacing: '-0.5px', fontWeight: 900 }}>Bazario</span>
             <span className="seller-badge-tag">SELLER CENTRAL</span>
+            <button className="mobile-close-drawer" onClick={() => setMobileSidebarOpen(false)}>✕</button>
           </div>
           <div className="seller-store-card">
             <div className="seller-avatar-circle">
@@ -162,7 +169,13 @@ export default function SellerLayout() {
 
         <nav className="seller-nav">
           {SELLER_NAV.map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => (isActive ? 'active' : '')}>
+            <NavLink
+              key={n.to}
+              to={n.to}
+              end={n.end}
+              onClick={() => setMobileSidebarOpen(false)}
+              className={({ isActive }) => (isActive ? 'active' : '')}
+            >
               <Ic name={n.icon} size={18} />
               <span>{n.label}</span>
               {n.badgeKey === 'unreadChat' && unreadChat > 0 && (
@@ -176,7 +189,10 @@ export default function SellerLayout() {
           <Link to={`/shop?seller=${seller?._id}`} target="_blank" className="view-storefront-btn">
             <Ic name="eye" size={16} /> View Storefront
           </Link>
-          <button onClick={logout} className="seller-logout-btn">
+          <Link to="/admin/login" className="view-storefront-btn" style={{ background: '#334155', color: '#fff', marginTop: 6 }}>
+            <Ic name="shield" size={16} /> Admin Portal
+          </Link>
+          <button onClick={logout} className="seller-logout-btn" style={{ marginTop: 8 }}>
             <Ic name="logout" size={16} /> Sign Out
           </button>
         </div>
@@ -225,21 +241,24 @@ export default function SellerLayout() {
 
         <header className="seller-top-bar">
           <div className="seller-top-left">
+            <button className="mobile-hamburger-btn" onClick={() => setMobileSidebarOpen(true)} aria-label="Toggle Menu">
+              <Ic name="menu" size={22} />
+            </button>
             <span className={`store-active-indicator ${seller?.status === 'frozen' || seller?.status === 'suspended' ? 'status-frozen' : ''}`}>
               <span className="pulse-dot"></span> Store Status: <b style={{ textTransform: 'uppercase' }}>{seller?.status || 'Active'}</b>
             </span>
-            <span className="seller-sep">|</span>
-            <span className="seller-owner-name">Owner: <b>{seller?.ownerName}</b></span>
+            <span className="seller-sep hide-on-mobile">|</span>
+            <span className="seller-owner-name hide-on-mobile">Owner: <b>{seller?.ownerName}</b></span>
           </div>
 
           <div className="seller-top-right">
             <Link to="/seller/support" className="seller-help-link">
-              <Ic name="chat" size={16} /> Need Help? Chat with Admin
+              <Ic name="chat" size={16} /> <span className="help-text">Chat with Admin</span>
               {unreadChat > 0 && <span className="unread-dot-bubble">{unreadChat}</span>}
             </Link>
             <div className="seller-user-pill">
               <span className="seller-user-initial">{seller?.ownerName?.[0] || 'U'}</span>
-              <span>{seller?.email}</span>
+              <span className="hide-on-mobile">{seller?.email}</span>
             </div>
           </div>
         </header>

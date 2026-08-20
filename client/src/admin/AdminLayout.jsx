@@ -18,6 +18,7 @@ const NAV = [
 export default function AdminLayout() {
   const navigate = useNavigate();
   const token = localStorage.getItem('ng_admin_token');
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const admin = (() => {
     try {
       return JSON.parse(localStorage.getItem('ng_admin') || 'null') || { name: localStorage.getItem('ng_admin_name') || 'Admin', permissions: [] };
@@ -58,47 +59,53 @@ export default function AdminLayout() {
       addToast({
         type: 'order',
         title: '🛒 New Order Received!',
-        body: `Order ${o.orderNumber} — ${o.name || 'Customer'} (${o.city || ''})`,
+        body: `Order #${o.orderNumber || ''} created`,
         link: `/admin/orders/${o._id}`,
       });
     };
 
-    const onNotify = (n) => {
-      const soundType = n.type === 'deposit' ? 'deposit' : n.type === 'withdrawal' ? 'withdrawal' : n.type === 'order' ? 'order' : 'default';
-      playNotificationSound(soundType);
-      addToast({
-        type: n.type || 'system',
-        title: n.title || 'New Notification',
-        body: n.body || '',
-        link: n.link || '/admin',
-      });
-      setNotif((prev) => ({ items: [n, ...prev.items].slice(0, 50), unread: prev.unread + 1 }));
-    };
-
-    const onNewMsg = (m) => {
-      if (m.sender === 'seller') {
+    const onMessage = (msg) => {
+      if (msg.sender === 'seller') {
         playNotificationSound('chat');
+        addToast({
+          type: 'chat',
+          title: `💬 New message from ${msg.senderName || 'Seller'}`,
+          body: msg.text ? (msg.text.length > 80 ? msg.text.slice(0, 80) + '...' : msg.text) : 'Sent an attachment',
+          link: '/admin/chat',
+        });
       }
     };
 
+    const onNotify = (n) => {
+      const soundType = n.type === 'deposit' ? 'deposit' : n.type === 'withdrawal' ? 'withdrawal' : n.type === 'approval' ? 'approval' : n.type === 'order' ? 'order' : 'default';
+      playNotificationSound(soundType);
+      addToast({
+        type: n.type || 'system',
+        title: n.title || 'System Notification',
+        body: n.body || '',
+        link: n.link || '/admin',
+      });
+      loadNotif();
+    };
+
     socket.on('order:new', onOrder);
+    socket.on('message:new', onMessage);
     socket.on('notify', onNotify);
-    socket.on('message:new', onNewMsg);
 
     return () => {
       socket.off('connect', join);
       socket.off('order:new', onOrder);
+      socket.off('message:new', onMessage);
       socket.off('notify', onNotify);
-      socket.off('message:new', onNewMsg);
     };
   }, [token, navigate]);
 
   useEffect(() => {
-    const close = (e) => {
+    const fn = (e) => {
       if (bellRef.current && !bellRef.current.contains(e.target)) setBellOpen(false);
     };
-    document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
+    document.addEventListener('mousedown', fn);
+    return () => document.removeEventListener('mousedown', fn);
   }, []);
 
   if (!token) return null;
@@ -114,15 +121,32 @@ export default function AdminLayout() {
 
   return (
     <div className="admin">
-      <aside className="admin-side">
+      {/* Mobile Drawer Overlay Backdrop */}
+      {mobileSidebarOpen && (
+        <div className="mobile-drawer-backdrop" onClick={() => setMobileSidebarOpen(false)}></div>
+      )}
+
+      <aside className={`admin-side ${mobileSidebarOpen ? 'mobile-open' : ''}`}>
         <div className="admin-logo">
-          <span className="logo-script">Bazario</span>
-          <span className="logo-name">ADMIN HUB</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+            <div>
+              <span className="logo-script">Bazario</span>
+              <span className="logo-name">ADMIN HUB</span>
+            </div>
+            <button className="mobile-close-drawer" onClick={() => setMobileSidebarOpen(false)}>✕</button>
+          </div>
           <small>Super Admin Control Center</small>
         </div>
         <nav>
           {NAV.filter((n) => can(n.perm)).map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.end}><Ic name={n.icon} size={17} /> {n.label}</NavLink>
+            <NavLink
+              key={n.to}
+              to={n.to}
+              end={n.end}
+              onClick={() => setMobileSidebarOpen(false)}
+            >
+              <Ic name={n.icon} size={17} /> {n.label}
+            </NavLink>
           ))}
         </nav>
         <div className="admin-side-bottom">
@@ -134,7 +158,11 @@ export default function AdminLayout() {
       <div className="admin-main">
         <header className="admin-top">
           <div className="admin-top-title">
-            <b>Platform Governance & Multi-Vendor Hub</b>
+            <button className="mobile-hamburger-btn" onClick={() => setMobileSidebarOpen(true)} aria-label="Toggle Menu">
+              <Ic name="menu" size={22} />
+            </button>
+            <b className="hide-on-mobile">Platform Governance & Multi-Vendor Hub</b>
+            <b className="show-on-mobile" style={{ fontSize: 14 }}>Bazario Admin</b>
           </div>
           <span className="admin-top-right">
             <span className="bell-wrap" ref={bellRef}>
@@ -166,7 +194,7 @@ export default function AdminLayout() {
                 </div>
               )}
             </span>
-            <span className="admin-user"><span className="admin-av">{admin.name[0]}</span> {admin.name}</span>
+            <span className="admin-user"><span className="admin-av">{admin.name[0]}</span> <span className="hide-on-mobile">{admin.name}</span></span>
           </span>
         </header>
         <div className="admin-content">
