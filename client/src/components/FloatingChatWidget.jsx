@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { sapi, api, fmtDate } from '../api.js';
+import { sapi, api, fmtDate, compressImage } from '../api.js';
 import { getSocket } from '../socket.js';
 import Ic from './Icons.jsx';
 import ChatAttachment from './ChatAttachment.jsx';
+import ChatMessageBubble from './ChatMessageBubble.jsx';
 
 export default function FloatingChatWidget({ role = 'seller', currentSeller = null }) {
   const location = useLocation();
@@ -14,6 +15,7 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
   const [text, setText] = useState('');
   const [file, setFile] = useState(null);
   const [filePreview, setFilePreview] = useState(null);
+  const [replyingTo, setReplyingTo] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -24,8 +26,9 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
 
   const scrollRef = useRef(null);
   const fileInputRef = useRef(null);
+  const textInputRef = useRef(null);
 
-  // Hide floating widget if user is already on the full support/chat page
+  // Hide floating widget if user is already on the full dedicated chat page
   const isFullChatPage =
     location.pathname === '/seller/support' ||
     location.pathname === '/admin/chat';
@@ -35,8 +38,9 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
     setLoading(true);
     sapi('/chat/seller/thread')
       .then((res) => {
-        setConv(res.conversation);
-        setMessages(res.messages || []);
+        if (!res) return;
+        setConv(res.conversation || null);
+        setMessages(Array.isArray(res.messages) ? res.messages : []);
         if (isOpen) {
           sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
           setUnreadCount(0);
@@ -44,7 +48,7 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
           setUnreadCount(res.conversation.unreadForSeller);
         }
       })
-      .catch((e) => console.error(e))
+      .catch((e) => console.error('Seller thread load error:', e))
       .finally(() => setLoading(false));
   };
 
@@ -53,14 +57,15 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
     setLoading(true);
     api('/chat/admin/conversations')
       .then((data) => {
-        setAdminConvos(data || []);
-        const totalUnread = (data || []).reduce((acc, c) => acc + (c.unreadForAdmin || 0), 0);
+        const convList = Array.isArray(data) ? data : [];
+        setAdminConvos(convList);
+        const totalUnread = convList.reduce((acc, c) => acc + (c.unreadForAdmin || 0), 0);
         setUnreadCount(totalUnread);
-        if (!selectedConvoId && data?.length) {
-          setSelectedConvoId(data[0]._id);
+        if (!selectedConvoId && convList.length) {
+          setSelectedConvoId(convList[0]._id);
         }
       })
-      .catch((e) => console.error(e))
+      .catch((e) => console.error('Admin convos load error:', e))
       .finally(() => setLoading(false));
   };
 
@@ -68,10 +73,10 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
     if (!id) return;
     api(`/chat/admin/conversations/${id}/messages`)
       .then((res) => {
-        setMessages(res.messages || []);
+        setMessages(Array.isArray(res) ? res : res?.messages || []);
         api(`/chat/admin/conversations/${id}/read`, { method: 'POST' }).catch(() => {});
       })
-      .catch((e) => console.error(e));
+      .catch((e) => console.error('Admin messages load error:', e));
   };
 
   useEffect(() => {
@@ -81,11 +86,19 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
       loadAdminConvos();
     }
 
-    const socket = getSocket();
+    let socket;
+    try {
+      socket = getSocket();
+    } catch (e) {
+      console.warn('Socket warning:', e);
+    }
+
     const onNewMsg = (msg) => {
+      if (!msg) return;
       if (role === 'seller') {
         setMessages((prev) => {
-          if (prev.some((m) => m._id === msg._id)) return prev;
+          if (!Array.isArray(prev)) return [msg];
+          if (prev.some((m) => m?._id === msg?._id)) return prev;
           return [...prev, msg];
         });
         if (!isOpen && msg.sender === 'admin') {
@@ -97,7 +110,8 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
         // Admin
         if (msg.conversation === selectedConvoId) {
           setMessages((prev) => {
-            if (prev.some((m) => m._id === msg._id)) return prev;
+            if (!Array.isArray(prev)) return [msg];
+            if (prev.some((m) => m?._id === msg?._id)) return prev;
             return [...prev, msg];
           });
         }
@@ -108,9 +122,13 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
       }
     };
 
-    socket.on('message:new', onNewMsg);
+    if (socket) {
+      socket.on('message:new', onNewMsg);
+    }
     return () => {
-      socket.off('message:new', onNewMsg);
+      if (socket) {
+        socket.off('message:new', onNewMsg);
+      }
     };
   }, [role, isOpen, selectedConvoId]);
 
@@ -162,6 +180,11 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const handleStartReply = (msg) => {
+    setReplyingTo(msg);
+    textInputRef.current?.focus();
+  };
+
   const handleSend = async (e) => {
     e.preventDefault();
     const clean = text.trim();
@@ -176,8 +199,9 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
     try {
       if (file) {
         setUploading(true);
+        const fileToUpload = await compressImage(file);
         const fd = new FormData();
-        fd.append('files', file);
+        fd.append('files', fileToUpload);
 
         const uploadFn = role === 'seller' ? sapi : api;
         const uploadRes = await uploadFn('/uploads', { method: 'POST', body: fd });
@@ -191,8 +215,20 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
         setUploading(false);
       }
 
+      const targetReply = replyingTo ? {
+        messageId: replyingTo._id,
+        sender: replyingTo.sender,
+        senderName: replyingTo.sender === (role === 'seller' ? 'seller' : 'admin')
+          ? 'You'
+          : (replyingTo.senderName || (role === 'seller' ? 'Super Admin' : 'Seller')),
+        text: replyingTo.text || (replyingTo.attachmentType === 'pdf' ? `📄 ${replyingTo.attachmentName || 'PDF Document'}` : '📷 Image Attachment'),
+        attachmentType: replyingTo.attachmentType || null,
+        attachmentName: replyingTo.attachmentName || '',
+      } : null;
+
       setText('');
       removeFile();
+      setReplyingTo(null);
 
       if (role === 'seller') {
         await sapi('/chat/seller/send', {
@@ -203,6 +239,7 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
             attachmentType,
             attachmentName,
             attachmentSize,
+            replyTo: targetReply,
           },
         });
       } else {
@@ -215,13 +252,14 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
             attachmentType,
             attachmentName,
             attachmentSize,
+            replyTo: targetReply,
           },
         });
         loadAdminConvos();
       }
     } catch (err) {
       setText(clean);
-      alert('Failed to send: ' + err.message);
+      alert('Failed to send message: ' + err.message);
     } finally {
       setSending(false);
       setUploading(false);
@@ -330,22 +368,37 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
             {messages.map((m) => {
               const isMe = role === 'seller' ? m.sender === 'seller' : m.sender === 'admin';
               return (
-                <div key={m._id} className={`floating-msg-bubble-wrap ${isMe ? 'msg-me' : 'msg-them'}`}>
-                  <div className="floating-msg-sender">
-                    {isMe ? 'You' : m.senderName || (role === 'seller' ? 'Super Admin' : 'Seller')}
-                  </div>
-                  <div className="floating-msg-body">
-                    {m.attachment && <ChatAttachment msg={m} />}
-                    {m.text && <div className="floating-msg-text">{m.text}</div>}
-                  </div>
-                  <div className="floating-msg-time">
-                    {fmtDate(m.createdAt)}
-                  </div>
-                </div>
+                <ChatMessageBubble
+                  key={m._id}
+                  msg={m}
+                  isMe={isMe}
+                  myRole={role}
+                  onReply={handleStartReply}
+                />
               );
             })}
             <div ref={scrollRef} />
           </div>
+
+          {/* Active Replying-To Bar */}
+          {replyingTo && (
+            <div className="chat-replying-bar floating-reply-bar">
+              <div className="crb-left">
+                <div className="crb-indicator"></div>
+                <div className="crb-info">
+                  <span className="crb-title">
+                    Replying to <b>{replyingTo.sender === (role === 'seller' ? 'seller' : 'admin') ? 'You' : (replyingTo.senderName || (role === 'seller' ? 'Super Admin' : 'Seller'))}</b>
+                  </span>
+                  <span className="crb-snippet">
+                    {replyingTo.text || (replyingTo.attachmentType === 'pdf' ? `📄 ${replyingTo.attachmentName || 'PDF Document'}` : '📷 Image Attachment')}
+                  </span>
+                </div>
+              </div>
+              <button type="button" className="crb-close" onClick={() => setReplyingTo(null)} title="Cancel reply">
+                <Ic name="x" size={16} />
+              </button>
+            </div>
+          )}
 
           {/* Pending Attachment Preview */}
           {file && (
@@ -394,9 +447,10 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
 
             <input
               type="text"
+              ref={textInputRef}
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder={file ? 'Add a caption...' : 'Type message...'}
+              placeholder={file ? 'Add a caption...' : replyingTo ? `Reply to ${replyingTo.sender === (role === 'seller' ? 'seller' : 'admin') ? 'your message' : 'Admin'}...` : 'Type message...'}
               disabled={sending}
             />
 

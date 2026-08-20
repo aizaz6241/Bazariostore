@@ -2640,6 +2640,28 @@ h1, h2, h3, h4 { line-height: 1.25; }
   cursor: not-allowed;
 }
 
+.floating-chat-messages .chat-bubble-wrap {
+  margin-bottom: 8px;
+}
+.floating-chat-messages .chat-bubble-inner {
+  max-width: 90%;
+  font-size: 12.5px;
+  padding: 8px 12px;
+}
+.floating-reply-bar {
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  background: #f8fafc;
+  padding: 6px 12px;
+}
+.floating-preview {
+  margin: 0;
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+}
+
 .floating-preview {
   padding: 6px 12px;
 }
