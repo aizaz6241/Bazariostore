@@ -7,19 +7,19 @@ import { getSetting } from '../models/System.js';
 // ------------------------------------------------------------------
 
 export const PAYMENT_METHODS = [
-  { key: 'cod', name: 'Cash on Delivery', sub: 'Pay when you receive your order', icon: 'banknote' },
-  { key: 'easypaisa', name: 'Easypaisa', sub: 'Pay securely via Easypaisa wallet', icon: 'wallet' },
-  { key: 'jazzcash', name: 'JazzCash', sub: 'Pay securely via JazzCash wallet', icon: 'wallet' },
-  { key: 'credit_card', name: 'Credit Card', sub: 'Visa, Mastercard, UnionPay', icon: 'card' },
-  { key: 'debit_card', name: 'Debit Card', sub: 'All Pakistani bank debit cards', icon: 'card' },
+  { key: 'cod', name: 'Cash on Delivery', sub: 'Pay securely when your package arrives', icon: 'banknote' },
+  { key: 'credit_card', name: 'Credit Card', sub: 'Visa, Mastercard, AMEX, Discover', icon: 'card' },
+  { key: 'debit_card', name: 'Debit Card', sub: 'All international bank debit cards', icon: 'card' },
+  { key: 'paypal', name: 'PayPal & Apple Pay', sub: 'Fast & encrypted 1-click checkout', icon: 'wallet' },
+  { key: 'stripe', name: 'Stripe Global Payments', sub: 'Instant & PCI-DSS certified gateway', icon: 'card' },
 ];
 
 const DEFAULT_CONFIG = {
   cod: { enabled: true },
-  easypaisa: { enabled: false, merchantId: '', storeId: '', apiKey: '' },
-  jazzcash: { enabled: false, merchantId: '', password: '', integritySalt: '' },
-  credit_card: { enabled: false, gateway: '', merchantId: '', apiKey: '', apiSecret: '' },
-  debit_card: { enabled: false, gateway: '', merchantId: '', apiKey: '', apiSecret: '' },
+  credit_card: { enabled: true, gateway: '', merchantId: '', apiKey: '', apiSecret: '' },
+  debit_card: { enabled: true, gateway: '', merchantId: '', apiKey: '', apiSecret: '' },
+  paypal: { enabled: false, clientId: '', clientSecret: '' },
+  stripe: { enabled: false, publishableKey: '', secretKey: '' },
 };
 
 export async function getPaymentConfig() {

@@ -525,7 +525,7 @@ router.post('/', authAdmin('sellers'), async (req, res) => {
       phone: phone || '',
       storeSlug,
       commissionRate: commissionRate !== undefined ? Number(commissionRate) : 10,
-      address: { city: city || 'Lahore' },
+      address: { city: city || 'New York' },
       status: 'active',
     });
 

@@ -45,7 +45,7 @@ const orderSchema = new mongoose.Schema(
       city: String,
       state: String,
       postalCode: String,
-      country: { type: String, default: 'Pakistan' },
+      country: { type: String, default: 'United States' },
     },
     shipping: {
       methodId: { type: mongoose.Schema.Types.ObjectId, ref: 'ShippingMethod' },

@@ -82,10 +82,10 @@ export default function Shipping() {
             <F label="Name *"><input value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} required /></F>
             <F label="Description"><input value={edit.description} onChange={(e) => setEdit({ ...edit, description: e.target.value })} /></F>
             <div className="form-grid">
-              <F label="Charges (Rs — 0 = free)"><input type="number" value={edit.cost} onChange={(e) => setEdit({ ...edit, cost: e.target.value })} /></F>
+              <F label="Charges ($ — 0 = free)"><input type="number" value={edit.cost} onChange={(e) => setEdit({ ...edit, cost: e.target.value })} /></F>
               <F label="Delivery Time"><input value={edit.etaText} onChange={(e) => setEdit({ ...edit, etaText: e.target.value })} placeholder="e.g. 3-5 business days" /></F>
-              <F label="Delivery Zones (comma separated — khali = nationwide)"><input value={edit.zones} onChange={(e) => setEdit({ ...edit, zones: e.target.value })} placeholder="Lahore, Karachi" /></F>
-              <F label="Free Shipping Rule (order Rs.X se zyada = free)"><input type="number" value={edit.freeAbove} onChange={(e) => setEdit({ ...edit, freeAbove: e.target.value })} placeholder="e.g. 3000" /></F>
+              <F label="Delivery Zones (comma separated — empty = worldwide)"><input value={edit.zones} onChange={(e) => setEdit({ ...edit, zones: e.target.value })} placeholder="New York, London, Tokyo" /></F>
+              <F label="Free Shipping Rule (order over $X = free)"><input type="number" value={edit.freeAbove} onChange={(e) => setEdit({ ...edit, freeAbove: e.target.value })} placeholder="e.g. 50" /></F>
               <F label="Sort Order"><input type="number" value={edit.sortOrder} onChange={(e) => setEdit({ ...edit, sortOrder: e.target.value })} /></F>
             </div>
             <div className="form-actions">

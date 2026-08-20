@@ -1439,11 +1439,25 @@ h1, h2, h3, h4 { line-height: 1.25; }
   color: #fff !important;
   border-bottom: none !important;
 }
+.header-in {
+  display: flex !important;
+  align-items: center !important;
+  gap: 16px !important;
+  padding: 8px 0 !important;
+  min-height: 60px !important;
+}
+
 .amazon-main-logo {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  text-decoration: none;
+  display: flex !important;
+  align-items: center !important;
+  padding: 4px 6px !important;
+  border-radius: 4px !important;
+  border: 1px solid transparent !important;
+  text-decoration: none !important;
+  flex-shrink: 0 !important;
+}
+.amazon-main-logo:hover {
+  border-color: #fff !important;
 }
 .amazon-logo-group {
   display: flex;
@@ -1464,83 +1478,113 @@ h1, h2, h3, h4 { line-height: 1.25; }
   letter-spacing: 2px;
   margin-top: 1px;
 }
-.amazon-pakistan-badge {
-  font-size: 12px;
-  color: #febd69;
-  font-weight: 700;
-  margin-top: -8px;
-}
 
 .header-deliver-to {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #fff;
-  cursor: pointer;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  color: #fff !important;
+  padding: 4px 8px !important;
+  border-radius: 4px !important;
+  border: 1px solid transparent !important;
+  cursor: pointer !important;
+  flex-shrink: 0 !important;
+}
+.header-deliver-to:hover {
+  border-color: #fff !important;
 }
 .header-deliver-to svg { color: #febd69; }
 .header-deliver-to small { font-size: 11px; color: #cbd5e1; display: block; line-height: 1; }
 .header-deliver-to b { font-size: 13px; color: #fff; line-height: 1.2; }
 
 .searchbar.amazon-search-style {
-  background: #fff;
-  border-radius: 4px;
-  border: 2px solid transparent;
-  overflow: hidden;
-  max-width: 640px;
+  background: #fff !important;
+  border-radius: 4px !important;
+  border: 2px solid transparent !important;
+  overflow: hidden !important;
+  flex: 1 !important;
+  max-width: 700px !important;
+  height: 40px !important;
+  display: flex !important;
+  align-items: stretch !important;
+  margin: 0 4px !important;
 }
 .searchbar.amazon-search-style:focus-within {
-  border-color: #febd69;
-  box-shadow: 0 0 0 3px rgba(254, 189, 105, 0.4);
+  border-color: #febd69 !important;
+  box-shadow: 0 0 0 3px rgba(254, 189, 105, 0.4) !important;
 }
 .search-cat select {
   background: #f3f4f6;
   border: none;
   font-size: 12px;
-  padding: 10px 8px;
+  padding: 0 10px;
   color: #334155;
   font-weight: 500;
   outline: none;
+  height: 100%;
 }
 .searchbar .search-btn {
   background: #febd69 !important;
   color: #131921 !important;
   padding: 0 16px;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .searchbar .search-btn:hover { background: #f3a847 !important; }
 
 .header-actions {
-  display: flex;
-  align-items: center;
-  gap: 20px;
+  display: flex !important;
+  align-items: center !important;
+  gap: 14px !important;
+  margin-left: auto !important;
+  flex-shrink: 0 !important;
 }
-.header-seller-link, .header-orders-link {
-  display: flex;
-  flex-direction: column;
-  color: #fff;
-  line-height: 1.1;
-  text-decoration: none;
+.header-orders-link {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  color: #fff !important;
+  line-height: 1.15 !important;
+  text-decoration: none !important;
+  padding: 4px 8px !important;
+  border-radius: 4px !important;
+  border: 1px solid transparent !important;
+  min-height: 38px !important;
 }
-.header-seller-link small, .header-orders-link small { font-size: 11px; color: #cbd5e1; }
-.header-seller-link b, .header-orders-link b { font-size: 13px; color: #fff; font-weight: 700; }
-.header-seller-link:hover b, .header-orders-link:hover b { color: #febd69; }
+.header-orders-link small { font-size: 11px; color: #cbd5e1; }
+.header-orders-link b { font-size: 13px; color: #fff; font-weight: 700; }
+.header-orders-link:hover { border-color: #fff !important; }
 
 .header-account {
   color: #fff !important;
-  display: flex;
-  flex-direction: column;
-  line-height: 1.1;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  line-height: 1.15 !important;
+  padding: 4px 8px !important;
+  border-radius: 4px !important;
+  border: 1px solid transparent !important;
+  min-height: 38px !important;
+  text-decoration: none !important;
 }
+.header-account:hover { border-color: #fff !important; }
 .header-account small { font-size: 11px; color: #cbd5e1; }
-.header-account b { font-size: 13px; color: #fff; display: flex; align-items: center; gap: 4px; }
+.header-account b { font-size: 13px; color: #fff; display: flex; align-items: center; gap: 4px; font-weight: 700; }
 
 .header-cart {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #fff;
-  text-decoration: none;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  color: #fff !important;
+  text-decoration: none !important;
+  padding: 4px 8px !important;
+  border-radius: 4px !important;
+  border: 1px solid transparent !important;
+  min-height: 38px !important;
 }
+.header-cart:hover { border-color: #fff !important; }
 .header-cart .cart-icon {
   position: relative;
   display: flex;

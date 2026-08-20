@@ -160,7 +160,7 @@ export default function SellerSettings() {
                 type="text"
                 value={form.bankDetails?.bankName || ''}
                 onChange={(e) => setForm({ ...form, bankDetails: { ...form.bankDetails, bankName: e.target.value } })}
-                placeholder="e.g. Meezan Bank, HBL, Bank Alfalah"
+                placeholder="e.g. JPMorgan Chase, Bank of America, Barclays"
               />
             </label>
             <label>
@@ -182,12 +182,12 @@ export default function SellerSettings() {
               />
             </label>
             <label>
-              <span>IBAN Number</span>
+              <span>IBAN / Routing Number</span>
               <input
                 type="text"
                 value={form.bankDetails?.iban || ''}
                 onChange={(e) => setForm({ ...form, bankDetails: { ...form.bankDetails, iban: e.target.value } })}
-                placeholder="PK00MEZN000..."
+                placeholder="US00CHAS000..."
               />
             </label>
           </div>
@@ -202,7 +202,7 @@ export default function SellerSettings() {
                 type="text"
                 value={form.address?.street || ''}
                 onChange={(e) => setForm({ ...form, address: { ...form.address, street: e.target.value } })}
-                placeholder="Shop # / Plaza / Building"
+                placeholder="Building / Suite / Street Address"
               />
             </label>
             <label>
@@ -211,16 +211,16 @@ export default function SellerSettings() {
                 type="text"
                 value={form.address?.city || ''}
                 onChange={(e) => setForm({ ...form, address: { ...form.address, city: e.target.value } })}
-                placeholder="Lahore, Karachi, Islamabad"
+                placeholder="San Francisco, New York, London"
               />
             </label>
             <label>
-              <span>State / Province</span>
+              <span>State / Region</span>
               <input
                 type="text"
                 value={form.address?.state || ''}
                 onChange={(e) => setForm({ ...form, address: { ...form.address, state: e.target.value } })}
-                placeholder="Punjab, Sindh"
+                placeholder="California, New York, Texas"
               />
             </label>
           </div>

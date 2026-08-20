@@ -1,7 +1,7 @@
 {
-  "name": "Bazario Marketplace & Seller Central",
+  "name": "Bazario Global Marketplace",
   "short_name": "Bazario",
-  "description": "Shop millions of products from verified sellers across Pakistan. Prime express delivery, cash on delivery, and 14-day easy returns.",
+  "description": "Shop millions of products from verified global sellers. Express delivery, secure checkout, and 14-day easy returns.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

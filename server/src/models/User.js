@@ -9,7 +9,7 @@ const addressSchema = new mongoose.Schema({
   city: String,
   state: String,
   postalCode: String,
-  country: { type: String, default: 'Pakistan' },
+  country: { type: String, default: 'United States' },
   isDefault: { type: Boolean, default: false },
 });
 

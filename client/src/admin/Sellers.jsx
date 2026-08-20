@@ -16,7 +16,7 @@ export default function Sellers() {
     password: '',
     phone: '',
     commissionRate: 10,
-    city: 'Lahore',
+    city: 'New York',
   });
   const [creating, setCreating] = useState(false);
   const [createErr, setCreateErr] = useState('');
@@ -33,12 +33,12 @@ export default function Sellers() {
   const [orderForm, setOrderForm] = useState({
     productId: '',
     qty: 1,
-    customerName: 'Ahmad Raza',
-    customerPhone: '+92 300 1234567',
+    customerName: 'Alex Miller',
+    customerPhone: '+1 (555) 234-5678',
     customerEmail: 'customer@gmail.com',
-    street: 'House 12, Main Street',
-    city: 'Lahore',
-    state: 'Punjab',
+    street: '42 Main Street, Suite 500',
+    city: 'New York',
+    state: 'NY',
     paymentMethod: 'cod',
     shippingCost: 0,
     adminNotes: 'Manually placed by Admin',
@@ -208,7 +208,7 @@ export default function Sellers() {
         password: '',
         phone: '',
         commissionRate: 10,
-        city: 'Lahore',
+        city: 'New York',
       });
       loadSellers();
     } catch (err) {
@@ -237,11 +237,11 @@ export default function Sellers() {
         productId: prods[0]?._id || '',
         qty: 1,
         customerName: 'Customer Name',
-        customerPhone: '+92 300 1234567',
+        customerPhone: '+1 (555) 234-5678',
         customerEmail: 'customer@gmail.com',
         street: 'Street Address',
-        city: 'Lahore',
-        state: 'Punjab',
+        city: 'New York',
+        state: 'NY',
         paymentMethod: 'cod',
         shippingCost: 0,
         adminNotes: `Order created by Admin for ${seller.storeName}`,
@@ -590,7 +590,7 @@ export default function Sellers() {
                     type="text"
                     value={createForm.city}
                     onChange={(e) => setCreateForm({ ...createForm, city: e.target.value })}
-                    placeholder="Lahore, Karachi, Islamabad"
+                    placeholder="New York, London, San Francisco"
                   />
                 </label>
               </div>

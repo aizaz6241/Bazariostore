@@ -12,7 +12,7 @@ function TopBar() {
     <div className="topbar">
       <div className="container topbar-in">
         <span className="topbar-item">
-          <Ic name="badgeCheck" size={15} /> {t.welcome || 'Welcome to Bazario — The World\'s Multi-Vendor Marketplace'}
+          <Ic name="badgeCheck" size={15} /> {t.welcome || 'Welcome to Bazario — Premier Global Multi-Vendor Marketplace'}
         </span>
         <div className="topbar-mid">
           {(t.promos || []).map((p, i) => (
@@ -20,11 +20,6 @@ function TopBar() {
               <Ic name={p.icon || 'truck'} size={15} /> {p.text}
             </span>
           ))}
-        </div>
-        <div className="topbar-right-links">
-          <Link to="/seller/login" className="seller-portal-cta">
-            🏬 <b>Seller Central</b>
-          </Link>
         </div>
       </div>
     </div>
@@ -94,12 +89,6 @@ function Header() {
 
         {/* Header Right Actions */}
         <div className="header-actions">
-          {/* Seller Central Shortcut */}
-          <Link to="/seller/login" className="header-seller-link" title="Vendor Management Portal">
-            <small>Become a</small>
-            <b>Seller</b>
-          </Link>
-
           {/* User Account */}
           <div className="nav-drop header-account-drop">
             <Link to={user ? '/account' : '/login'} className="header-account">
@@ -257,8 +246,6 @@ function MobileNav() {
     <nav className="mobile-nav">
       <NavLink to="/" end><Ic name="home" size={20} /><span>Home</span></NavLink>
       <NavLink to="/shop"><Ic name="grid" size={20} /><span>Deals</span></NavLink>
-      <NavLink to="/seller/login"><Ic name="store" size={20} /><span>Seller</span></NavLink>
-      <NavLink to="/admin/login"><Ic name="shield" size={20} /><span>Admin</span></NavLink>
       <NavLink to="/cart" className="mn-cart">
         <Ic name="cart" size={20} />
         {count > 0 && <em className="mn-badge">{count}</em>}
