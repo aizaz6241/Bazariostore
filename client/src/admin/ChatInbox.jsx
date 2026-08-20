@@ -179,7 +179,7 @@ export default function ChatInbox() {
   });
 
   return (
-    <div className="admin-chat-layout">
+    <div className={`admin-chat-layout ${selectedId ? 'mobile-thread-view' : 'mobile-list-view'}`}>
       {/* Sidebar with seller conversations */}
       <div className="admin-chat-sidebar">
         <div className="admin-chat-sidebar-head">
@@ -240,6 +240,14 @@ export default function ChatInbox() {
           <>
             {/* Header */}
             <div className="admin-thread-head">
+              <button
+                type="button"
+                className="chat-mobile-back-btn"
+                onClick={() => setSelectedId(null)}
+                title="Back to conversations list"
+              >
+                <Ic name="arrowLeft" size={16} /> Back
+              </button>
               <div className="thread-store-info">
                 <h3>🏬 {selectedConv.seller?.storeName || selectedConv.storeName}</h3>
                 <small className="muted">
