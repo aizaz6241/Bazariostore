@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate, Link, Navigate } from 'react-router-dom';
-import { sapi } from '../api.js';
+import { sapi, money } from '../api.js';
 import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
 import FloatingChatWidget from '../components/FloatingChatWidget.jsx';
@@ -221,6 +221,20 @@ export default function SellerLayout() {
           </div>
 
           <div className="seller-top-right">
+            {/* Live Merchant Wallet Quick Pill */}
+            <Link to="/seller/wallet" className="seller-topbar-wallet-pill" title="Merchant Wallet & Financial Ledger">
+              <div className="stwp-icon"><Ic name="banknote" size={16} /></div>
+              <div className="stwp-body">
+                <span className="stwp-lbl">Wallet</span>
+                <b className="stwp-val">{money(seller?.wallet?.balance || 0)}</b>
+              </div>
+              {(seller?.wallet?.processingFund > 0) && (
+                <span className="stwp-proc" title="Locked in Order Processing">
+                  🔒 {money(seller.wallet.processingFund)}
+                </span>
+              )}
+            </Link>
+
             <button
               type="button"
               onClick={() => setAppModalOpen(true)}
@@ -228,12 +242,14 @@ export default function SellerLayout() {
               title="Install Bazario App on Android / iOS"
             >
               <Ic name="download" size={14} />
-              <span>Install App</span>
+              <span className="hide-on-mobile">Install App</span>
             </button>
+
             <Link to="/seller/support" className="seller-help-link">
-              <Ic name="chat" size={16} /> <span className="help-text">Chat with Admin</span>
+              <Ic name="chat" size={16} /> <span className="help-text hide-on-mobile">Support Chat</span>
               {unreadChat > 0 && <span className="unread-dot-bubble">{unreadChat}</span>}
             </Link>
+
             <Link to="/seller/settings" className="seller-user-pill" title="Store & Account Settings" style={{ textDecoration: 'none' }}>
               <span className="seller-user-initial">{seller?.ownerName?.[0] || 'U'}</span>
               <span className="hide-on-mobile">{seller?.email}</span>

@@ -45,11 +45,52 @@ export default function SellerDashboard() {
           <p>Welcome back, <b>{data?.seller?.storeName}</b>! Here is your real-time performance summary.</p>
         </div>
         <div className="seller-quick-actions">
+          <Link to="/seller/wallet" className="seller-btn-wallet">
+            <Ic name="banknote" size={16} /> My Wallet ({money(stats?.availableBalance || data?.seller?.wallet?.balance)})
+          </Link>
           <button type="button" onClick={() => setAppModalOpen(true)} className="seller-btn-app-install">
-            <Ic name="download" size={16} /> Install Seller App
+            <Ic name="download" size={16} /> Install App
           </button>
           <Link to="/seller/products" className="seller-btn-pri"><Ic name="plus" size={16} /> Add Product</Link>
           <Link to="/seller/support" className="seller-btn-sec"><Ic name="chat" size={16} /> Support Chat</Link>
+        </div>
+      </div>
+
+      {/* ─── LIVE MERCHANT WALLET HERO & QUICK PAYOUT ACTIONS ─── */}
+      <div className="seller-wallet-hero-card">
+        <div className="swh-left">
+          <div className="swh-icon-box">
+            <Ic name="banknote" size={26} />
+          </div>
+          <div className="swh-info">
+            <span className="swh-title">Available Merchant Wallet Balance</span>
+            <div className="swh-balance-row">
+              <span className="swh-amount">{money(stats?.availableBalance || data?.seller?.wallet?.balance)}</span>
+              {(stats?.processingFund > 0 || data?.seller?.wallet?.processingFund > 0) && (
+                <span className="swh-proc-badge" title="Funds locked in active order processing">
+                  🔒 {money(stats?.processingFund || data?.seller?.wallet?.processingFund)} Processing
+                </span>
+              )}
+              {(stats?.totalProfitEarned > 0 || data?.seller?.wallet?.totalProfitEarned > 0) && (
+                <span className="swh-profit-badge" title="Cumulative 20% order profits earned">
+                  +{money(stats?.totalProfitEarned || data?.seller?.wallet?.totalProfitEarned)} Profit Earned
+                </span>
+              )}
+            </div>
+            <span className="swh-sub">Ready for withdrawal or used for order fulfillment fund locking.</span>
+          </div>
+        </div>
+
+        <div className="swh-actions">
+          <Link to="/seller/wallet?tab=deposit" className="swh-btn swh-btn-deposit">
+            <Ic name="plus" size={15} /> 💰 Add Deposit
+          </Link>
+          <Link to="/seller/wallet?tab=withdraw" className="swh-btn swh-btn-withdraw">
+            <Ic name="banknote" size={15} /> 💸 Request Payout
+          </Link>
+          <Link to="/seller/wallet?tab=ledger" className="swh-btn swh-btn-ledger">
+            <Ic name="eye" size={15} /> 📜 Financial Ledger
+          </Link>
         </div>
       </div>
 

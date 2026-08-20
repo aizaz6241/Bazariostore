@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { sapi, money, fmtDay, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
 
@@ -19,15 +20,30 @@ const TYPE_BADGE = {
 };
 
 export default function SellerWallet() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [wallet, setWallet] = useState(null);
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('ledger'); // 'ledger' | 'deposit' | 'withdraw'
+  const [tab, setTab] = useState(() => searchParams.get('tab') || 'ledger'); // 'ledger' | 'deposit' | 'withdraw'
   const [ledgerFilter, setLedgerFilter] = useState('all'); // 'all' | 'orders' | 'deposits' | 'withdrawals'
   const [method, setMethod] = useState('bank');
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    const urlTab = searchParams.get('tab');
+    if (urlTab && ['ledger', 'deposit', 'withdraw'].includes(urlTab)) {
+      setTab(urlTab);
+    }
+  }, [searchParams]);
+
+  const handleTabChange = (newTab) => {
+    setTab(newTab);
+    setSearchParams({ tab: newTab });
+    setMsg('');
+    setErr('');
+  };
 
   // Deposit form
   const [depForm, setDepForm] = useState({ amount: '', depositRef: '', depositNote: '' });
@@ -179,19 +195,19 @@ export default function SellerWallet() {
       <div className="wallet-action-tabs">
         <button
           className={`wallet-action-tab ${tab === 'ledger' ? 'active' : ''}`}
-          onClick={() => { setTab('ledger'); setMsg(''); setErr(''); }}
+          onClick={() => handleTabChange('ledger')}
         >
           📊 Financial Ledger &amp; Payouts
         </button>
         <button
           className={`wallet-action-tab ${tab === 'deposit' ? 'active' : ''}`}
-          onClick={() => { setTab('deposit'); setMsg(''); setErr(''); }}
+          onClick={() => handleTabChange('deposit')}
         >
           💰 Deposit Funds
         </button>
         <button
           className={`wallet-action-tab ${tab === 'withdraw' ? 'active' : ''}`}
-          onClick={() => { setTab('withdraw'); setMsg(''); setErr(''); }}
+          onClick={() => handleTabChange('withdraw')}
         >
           💸 Withdraw Funds
         </button>
@@ -269,11 +285,19 @@ export default function SellerWallet() {
                   const isDelivered = r.type === 'order_delivered_release';
                   const isDeposit = r.type === 'deposit';
                   const isWithdrawal = r.type === 'withdrawal';
+                  const dObj = new Date(r.createdAt || r.processedAt || Date.now());
 
                   return (
                     <tr key={r._id}>
                       <td>
-                        <span style={{ fontSize: 12, fontWeight: 600 }}>{fmtDate(r.createdAt || r.processedAt)}</span>
+                        <div className="ledger-datetime-cell">
+                          <span className="ldt-date">
+                            {dObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </span>
+                          <span className="ldt-time">
+                            {dObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
                       </td>
                       <td>
                         <span
