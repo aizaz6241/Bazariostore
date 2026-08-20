@@ -69,8 +69,25 @@ export default function ChatInbox() {
           if (prev.some((m) => m?._id === msg?._id)) return prev;
           return [...prev, msg];
         });
+        api(`/chat/admin/conversations/${selectedId}/read`, { method: 'POST' }).catch(() => {});
       }
-      loadConvos();
+
+      setConvos((prev) => {
+        if (!Array.isArray(prev)) return [];
+        const isCurrent = msg.conversation === selectedId;
+        const next = prev.map((c) => {
+          if (c._id === msg.conversation) {
+            return {
+              ...c,
+              lastMessage: msg.text || (msg.attachmentType === 'pdf' ? `📄 ${msg.attachmentName || 'PDF Document'}` : '📷 Photo Attachment'),
+              lastAt: msg.createdAt || new Date(),
+              unreadForAdmin: isCurrent ? 0 : ((c.unreadForAdmin || 0) + (msg.sender === 'seller' ? 1 : 0)),
+            };
+          }
+          return c;
+        });
+        return [...next].sort((a, b) => new Date(b.lastAt || 0) - new Date(a.lastAt || 0));
+      });
     };
 
     if (socket) {
@@ -237,25 +254,46 @@ export default function ChatInbox() {
 
           {filteredConvos.map((c) => {
             const isSelected = c._id === selectedId;
-            const hasUnread = (c.unreadForAdmin || 0) > 0;
+            const unreadCount = c.unreadForAdmin || 0;
+            const hasUnread = unreadCount > 0;
             const storeTitle = c.storeName || c.seller?.storeName || 'Unknown Store';
             return (
               <div
                 key={c._id}
                 className={`admin-convo-item ${isSelected ? 'selected' : ''} ${hasUnread ? 'has-unread' : ''}`}
-                onClick={() => setSelectedId(c._id)}
+                onClick={() => {
+                  setSelectedId(c._id);
+                  if (hasUnread) {
+                    setConvos((prev) =>
+                      Array.isArray(prev) ? prev.map((item) => (item._id === c._id ? { ...item, unreadForAdmin: 0 } : item)) : []
+                    );
+                    api(`/chat/admin/conversations/${c._id}/read`, { method: 'POST' }).catch(() => {});
+                  }
+                }}
               >
                 <div className="convo-avatar">
                   <span>{(storeTitle[0] || 'S').toUpperCase()}</span>
+                  {hasUnread && <span className="avatar-unread-dot" />}
                 </div>
                 <div className="convo-body">
                   <div className="convo-top">
-                    <b className="convo-name">{storeTitle}</b>
+                    <div className="convo-title-box">
+                      <b className="convo-name">{storeTitle}</b>
+                      {hasUnread && (
+                        <span className="seller-unread-pill-label" title={`${unreadCount} unread message(s)`}>
+                          {unreadCount} NEW
+                        </span>
+                      )}
+                    </div>
                     <small className="convo-time">{c.lastAt ? fmtDay(c.lastAt) : ''}</small>
                   </div>
                   <div className="convo-sub">
-                    <span className="convo-last-msg">{c.lastMessage || 'No messages yet'}</span>
-                    {hasUnread && <span className="convo-unread-pill">{c.unreadForAdmin}</span>}
+                    <span className={`convo-last-msg ${hasUnread ? 'convo-last-msg-bold' : ''}`}>
+                      {c.lastMessage || 'No messages yet'}
+                    </span>
+                    {hasUnread && (
+                      <span className="convo-unread-bubble-count">{unreadCount}</span>
+                    )}
                   </div>
                 </div>
               </div>

@@ -2289,19 +2289,149 @@ h1, h2, h3, h4 { line-height: 1.25; }
 }
 .admin-chat-sidebar-head { padding: 14px 16px; border-bottom: 1px solid #e2e8f0; }
 .admin-convos-list { flex: 1; min-height: 0; overflow-y: auto; }
-.admin-convo-item { display: flex; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #f8fafc; cursor: pointer; transition: 0.15s; }
+.admin-convo-item {
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+}
 .admin-convo-item:hover { background: #f8fafc; }
+.admin-convo-item.selected,
 .admin-convo-item.active { background: #eff6ff; border-left: 4px solid var(--primary); }
+.admin-convo-item.has-unread {
+  background: #f0fdf4;
+  border-left: 4px solid #16a34a;
+}
+.admin-convo-item.has-unread:hover {
+  background: #dcfce7;
+}
+
+.convo-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #0f172a;
+  color: #febd69;
+  font-weight: 800;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.avatar-unread-dot {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 11px;
+  height: 11px;
+  background: #ef4444;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+}
+
+.convo-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+}
+
+.convo-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.convo-title-box {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.convo-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.has-unread .convo-name {
+  color: #065f46;
+  font-weight: 800;
+}
+
+.seller-unread-pill-label {
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1.5px 6px;
+  border-radius: 10px;
+  line-height: 1.2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(239, 68, 68, 0.4);
+  letter-spacing: 0.3px;
+}
+
+.convo-time {
+  font-size: 11px;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.has-unread .convo-time {
+  color: #16a34a;
+  font-weight: 700;
+}
+
+.convo-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.convo-last-msg {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.convo-last-msg-bold {
+  color: #0f172a !important;
+  font-weight: 700 !important;
+}
+
+.convo-unread-bubble-count {
+  background: #16a34a;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
 .avatar-chip { width: 36px; height: 36px; border-radius: 50%; background: #0f172a; color: #febd69; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px; }
-.convo-meta { flex: 1; overflow: hidden; }
-.convo-top-line { display: flex; justify-content: space-between; align-items: baseline; }
-.convo-store-name { font-size: 13px; color: #0f172a; }
-.convo-last-msg { font-size: 12px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
-.convo-tags { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
-.convo-tag-status { font-size: 10px; text-transform: uppercase; font-weight: 700; padding: 1px 6px; border-radius: 8px; }
-.convo-tag-status.open { background: #dcfce7; color: #166534; }
-.convo-tag-status.resolved { background: #e2e8f0; color: #64748b; }
-.convo-unread-bubble { background: #ef4444; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px; }
 
 .admin-chat-thread {
   display: flex;

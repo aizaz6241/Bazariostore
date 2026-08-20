@@ -320,15 +320,25 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
               {role === 'admin' && adminConvos.length > 1 && (
                 <select
                   value={selectedConvoId || ''}
-                  onChange={(e) => setSelectedConvoId(e.target.value)}
+                  onChange={(e) => {
+                    const cid = e.target.value;
+                    setSelectedConvoId(cid);
+                    setAdminConvos((prev) =>
+                      Array.isArray(prev) ? prev.map((c) => (c._id === cid ? { ...c, unreadForAdmin: 0 } : c)) : []
+                    );
+                    api(`/chat/admin/conversations/${cid}/read`, { method: 'POST' }).catch(() => {});
+                  }}
                   className="floating-admin-select"
-                  title="Switch seller"
+                  title="Switch seller conversation"
                 >
-                  {adminConvos.map((c) => (
-                    <option key={c._id} value={c._id}>
-                      {c.seller?.storeName || c.storeName} {c.unreadForAdmin ? `(${c.unreadForAdmin} new)` : ''}
-                    </option>
-                  ))}
+                  {adminConvos.map((c) => {
+                    const unread = c.unreadForAdmin || 0;
+                    return (
+                      <option key={c._id} value={c._id}>
+                        {c.seller?.storeName || c.storeName || 'Seller'} {unread > 0 ? `(${unread} NEW)` : ''}
+                      </option>
+                    );
+                  })}
                 </select>
               )}
 
