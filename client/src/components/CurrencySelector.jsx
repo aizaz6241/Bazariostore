@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 import Ic from './Icons.jsx';
 
-export default function CurrencySelector({ compact = false, showLabel = true, className = '' }) {
+export default function CurrencySelector({ compact = false, showLabel = true, className = '', align = 'right' }) {
   const { currency, setCurrency, currencies, rates } = useCurrency();
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -42,10 +42,10 @@ export default function CurrencySelector({ compact = false, showLabel = true, cl
       </button>
 
       {open && (
-        <div className="currency-dropdown-menu">
+        <div className={`currency-dropdown-menu align-${align}`}>
           <div className="currency-dropdown-header">
             <span>🌐 Select Currency</span>
-            <small>Live Exchange Rates</small>
+            <small>Live Rates</small>
           </div>
           <div className="currency-list">
             {Object.values(currencies).map((c) => {
@@ -70,10 +70,12 @@ export default function CurrencySelector({ compact = false, showLabel = true, cl
                   </div>
 
                   <div className="co-right">
-                    {c.code !== 'USD' && (
+                    {c.code !== 'USD' ? (
                       <span className="co-rate" title={`1 USD = ${rate.toFixed(2)} ${c.code}`}>
                         1$ ≈ {rate >= 10 ? rate.toFixed(1) : rate.toFixed(2)} {c.symbol}
                       </span>
+                    ) : (
+                      <span className="co-rate base-badge">Base USD</span>
                     )}
                     {isSelected && <Ic name="check" size={14} className="co-check" />}
                   </div>

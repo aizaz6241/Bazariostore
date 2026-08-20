@@ -43,20 +43,16 @@ export default function SellerDashboard() {
     <div className="seller-dash">
       {/* Welcome Banner */}
       <div className="seller-dash-welcome">
-        <div>
+        <div className="sdw-heading">
           <h2>Seller Business Hub 🚀</h2>
           <p>Welcome back, <b>{data?.seller?.storeName}</b>! Here is your real-time performance summary.</p>
         </div>
         <div className="seller-quick-actions">
-          <CurrencySelector compact />
-          <Link to="/seller/wallet" className="seller-btn-wallet">
-            <Ic name="banknote" size={16} /> My Wallet ({formatMoney(stats?.availableBalance || data?.seller?.wallet?.balance)})
-          </Link>
-          <button type="button" onClick={() => setAppModalOpen(true)} className="seller-btn-app-install">
-            <Ic name="download" size={16} /> Install App
-          </button>
           <Link to="/seller/products" className="seller-btn-pri"><Ic name="plus" size={16} /> Add Product</Link>
           <Link to="/seller/support" className="seller-btn-sec"><Ic name="chat" size={16} /> Support Chat</Link>
+          <Link to="/seller/wallet" className="seller-btn-wallet hide-on-mobile">
+            <Ic name="banknote" size={16} /> My Wallet ({formatMoney(stats?.availableBalance || data?.seller?.wallet?.balance)})
+          </Link>
         </div>
       </div>
 
