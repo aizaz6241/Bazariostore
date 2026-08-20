@@ -51,6 +51,7 @@ export default function ChatMessageBubble({ msg, isMe, myRole = 'seller', onRepl
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
     >
       {/* Swipe-to-Reply Background Pop Indicator */}
       {isSwiping && (

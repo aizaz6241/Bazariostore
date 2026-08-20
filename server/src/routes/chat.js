@@ -17,7 +17,7 @@ router.get('/seller/thread', authSeller, async (req, res) => {
     const seller = await Seller.findById(sellerId);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
-    let conv = await Conversation.findOne({ seller: sellerId });
+    let conv = await Conversation.findOne({ seller: sellerId }).sort({ lastAt: -1 });
     if (!conv) {
       conv = new Conversation({
         seller: seller._id,
@@ -33,7 +33,15 @@ router.get('/seller/thread', authSeller, async (req, res) => {
       await conv.save();
     }
 
-    const messages = await Message.find({ conversation: conv._id }).sort({ createdAt: 1 }).limit(200);
+    // Sync any orphan messages
+    await Message.updateMany(
+      { seller: seller._id, conversation: { $ne: conv._id } },
+      { $set: { conversation: conv._id } }
+    );
+
+    const messages = await Message.find({
+      $or: [{ conversation: conv._id }, { seller: seller._id }]
+    }).sort({ createdAt: 1 }).limit(500);
 
     res.json({ conversation: conv, messages });
   } catch (err) {
@@ -135,13 +143,37 @@ router.post('/seller/read', authSeller, async (req, res) => {
 // GET /api/chat/admin/conversations (Admin gets list of all seller chats)
 router.get('/admin/conversations', authAdmin('chat'), async (req, res) => {
   try {
-    const convos = await Conversation.find()
+    const allConvos = await Conversation.find()
       .populate('seller', 'storeName ownerName email phone rating')
       .populate('assignedStaff', 'name email title')
-      .sort({ lastAt: -1 })
-      .limit(100);
+      .sort({ lastAt: -1 });
 
-    res.json(convos);
+    // Group by seller id to merge duplicate conversation records in DB
+    const sellerMap = new Map();
+    const cleanList = [];
+
+    for (const c of allConvos) {
+      const sId = c.seller?._id?.toString() || c.seller?.toString();
+      if (sId) {
+        if (!sellerMap.has(sId)) {
+          sellerMap.set(sId, c);
+          cleanList.push(c);
+        } else {
+          // Merge messages of duplicate conversation into primary conversation
+          const primaryConv = sellerMap.get(sId);
+          await Message.updateMany(
+            { conversation: c._id },
+            { $set: { conversation: primaryConv._id, seller: primaryConv.seller?._id || primaryConv.seller } }
+          );
+          // Delete duplicate conversation record
+          await Conversation.findByIdAndDelete(c._id);
+        }
+      } else {
+        cleanList.push(c);
+      }
+    }
+
+    res.json(cleanList);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -150,7 +182,27 @@ router.get('/admin/conversations', authAdmin('chat'), async (req, res) => {
 // GET /api/chat/admin/conversations/:id/messages (Admin gets conversation messages)
 router.get('/admin/conversations/:id/messages', authAdmin('chat'), async (req, res) => {
   try {
-    const messages = await Message.find({ conversation: req.params.id }).sort({ createdAt: 1 }).limit(200);
+    const conv = await Conversation.findById(req.params.id);
+    if (!conv) {
+      const fallbackMsgs = await Message.find({ conversation: req.params.id }).sort({ createdAt: 1 }).limit(500);
+      return res.json(fallbackMsgs);
+    }
+
+    const sellerId = conv.seller?._id || conv.seller;
+    const query = sellerId
+      ? { $or: [{ conversation: conv._id }, { seller: sellerId }] }
+      : { conversation: conv._id };
+
+    // Sync any messages pointing to seller but different conv id
+    if (sellerId) {
+      await Message.updateMany(
+        { seller: sellerId, conversation: { $ne: conv._id } },
+        { $set: { conversation: conv._id } }
+      );
+    }
+
+    const messages = await Message.find(query).sort({ createdAt: 1 }).limit(500);
+
     // Mark as read for admin
     await Conversation.findByIdAndUpdate(req.params.id, { unreadForAdmin: 0 });
     res.json(messages);
