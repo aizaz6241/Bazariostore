@@ -1,14 +1,27 @@
 {
-  "name": "nayab-glow",
+  "name": "bazario-marketplace",
   "version": "1.0.0",
   "private": true,
-  "description": "Official Nayab Glow — MERN e-commerce store (storefront + admin panel)",
+  "type": "module",
   "scripts": {
-    "build": "npm install --include=dev --prefix client && npm run build --prefix client && npm install --omit=dev --prefix server",
-    "start": "npm start --prefix server",
-    "seed": "npm run seed --prefix server",
-    "dev:server": "npm run dev --prefix server",
+    "build": "npm run build --prefix client",
+    "start": "node server/src/index.js",
+    "seed": "node server/src/seed.js",
+    "dev:server": "node --watch server/src/index.js",
     "dev:client": "npm run dev --prefix client"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.5.0",
+    "multer": "^2.2.0",
+    "pdfkit": "^0.19.1",
+    "socket.io": "^4.7.5",
+    "uploadthing": "^7.7.4"
   },
   "engines": {
     "node": ">=20"
