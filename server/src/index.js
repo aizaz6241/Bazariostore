@@ -239,29 +239,49 @@ process.on('uncaughtException', (err) => console.error('uncaughtException:', err
 
 const PORT = process.env.PORT || 5000;
 
-// Start HTTP & Socket server immediately
-server.listen(PORT, () => {
-  console.log(`=======================================================`);
-  console.log(`🚀 Amazon Multi-Vendor Marketplace Live at http://localhost:${PORT}`);
-  console.log(`🛒 Storefront:      http://localhost:${PORT}`);
-  console.log(`🏬 Seller Central:  http://localhost:${PORT}/seller`);
-  console.log(`👑 Super Admin:     http://localhost:${PORT}/admin`);
-  console.log(`=======================================================`);
-});
+// Start HTTP & Socket server only in persistent/standalone environments (skip in Vercel serverless)
+if (!process.env.VERCEL) {
+  server.listen(PORT, () => {
+    console.log(`=======================================================`);
+    console.log(`🚀 Bazario Multi-Vendor Marketplace Live at http://localhost:${PORT}`);
+    console.log(`🛒 Storefront:      http://localhost:${PORT}`);
+    console.log(`🏬 Seller Central:  http://localhost:${PORT}/seller`);
+    console.log(`👑 Super Admin:     http://localhost:${PORT}/admin`);
+    console.log(`=======================================================`);
+  });
+}
 
-// Asynchronous MongoDB connection
-async function connectDB() {
-  let mongoUri = process.env.MONGO_URI;
+const DEFAULT_ATLAS_URI = 'mongodb+srv://aizaz6241_db_user:u2IODhWhiXehEOy8@cluster0.ijpphlb.mongodb.net/bazario?retryWrites=true&w=majority&appName=Cluster0';
+
+// Serverless-friendly cached MongoDB connection
+let cachedConn = null;
+export async function connectDB() {
+  if (mongoose.connection.readyState >= 1) {
+    return mongoose.connection;
+  }
+  if (cachedConn) {
+    return cachedConn;
+  }
+
+  let mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI;
   if (!mongoUri || mongoUri.includes('<db_username>')) {
-    mongoUri = 'mongodb://127.0.0.1:27017/amazon_ecommerce';
+    mongoUri = DEFAULT_ATLAS_URI;
   }
 
   try {
-    await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 4000 });
+    cachedConn = await mongoose.connect(mongoUri, {
+      serverSelectionTimeoutMS: 5000,
+      bufferCommands: false,
+    });
     console.log('✅ MongoDB connected successfully to database');
+    return cachedConn;
   } catch (err) {
-    console.log('MongoDB info:', err.message);
+    console.error('MongoDB connection error:', err.message);
+    throw err;
   }
 }
 
-connectDB();
+connectDB().catch(() => {});
+
+export { app, server };
+export default app;

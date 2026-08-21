@@ -1,12 +1,8 @@
 export function getApiBase() {
-  let base = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
-  if (!base && typeof window !== 'undefined') {
-    const host = window.location.hostname;
-    if (host.includes('vercel.app') || host.includes('bazario') || host.includes('render.com') || (host !== 'localhost' && host !== '127.0.0.1')) {
-      base = 'https://bazario-backend-clsx.onrender.com';
-    }
-  }
-  return base;
+  const customUrl = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
+  if (customUrl) return customUrl;
+  // Default to relative '/api' on the same domain (works seamlessly on Vercel, localhost, etc.)
+  return '';
 }
 
 async function request(path, opts = {}, token) {
@@ -133,15 +129,7 @@ export function resolveMediaUrl(url) {
   if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:') || url.startsWith('blob:')) {
     return url;
   }
-  let base = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
-  if (!base) {
-    if (typeof window !== 'undefined') {
-      const host = window.location.hostname;
-      if (host.includes('vercel.app') || host.includes('bazario') || host.includes('render.com') || host !== 'localhost') {
-        base = 'https://bazario-backend-clsx.onrender.com';
-      }
-    }
-  }
+  const base = getApiBase();
   const cleanPath = url.startsWith('/') ? url : `/${url}`;
   if (!base) return cleanPath;
   return `${base}${cleanPath}`;
