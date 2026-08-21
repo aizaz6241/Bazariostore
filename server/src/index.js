@@ -252,7 +252,7 @@ if (!process.env.VERCEL) {
   });
 }
 
-const DEFAULT_ATLAS_URI = 'mongodb+srv://aizaz6241_db_user:u2IODhWhiXehEOy8@cluster0.ijpphlb.mongodb.net/bazario?retryWrites=true&w=majority&appName=Cluster0';
+const DEFAULT_ATLAS_URI = 'mongodb+srv://aizazkhan6241_db_user:98av24298@cluster0.ijpphlb.mongodb.net/bazario?retryWrites=true&w=majority&appName=Cluster0';
 
 // Serverless-friendly cached MongoDB connection
 let cachedConn = null;
