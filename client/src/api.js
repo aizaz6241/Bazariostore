@@ -8,8 +8,9 @@ export function getApiBase() {
 async function request(path, opts = {}, token) {
   const base = getApiBase();
   const url = (base ? `${base}/api` : '/api') + path;
+  let res;
   try {
-    const res = await fetch(url, {
+    res = await fetch(url, {
       method: opts.method || 'GET',
       headers: {
         ...(opts.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
@@ -17,25 +18,24 @@ async function request(path, opts = {}, token) {
       },
       body: opts.body instanceof FormData ? opts.body : opts.body ? JSON.stringify(opts.body) : undefined,
     });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      const isSuspended = res.status === 503 || (typeof data === 'string' && data.includes('suspended'));
-      const err = new Error(
-        data.message || (isSuspended ? 'Backend server is suspended on Render. Please resume it from dashboard.render.com' : 'Something went wrong')
-      );
-      err.status = res.status;
-      throw err;
-    }
-    return data;
-  } catch (err) {
-    if (err.message && err.message.includes('suspended')) {
-      throw err;
-    }
-    if (err.name === 'TypeError' || err.message === 'Failed to fetch') {
-      throw new Error('Backend server is sleeping or suspended on Render. Please check dashboard.render.com and resume the service.');
-    }
+  } catch (netErr) {
+    throw new Error('Unable to connect to backend server. Please check your connection or verify backend service is active.');
+  }
+
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    data = {};
+  }
+
+  if (!res.ok) {
+    const msg = data?.message || (res.status === 404 ? 'API route not found (404)' : `Server request failed (status ${res.status})`);
+    const err = new Error(msg);
+    err.status = res.status;
     throw err;
   }
+  return data;
 }
 
 // admin-token requests (also used for public storefront reads)

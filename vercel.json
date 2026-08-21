@@ -2,15 +2,15 @@
   "version": 2,
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "/api/index.js"
+      "source": "/api/:match*",
+      "destination": "/api"
     },
     {
-      "source": "/uploads/(.*)",
-      "destination": "/api/index.js"
+      "source": "/uploads/:match*",
+      "destination": "/api"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!api|uploads).*)",
       "destination": "/index.html"
     }
   ]
