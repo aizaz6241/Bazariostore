@@ -1,4 +1,5 @@
 import 'dotenv/config';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'bazario_super_secure_jwt_secret_2026_xyz';
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
@@ -38,7 +39,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
-app.get('/api/health', (req, res) => res.json({ ok: true, name: 'Bazario Multi-Vendor Marketplace API' }));
+app.get(['/api/health', '/health'], (req, res) => res.json({ ok: true, name: 'Bazario Multi-Vendor Marketplace API' }));
 app.use('/api/products', productRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/orders', orderRoutes);
