@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import Ic from './Icons.jsx';
 import { resolveMediaUrl, downloadAttachment } from '../api.js';
 
@@ -23,6 +24,19 @@ export default function ChatAttachment({ msg, url: directUrl, type: directType, 
     msg.text.match(/\.(jpeg|jpg|png|gif|webp|svg|pdf)(\?.*)?$/i)
       ? msg.text
       : null);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        setImageModalOpen(false);
+        setPdfModalOpen(false);
+      }
+    };
+    if (imageModalOpen || pdfModalOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [imageModalOpen, pdfModalOpen]);
 
   if (!rawUrl) return null;
 
@@ -99,8 +113,8 @@ export default function ChatAttachment({ msg, url: directUrl, type: directType, 
           </div>
         </div>
 
-        {/* In-Chat PDF Viewer Modal */}
-        {pdfModalOpen && (
+        {/* In-Chat PDF Viewer Modal rendered in portal */}
+        {pdfModalOpen && typeof document !== 'undefined' && createPortal(
           <div className="chat-modal-overlay" onClick={() => setPdfModalOpen(false)}>
             <div className="pdf-viewer-modal" onClick={(e) => e.stopPropagation()}>
               <div className="pdf-modal-header">
@@ -155,20 +169,25 @@ export default function ChatAttachment({ msg, url: directUrl, type: directType, 
                 <span>💡 Having trouble viewing? You can also <a href={fullUrl} target="_blank" rel="noopener noreferrer">open in a new tab</a> or click Download.</span>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
       </>
     );
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 2. IMAGE ATTACHMENT CARD & LIGHTBOX
+  // 2. IMAGE ATTACHMENT CARD & FULLSCREEN LIGHTBOX
   // ─────────────────────────────────────────────────────────────
   return (
     <>
       <div className="chat-image-wrap">
         {!imgError ? (
-          <div className="chat-img-container" onClick={() => setImageModalOpen(true)}>
+          <div
+            className="chat-img-container"
+            onClick={() => setImageModalOpen(true)}
+            title="Click to zoom picture"
+          >
             <img
               src={fullUrl}
               alt={filename}
@@ -177,12 +196,14 @@ export default function ChatAttachment({ msg, url: directUrl, type: directType, 
               loading="lazy"
             />
             <div className="chat-img-overlay">
-              <div className="cio-btn"><Ic name="eye" size={15} /> <span>Zoom</span></div>
+              <div className="cio-btn">
+                <Ic name="eye" size={14} /> <span>Zoom</span>
+              </div>
               <button
                 type="button"
                 className="cio-dl-btn"
                 onClick={handleDownload}
-                title="Download image"
+                title="Download picture"
               >
                 <Ic name="download" size={14} />
               </button>
@@ -190,30 +211,38 @@ export default function ChatAttachment({ msg, url: directUrl, type: directType, 
           </div>
         ) : (
           <div className="chat-img-fallback" onClick={() => setImageModalOpen(true)}>
-            <Ic name="image" size={24} />
+            <div className="cif-icon">
+              <Ic name="image" size={22} />
+            </div>
             <div className="cif-info">
               <span className="cif-name">{filename}</span>
-              <small className="cif-hint">Click to open or download</small>
+              <small className="cif-hint">Click to view or download photo</small>
             </div>
-            <button type="button" className="cif-dl" onClick={handleDownload} title="Download">
+            <button
+              type="button"
+              className="cif-dl"
+              onClick={handleDownload}
+              title="Download image"
+              disabled={downloading}
+            >
               <Ic name="download" size={15} />
             </button>
           </div>
         )}
       </div>
 
-      {/* Lightbox Modal */}
-      {imageModalOpen && (
+      {/* Lightbox Modal Rendered Directly to Body via Portal for Fullscreen breakout */}
+      {imageModalOpen && typeof document !== 'undefined' && createPortal(
         <div className="image-lightbox-overlay" onClick={() => setImageModalOpen(false)}>
           <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
             <div className="lightbox-top">
-              <span className="lightbox-title">{filename}</span>
+              <span className="lightbox-title" title={filename}>{filename}</span>
               <div className="lightbox-actions">
                 <button
                   type="button"
                   onClick={handleDownload}
                   className="btn-icon"
-                  title="Download image"
+                  title="Download full size photo"
                   disabled={downloading}
                 >
                   <Ic name="download" size={18} />
@@ -223,25 +252,30 @@ export default function ChatAttachment({ msg, url: directUrl, type: directType, 
                   target="_blank"
                   rel="noopener noreferrer"
                   className="btn-icon"
-                  title="Open original in new tab"
+                  title="Open original image in new tab"
                 >
                   <Ic name="externalLink" size={17} />
                 </a>
                 <button
                   type="button"
-                  className="btn-icon"
+                  className="btn-icon btn-close-lightbox"
                   onClick={() => setImageModalOpen(false)}
-                  title="Close"
+                  title="Close (Esc)"
                 >
                   <Ic name="x" size={20} />
                 </button>
               </div>
             </div>
             <div className="lightbox-body">
-              <img src={fullUrl} alt={filename} className="lightbox-img" />
+              <img
+                src={fullUrl}
+                alt={filename}
+                className="lightbox-img"
+              />
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
