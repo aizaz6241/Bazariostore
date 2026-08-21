@@ -265,7 +265,7 @@ export async function connectDB() {
   }
 
   let mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI;
-  if (!mongoUri || mongoUri.includes('<db_username>')) {
+  if (!mongoUri || mongoUri.includes('<db_username>') || mongoUri.includes('<db_password>') || mongoUri.includes('aizaz6241_db_user:') || mongoUri.includes('u2IODhWhiXehEOy8')) {
     mongoUri = DEFAULT_ATLAS_URI;
   }
 
