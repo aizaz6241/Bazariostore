@@ -1,22 +1,45 @@
-const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
+export function getApiBase() {
+  let base = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
+  if (!base && typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host.includes('vercel.app') || host.includes('bazario') || host.includes('render.com') || (host !== 'localhost' && host !== '127.0.0.1')) {
+      base = 'https://bazario-backend-clsx.onrender.com';
+    }
+  }
+  return base;
+}
 
 async function request(path, opts = {}, token) {
-  const url = (API_BASE ? `${API_BASE}/api` : '/api') + path;
-  const res = await fetch(url, {
-    method: opts.method || 'GET',
-    headers: {
-      ...(opts.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: opts.body instanceof FormData ? opts.body : opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const err = new Error(data.message || 'Something went wrong');
-    err.status = res.status;
+  const base = getApiBase();
+  const url = (base ? `${base}/api` : '/api') + path;
+  try {
+    const res = await fetch(url, {
+      method: opts.method || 'GET',
+      headers: {
+        ...(opts.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: opts.body instanceof FormData ? opts.body : opts.body ? JSON.stringify(opts.body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const isSuspended = res.status === 503 || (typeof data === 'string' && data.includes('suspended'));
+      const err = new Error(
+        data.message || (isSuspended ? 'Backend server is suspended on Render. Please resume it from dashboard.render.com' : 'Something went wrong')
+      );
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  } catch (err) {
+    if (err.message && err.message.includes('suspended')) {
+      throw err;
+    }
+    if (err.name === 'TypeError' || err.message === 'Failed to fetch') {
+      throw new Error('Backend server is sleeping or suspended on Render. Please check dashboard.render.com and resume the service.');
+    }
     throw err;
   }
-  return data;
 }
 
 // admin-token requests (also used for public storefront reads)
