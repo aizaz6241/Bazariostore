@@ -1,5 +1,11 @@
 export function getApiBase() {
-  const customUrl = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
+  let customUrl = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
+  // Safeguard: If running on Vercel and VITE_API_URL is pointing to an old/suspended Render backend, ignore it and use native Vercel /api
+  if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
+    if (customUrl.includes('onrender.com') || customUrl.includes('render.com')) {
+      customUrl = '';
+    }
+  }
   if (customUrl) return customUrl;
   // Default to relative '/api' on the same domain (works seamlessly on Vercel, localhost, etc.)
   return '';
