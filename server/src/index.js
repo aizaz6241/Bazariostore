@@ -271,8 +271,8 @@ export async function connectDB() {
 
   try {
     cachedConn = await mongoose.connect(mongoUri, {
-      serverSelectionTimeoutMS: 5000,
-      bufferCommands: false,
+      serverSelectionTimeoutMS: 3000,
+      connectTimeoutMS: 3000,
     });
     console.log('✅ MongoDB connected successfully to database');
     return cachedConn;
