@@ -63,8 +63,8 @@ app.use('/api/sellers', sellerRoutes);
 // Static uploads serving (both server/uploads and root/uploads)
 const serverUploadsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../uploads');
 const rootUploadsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../uploads');
-if (!fs.existsSync(serverUploadsDir)) fs.mkdirSync(serverUploadsDir, { recursive: true });
-if (!fs.existsSync(rootUploadsDir)) fs.mkdirSync(rootUploadsDir, { recursive: true });
+try { if (!fs.existsSync(serverUploadsDir)) fs.mkdirSync(serverUploadsDir, { recursive: true }); } catch {}
+try { if (!fs.existsSync(rootUploadsDir)) fs.mkdirSync(rootUploadsDir, { recursive: true }); } catch {}
 app.use('/uploads', express.static(serverUploadsDir));
 app.use('/uploads', express.static(rootUploadsDir));
 
