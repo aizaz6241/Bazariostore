@@ -731,6 +731,24 @@
   }
 }
 
+@media (max-width: 768px) {
+  .wallet-action-tabs {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 6px !important;
+    overflow-x: visible !important;
+  }
+  .wallet-action-tab {
+    padding: 9px 6px !important;
+    font-size: 11.5px !important;
+    justify-content: center !important;
+    text-align: center !important;
+    white-space: normal !important;
+    line-height: 1.2 !important;
+    gap: 4px !important;
+  }
+}
+
 @media (max-width: 600px) {
   .seller-wallet-kpi-grid {
     grid-template-columns: 1fr !important;
@@ -751,6 +769,19 @@
   }
   .deposit-method-pills {
     grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .wallet-action-tabs {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+  .wallet-action-tab {
+    padding: 10px 14px !important;
+    font-size: 13px !important;
+    justify-content: flex-start !important;
+    text-align: left !important;
   }
 }
 

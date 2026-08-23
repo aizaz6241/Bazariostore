@@ -178,15 +178,15 @@ export default function SellerSupport() {
             <Ic name="chat" size={24} />
           </div>
           <div>
-            <h2>Admin &amp; Platform Support Desk</h2>
-            <p>Direct official channel to Super Admin. Inquire regarding orders, payouts, product approvals, or upload documents.</p>
+            <h2>24/7 Merchant Support &amp; Helpline 🎧</h2>
+            <p>Direct official channel to Super Admin &amp; Compliance Team. Inquire regarding orders, payouts, account health, or store assistance.</p>
           </div>
         </div>
 
         <div className="ssh-chips">
           <div className="ssh-chip">
             <span className="ssh-pulse-green"></span>
-            <span>Live Help Desk</span>
+            <span>24/7 Live Support &amp; Helpline</span>
           </div>
           <div className="ssh-chip hide-on-mobile">
             <span>⚡ Avg Reply: &lt; 2 mins</span>
@@ -204,7 +204,7 @@ export default function SellerSupport() {
               <span className="online-beacon" title="Online and Ready"></span>
             </div>
             <div className="admin-status-info">
-              <b className="admin-title">Bazario Official Merchant Desk</b>
+              <b className="admin-title">Bazario Official Merchant Helpline</b>
               <span className="admin-subtitle">
                 {conv?.assignedStaffName ? `Assigned agent: ${conv.assignedStaffName}` : 'Super Admin & Financial Compliance Team'}
               </span>

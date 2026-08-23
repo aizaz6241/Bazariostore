@@ -65,7 +65,7 @@ export default function SellerDashboard() {
         </div>
         <div className="seller-quick-actions">
           <Link to="/seller/products" className="seller-btn-pri"><Ic name="plus" size={16} /> Add Product</Link>
-          <Link to="/seller/support" className="seller-btn-sec"><Ic name="chat" size={16} /> Support Chat</Link>
+          <Link to="/seller/support" className="seller-btn-sec"><Ic name="chat" size={16} /> Support &amp; Helpline</Link>
           <Link to="/seller/wallet" className="seller-btn-wallet hide-on-mobile">
             <Ic name="banknote" size={16} /> My Wallet ({formatMoney(stats?.availableBalance || data?.seller?.wallet?.balance)})
           </Link>
@@ -129,12 +129,14 @@ export default function SellerDashboard() {
             <div className="shh-top">
               <div className="shh-left">
                 <div className={`shh-score-badge tier-badge-${tier}`}>
-                  <Ic name="shield" size={24} />
-                  <span className="shh-score-num">{score}</span>
-                  <span className="shh-score-total">/100</span>
+                  <Ic name="shield" size={26} />
+                  <div className="shh-score-val-wrap">
+                    <span className="shh-score-num">{score}</span>
+                    <span className="shh-score-total">/100</span>
+                  </div>
                 </div>
                 <div className="shh-title-box">
-                  <div className="flex items-center gap-2">
+                  <div className="shh-title-row">
                     <b className="shh-main-title">Account Health &amp; Compliance Rating</b>
                     <span className={`shh-status-pill tier-pill-${tier}`}>{tierLabel}</span>
                   </div>
@@ -144,7 +146,7 @@ export default function SellerDashboard() {
 
               <div className="shh-actions">
                 <Link to="/seller/support" className="shh-support-btn">
-                  <Ic name="chat" size={15} /> Compliance Support
+                  <Ic name="chat" size={15} /> 🎧 Merchant Helpline
                 </Link>
               </div>
             </div>
@@ -159,21 +161,21 @@ export default function SellerDashboard() {
                   <span className="shh-gauge-glow-cap" />
                 </div>
               </div>
-              <div className="shh-gauge-scale">
-                <div className="scale-item item-red" style={{ width: '20%' }}>
-                  <span className="scale-dot red"></span>
+              <div className="shh-gauge-scale-grid">
+                <div className="scale-pill pill-red">
+                  <span className="scale-dot red" />
                   <span className="scale-lbl">0–20 (Suspension)</span>
                 </div>
-                <div className="scale-item item-orange" style={{ width: '12%' }}>
-                  <span className="scale-dot orange"></span>
+                <div className="scale-pill pill-orange">
+                  <span className="scale-dot orange" />
                   <span className="scale-lbl">21–30 (Freeze)</span>
                 </div>
-                <div className="scale-item item-yellow" style={{ width: '46%' }}>
-                  <span className="scale-dot yellow"></span>
+                <div className="scale-pill pill-yellow">
+                  <span className="scale-dot yellow" />
                   <span className="scale-lbl">31–79 (At Risk)</span>
                 </div>
-                <div className="scale-item item-green" style={{ width: '22%', textAlign: 'right' }}>
-                  <span className="scale-dot green"></span>
+                <div className="scale-pill pill-green">
+                  <span className="scale-dot green" />
                   <span className="scale-lbl">80–100 (Healthy)</span>
                 </div>
               </div>
@@ -416,43 +418,56 @@ export default function SellerDashboard() {
         {/* Sales Chart */}
         <div className="seller-card chart-card">
           <div className="seller-card-head">
-            <h3>📈 Daily Sales Revenue Trend (Last 14 Days)</h3>
+            <div className="sch-title-box">
+              <h3>📈 Daily Sales Revenue Trend (Last 14 Days)</h3>
+              <span className="sch-subtitle">Store revenue progression and customer order volume</span>
+            </div>
             <span className="badge-pill">{currentCurrency.code} ({currentCurrency.symbol})</span>
           </div>
-          <div className="sales-bar-chart">
-            {salesByDay.map((day, idx) => {
-              const heightPercent = Math.max(8, Math.round((day.revenue / maxDayRev) * 100));
-              return (
-                <div key={idx} className="chart-bar-col" title={`${day.rawDate}: ${formatMoney(day.revenue)} (${day.orders} orders)`}>
-                  <div className="bar-hover-val">{day.revenue > 0 ? formatMoney(day.revenue) : ''}</div>
-                  <div className="bar-track">
-                    <div
-                      className="bar-fill"
-                      style={{ height: `${heightPercent}%`, backgroundColor: day.revenue > 0 ? '#ff9900' : '#e2e8f0' }}
-                    ></div>
+          <div className="sales-chart-outer-wrap">
+            <div className="sales-bar-chart">
+              {salesByDay.map((day, idx) => {
+                const heightPercent = Math.max(8, Math.round((day.revenue / maxDayRev) * 100));
+                return (
+                  <div key={idx} className="chart-bar-col" title={`${day.rawDate}: ${formatMoney(day.revenue)} (${day.orders} orders)`}>
+                    <div className="bar-hover-val">{day.revenue > 0 ? formatMoney(day.revenue) : ''}</div>
+                    <div className="bar-track">
+                      <div
+                        className="bar-fill"
+                        style={{ height: `${heightPercent}%`, backgroundColor: day.revenue > 0 ? '#ff9900' : '#e2e8f0' }}
+                      ></div>
+                    </div>
+                    <span className="bar-label">{day.date}</span>
                   </div>
-                  <span className="bar-label">{day.date}</span>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
         </div>
 
         {/* Top Selling Products */}
         <div className="seller-card top-prods-card">
           <div className="seller-card-head">
-            <h3>🔥 Top Selling Products</h3>
-            <Link to="/seller/products" className="link-sm">View All</Link>
+            <div className="sch-title-box">
+              <h3>🔥 Top Selling Products</h3>
+              <span className="sch-subtitle">Highest volume merchandise</span>
+            </div>
+            <Link to="/seller/products" className="seller-view-all-pill">View All Catalog →</Link>
           </div>
           <div className="top-prods-list">
-            {topProducts.length === 0 && <p className="muted-sm">No sales recorded yet.</p>}
+            {topProducts.length === 0 && (
+              <div className="top-prods-empty">
+                <span className="empty-emoji">📦</span>
+                <p>No sales recorded yet. Publish active products to track performance.</p>
+              </div>
+            )}
             {topProducts.map((p, i) => (
               <div key={i} className="top-prod-item">
-                <span className="top-rank">{i + 1}</span>
+                <span className={`top-rank rank-${i + 1}`}>#{i + 1}</span>
                 <img src={p.image || '/img/products/serum.svg'} alt={p.name} className="top-prod-img" />
                 <div className="top-prod-info">
-                  <b className="top-prod-name">{p.name}</b>
-                  <small className="muted">{p.qty} units sold</small>
+                  <b className="top-prod-name" title={p.name}>{p.name}</b>
+                  <small className="top-prod-meta">{p.qty} units sold</small>
                 </div>
                 <div className="top-prod-rev">{formatMoney(p.revenue)}</div>
               </div>
@@ -464,8 +479,13 @@ export default function SellerDashboard() {
       {/* Recent Orders Table */}
       <div className="seller-card recent-orders-card">
         <div className="seller-card-head">
-          <h3>📦 Recent Orders for Your Store</h3>
-          <Link to="/seller/orders" className="seller-view-all">View All Orders ({stats?.totalOrders || 0}) →</Link>
+          <div className="sch-title-box">
+            <h3>📦 Recent Orders for Your Store</h3>
+            <span className="sch-subtitle">Latest incoming orders requiring dispatch and fulfillment</span>
+          </div>
+          <Link to="/seller/orders" className="seller-view-all-btn">
+            View All Orders ({stats?.totalOrders || 0}) →
+          </Link>
         </div>
         <div className="seller-table-wrap">
           <table className="seller-table">

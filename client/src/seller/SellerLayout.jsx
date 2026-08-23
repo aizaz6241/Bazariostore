@@ -20,7 +20,7 @@ const SELLER_NAV = [
   { to: '/seller/analytics', icon: 'eye', label: 'Analytics & Reports' },
   { to: '/seller/wallet', icon: 'banknote', label: 'My Wallet', badgeKey: 'wallet' },
   { to: '/seller/shipping', icon: 'truck', label: 'Shipping Settings' },
-  { to: '/seller/support', icon: 'chat', label: 'Support & Chat', badgeKey: 'unreadChat' },
+  { to: '/seller/support', icon: 'chat', label: 'Support & Helpline', badgeKey: 'unreadChat' },
   { to: '/seller/settings', icon: 'shield', label: 'Store Settings' },
 ];
 

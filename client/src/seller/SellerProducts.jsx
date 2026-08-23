@@ -313,11 +313,11 @@ export default function SellerProducts() {
                       <div className="prod-cell">
                         <img
                           src={p.images?.[0]?.url || p.image || '/img/products/serum.svg'}
-                          alt=""
+                          alt={p.name}
                           className="prod-thumb"
                         />
-                        <div>
-                          <b className="prod-name-title">{p.name}</b>
+                        <div className="prod-meta-box">
+                          <b className="prod-name-title" title={p.name}>{p.name}</b>
                           <small className="muted block">SKU: {p.sku || 'N/A'} • {p.brand || 'Generic'}</small>
                         </div>
                       </div>
@@ -344,11 +344,11 @@ export default function SellerProducts() {
                     </td>
                     <td>
                       <div className="row-actions">
-                        <button onClick={() => openEdit(p)} className="btn-icon" title="Edit Product">
-                          <Ic name="sparkle" size={15} /> Edit
+                        <button type="button" onClick={() => openEdit(p)} className="btn-action-edit" title="Edit Product">
+                          <Ic name="sparkle" size={13} /> Edit
                         </button>
-                        <button onClick={() => handleDelete(p._id, p.name)} className="btn-icon text-red" title="Delete">
-                          <Ic name="x" size={15} />
+                        <button type="button" onClick={() => handleDelete(p._id, p.name)} className="btn-action-delete" title="Delete Product">
+                          <Ic name="x" size={13} /> Delete
                         </button>
                       </div>
                     </td>
