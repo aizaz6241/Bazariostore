@@ -5,6 +5,7 @@ import Ic from '../components/Icons.jsx';
 import SellerAppModal from '../components/SellerAppModal.jsx';
 import CurrencySelector from '../components/CurrencySelector.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
+import { getSocket } from '../socket.js';
 
 export default function SellerDashboard() {
   const { formatMoney, currentCurrency } = useCurrency();
@@ -14,7 +15,6 @@ export default function SellerDashboard() {
   const [appModalOpen, setAppModalOpen] = useState(false);
 
   const loadData = () => {
-    setLoading(true);
     sapi('/sellers/dashboard')
       .then((res) => {
         setData(res);
@@ -26,6 +26,22 @@ export default function SellerDashboard() {
 
   useEffect(() => {
     loadData();
+
+    const socket = getSocket();
+    const onSync = () => loadData();
+    socket.on('order:new', onSync);
+    socket.on('wallet:update', onSync);
+    socket.on('seller:health_update', onSync);
+    socket.on('seller:status_update', onSync);
+    socket.on('seller:targets_update', onSync);
+
+    return () => {
+      socket.off('order:new', onSync);
+      socket.off('wallet:update', onSync);
+      socket.off('seller:health_update', onSync);
+      socket.off('seller:status_update', onSync);
+      socket.off('seller:targets_update', onSync);
+    };
   }, []);
 
   if (loading && !data) {
@@ -93,6 +109,118 @@ export default function SellerDashboard() {
           </Link>
         </div>
       </div>
+
+      {/* ─── SELLER ACCOUNT HEALTH & COMPLIANCE RATING HERO CARD ─── */}
+      {(() => {
+        const health = data?.seller?.accountHealth || {};
+        const score = health.score !== undefined ? health.score : 100;
+        const tier = score >= 80 ? 'healthy' : score >= 31 ? 'warning' : score > 20 ? 'freeze' : 'suspended';
+        const tierLabel = score >= 80 ? 'Good / Healthy Standing' : score >= 31 ? 'At Risk / Needs Attention' : score > 20 ? 'Critical (Freeze Warning)' : 'Critical (Suspension Warning)';
+        const tierDesc = score >= 80
+          ? 'Your merchant store is in excellent standing. You enjoy uninterrupted product listings and fast withdrawal processing.'
+          : score >= 31
+          ? 'Your account health has dropped below 80. Improve dispatch timeliness and customer satisfaction to avoid account restrictions.'
+          : score > 20
+          ? 'Urgent attention required: Your score is near the 30% freeze threshold. Contact Platform Compliance immediately.'
+          : 'High Risk Notice: Your account is at the 20% suspension threshold. Platform Admin review is pending.';
+
+        return (
+          <div className={`seller-health-hero-card health-card-tier-${tier}`}>
+            <div className="shh-top">
+              <div className="shh-left">
+                <div className={`shh-score-badge tier-badge-${tier}`}>
+                  <Ic name="shield" size={24} />
+                  <span className="shh-score-num">{score}</span>
+                  <span className="shh-score-total">/100</span>
+                </div>
+                <div className="shh-title-box">
+                  <div className="flex items-center gap-2">
+                    <b className="shh-main-title">Account Health &amp; Compliance Rating</b>
+                    <span className={`shh-status-pill tier-pill-${tier}`}>{tierLabel}</span>
+                  </div>
+                  <p className="shh-desc">{tierDesc}</p>
+                </div>
+              </div>
+
+              <div className="shh-actions">
+                <Link to="/seller/support" className="shh-support-btn">
+                  <Ic name="chat" size={15} /> Compliance Support
+                </Link>
+              </div>
+            </div>
+
+            {/* Visual Range Progress Bar Gauge */}
+            <div className="shh-gauge-wrap">
+              <div className="shh-gauge-track">
+                <div
+                  className={`shh-gauge-fill fill-${tier}`}
+                  style={{ width: `${Math.max(4, Math.min(100, score))}%` }}
+                >
+                  <span className="shh-gauge-glow-cap" />
+                </div>
+              </div>
+              <div className="shh-gauge-scale">
+                <div className="scale-item item-red" style={{ width: '20%' }}>
+                  <span className="scale-dot red"></span>
+                  <span className="scale-lbl">0–20 (Suspension)</span>
+                </div>
+                <div className="scale-item item-orange" style={{ width: '12%' }}>
+                  <span className="scale-dot orange"></span>
+                  <span className="scale-lbl">21–30 (Freeze)</span>
+                </div>
+                <div className="scale-item item-yellow" style={{ width: '46%' }}>
+                  <span className="scale-dot yellow"></span>
+                  <span className="scale-lbl">31–79 (At Risk)</span>
+                </div>
+                <div className="scale-item item-green" style={{ width: '22%', textAlign: 'right' }}>
+                  <span className="scale-dot green"></span>
+                  <span className="scale-lbl">80–100 (Healthy)</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Policy Metric Breakdown Grid */}
+            <div className="shh-metrics-grid">
+              <div className="shh-metric-item">
+                <span className="smi-lbl">Account Privileges</span>
+                <b className={`smi-val ${tier === 'healthy' ? 'text-green' : tier === 'warning' ? 'text-yellow' : 'text-red'}`}>
+                  {tier === 'healthy' ? '✅ Full Privileges' : tier === 'warning' ? '⚠️ At Risk' : tier === 'freeze' ? '❄️ Freeze Alert' : '⛔ Suspension Alert'}
+                </b>
+              </div>
+              <div className="shh-metric-item">
+                <span className="smi-lbl">Policy Violations</span>
+                <b className="smi-val text-green">{health.policyViolations || 0} Active Notices</b>
+              </div>
+              <div className="shh-metric-item">
+                <span className="smi-lbl">Order Defect Rate</span>
+                <b className="smi-val text-green">{((health.orderDefectRate || 0) * 100).toFixed(1)}% (Target &lt; 1%)</b>
+              </div>
+              <div className="shh-metric-item">
+                <span className="smi-lbl">Latest Evaluation</span>
+                <b className="smi-val">{health.lastEvaluatedAt ? fmtDate(health.lastEvaluatedAt) : 'Recently Validated'}</b>
+              </div>
+            </div>
+
+            {/* Recent Adjustments History (if available) */}
+            {Array.isArray(health.history) && health.history.length > 0 && (
+              <div className="shh-history-box">
+                <span className="shh-hist-title">Recent Compliance Log:</span>
+                <div className="shh-hist-list">
+                  {health.history.slice(0, 2).map((h, i) => (
+                    <div key={i} className="shh-hist-row">
+                      <span className={`hist-delta ${h.delta >= 0 ? 'plus' : 'minus'}`}>
+                        {h.delta >= 0 ? `+${h.delta}` : h.delta} pts
+                      </span>
+                      <span className="hist-reason">"{h.reason || 'Routine Policy Evaluation'}"</span>
+                      <small className="hist-meta">• {h.changedBy || 'Admin'} ({fmtDate(h.createdAt)})</small>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Featured Mobile App Card Banner */}
       <div className="seller-app-dashboard-banner">
@@ -204,6 +332,84 @@ export default function SellerDashboard() {
           <b className="sec-val">{stats?.refundCount || 0}</b>
         </div>
       </div>
+
+      {/* ─── PERFORMANCE TARGETS & CASH BONUSES WIDGET ─── */}
+      {Array.isArray(data?.seller?.targets) && data.seller.targets.length > 0 && (
+        <div className="seller-card" style={{ marginBottom: 20, borderLeft: '4px solid #f59e0b' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 24 }}>🎯</span>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16 }}>Store Performance Targets &amp; Cash Bonuses</h3>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>
+                  Complete assigned delivery order volume milestones to unlock instant wallet cash bonuses.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
+            {data.seller.targets.map((tgt) => {
+              const current = tgt.currentOrderCount || 0;
+              const target = tgt.targetOrderCount || 1;
+              const pct = Math.min(100, Math.round((current / target) * 100));
+              const isCompleted = tgt.status === 'completed' || current >= target;
+
+              return (
+                <div
+                  key={tgt._id || tgt.title}
+                  style={{
+                    background: isCompleted ? '#f0fdf4' : '#f8fafc',
+                    border: `1.5px solid ${isCompleted ? '#86efac' : '#e2e8f0'}`,
+                    borderRadius: 10,
+                    padding: '14px 16px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                    <div>
+                      <b style={{ fontSize: 14, color: '#0f172a' }}>{tgt.title}</b>
+                      {tgt.description && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>{tgt.description}</p>}
+                    </div>
+                    <span
+                      style={{
+                        padding: '3px 8px',
+                        borderRadius: 6,
+                        fontSize: 11,
+                        fontWeight: 800,
+                        background: isCompleted ? '#dcfce7' : '#fef3c7',
+                        color: isCompleted ? '#166534' : '#92400e',
+                      }}
+                    >
+                      {isCompleted ? '🎉 COMPLETED' : 'IN PROGRESS'}
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '8px 0 4px', fontSize: 12.5 }}>
+                    <span><b>{current}</b> / {target} Delivered Orders</span>
+                    <b style={{ color: '#16a34a', fontSize: 13 }}>Bonus: +{formatMoney(tgt.bonusAmount || 0)}</b>
+                  </div>
+
+                  <div style={{ height: 8, background: '#e2e8f0', borderRadius: 4, overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        height: '100%',
+                        width: `${pct}%`,
+                        background: isCompleted ? '#16a34a' : '#f59e0b',
+                        transition: 'width 0.3s ease',
+                      }}
+                    />
+                  </div>
+                  {isCompleted && tgt.bonusCredited && (
+                    <small style={{ display: 'block', marginTop: 6, color: '#166534', fontWeight: 700, fontSize: 11 }}>
+                      ✅ Bonus {formatMoney(tgt.bonusAmount)} credited directly to Merchant Wallet!
+                    </small>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Sales Trend Chart & Top Selling Products */}
       <div className="seller-charts-row">

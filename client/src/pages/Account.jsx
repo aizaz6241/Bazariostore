@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
-import { uapi, money, fmtDate } from '../api.js';
+import { uapi, fmtDate } from '../api.js';
 import { useAuth } from '../auth.jsx';
+import { useCurrency } from '../context/CurrencyContext.jsx';
 import { PROVINCES, STATUS_LABELS } from '../data.js';
 import Ic from '../components/Icons.jsx';
 import { OrderTimeline, OrderDetailCard } from './TrackOrder.jsx';
@@ -10,6 +11,7 @@ const EMPTY_ADDR = { label: 'Home', fullName: '', phone: '', street: '', apartme
 
 export default function Account() {
   const { user, update, logout } = useAuth();
+  const { formatMoney } = useCurrency();
   const [params, setParams] = useSearchParams();
   const tab = params.get('tab') || 'profile';
   const [profile, setProfile] = useState({ name: '', phone: '' });
@@ -142,7 +144,7 @@ export default function Account() {
               <button className="account-order-head" onClick={() => setOpenOrder(openOrder === o._id ? null : o._id)}>
                 <span><b>{o.orderNumber}</b><small className="muted">{fmtDate(o.createdAt)} · {o.items.length} item(s)</small></span>
                 <span className="order-list-right">
-                  <b>{money(o.total)}</b>
+                  <b>{formatMoney(o.total)}</b>
                   <span className={`status-pill st-${o.status}`}>{STATUS_LABELS[o.status]}</span>
                   <Ic name="chevDown" size={15} />
                 </span>

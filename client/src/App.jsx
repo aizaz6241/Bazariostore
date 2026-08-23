@@ -71,10 +71,11 @@ export default function App() {
         <Route path="/forgot-password" element={<Forgot />} />
         <Route path="/reset-password" element={<Reset />} />
         <Route path="/account" element={<Account />} />
+        <Route path="/seller/login" element={<SellerLogin />} />
+        <Route path="/admin/login" element={<AdminLogin />} />
       </Route>
 
       {/* ─── Seller Central Portal ───────────────────────────── */}
-      <Route path="/seller/login" element={<SellerLogin />} />
       <Route path="/seller" element={<SellerLayout />}>
         <Route index element={<SellerDashboard />} />
         <Route path="products" element={<SellerProducts />} />
@@ -89,8 +90,22 @@ export default function App() {
         <Route path="settings" element={<SellerSettings />} />
       </Route>
 
+      {/* ─── Aliases for /sellers -> /seller ─────────────────────── */}
+      <Route path="/sellers" element={<Navigate to="/seller" replace />} />
+      <Route path="/sellers/login" element={<Navigate to="/seller/login" replace />} />
+      <Route path="/sellers/orders" element={<Navigate to="/seller/orders" replace />} />
+      <Route path="/sellers/wallet" element={<Navigate to="/seller/wallet" replace />} />
+      <Route path="/sellers/products" element={<Navigate to="/seller/products" replace />} />
+      <Route path="/sellers/refunds" element={<Navigate to="/seller/refunds" replace />} />
+      <Route path="/sellers/inventory" element={<Navigate to="/seller/inventory" replace />} />
+      <Route path="/sellers/discounts" element={<Navigate to="/seller/discounts" replace />} />
+      <Route path="/sellers/analytics" element={<Navigate to="/seller/analytics" replace />} />
+      <Route path="/sellers/shipping" element={<Navigate to="/seller/shipping" replace />} />
+      <Route path="/sellers/support" element={<Navigate to="/seller/support" replace />} />
+      <Route path="/sellers/settings" element={<Navigate to="/seller/settings" replace />} />
+      <Route path="/sellers/*" element={<Navigate to="/seller" replace />} />
+
       {/* ─── Super Admin Control Center ──────────────────────── */}
-      <Route path="/admin/login" element={<AdminLogin />} />
       <Route path="/admin" element={<AdminLayout />}>
         <Route index element={<Dashboard />} />
         <Route path="sellers" element={<Sellers />} />

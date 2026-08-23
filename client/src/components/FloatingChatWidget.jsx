@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { sapi, api, fmtDate, compressImage } from '../api.js';
-import { getSocket } from '../socket.js';
+import { getSocket, getGuestId } from '../socket.js';
 import Ic from './Icons.jsx';
 import ChatAttachment from './ChatAttachment.jsx';
 import ChatMessageBubble from './ChatMessageBubble.jsx';
@@ -33,9 +33,23 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
     location.pathname === '/seller/support' ||
     location.pathname === '/admin/chat';
 
-  // Load seller thread
+  // Load seller or guest thread
   const loadSellerThread = () => {
     setLoading(true);
+    const isSellerLoggedIn = Boolean(localStorage.getItem('seller_token'));
+    if (!isSellerLoggedIn) {
+      const guestId = getGuestId();
+      api(`/chat/guest/${guestId}`)
+        .then((res) => {
+          if (!res) return;
+          setConv(res.conversation || null);
+          setMessages(Array.isArray(res.messages) ? res.messages : []);
+        })
+        .catch((e) => console.error('Guest thread load error:', e))
+        .finally(() => setLoading(false));
+      return;
+    }
+
     sapi('/chat/seller/thread')
       .then((res) => {
         if (!res) return;
@@ -231,17 +245,35 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
       setReplyingTo(null);
 
       if (role === 'seller') {
-        await sapi('/chat/seller/send', {
-          method: 'POST',
-          body: {
-            text: clean,
-            attachment: attachmentUrl,
-            attachmentType,
-            attachmentName,
-            attachmentSize,
-            replyTo: targetReply,
-          },
-        });
+        const isSellerLoggedIn = Boolean(localStorage.getItem('seller_token'));
+        if (!isSellerLoggedIn) {
+          const guestId = getGuestId();
+          await api('/chat/guest/send', {
+            method: 'POST',
+            body: {
+              guestId,
+              text: clean,
+              attachment: attachmentUrl,
+              attachmentType,
+              attachmentName,
+              attachmentSize,
+              replyTo: targetReply,
+            },
+          });
+          loadSellerThread();
+        } else {
+          await sapi('/chat/seller/send', {
+            method: 'POST',
+            body: {
+              text: clean,
+              attachment: attachmentUrl,
+              attachmentType,
+              attachmentName,
+              attachmentSize,
+              replyTo: targetReply,
+            },
+          });
+        }
       } else {
         if (!selectedConvoId) return;
         await api(`/chat/admin/conversations/${selectedConvoId}/reply`, {
@@ -272,16 +304,17 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
   const currentConvo = role === 'admin' ? adminConvos.find((c) => c._id === selectedConvoId) : conv;
 
   return (
-    <div className="floating-chat-root">
+    <div className="floating-chat-container">
       {/* Floating Trigger Button */}
       {!isOpen && (
         <button
-          className="floating-chat-trigger"
+          type="button"
+          className={`floating-chat-pill-btn ${role === 'seller' ? 'seller-chat-pill' : 'admin-chat-pill'}`}
           onClick={toggleOpen}
           title={role === 'seller' ? 'Chat with Admin Support' : 'Open Seller Support Inbox'}
         >
           <div className="floating-btn-content">
-            <Ic name="chat" size={24} stroke={2} />
+            <Ic name="chat" size={20} stroke={2} />
             <span className="floating-btn-text">
               {role === 'seller' ? 'Support' : 'Chat Desk'}
             </span>
@@ -436,7 +469,7 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
           )}
 
           {/* Floating Input / Reply Bar */}
-          <form onSubmit={handleSend} className="floating-chat-input-bar">
+          <form onSubmit={handleSend} className="floating-chat-input-bar" style={{ alignItems: 'flex-end' }}>
             <input
               type="file"
               ref={fileInputRef}
@@ -451,23 +484,43 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
               onClick={() => fileInputRef.current?.click()}
               title="Attach Image or PDF document"
               disabled={sending}
+              style={{ marginBottom: 4 }}
             >
               <Ic name="paperclip" size={18} stroke={2} />
             </button>
 
-            <input
-              type="text"
+            <textarea
               ref={textInputRef}
+              rows={2}
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder={file ? 'Add a caption...' : replyingTo ? `Reply to ${replyingTo.sender === (role === 'seller' ? 'seller' : 'admin') ? 'your message' : 'Admin'}...` : 'Type message...'}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend(e);
+                }
+              }}
+              placeholder={file ? 'Add a caption...' : replyingTo ? `Reply... (Enter to send, Shift+Enter for newline)` : 'Type message... (Enter to send, Shift+Enter for newline)'}
               disabled={sending}
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                borderRadius: 8,
+                border: '1px solid #cbd5e1',
+                resize: 'vertical',
+                minHeight: 44,
+                maxHeight: 120,
+                fontFamily: 'inherit',
+                fontSize: 13,
+                lineHeight: 1.4,
+              }}
             />
 
             <button
               type="submit"
               className="floating-send-btn"
               disabled={sending || (!text.trim() && !file)}
+              style={{ height: 38, marginBottom: 3 }}
             >
               {sending ? (
                 uploading ? '...' : '...'

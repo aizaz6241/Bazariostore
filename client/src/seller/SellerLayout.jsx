@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate, Link, Navigate } from 'react-router-dom';
-import { sapi, money } from '../api.js';
+import { sapi } from '../api.js';
 import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
 import FloatingChatWidget from '../components/FloatingChatWidget.jsx';
@@ -98,112 +98,187 @@ export default function SellerLayout() {
       addToast({
         type: n.type || 'system',
         title: n.title || 'Notification',
-        body: n.body || '',
-        link: n.link || '/seller',
+        body: n.body || n.message || '',
+        link: n.link || null,
       });
       refreshSeller();
     };
 
-    const onWalletUpdate = (data) => {
-      playNotificationSound(data?.type === 'approval' ? 'approval' : 'deposit');
-      refreshSeller();
+    const onWalletUpdate = (wData) => {
+      setSeller((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev, wallet: { ...(prev.wallet || {}), ...wData } };
+        localStorage.setItem('ng_seller', JSON.stringify(updated));
+        return updated;
+      });
     };
 
-    const onOrderNew = (ord) => {
-      playNotificationSound('order');
-      addToast({
-        type: 'order',
-        title: '📦 New Order Received!',
-        body: `Order #${ord.orderNumber} placed by customer`,
-        link: '/seller/orders',
+    const onHealthUpdate = ({ accountHealth, status }) => {
+      setSeller((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev, accountHealth: accountHealth || prev.accountHealth, status: status || prev.status };
+        localStorage.setItem('ng_seller', JSON.stringify(updated));
+        return updated;
+      });
+    };
+
+    const onStatusUpdate = ({ seller: updatedSeller }) => {
+      if (updatedSeller) {
+        setSeller(updatedSeller);
+        localStorage.setItem('ng_seller', JSON.stringify(updatedSeller));
+      }
+    };
+
+    const onTargetsUpdate = ({ targets }) => {
+      setSeller((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev, targets };
+        localStorage.setItem('ng_seller', JSON.stringify(updated));
+        return updated;
       });
     };
 
     socket.on('message:new', onMessage);
-    socket.on('notify', onNotify);
+    socket.on('seller:notification', onNotify);
     socket.on('wallet:update', onWalletUpdate);
-    socket.on('order:new', onOrderNew);
+    socket.on('seller:health_update', onHealthUpdate);
+    socket.on('seller:status_update', onStatusUpdate);
+    socket.on('seller:targets_update', onTargetsUpdate);
 
     return () => {
-      socket.off('connect', join);
       socket.off('message:new', onMessage);
-      socket.off('notify', onNotify);
+      socket.off('seller:notification', onNotify);
       socket.off('wallet:update', onWalletUpdate);
-      socket.off('order:new', onOrderNew);
+      socket.off('seller:health_update', onHealthUpdate);
+      socket.off('seller:status_update', onStatusUpdate);
+      socket.off('seller:targets_update', onTargetsUpdate);
     };
-  }, [token, seller?._id]);
+  }, [token]);
 
-  if (!token) return <Navigate to="/seller/login" replace />;
+  if (!token) {
+    return <Navigate to="/seller/login" replace />;
+  }
 
-  const logout = () => {
+  const handleLogout = () => {
     localStorage.removeItem('ng_seller_token');
     localStorage.removeItem('ng_seller');
     navigate('/seller/login');
   };
 
+  // Health calculation: ensure accountHealth score is accurately read
+  const healthScore = seller?.accountHealth?.score ?? seller?.healthScore ?? 100;
+  let healthTier = 'healthy';
+  let healthLabel = 'HEALTHY';
+  if (seller?.status === 'suspended') {
+    healthTier = 'suspended';
+    healthLabel = 'SUSPENDED';
+  } else if (seller?.status === 'frozen') {
+    healthTier = 'freeze';
+    healthLabel = 'FROZEN';
+  } else if (healthScore < 60) {
+    healthTier = 'suspended';
+    healthLabel = 'CRITICAL';
+  } else if (healthScore < 75) {
+    healthTier = 'warning';
+    healthLabel = 'AT RISK';
+  }
+
   return (
-    <div className="seller-portal">
-      {/* Mobile Drawer Overlay Backdrop */}
+    <div className="seller-portal-layout">
+      {/* Mobile Backdrop */}
       {mobileSidebarOpen && (
-        <div className="mobile-drawer-backdrop" onClick={() => setMobileSidebarOpen(false)}></div>
+        <div className="seller-sidebar-backdrop" onClick={() => setMobileSidebarOpen(false)} />
       )}
 
-      {/* Seller Sidebar */}
-      <aside className={`seller-sidebar ${mobileSidebarOpen ? 'mobile-open' : ''}`}>
+      {/* ─── SELLER LEFT SIDEBAR ─── */}
+      <aside
+        className={`seller-sidebar ${mobileSidebarOpen ? 'drawer-open mobile-open' : ''}`}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="seller-brand">
           <div className="seller-logo-title">
-            <span className="amazon-name" style={{ letterSpacing: '-0.5px', fontWeight: 900 }}>Bazario</span>
+            <span className="amazon-name">BAZARIO</span>
             <span className="seller-badge-tag">SELLER CENTRAL</span>
-            <button className="mobile-close-drawer" onClick={() => setMobileSidebarOpen(false)}>✕</button>
+            <button
+              type="button"
+              className="mobile-close-drawer"
+              onClick={() => setMobileSidebarOpen(false)}
+              aria-label="Close Navigation"
+            >
+              <Ic name="x" size={20} />
+            </button>
           </div>
+
+          {/* Store Profile Card */}
           <div className="seller-store-card">
             <div className="seller-avatar-circle">
-              {seller?.logo ? <img src={seller.logo} alt="Logo" /> : (seller?.storeName?.[0] || 'S')}
+              {seller?.logo ? (
+                <img src={seller.logo} alt="Store logo" />
+              ) : (
+                <span>{seller?.storeName?.[0] || 'S'}</span>
+              )}
             </div>
             <div className="seller-store-meta">
-              <b className="store-name-text">{seller?.storeName || 'My Store'}</b>
-              <span className="seller-rating-pill">
-                {seller?.rating ? `⭐ ${seller.rating.toFixed(1)}` : '🆕 New Seller'} • {seller?.commissionRate || 10}% fee
-              </span>
+              <span className="store-name-text" title={seller?.storeName}>{seller?.storeName || 'My Store'}</span>
+              <span className="seller-rating-pill">⭐ {seller?.rating?.toFixed(1) || '5.0'} • Merchant</span>
             </div>
           </div>
         </div>
 
+        {/* Navigation Menu */}
         <nav className="seller-nav">
-          {SELLER_NAV.map((n) => (
-            <NavLink
-              key={n.to}
-              to={n.to}
-              end={n.end}
-              onClick={() => setMobileSidebarOpen(false)}
-              className={({ isActive }) => (isActive ? 'active' : '')}
-            >
-              <Ic name={n.icon} size={18} />
-              <span>{n.label}</span>
-              {n.badgeKey === 'unreadChat' && unreadChat > 0 && (
-                <span className="seller-nav-badge">{unreadChat}</span>
-              )}
-            </NavLink>
-          ))}
+          {SELLER_NAV.map((n) => {
+            let badge = null;
+            if (n.badgeKey === 'unreadChat' && unreadChat > 0) {
+              badge = <span className="seller-nav-badge">{unreadChat}</span>;
+            }
+            return (
+              <NavLink
+                key={n.to}
+                to={n.to}
+                end={n.end}
+                onClick={() => setMobileSidebarOpen(false)}
+                className={({ isActive }) => (isActive ? 'active' : '')}
+              >
+                <Ic name={n.icon} size={18} />
+                <span>{n.label}</span>
+                {badge}
+              </NavLink>
+            );
+          })}
         </nav>
 
+        {/* Sidebar Footer */}
         <div className="seller-sidebar-footer">
           <button
             type="button"
-            onClick={() => setAppModalOpen(true)}
             className="seller-install-app-sidebar-btn"
+            onClick={() => {
+              setMobileSidebarOpen(false);
+              setAppModalOpen(true);
+            }}
           >
             <Ic name="download" size={16} />
             <span>Install Seller App</span>
-            <span className="app-badge-new">NEW</span>
+            <span className="app-badge-new">APK</span>
           </button>
-          <Link to={`/shop?seller=${seller?._id}`} target="_blank" className="view-storefront-btn">
-            <Ic name="eye" size={16} /> View Storefront
+
+          <Link
+            to="/"
+            className="view-storefront-btn"
+            target="_blank"
+            onClick={() => setMobileSidebarOpen(false)}
+          >
+            <Ic name="external" size={15} /> Open Storefront
           </Link>
-          <Link to="/admin/login" className="view-storefront-btn" style={{ background: '#334155', color: '#fff', marginTop: 4 }}>
-            <Ic name="shield" size={16} /> Admin Portal
-          </Link>
-          <button onClick={logout} className="seller-logout-btn" style={{ marginTop: 6 }}>
+          <button
+            type="button"
+            className="seller-logout-btn"
+            onClick={() => {
+              setMobileSidebarOpen(false);
+              handleLogout();
+            }}
+          >
             <Ic name="logout" size={16} /> Sign Out
           </button>
         </div>
@@ -217,25 +292,40 @@ export default function SellerLayout() {
               <Ic name="menu" size={22} />
             </button>
             <span className={`store-active-indicator hide-on-mobile ${seller?.status === 'frozen' || seller?.status === 'suspended' ? 'status-frozen' : ''}`}>
-              <span className="pulse-dot"></span> Store Status: <b style={{ textTransform: 'uppercase' }}>{seller?.status || 'Active'}</b>
+              <span className="pulse-dot"></span> Store: <b style={{ textTransform: 'uppercase' }}>{seller?.status || 'Active'}</b>
             </span>
-            <span className="seller-sep hide-on-mobile">|</span>
-            <span className="seller-owner-name hide-on-mobile">Owner: <b>{seller?.ownerName}</b></span>
+            <span className="seller-sep hide-on-tablet">|</span>
+            <span className="seller-owner-name hide-on-tablet">Owner: <b>{seller?.ownerName}</b></span>
           </div>
 
           <div className="seller-top-right">
             {/* Global Real-Time Currency Selector */}
             <CurrencySelector compact className="seller-topbar-curr-select" />
 
+            {/* Live Account Health Pill */}
+            <div
+              className={`seller-topbar-health-pill health-tier-${healthTier}`}
+              title={`Account Health Score: ${healthScore}/100 (${healthLabel})`}
+            >
+              <div className="sthp-icon">
+                <Ic name="shield" size={14} />
+              </div>
+              <div className="sthp-body">
+                <span className="sthp-lbl hide-on-laptop">Health</span>
+                <b className="sthp-score">{healthScore}/100</b>
+              </div>
+              <span className={`sthp-tag health-tag-${healthTier} hide-on-mobile`}>{healthLabel}</span>
+            </div>
+
             {/* Live Merchant Wallet Quick Pill */}
             <Link to="/seller/wallet" className="seller-topbar-wallet-pill" title="Merchant Wallet & Financial Ledger">
-              <div className="stwp-icon"><Ic name="banknote" size={16} /></div>
+              <div className="stwp-icon"><Ic name="banknote" size={15} /></div>
               <div className="stwp-body">
-                <span className="stwp-lbl hide-on-mobile">Wallet</span>
+                <span className="stwp-lbl hide-on-laptop">Wallet</span>
                 <b className="stwp-val">{formatMoney(seller?.wallet?.balance || 0)}</b>
               </div>
               {(seller?.wallet?.processingFund > 0) && (
-                <span className="stwp-proc hide-on-mobile" title="Locked in Order Processing">
+                <span className="stwp-proc hide-on-laptop" title="Locked in Order Processing">
                   🔒 {formatMoney(seller.wallet.processingFund)}
                 </span>
               )}
@@ -245,26 +335,36 @@ export default function SellerLayout() {
             <button
               type="button"
               onClick={() => setAppModalOpen(true)}
-              className="seller-app-pill-btn"
+              className="seller-app-pill-btn hide-on-laptop"
               title="Install Bazario App on Android / iOS"
             >
-              <Ic name="download" size={14} />
-              <span className="hide-on-mobile">Install App</span>
+              <Ic name="download" size={13} />
+              <span>App</span>
             </button>
 
-            {/* Desktop Only Links */}
-            <Link to="/seller/support" className="seller-help-link hide-on-mobile">
-              <Ic name="chat" size={16} /> <span className="help-text">Support Chat</span>
-              {unreadChat > 0 && <span className="unread-dot-bubble">{unreadChat}</span>}
-            </Link>
-
-            <Link to="/seller/settings" className="seller-user-pill hide-on-mobile" title="Store & Account Settings" style={{ textDecoration: 'none' }}>
+            {/* Desktop Quick Settings / Profile */}
+            <Link to="/seller/settings" className="seller-user-pill" title="Store & Account Settings">
               <span className="seller-user-initial">{seller?.ownerName?.[0] || 'U'}</span>
-              <span>{seller?.email}</span>
+              <span className="seller-user-email-text hide-on-laptop">{seller?.ownerName || seller?.email}</span>
               <Ic name="gear" size={14} />
             </Link>
           </div>
         </header>
+
+        {/* Zero Wallet Balance Alert Banner */}
+        {seller?.status === 'active' && (!seller?.wallet?.balance || seller.wallet.balance <= 0) && (
+          <div className="zero-balance-top-banner">
+            <div className="zbb-content">
+              <span style={{ fontSize: 18 }}>⚠️</span>
+              <div>
+                <b>MERCHANT WALLET ALERT: Zero Balance ($0.00)</b> — You cannot confirm or dispatch customer orders until you deposit funds to lock required processing amounts.
+              </div>
+            </div>
+            <Link to="/seller/wallet" className="zbb-btn">
+              <Ic name="plusCircle" size={14} /> Deposit Funds Now
+            </Link>
+          </div>
+        )}
 
         {/* Top Compliance & Status Announcement Banners */}
         {(seller?.status === 'frozen' || seller?.status === 'suspended') && (
@@ -324,4 +424,3 @@ export default function SellerLayout() {
     </div>
   );
 }
-

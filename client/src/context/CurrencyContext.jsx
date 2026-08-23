@@ -3,9 +3,11 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 export const CURRENCIES = {
   USD: { code: 'USD', symbol: '$', name: 'US Dollar', flag: '🇺🇸', defaultRate: 1.0, locale: 'en-US' },
   INR: { code: 'INR', symbol: '₹', name: 'Indian Rupee', flag: '🇮🇳', defaultRate: 83.50, locale: 'en-IN' },
+  PKR: { code: 'PKR', symbol: '₨ ', name: 'Pakistani Rupee', flag: '🇵🇰', defaultRate: 278.50, locale: 'en-PK' },
   EUR: { code: 'EUR', symbol: '€', name: 'Euro', flag: '🇪🇺', defaultRate: 0.92, locale: 'de-DE' },
   GBP: { code: 'GBP', symbol: '£', name: 'British Pound', flag: '🇬🇧', defaultRate: 0.79, locale: 'en-GB' },
   AED: { code: 'AED', symbol: 'AED ', name: 'UAE Dirham', flag: '🇦🇪', defaultRate: 3.67, locale: 'ar-AE' },
+  SAR: { code: 'SAR', symbol: 'SAR ', name: 'Saudi Riyal', flag: '🇸🇦', defaultRate: 3.75, locale: 'ar-SA' },
   CAD: { code: 'CAD', symbol: 'CA$', name: 'Canadian Dollar', flag: '🇨🇦', defaultRate: 1.36, locale: 'en-CA' },
   AUD: { code: 'AUD', symbol: 'A$', name: 'Australian Dollar', flag: '🇦🇺', defaultRate: 1.52, locale: 'en-AU' },
 };
@@ -13,9 +15,11 @@ export const CURRENCIES = {
 export const DEFAULT_RATES = {
   USD: 1.0,
   INR: 83.50,
+  PKR: 278.50,
   EUR: 0.92,
   GBP: 0.79,
   AED: 3.67,
+  SAR: 3.75,
   CAD: 1.36,
   AUD: 1.52,
 };
@@ -57,9 +61,11 @@ export function CurrencyProvider({ children }) {
           const newRates = {
             USD: 1.0,
             INR: data.rates.INR || DEFAULT_RATES.INR,
+            PKR: data.rates.PKR || DEFAULT_RATES.PKR,
             EUR: data.rates.EUR || DEFAULT_RATES.EUR,
             GBP: data.rates.GBP || DEFAULT_RATES.GBP,
             AED: data.rates.AED || DEFAULT_RATES.AED,
+            SAR: data.rates.SAR || DEFAULT_RATES.SAR,
             CAD: data.rates.CAD || DEFAULT_RATES.CAD,
             AUD: data.rates.AUD || DEFAULT_RATES.AUD,
           };
@@ -77,9 +83,11 @@ export function CurrencyProvider({ children }) {
               const fbRates = {
                 USD: 1.0,
                 INR: fbData.rates.INR || DEFAULT_RATES.INR,
+                PKR: fbData.rates.PKR || DEFAULT_RATES.PKR,
                 EUR: fbData.rates.EUR || DEFAULT_RATES.EUR,
                 GBP: fbData.rates.GBP || DEFAULT_RATES.GBP,
                 AED: fbData.rates.AED || DEFAULT_RATES.AED,
+                SAR: fbData.rates.SAR || DEFAULT_RATES.SAR,
                 CAD: fbData.rates.CAD || DEFAULT_RATES.CAD,
                 AUD: fbData.rates.AUD || DEFAULT_RATES.AUD,
               };

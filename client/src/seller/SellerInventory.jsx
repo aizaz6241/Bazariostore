@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { sapi, money, fmtDay } from '../api.js';
 import Ic from '../components/Icons.jsx';
+import { useCurrency } from '../context/CurrencyContext.jsx';
 
 export default function SellerInventory() {
-  const { seller } = useOutletContext();
+  const { formatMoney } = useCurrency();
+  const outletCtx = useOutletContext();
+  const seller = outletCtx?.seller;
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState({});
@@ -120,7 +123,7 @@ export default function SellerInventory() {
                         <span>{p.name}</span>
                       </div>
                     </td>
-                    <td>{money(p.price)}</td>
+                    <td><b>{formatMoney(p.price)}</b></td>
                     <td>
                       <span className={`stock-badge stock-${stockStatus}`}>{p.stock}</span>
                     </td>

@@ -1,6 +1,7 @@
 import Discount from '../models/Discount.js';
 import Product from '../models/Product.js';
 import ShippingMethod from '../models/ShippingMethod.js';
+import Seller from '../models/Seller.js';
 
 function inWindow(d, now) {
   if (d.startsAt && now < d.startsAt) return false;
@@ -44,8 +45,20 @@ function computeAmount(d, lines, subtotal, shippingCost) {
 export async function quoteCart({ items = [], couponCode = '', shippingMethodId = null }) {
   const lines = [];
   for (const it of items) {
-    const p = await Product.findById(it.id);
+    const p = await Product.findById(it.id).populate('seller');
     if (!p || !p.active) throw new Error('A product in your cart is no longer available');
+
+    // Auto-resolve seller if missing
+    if (!p.seller && p.sellerName) {
+      const s = await Seller.findOne({
+        $or: [{ storeName: p.sellerName }, { storeSlug: p.sellerSlug }],
+      });
+      if (s) {
+        p.seller = s;
+        await Product.updateOne({ _id: p._id }, { $set: { seller: s._id, sellerName: s.storeName, sellerSlug: s.storeSlug } });
+      }
+    }
+
     let price = p.price;
     if (it.size && p.sizes?.length) {
       const s = p.sizes.find((s) => s.label === it.size);

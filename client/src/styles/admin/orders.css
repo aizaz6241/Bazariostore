@@ -1,0 +1,10 @@
+/* ==========================================================================
+   ADMIN CONTROL CENTER — ORDERS STYLES
+   (client/src/styles/admin/orders.css)
+   ========================================================================== */
+
+.admin-orders-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}

@@ -6,36 +6,6 @@ import { useContent } from '../content.jsx';
 import Ic from './Icons.jsx';
 import CurrencySelector from './CurrencySelector.jsx';
 
-function TopBar() {
-  const { content } = useContent();
-  const t = content.topbar || {};
-  return (
-    <div className="topbar">
-      <div className="container topbar-in">
-        <span className="topbar-item">
-          <Ic name="badgeCheck" size={15} /> {t.welcome || 'Welcome to Bazario — Premier Global Multi-Vendor Marketplace'}
-        </span>
-        <div className="topbar-mid">
-          {(t.promos || []).map((p, i) => (
-            <span className="topbar-item" key={i}>
-              <Ic name={p.icon || 'truck'} size={15} /> {p.text}
-            </span>
-          ))}
-        </div>
-        <div className="topbar-right" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <CurrencySelector compact />
-          <Link to="/seller/login" className="topbar-link topbar-seller-link">
-            <Ic name="tag" size={14} /> Sell on Bazario
-          </Link>
-          <Link to="/track-order" className="topbar-link">
-            <Ic name="truck" size={14} /> Track Order
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function Logo() {
   return (
     <Link to="/" className="amazon-main-logo">
@@ -275,7 +245,6 @@ export default function StoreLayout() {
 
   return (
     <>
-      <TopBar />
       <Header />
       <NavBar />
       <main>

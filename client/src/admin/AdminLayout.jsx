@@ -126,7 +126,10 @@ export default function AdminLayout() {
         <div className="mobile-drawer-backdrop" onClick={() => setMobileSidebarOpen(false)}></div>
       )}
 
-      <aside className={`admin-side ${mobileSidebarOpen ? 'mobile-open' : ''}`}>
+      <aside
+        className={`admin-side ${mobileSidebarOpen ? 'mobile-open drawer-open' : ''}`}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="admin-logo">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
             <div>

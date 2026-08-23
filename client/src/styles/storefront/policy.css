@@ -1,0 +1,88 @@
+/* ==========================================================================
+   BAZARIO CUSTOMER STOREFRONT — POLICY PAGES & FAQS (policy.css)
+   (client/src/styles/storefront/policy.css)
+   ========================================================================== */
+
+.policy-body {
+  max-width: 880px;
+  margin: 32px auto 60px auto;
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 36px 40px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: #334155;
+}
+
+.policy-body p {
+  margin-bottom: 20px;
+}
+
+.policy-body p:last-child {
+  margin-bottom: 0;
+}
+
+.policy-wrap {
+  max-width: 860px;
+  margin: 32px auto 60px auto;
+  padding: 0 16px;
+}
+
+.policy-card {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 40px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+}
+
+.policy-title {
+  font-size: 28px;
+  font-weight: 900;
+  color: #0f172a;
+  margin: 0 0 8px 0;
+  letter-spacing: -0.5px;
+}
+
+.policy-content {
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: #334155;
+  margin-top: 24px;
+}
+
+.policy-content h2, .policy-content h3 {
+  color: #0f172a;
+  font-weight: 800;
+  margin: 24px 0 10px 0;
+}
+
+.policy-content p {
+  margin-bottom: 16px;
+}
+
+.policy-content ul, .policy-content ol {
+  padding-left: 24px;
+  margin-bottom: 18px;
+}
+
+.policy-content li {
+  margin-bottom: 8px;
+}
+
+@media (max-width: 600px) {
+  .policy-body {
+    padding: 24px 18px;
+    margin: 20px 12px 40px 12px;
+    font-size: 13.5px;
+    line-height: 1.65;
+  }
+  .policy-card {
+    padding: 24px 18px;
+  }
+  .policy-title {
+    font-size: 22px;
+  }
+}

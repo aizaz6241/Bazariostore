@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { api, money, fmtDate } from '../api.js';
+import { api, fmtDate } from '../api.js';
+import { useCurrency } from '../context/CurrencyContext.jsx';
 import { STATUS_STEPS, STATUS_LABELS } from '../data.js';
 import Ic from '../components/Icons.jsx';
 import { TrustStrip } from '../components/Bits.jsx';
@@ -40,6 +41,7 @@ export function OrderTimeline({ order }) {
 }
 
 export function OrderDetailCard({ order }) {
+  const { formatMoney } = useCurrency();
   return (
     <div className="track-cols">
       <div className="card">
@@ -48,12 +50,12 @@ export function OrderDetailCard({ order }) {
           <div className="os-item" key={n}>
             <span className="cart-thumb"><img src={i.image} alt="" /></span>
             <span className="os-name">{i.name}{i.size ? ` ${i.size}` : ''}{i.variant ? ` — ${i.variant}` : ''}<small className="muted">Qty: {i.qty}</small></span>
-            <b>{money(i.price * i.qty)}</b>
+            <b>{formatMoney(i.price * i.qty)}</b>
           </div>
         ))}
-        {order.discount > 0 && <div className="sum-row discount"><span>Discount{order.couponCode ? ` (${order.couponCode})` : ''}</span><span>- {money(order.discount)}</span></div>}
-        <div className="sum-row"><span>Shipping ({order.shipping?.name})</span><span>{order.shipping?.cost ? money(order.shipping.cost) : 'FREE'}</span></div>
-        <div className="sum-total"><span>Total ({(order.paymentMethod || 'cod').replace('_', ' ').toUpperCase()})</span><b>{money(order.total)}</b></div>
+        {order.discount > 0 && <div className="sum-row discount"><span>Discount{order.couponCode ? ` (${order.couponCode})` : ''}</span><span>- {formatMoney(order.discount)}</span></div>}
+        <div className="sum-row"><span>Shipping ({order.shipping?.name})</span><span>{order.shipping?.cost ? formatMoney(order.shipping.cost) : 'FREE'}</span></div>
+        <div className="sum-total"><span>Total ({(order.paymentMethod || 'cod').replace('_', ' ').toUpperCase()})</span><b>{formatMoney(order.total)}</b></div>
       </div>
       <div className="card">
         <h4>Delivery Address</h4>
@@ -78,6 +80,7 @@ export function OrderDetailCard({ order }) {
 }
 
 export default function TrackOrder() {
+  const { formatMoney } = useCurrency();
   const [params] = useSearchParams();
   const [mode, setMode] = useState(params.get('order') ? 'order' : 'order');
   const [orderNumber, setOrderNumber] = useState(params.get('order') || '');
@@ -156,7 +159,7 @@ export default function TrackOrder() {
                   <small className="muted">{fmtDate(o.createdAt)} · {o.itemCount} item{o.itemCount > 1 ? 's' : ''} · {o.firstItem}</small>
                 </span>
                 <span className="order-list-right">
-                  <b>{money(o.total)}</b>
+                  <b>{formatMoney(o.total)}</b>
                   <span className={`status-pill st-${o.status}`}>{STATUS_LABELS[o.status]}</span>
                 </span>
               </button>

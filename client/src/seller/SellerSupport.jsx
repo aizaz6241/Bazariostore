@@ -115,7 +115,6 @@ export default function SellerSupport() {
     let attachmentSize = 0;
 
     try {
-      // If file selected, compress photo on mobile client first then upload
       if (file) {
         setUploading(true);
         const fileToUpload = await compressImage(file);
@@ -146,7 +145,6 @@ export default function SellerSupport() {
         attachmentName: replyingTo.attachmentName || '',
       } : null;
 
-      // Clear inputs immediately for snappy UX
       setText('');
       removeFile();
       setReplyingTo(null);
@@ -163,7 +161,7 @@ export default function SellerSupport() {
         },
       });
     } catch (err) {
-      setText(clean); // restore on error
+      setText(clean);
       alert('Failed to send message: ' + err.message);
     } finally {
       setSending(false);
@@ -173,39 +171,76 @@ export default function SellerSupport() {
 
   return (
     <div className="seller-support-page">
-      <div className="seller-page-header">
-        <div>
-          <h2>💬 Admin & Platform Support Desk</h2>
-          <p>Chat directly with Super Admin and official platform staff. Send text, screenshots, receipts, or PDF documents.</p>
+      {/* Top Header Banner */}
+      <div className="seller-support-header">
+        <div className="ssh-left">
+          <div className="ssh-icon-box">
+            <Ic name="chat" size={24} />
+          </div>
+          <div>
+            <h2>Admin &amp; Platform Support Desk</h2>
+            <p>Direct official channel to Super Admin. Inquire regarding orders, payouts, product approvals, or upload documents.</p>
+          </div>
+        </div>
+
+        <div className="ssh-chips">
+          <div className="ssh-chip">
+            <span className="ssh-pulse-green"></span>
+            <span>Live Help Desk</span>
+          </div>
+          <div className="ssh-chip hide-on-mobile">
+            <span>⚡ Avg Reply: &lt; 2 mins</span>
+          </div>
         </div>
       </div>
 
+      {/* Main Support Chat Console Card */}
       <div className="seller-chat-container">
-        {/* Chat Header */}
+        {/* Support Console Bar */}
         <div className="seller-chat-head">
           <div className="admin-status-indicator">
-            <span className="online-beacon"></span>
-            <div>
-              <b>Bazario Official Support Desk</b>
-              <small className="muted block">
-                {conv?.assignedStaffName ? `Assigned agent: ${conv.assignedStaffName}` : 'Available 24/7 • Avg reply time: ~2 mins'}
-              </small>
+            <div className="admin-avatar-wrap">
+              <Ic name="headset" size={20} />
+              <span className="online-beacon" title="Online and Ready"></span>
+            </div>
+            <div className="admin-status-info">
+              <b className="admin-title">Bazario Official Merchant Desk</b>
+              <span className="admin-subtitle">
+                {conv?.assignedStaffName ? `Assigned agent: ${conv.assignedStaffName}` : 'Super Admin & Financial Compliance Team'}
+              </span>
             </div>
           </div>
-          <div className="ticket-status-pill">
-            Status: <span className="status-open">Open Ticket</span>
+
+          <div className="seller-chat-head-actions">
+            <div className="ticket-status-pill">
+              <span className="status-dot"></span>
+              <span>Open Support Ticket</span>
+            </div>
+            <button
+              type="button"
+              onClick={loadThread}
+              className="chat-refresh-btn"
+              title="Refresh conversation messages"
+            >
+              <Ic name="refresh" size={15} />
+            </button>
           </div>
         </div>
 
-        {/* Messages Feed */}
+        {/* Messages Feed Area */}
         <div className="seller-chat-messages">
-          {loading && <div className="text-center py-10 muted">Loading support conversation...</div>}
+          {loading && (
+            <div className="chat-loading-box">
+              <div className="chat-spinner"></div>
+              <p>Connecting to secure support thread...</p>
+            </div>
+          )}
 
           {!loading && messages.length === 0 && (
             <div className="chat-empty-state">
               <div className="empty-icon"><Ic name="chat" size={32} /></div>
-              <h4>Start a conversation with Super Admin</h4>
-              <p>Type your inquiry below regarding vendor payouts, product listing approval, account verification, or send documents/receipts.</p>
+              <h4>Start a conversation with Support Desk</h4>
+              <p>Type your message below regarding balance deposits, payout withdrawals, catalog listings, or account verification.</p>
             </div>
           )}
 
@@ -224,7 +259,7 @@ export default function SellerSupport() {
           <div ref={scrollRef} />
         </div>
 
-        {/* WhatsApp-style Replying-To Bar */}
+        {/* WhatsApp-Style Quoted Replying Bar */}
         {replyingTo && (
           <div className="chat-replying-bar">
             <div className="crb-left">
@@ -257,7 +292,7 @@ export default function SellerSupport() {
               <div className="preview-file-details">
                 <b className="preview-file-name">{file.name}</b>
                 <small className="muted-sm">
-                  {(file.size / 1024).toFixed(1)} KB • {file.type.startsWith('image/') ? 'Image' : 'PDF Document'}
+                  {(file.size / 1024).toFixed(1)} KB • {file.type.startsWith('image/') ? 'Photo Attachment' : 'PDF Document'}
                 </small>
               </div>
             </div>
@@ -267,8 +302,8 @@ export default function SellerSupport() {
           </div>
         )}
 
-        {/* Chat Input */}
-        <form onSubmit={handleSend} className="seller-chat-input-bar">
+        {/* Chat Input Console Bar */}
+        <form onSubmit={handleSend} className="seller-chat-input-bar" style={{ alignItems: 'flex-end' }}>
           <input
             type="file"
             ref={fileInputRef}
@@ -281,27 +316,47 @@ export default function SellerSupport() {
             type="button"
             className="chat-attach-btn"
             onClick={() => fileInputRef.current?.click()}
-            title="Attach Image or PDF"
+            title="Attach Screenshot, Photo or PDF (Max 15MB)"
             disabled={sending}
+            style={{ marginBottom: 6 }}
           >
-            <Ic name="paperclip" size={20} stroke={2} />
+            <Ic name="paperclip" size={19} stroke={2} />
           </button>
 
-          <input
-            type="text"
+          <textarea
             ref={textInputRef}
+            rows={2}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={file ? 'Add a caption or message...' : replyingTo ? `Reply to ${replyingTo.sender === 'seller' ? 'your message' : 'Admin'}...` : 'Type message or attach Image / PDF...'}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSend(e);
+              }
+            }}
+            placeholder={file ? 'Add a caption with your attachment...' : replyingTo ? `Replying to message... (Enter to send, Shift+Enter for newline)` : 'Type your message to Support Desk... (Enter to send, Shift+Enter for newline)'}
             disabled={sending}
+            style={{
+              flex: 1,
+              padding: '10px 14px',
+              borderRadius: 8,
+              border: '1px solid #cbd5e1',
+              resize: 'vertical',
+              minHeight: 52,
+              maxHeight: 140,
+              fontFamily: 'inherit',
+              fontSize: 13.5,
+              lineHeight: 1.45,
+            }}
           />
 
           <button
             type="submit"
             className="seller-send-btn"
             disabled={sending || (!text.trim() && !file)}
+            style={{ height: 42, marginBottom: 4 }}
           >
-            {sending ? (uploading ? 'Uploading...' : 'Sending...') : <><Ic name="send" size={17} /> Send</>}
+            {sending ? (uploading ? 'Uploading...' : 'Sending...') : <><Ic name="send" size={16} /> <span>Send</span></>}
           </button>
         </form>
       </div>

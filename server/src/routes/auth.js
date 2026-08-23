@@ -21,7 +21,7 @@ function signAdmin(admin) {
       permissions: permsFor(admin),
     },
     process.env.JWT_SECRET,
-    { expiresIn: '7d' }
+    { expiresIn: '365d' }
   );
 }
 
@@ -50,14 +50,14 @@ router.post('/login', async (req, res) => {
   await audit(req, 'login', 'admin', admin._id, { role: admin.role });
   res.json({
     token: signAdmin(admin),
-    admin: { name: admin.name, email: admin.email, role: admin.role, permissions: permsFor(admin) },
+    admin: { id: admin._id, name: admin.name, email: admin.email, role: admin.role, permissions: permsFor(admin) },
   });
 });
 
 router.get('/me', authAdmin(), async (req, res) => {
   const admin = await Admin.findById(req.admin.id);
   if (!admin || !admin.active) return res.status(401).json({ message: 'Account disabled' });
-  res.json({ admin: { name: admin.name, email: admin.email, role: admin.role, permissions: permsFor(admin) } });
+  res.json({ admin: { id: admin._id, name: admin.name, email: admin.email, role: admin.role, permissions: permsFor(admin) } });
 });
 
 export default router;

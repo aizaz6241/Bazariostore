@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../cart.jsx';
 import { useAuth } from '../auth.jsx';
-import { api, uapi, money } from '../api.js';
+import { useCurrency } from '../context/CurrencyContext.jsx';
+import { api, uapi } from '../api.js';
 import { PROVINCES, PAYMENT_LABELS } from '../data.js';
 import { getGuestId } from '../socket.js';
 import Ic from '../components/Icons.jsx';
@@ -11,6 +12,7 @@ import { StepsBar, TrustStrip } from '../components/Bits.jsx';
 export default function Checkout() {
   const { items, subtotal, clear, showToast } = useCart();
   const { user } = useAuth();
+  const { formatMoney } = useCurrency();
   const navigate = useNavigate();
 
   const [form, setForm] = useState({
@@ -345,7 +347,7 @@ export default function Checkout() {
                     <div className="review-item" key={i.key}>
                       <span className="cart-thumb"><img src={i.image} alt="" /></span>
                       <span className="ri-name">{i.name}{i.size ? ` (${i.size})` : ''}{i.variant ? ` — ${i.variant}` : ''} <small className="muted">× {i.qty}</small></span>
-                      <b>{money(i.price * i.qty)}</b>
+                      <b>{formatMoney(i.price * i.qty)}</b>
                     </div>
                   ))}
                 </div>
@@ -353,7 +355,7 @@ export default function Checkout() {
                 {serverError && <div className="alert-error"><Ic name="x" size={15} /> {serverError}</div>}
 
                 <button className="btn-buynow btn-block btn-lg" onClick={placeOrder} disabled={placing}>
-                  {placing ? 'PLACING ORDER…' : <>PLACE ORDER — {(PAYMENT_LABELS[payKey] || '').toUpperCase()} ({money(total)})</>}
+                  {placing ? 'PLACING ORDER…' : <>PLACE ORDER — {(PAYMENT_LABELS[payKey] || '').toUpperCase()} ({formatMoney(total)})</>}
                 </button>
                 <p className="muted-sm center">By placing this order you agree to our <Link to="/page/terms">Terms & Conditions</Link>.</p>
               </>
@@ -367,16 +369,16 @@ export default function Checkout() {
                 <div className="os-item" key={i.key}>
                   <span className="cart-thumb"><img src={i.image} alt="" /></span>
                   <span className="os-name">{i.name}{i.size ? ` ${i.size}` : ''}<small className="muted">Qty: {i.qty}</small></span>
-                  <b>{money(i.price * i.qty)}</b>
+                  <b>{formatMoney(i.price * i.qty)}</b>
                 </div>
               ))}
-              <div className="sum-row"><span>Subtotal</span><span>{money(quote?.subtotal ?? subtotal)}</span></div>
-              <div className="sum-row"><span>Shipping</span><span className={shippingCost ? '' : 'free'}>{shippingCost ? money(shippingCost) : 'FREE'}</span></div>
+              <div className="sum-row"><span>Subtotal</span><span>{formatMoney(quote?.subtotal ?? subtotal)}</span></div>
+              <div className="sum-row"><span>Shipping</span><span className={shippingCost ? '' : 'free'}>{shippingCost ? formatMoney(shippingCost) : 'FREE'}</span></div>
               {(quote?.applied || []).map((a, i) => (
-                <div className="sum-row discount" key={i}><span>{a.label}{a.code ? ` (${a.code})` : ''}</span><span>{a.amount ? `- ${money(a.amount)}` : '✓'}</span></div>
+                <div className="sum-row discount" key={i}><span>{a.label}{a.code ? ` (${a.code})` : ''}</span><span>{a.amount ? `- ${formatMoney(a.amount)}` : '✓'}</span></div>
               ))}
-              <div className="sum-total"><span>Total</span><b>{money(total)}</b></div>
-              <small className="muted">Including {money(vat)} VAT</small>
+              <div className="sum-total"><span>Total</span><b>{formatMoney(total)}</b></div>
+              <small className="muted">Including {formatMoney(vat)} VAT</small>
             </div>
 
             <div className="card promo-box">

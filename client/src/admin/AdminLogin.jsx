@@ -7,7 +7,7 @@ export default function AdminLogin() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [show, setShow] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -25,22 +25,26 @@ export default function AdminLogin() {
       localStorage.setItem('ng_admin_name', admin.name);
       navigate('/admin');
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Login failed. Please check your admin credentials.');
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="admin-login-page">
-      <form className="card admin-login-card" onSubmit={submit}>
-        <div style={{ textAlign: 'center', marginBottom: 16 }}>
-          <span style={{ fontSize: 28, fontWeight: 900, color: '#f59e0b', letterSpacing: '-1px' }}>Bazario</span>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: 2, marginTop: 2 }}>SUPER ADMIN CONTROL PANEL</div>
+    <div className="auth-page">
+      <div className="card auth-card">
+        {/* Brand & Badge */}
+        <div className="seller-auth-brand">
+          <div className="amazon-logo-seller">
+            <span className="brand-prime" style={{ fontWeight: 900, letterSpacing: '-1px', color: '#0f172a' }}>Bazario</span>
+            <span className="brand-hub" style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)' }}>Super Admin</span>
+          </div>
+          <p className="seller-auth-sub">Platform control, multi-vendor governance &amp; finance</p>
         </div>
 
         {/* Role / Portal Switcher Tabs */}
-        <div className="login-portal-tabs" style={{ marginBottom: 18 }}>
+        <div className="login-portal-tabs">
           <Link to="/login" className="portal-tab">
             <Ic name="user" size={15} /> Customer
           </Link>
@@ -52,44 +56,76 @@ export default function AdminLogin() {
           </Link>
         </div>
 
-        <p className="muted-sm" style={{ textAlign: 'center', marginBottom: 18 }}>Sign in with super administrator credentials</p>
-        {error && <div className="alert-error"><Ic name="x" size={14} /> {error}</div>}
-        <div className="field">
-          <label>Admin Email</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="admin@bazario.com"
-            autoComplete="username"
-            autoCapitalize="none"
-            spellCheck={false}
-            autoFocus
-          />
-        </div>
-        <div className="field">
-          <label>Password</label>
-          <div className="pw-wrap">
+        {error && (
+          <div className="alert-error" style={{ marginBottom: 16 }}>
+            <Ic name="shield" size={16} />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <form onSubmit={submit} className="auth-form-clean">
+          <div className="field">
+            <label>Super Admin Email</label>
             <input
-              type={show ? 'text' : 'password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              autoComplete="current-password"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="admin@bazario.com"
+              autoComplete="username"
               autoCapitalize="none"
+              spellCheck={false}
+              required
+              autoFocus
             />
-            <button type="button" className="pw-eye" onClick={() => setShow(!show)} aria-label={show ? 'Hide password' : 'Show password'}>
-              <Ic name="eye" size={17} />
-            </button>
+          </div>
+
+          <div className="field">
+            <label>Master Password</label>
+            <div className="pw-wrap" style={{ position: 'relative' }}>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                required
+                style={{ paddingRight: 40 }}
+              />
+              <button
+                type="button"
+                className="pw-eye"
+                onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                <Ic name="eye" size={16} />
+              </button>
+            </div>
+          </div>
+
+          <button className="btn-primary btn-block btn-auth-submit" disabled={busy}>
+            {busy ? 'Verifying credentials…' : 'SIGN IN AS SUPER ADMIN →'}
+          </button>
+        </form>
+
+        <div className="auth-links" style={{ justifyContent: 'center', marginTop: 16 }}>
+          <span style={{ fontSize: 12.5, color: '#64748b' }}>
+            Authorized personnel only. All access is logged and audited.
+          </span>
+        </div>
+
+        {/* Compact Quick Portal Links */}
+        <div className="auth-quick-portals">
+          <span className="aqp-label">Looking for other portals?</span>
+          <div className="aqp-links">
+            <Link to="/login" className="aqp-pill customer-pill">
+              <Ic name="user" size={13} /> Customer Sign In
+            </Link>
+            <Link to="/seller/login" className="aqp-pill seller-pill">
+              <Ic name="tag" size={13} /> Seller Central
+            </Link>
           </div>
         </div>
-        <button className="btn-primary btn-block" disabled={busy}>{busy ? 'Signing in…' : 'SIGN IN AS SUPER ADMIN'}</button>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 18, borderTop: '1px solid #334155', paddingTop: 14, fontSize: 12 }}>
-          <Link to="/" style={{ color: '#94a3b8', textDecoration: 'none' }}>← Back to Store</Link>
-          <Link to="/seller/login" style={{ color: '#f59e0b', textDecoration: 'none', fontWeight: 600 }}>🏬 Seller Central →</Link>
-        </div>
-      </form>
+      </div>
     </div>
   );
 }

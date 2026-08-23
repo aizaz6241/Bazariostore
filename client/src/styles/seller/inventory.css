@@ -1,0 +1,52 @@
+/* ==========================================================================
+   SELLER PORTAL — INVENTORY CENTER STYLES
+   (client/src/styles/seller/inventory.css)
+   ========================================================================== */
+
+/* ─── INVENTORY SUMMARY ROW ─── */
+.inv-summary-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.inv-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.inv-card b { font-size: 22px; font-weight: 800; color: #0f172a; display: block; }
+.inv-card small { font-size: 12px; color: #64748b; }
+.inv-card-total { border-left: 4px solid #2563eb; }
+.inv-card-low { border-left: 4px solid #f59e0b; }
+.inv-card-out { border-left: 4px solid #ef4444; }
+.inv-card-ok { border-left: 4px solid #10b981; }
+
+/* ─── INVENTORY SEARCH BAR ─── */
+.inv-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+}
+.inv-search-bar input { border: none; outline: none; width: 100%; font-size: 13.5px; }
+
+/* Inline Stock Edit */
+.stock-edit-input {
+  width: 70px;
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}

@@ -1,0 +1,10 @@
+/* ==========================================================================
+   ADMIN CONTROL CENTER — SETTINGS, AUDIT & STAFF STYLES
+   (client/src/styles/admin/settings.css)
+   ========================================================================== */
+
+.admin-settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}

@@ -5,12 +5,13 @@ import Discount from '../models/Discount.js';
 import Refund from '../models/Refund.js';
 import { Conversation } from '../models/Chat.js';
 import { StockHistory } from '../models/StockHistory.js';
-import { authAdmin, authUser, softUser } from '../middleware/auth.js';
+import { authAdmin, authUser, softUser, authSellerOrAdmin } from '../middleware/auth.js';
 import { quoteCart } from '../services/discounts.js';
 import { initiatePayment, getPaymentConfig } from '../services/payments.js';
 import { audit } from '../utils/audit.js';
 import { notify } from '../utils/notify.js';
 import { lockSellerOrderFund, releaseSellerOrderDelivered, releaseSellerOrderCancelled } from './sellers.js';
+import { handleStatusUpdate } from './sellers/orders.routes.js';
 
 const router = Router();
 
@@ -74,15 +75,24 @@ router.post('/', softUser, async (req, res) => {
       orderNumber: makeOrderNumber(),
       user: req.user?.id || null,
       guestId: guestId || '',
-      items: q.lines.map((l) => ({
-        product: l.product._id,
-        name: l.product.name,
-        image: l.product.image,
-        size: l.size,
-        variant: l.variant,
-        price: l.price,
-        qty: l.qty,
-      })),
+      seller: q.lines[0]?.product?.seller?._id || q.lines[0]?.product?.seller || null,
+      items: q.lines.map((l) => {
+        const sId = l.product.seller?._id || l.product.seller || null;
+        const sName = l.product.seller?.storeName || l.product.sellerName || 'Verified Store';
+        return {
+          product: l.product._id,
+          seller: sId,
+          sellerName: sName,
+          name: l.product.name,
+          image: l.product.image,
+          size: l.size,
+          variant: l.variant,
+          price: l.price,
+          costPrice: l.product.costPrice || (l.product.price ? Math.round(l.product.price * 0.8) : 0),
+          qty: l.qty,
+          itemStatus: 'pending',
+        };
+      }),
       contact,
       shippingAddress: addr,
       shipping: { methodId: q.shipping.methodId, name: q.shipping.name, cost: q.shipping.cost, eta: q.shipping.eta },
@@ -129,9 +139,9 @@ router.post('/', softUser, async (req, res) => {
     req.app.get('io')?.to('admins').emit('order:new', { _id: order._id, orderNumber: order.orderNumber, total: order.total, name: addr.fullName, city: addr.city });
 
     // Notify individual sellers who own items in this order
-    const sellerIds = [...new Set(items.map((i) => i.seller?.toString()).filter(Boolean))];
+    const sellerIds = [...new Set(order.items.map((i) => i.seller?.toString()).filter(Boolean))];
     for (const sId of sellerIds) {
-      const sItems = items.filter((i) => i.seller?.toString() === sId);
+      const sItems = order.items.filter((i) => i.seller?.toString() === sId);
       notify(req.app, {
         recipientType: 'seller',
         sellerId: sId,
@@ -232,7 +242,10 @@ async function restockOrder(order, reason, by) {
   order.stockRestored = true;
 }
 
-router.patch('/:id/status', authAdmin('orders'), async (req, res) => {
+const orderStatusHandler = async (req, res) => {
+  if (req.seller && !req.admin) {
+    return handleStatusUpdate(req, res);
+  }
   const { status, note } = req.body || {};
   if (!STATUSES.includes(status)) return res.status(400).json({ message: 'Invalid status' });
   const order = await Order.findById(req.params.id);
@@ -241,7 +254,7 @@ router.patch('/:id/status', authAdmin('orders'), async (req, res) => {
 
   // 1. Order Cancelled
   if (status === 'cancelled' && prev !== 'cancelled') {
-    await restockOrder(order, 'order_cancelled', req.admin.name);
+    await restockOrder(order, 'order_cancelled', req.admin?.name || 'Admin');
     // Release locked processing funds back to each seller
     const sellerIds = [...new Set(order.items.map((i) => i.seller?.toString()).filter(Boolean))];
     for (const sId of sellerIds) {
@@ -281,11 +294,15 @@ router.patch('/:id/status', authAdmin('orders'), async (req, res) => {
   });
 
   order.status = status;
-  order.statusHistory.push({ status, note: note || '', by: req.admin.name });
+  order.statusHistory.push({ status, note: note || '', by: req.admin?.name || 'Admin' });
   await order.save();
   await audit(req, 'order_updated', 'order', order._id, { orderNumber: order.orderNumber, from: prev, to: status, note: note || '' });
   res.json(order);
-});
+};
+
+router.patch('/:id/status', authSellerOrAdmin, orderStatusHandler);
+router.put('/:id/status', authSellerOrAdmin, orderStatusHandler);
+router.post('/:id/status', authSellerOrAdmin, orderStatusHandler);
 
 router.patch('/:id/payment', authAdmin('orders'), async (req, res) => {
   const { paymentStatus } = req.body || {};

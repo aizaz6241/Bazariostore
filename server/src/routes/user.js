@@ -11,7 +11,7 @@ import { comparePassword, cleanEmail } from '../utils/password.js';
 const router = Router();
 
 const signUser = (u) =>
-  jwt.sign({ t: 'user', id: u._id, name: u.name, email: u.email }, process.env.JWT_SECRET, { expiresIn: '30d' });
+  jwt.sign({ t: 'user', id: u._id, name: u.name, email: u.email }, process.env.JWT_SECRET, { expiresIn: '365d' });
 
 const publicUser = (u) => ({ id: u._id, name: u.name, email: u.email, phone: u.phone || '', addresses: u.addresses });
 

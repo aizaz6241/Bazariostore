@@ -1,0 +1,382 @@
+/* ==========================================================================
+   SELLER PORTAL — DISCOUNTS & PROMOTIONAL COUPONS STYLES
+   (client/src/styles/seller/discounts.css)
+   ========================================================================== */
+
+.seller-discounts-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ─── 1. DISCOUNTS KPI SUMMARY GRID ─── */
+.discounts-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.dkpi-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.dkpi-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.dkpi-icon-box.purple { background: #f3e8ff; color: #7e22ce; }
+.dkpi-icon-box.green { background: #dcfce7; color: #166534; }
+.dkpi-icon-box.orange { background: #ffedd5; color: #c2410c; }
+
+.dkpi-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dkpi-lbl {
+  font-size: 11.5px;
+  color: #64748b;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.dkpi-val {
+  font-size: 22px;
+  font-weight: 900;
+  color: #0f172a;
+}
+
+/* ─── 2. COUPON CREATOR CARD & FORM ─── */
+.coupon-creator-card {
+  border: 1.5px solid #cbd5e1 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06) !important;
+  background: #ffffff;
+}
+
+.ccc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f1f5f9;
+  margin-bottom: 20px;
+}
+
+.ccc-head-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ccc-badge-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ccc-head-title h3 {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+}
+
+.ccc-head-title p {
+  font-size: 12.5px;
+  color: #64748b;
+  margin: 2px 0 0 0;
+}
+
+.btn-close-card {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+.btn-close-card:hover { color: #0f172a; background: #f1f5f9; }
+
+.coupon-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.cfg-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.cfg-field.cfg-full {
+  grid-column: 1 / -1;
+}
+
+.cfg-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cfg-field label, .cfg-label-row label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.btn-auto-code {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-auto-code:hover { background: #dbeafe; }
+
+.cfg-input, .cfg-select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  background: #ffffff;
+  color: #0f172a;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+}
+.cfg-input:focus, .cfg-select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.cfg-input.code-style {
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #1e293b;
+}
+
+.cfg-input-prefix-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.cfg-prefix {
+  position: absolute;
+  left: 12px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #64748b;
+  pointer-events: none;
+}
+
+.cfg-input.with-prefix {
+  padding-left: 28px !important;
+}
+
+.cfg-hint {
+  font-size: 11px;
+  color: #64748b;
+}
+
+/* ─── 3. LIVE COUPON TICKET PREVIEW ─── */
+.coupon-live-ticket-preview {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  color: #ffffff;
+  border-radius: 10px;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  position: relative;
+  overflow: hidden;
+  border: 1.5px dashed #475569;
+}
+
+.cltp-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cltp-tag {
+  font-size: 10px;
+  font-weight: 800;
+  color: #f59e0b;
+  letter-spacing: 1.5px;
+}
+
+.cltp-code {
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  color: #ffffff;
+  font-family: monospace;
+}
+
+.cltp-desc {
+  font-size: 12.5px;
+  color: #cbd5e1;
+  margin: 0;
+}
+
+.cltp-badge {
+  background: #f59e0b;
+  color: #0f172a;
+  padding: 10px 16px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+}
+.cltp-badge span { font-size: 16px; line-height: 1; }
+.cltp-badge small { font-size: 10px; font-weight: 800; letter-spacing: 1px; margin-top: 2px; }
+
+.cfg-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.btn-cancel {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 9px 18px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.btn-cancel:hover { background: #e2e8f0; color: #0f172a; }
+
+/* ─── 4. COUPONS TABLE CELLS & DETAILS ─── */
+.coupon-code-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ticket-icon {
+  font-size: 16px;
+}
+
+.coupon-code-badge {
+  font-size: 13px;
+  font-weight: 800;
+  color: #0f172a;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: monospace;
+  letter-spacing: 0.5px;
+}
+
+.btn-copy-code {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+.btn-copy-code:hover {
+  background: #e2e8f0;
+  color: #2563eb;
+}
+
+.discount-val-pill {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e40af;
+  font-weight: 800;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  display: inline-block;
+}
+
+.usage-progress-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 130px;
+}
+.usage-progress-meta span {
+  font-size: 12px;
+  color: #475569;
+}
+
+.usage-bar-track {
+  width: 100%;
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.usage-bar-fill {
+  height: 100%;
+  background: #f59e0b;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.expiry-text {
+  font-size: 12.5px;
+  color: #64748b;
+}
+
+/* ─── 5. RESPONSIVE MEDIA QUERIES ─── */
+@media (max-width: 768px) {
+  .coupon-form-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .discounts-kpi-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .coupon-live-ticket-preview {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+  .cltp-badge {
+    align-self: flex-start !important;
+  }
+}

@@ -33,15 +33,22 @@ function verifyAdminToken(permission, req, res, next) {
   }
 }
 
-// Seller auth (required for vendor portal)
+// Seller auth (required for vendor portal, allows admin override)
 export function authSeller(req, res, next) {
   const token = bearer(req);
   if (!token) return res.status(401).json({ message: 'Seller authorization required' });
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    if (payload.t !== 'seller') return res.status(401).json({ message: 'Seller access required' });
-    req.seller = payload;
-    next();
+    if (payload.t === 'seller') {
+      req.seller = payload;
+      return next();
+    }
+    if (payload.t === 'admin') {
+      req.admin = payload;
+      req.seller = payload;
+      return next();
+    }
+    return res.status(401).json({ message: 'Seller access required' });
   } catch {
     return res.status(401).json({ message: 'Session expired, please login again' });
   }
@@ -59,6 +66,7 @@ export function authSellerOrAdmin(req, res, next) {
     }
     if (payload.t === 'admin') {
       req.admin = payload;
+      req.seller = payload;
       return next();
     }
     return res.status(401).json({ message: 'Unauthorized' });

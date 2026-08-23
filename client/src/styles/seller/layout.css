@@ -1,0 +1,957 @@
+/* ==========================================================================
+   SELLER PORTAL — LAYOUT, SIDEBAR, TOPBAR & SHARED COMPONENTS
+   (client/src/styles/seller/layout.css)
+   ========================================================================== */
+
+/* ─── ROOT PORTAL CONTAINER & MAIN LAYOUT ─── */
+.seller-portal-layout, .seller-dashboard-shell, .seller-portal {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: stretch !important;
+  min-height: 100vh !important;
+  min-height: 100dvh !important;
+  width: 100% !important;
+  background: #f8fafc !important;
+  position: relative !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* ─── SELLER SIDEBAR ─── */
+.seller-sidebar {
+  width: 265px !important;
+  min-width: 265px !important;
+  max-width: 265px !important;
+  background: #0f172a !important;
+  color: #ffffff !important;
+  display: flex !important;
+  flex-direction: column !important;
+  flex-shrink: 0 !important;
+  position: sticky !important;
+  top: 0 !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  z-index: 120 !important;
+  border-right: 1px solid #1e293b !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: #334155 transparent !important;
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  box-sizing: border-box !important;
+}
+
+@media (min-width: 769px) {
+  .seller-sidebar {
+    transform: none !important;
+    display: flex !important;
+    visibility: visible !important;
+  }
+}
+
+.seller-sidebar::-webkit-scrollbar { width: 4px; }
+.seller-sidebar::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+
+.seller-brand {
+  padding: 20px 16px;
+  border-bottom: 1px solid #1e293b;
+}
+
+.seller-logo-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.seller-logo-title .amazon-name {
+  font-size: 22px;
+  font-weight: 900;
+  color: #ffffff;
+  letter-spacing: -0.5px;
+}
+
+.seller-logo-title .seller-badge-tag {
+  font-size: 10px;
+  font-weight: 700;
+  color: #f59e0b;
+  letter-spacing: 1px;
+}
+
+.mobile-close-drawer {
+  display: none;
+}
+
+.seller-store-card {
+  background: #1e293b;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.seller-avatar-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #f59e0b;
+  color: #0f172a;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+  font-size: 14px;
+}
+.seller-avatar-circle img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.seller-store-meta {
+  overflow: hidden;
+  flex: 1;
+}
+
+.store-name-text {
+  display: block;
+  font-size: 13px;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 700;
+}
+
+.seller-rating-pill {
+  font-size: 11px;
+  color: #94a3b8;
+  display: block;
+}
+
+/* Seller Navigation Links */
+.seller-nav {
+  padding: 16px 12px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.seller-nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #94a3b8;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.seller-nav a:hover, .seller-nav a.active {
+  background: #1e293b;
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.seller-nav-badge {
+  background: #ef4444;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  margin-left: auto;
+}
+
+.seller-sidebar-footer {
+  padding: 16px;
+  border-top: 1px solid #1e293b;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.seller-install-app-sidebar-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #1e293b, #334155);
+  color: #f8fafc;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.seller-install-app-sidebar-btn:hover {
+  background: #334155;
+  color: #f59e0b;
+}
+
+.app-badge-new {
+  background: #f59e0b;
+  color: #0f172a;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 4px;
+  border-radius: 4px;
+  margin-left: auto;
+}
+
+.view-storefront-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #94a3b8;
+  font-size: 12.5px;
+  text-decoration: none;
+  padding: 6px 0;
+  transition: color 0.15s ease;
+}
+.view-storefront-btn:hover { color: #ffffff; }
+
+.seller-logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #f87171;
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 6px 0;
+}
+.seller-logout-btn:hover { color: #ef4444; }
+
+/* ─── MAIN CONTENT WRAPPER ─── */
+.seller-main-wrap {
+  flex: 1 1 0% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-width: 0 !important;
+  width: auto !important;
+  background: #f8fafc !important;
+  position: relative !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+}
+
+/* ─── SELLER TOPBAR ─── */
+.seller-top-bar {
+  background: #ffffff !important;
+  min-height: 60px !important;
+  height: 60px !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 0 18px !important;
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 100 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+  margin: 0 !important;
+  gap: 8px !important;
+  box-sizing: border-box !important;
+}
+
+.seller-top-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-shrink: 1;
+}
+
+.mobile-hamburger-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #334155;
+}
+
+.store-active-indicator {
+  font-size: 12px;
+  font-weight: 600;
+  color: #166534;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.store-active-indicator.status-frozen { color: #dc2626; }
+
+.seller-sep { color: #cbd5e1; margin: 0 2px; }
+.seller-owner-name { font-size: 12px; color: #475569; white-space: nowrap; }
+
+.seller-top-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Topbar Wallet Pill */
+.seller-topbar-wallet-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  padding: 4px 9px;
+  border-radius: 9999px;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.seller-topbar-wallet-pill:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+.stwp-icon { color: #2563eb; display: flex; align-items: center; }
+.stwp-body { display: flex; align-items: center; gap: 4px; }
+.stwp-lbl { font-size: 11px; color: #64748b; font-weight: 500; }
+.stwp-val { font-size: 12.5px; font-weight: 800; color: #1e40af; }
+.stwp-proc { font-size: 10.5px; color: #d97706; font-weight: 700; background: #fef3c7; padding: 1px 5px; border-radius: 4px; }
+
+/* Topbar App Pill Button */
+.seller-app-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  padding: 4px 8px;
+  border-radius: 9999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.seller-app-pill-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.seller-help-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #0284c7;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  position: relative;
+  white-space: nowrap;
+}
+.unread-dot-bubble {
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 8px;
+}
+
+.seller-user-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #334155;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.seller-user-initial {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #0f172a;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11.5px;
+  font-weight: 800;
+}
+.seller-user-email-text {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Responsive Hide Helpers */
+@media (max-width: 1280px) {
+  .hide-on-laptop { display: none !important; }
+}
+
+@media (max-width: 1024px) {
+  .hide-on-tablet { display: none !important; }
+}
+
+@media (max-width: 768px) {
+  .hide-on-mobile { display: none !important; }
+  .mobile-hamburger-btn { display: flex !important; }
+}
+
+/* ─── SELLER CONTENT BODY & SHARED PAGE HEADERS ─── */
+.seller-content-body {
+  padding: 24px !important;
+  flex: 1 !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  margin-top: 0 !important;
+}
+
+.seller-page, .seller-orders-page, .seller-refunds-page, .seller-products-page, .seller-prods-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.seller-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.seller-page-header h2 {
+  font-size: 22px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+}
+
+.seller-page-header p {
+  font-size: 13.5px;
+  color: #64748b;
+  margin: 0;
+}
+
+/* ─── COMPLIANCE BANNERS ─── */
+.seller-compliance-banner {
+  margin: 16px 24px 0 24px !important;
+  border-radius: 8px !important;
+  padding: 14px 18px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 14px !important;
+}
+.banner-frozen {
+  background: #fef2f2 !important;
+  border: 1.5px solid #fca5a5 !important;
+  color: #991b1b !important;
+}
+.banner-warning {
+  background: #fffbeb !important;
+  border: 1.5px solid #fde68a !important;
+  color: #92400e !important;
+}
+.banner-info-text { flex: 1; }
+.banner-title { font-size: 13.5px; font-weight: 800; display: block; margin-bottom: 2px; }
+.banner-desc { font-size: 12px; margin: 0; line-height: 1.4; }
+.banner-chat-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 14px;
+  border-radius: 6px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+/* ─── SELLER CARDS & TABLES (GLOBAL) ─── */
+.seller-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.seller-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-top: 12px;
+}
+
+.seller-table, .admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  text-align: left;
+}
+
+.seller-table th, .admin-table th {
+  background: #f8fafc;
+  padding: 11px 14px;
+  color: #475569;
+  font-weight: 700;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1.5px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.seller-table td, .admin-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.seller-table tr:hover td, .admin-table tr:hover td {
+  background: #f8fafc;
+}
+
+/* Table Empty Box */
+.table-empty-box {
+  padding: 48px 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.empty-icon-circle {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  margin-bottom: 4px;
+}
+.table-empty-box h4 {
+  font-size: 16px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+}
+.table-empty-box p {
+  font-size: 13px;
+  color: #64748b;
+  max-width: 420px;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Status Tags */
+.status-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.status-tag.status-pending { background: #fef3c7; color: #92400e; }
+.status-tag.status-confirmed, .status-tag.status-processing { background: #e0f2fe; color: #0369a1; }
+.status-tag.status-shipped, .status-tag.status-dispatched { background: #ede9fe; color: #6d28d9; }
+.status-tag.status-delivered, .status-tag.status-approved, .status-tag.status-active { background: #dcfce7; color: #166534; }
+.status-tag.status-cancelled, .status-tag.status-rejected, .status-tag.status-suspended { background: #fee2e2; color: #991b1b; }
+
+/* Table Action Buttons */
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-icon {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-icon:hover { background: #e2e8f0; color: #0f172a; }
+.btn-icon.text-red { color: #dc2626; border-color: #fee2e2; background: #fef2f2; }
+.btn-icon.text-red:hover { background: #fee2e2; color: #991b1b; }
+
+.btn-sm-action {
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: 4px;
+  text-decoration: none;
+  display: inline-block;
+  transition: background 0.15s ease;
+}
+.btn-sm-action:hover { background: #1e293b; }
+
+/* ─── MOBILE DRAWER & RESPONSIVENESS ─── */
+@media (max-width: 768px) {
+  .seller-portal-layout {
+    flex-direction: column !important;
+  }
+  .seller-sidebar {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    width: 280px !important;
+    max-width: 82vw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    z-index: 99999 !important;
+    transform: translateX(-100%) !important;
+    transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    box-shadow: 0 0 35px rgba(0, 0, 0, 0.5) !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+  }
+  .seller-sidebar.drawer-open {
+    transform: translateX(0) !important;
+    pointer-events: auto !important;
+    visibility: visible !important;
+  }
+  .seller-sidebar-backdrop {
+    position: fixed !important;
+    inset: 0 !important;
+    background: rgba(15, 23, 42, 0.72) !important;
+    backdrop-filter: blur(4px) !important;
+    -webkit-backdrop-filter: blur(4px) !important;
+    z-index: 99998 !important;
+    touch-action: none !important;
+  }
+  .mobile-close-drawer {
+    display: flex !important;
+    background: rgba(255, 255, 255, 0.12) !important;
+    border: none !important;
+    border-radius: 6px !important;
+    color: #ffffff !important;
+    width: 32px !important;
+    height: 32px !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    padding: 4px !important;
+    transition: background 0.15s ease !important;
+    touch-action: manipulation !important;
+  }
+  .mobile-close-drawer:hover {
+    background: rgba(255, 255, 255, 0.25) !important;
+  }
+  .seller-nav a {
+    padding: 12px 14px !important;
+    font-size: 14px !important;
+    touch-action: manipulation !important;
+    -webkit-tap-highlight-color: transparent !important;
+    cursor: pointer !important;
+  }
+  .mobile-hamburger-btn {
+    touch-action: manipulation !important;
+    cursor: pointer !important;
+  }
+  .seller-main-wrap {
+    width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: hidden !important;
+  }
+}
+
+/* ==========================================================================
+   SELLER AUTHENTICATION & LOGIN PAGE (.seller-auth-page)
+   ========================================================================== */
+.seller-auth-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(120% 120% at 50% 10%, #1e293b 0%, #0f172a 100%);
+  padding: 32px 16px;
+  box-sizing: border-box;
+  position: relative;
+  overflow-x: hidden;
+}
+
+.seller-auth-page::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: radial-gradient(rgba(245, 158, 11, 0.08) 1px, transparent 1px);
+  background-size: 24px 24px;
+  pointer-events: none;
+}
+
+.seller-auth-box {
+  width: 100%;
+  max-width: 440px;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.12);
+  padding: 36px 32px;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 10;
+  animation: authPopIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes authPopIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.seller-auth-brand {
+  text-align: center;
+  margin-bottom: 22px;
+}
+
+.amazon-logo-seller {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.amazon-logo-seller .brand-prime {
+  font-size: 30px;
+  font-weight: 900;
+  color: #0f172a;
+  letter-spacing: -1px;
+}
+
+.amazon-logo-seller .brand-hub {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.seller-auth-sub {
+  font-size: 13px;
+  color: #64748b;
+  margin: 6px 0 0 0;
+  line-height: 1.4;
+}
+
+/* Role / Portal Switcher Tabs */
+.login-portal-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+}
+
+.portal-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+  text-decoration: none;
+  padding: 8px 6px;
+  border-radius: 7px;
+  transition: all 0.18s ease;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.portal-tab:hover {
+  color: #0f172a;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.portal-tab.active {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  font-weight: 800;
+}
+
+/* Seller Auth Error Alert */
+.seller-auth-error {
+  background: #fef2f2;
+  border: 1.5px solid #fecaca;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #b91c1c;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* Seller Auth Form */
+.seller-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.seller-auth-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.seller-auth-form label span {
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.seller-auth-form input {
+  width: 100%;
+  padding: 11px 14px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  background: #ffffff;
+  color: #0f172a;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.seller-auth-form input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3.5px rgba(37, 99, 235, 0.12);
+}
+
+.seller-auth-btn {
+  width: 100%;
+  padding: 12px 18px;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.22);
+  margin-top: 4px;
+}
+
+.seller-auth-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.32);
+  background: #1e293b;
+}
+
+.seller-auth-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Seller Auth Footer */
+.seller-auth-footer {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid #e2e8f0;
+  text-align: center;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.seller-auth-footer p {
+  margin: 0;
+}
+
+.seller-auth-links {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 14px;
+}
+
+.seller-auth-links a {
+  color: #475569;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 12.5px;
+  transition: color 0.15s ease;
+}
+
+.seller-auth-links a:hover {
+  color: #2563eb;
+}
+
+@media (max-width: 480px) {
+  .seller-auth-page {
+    padding: 20px 12px;
+    align-items: flex-start;
+  }
+  .seller-auth-box {
+    padding: 26px 18px;
+    border-radius: 12px;
+  }
+  .amazon-logo-seller .brand-prime {
+    font-size: 26px;
+  }
+  .portal-tab {
+    font-size: 11px;
+    padding: 7px 4px;
+    gap: 3px;
+  }
+}
+
+

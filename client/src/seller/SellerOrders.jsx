@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { sapi, fmtDate } from '../api.js';
+import { sapi, fmtDate, money } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
+import { getSocket } from '../socket.js';
 
 const STATUS_TABS = [
   { key: 'all', label: 'All Orders', icon: 'package' },
@@ -26,7 +27,6 @@ export default function SellerOrders() {
   const [actionMsg, setActionMsg] = useState('');
 
   const loadOrders = () => {
-    setLoading(true);
     sapi('/sellers/orders')
       .then(setOrders)
       .catch((e) => console.error(e))
@@ -35,6 +35,18 @@ export default function SellerOrders() {
 
   useEffect(() => {
     loadOrders();
+
+    const socket = getSocket();
+    const onOrderUpdate = () => loadOrders();
+    socket.on('order:new', onOrderUpdate);
+    socket.on('order:update', onOrderUpdate);
+    socket.on('seller:status_update', onOrderUpdate);
+
+    return () => {
+      socket.off('order:new', onOrderUpdate);
+      socket.off('order:update', onOrderUpdate);
+      socket.off('seller:status_update', onOrderUpdate);
+    };
   }, []);
 
   const handleQuickConfirm = async (ord) => {
@@ -42,10 +54,11 @@ export default function SellerOrders() {
     setActionMsg('');
     try {
       const res = await sapi(`/sellers/orders/${ord._id}/confirm`, { method: 'POST' });
-      setActionMsg(`✅ Order #${ord.orderNumber} confirmed! $${res.lockedAmount.toFixed(2)} locked in processing funds.`);
+      const lockedAmt = Number(res?.lockedAmount ?? ord.sellerTotal ?? 0);
+      setActionMsg(`✅ Order #${ord.orderNumber} confirmed! ${formatMoney(lockedAmt)} locked in processing funds.`);
       loadOrders();
     } catch (err) {
-      alert('Error confirming order: ' + err.message);
+      alert('⚠️ Order Confirmation Failed:\n' + err.message);
     } finally {
       setConfirmingId(null);
     }
@@ -62,15 +75,27 @@ export default function SellerOrders() {
     e.preventDefault();
     if (!selectedOrd) return;
     setUpdating(true);
+    setActionMsg('');
     try {
-      await sapi(`/sellers/orders/${selectedOrd._id}/status`, {
-        method: 'PATCH',
-        body: { status: newStatus, trackingNumber: trackingNum },
-      });
+      const ordId = selectedOrd._id || selectedOrd.id;
+      let res;
+      try {
+        res = await sapi(`/sellers/orders/${ordId}/status`, {
+          method: 'PATCH',
+          body: { status: newStatus, trackingNumber: trackingNum },
+        });
+      } catch (err1) {
+        // Fallback to /orders/:id/status
+        res = await sapi(`/orders/${ordId}/status`, {
+          method: 'PATCH',
+          body: { status: newStatus, trackingNumber: trackingNum },
+        });
+      }
+      setActionMsg(`✅ Order #${selectedOrd.orderNumber || ordId} status updated to "${newStatus.toUpperCase()}" successfully!`);
       setSelectedOrd(null);
       loadOrders();
     } catch (err) {
-      alert(err.message || 'Failed to update order');
+      alert(err.message || 'Failed to update order status');
     } finally {
       setUpdating(false);
     }
@@ -177,7 +202,7 @@ export default function SellerOrders() {
                             <img src={it.image || '/img/products/serum.svg'} alt="" className="thumb-xs" />
                             <div>
                               <b>{it.name}</b>
-                              <small className="muted block">Qty: {it.qty} × {money(it.price)}</small>
+                              <small className="muted block">Qty: {it.qty} × {formatMoney(it.price)}</small>
                             </div>
                           </div>
                         ))}

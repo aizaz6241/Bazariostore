@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { sapi, money } from '../api.js';
 import Ic from '../components/Icons.jsx';
+import { useCurrency } from '../context/CurrencyContext.jsx';
 
 export default function SellerShipping() {
+  const { formatMoney } = useCurrency();
   const [methods, setMethods] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -97,12 +99,12 @@ export default function SellerShipping() {
               <input value={form.description} onChange={set('description')} placeholder="e.g. Delivered via Delhivery / BlueDart" />
             </div>
             <div className="field">
-              <label>Shipping Cost (₹) *</label>
-              <input type="number" value={form.cost} onChange={set('cost')} placeholder="e.g. 49" min={0} />
+              <label>Shipping Cost ($ USD) *</label>
+              <input type="number" step="0.01" value={form.cost} onChange={set('cost')} placeholder="e.g. 5.00" min={0} />
             </div>
             <div className="field">
-              <label>Free Above Order Amount (₹)</label>
-              <input type="number" value={form.freeAbove} onChange={set('freeAbove')} placeholder="e.g. 499 — leave blank to never be free" min={0} />
+              <label>Free Above Order Amount ($ USD)</label>
+              <input type="number" step="0.01" value={form.freeAbove} onChange={set('freeAbove')} placeholder="e.g. 50.00 — leave blank to never be free" min={0} />
             </div>
             <div className="field">
               <label>Estimated Delivery Time</label>
@@ -147,8 +149,8 @@ export default function SellerShipping() {
                 <tr key={m._id}>
                   <td><b>{m.name}</b></td>
                   <td className="muted-sm">{m.description || '—'}</td>
-                  <td>{money(m.cost)}</td>
-                  <td>{m.freeAbove ? money(m.freeAbove) : 'Never free'}</td>
+                  <td><b>{formatMoney(m.cost)}</b></td>
+                  <td>{m.freeAbove ? formatMoney(m.freeAbove) : 'Never free'}</td>
                   <td className="muted-sm">{m.eta || '—'}</td>
                   <td>
                     <span className={`status-chip ${m.active ? 'chip-green' : 'chip-red'}`}>

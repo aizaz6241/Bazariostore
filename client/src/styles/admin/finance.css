@@ -1,0 +1,23 @@
+/* ==========================================================================
+   ADMIN CONTROL CENTER — FINANCE & PAYOUTS STYLES
+   (client/src/styles/admin/finance.css)
+   ========================================================================== */
+
+.finance-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.finance-stat-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.finance-stat-card .lbl { font-size: 11.5px; color: #64748b; font-weight: 700; text-transform: uppercase; }
+.finance-stat-card .val { font-size: 22px; font-weight: 900; color: #0f172a; }

@@ -63,6 +63,85 @@ const sellerSchema = new mongoose.Schema(
       pendingDeposit: { type: Number, default: 0 },    // pending deposit requests
       pendingWithdrawal: { type: Number, default: 0 }, // pending withdrawal requests
       totalWithdrawn: { type: Number, default: 0 },    // total paid out
+      securityDeposit: { type: Number, default: 0 },   // security deposit amount recorded
+    },
+    // KYC Verification / Identity Documents uploaded during self-registration
+    kycDocuments: {
+      idDocumentUrl: { type: String, default: '' },
+      idDocumentType: { type: String, default: 'Passport / ID' },
+      uploadedAt: { type: Date, default: null },
+    },
+    // Security Deposit & Referral information (set on Admin approval)
+    securityDeposit: {
+      paid: { type: Boolean, default: false },
+      amount: { type: Number, default: 0 },
+      paidAt: { type: Date, default: null },
+      referralCode: { type: String, default: '' },
+      note: { type: String, default: '' },
+    },
+    // Performance Target Milestones & Bonus Rewards
+    targets: [
+      {
+        title: { type: String, required: true },
+        targetOrders: { type: Number, required: true },
+        currentOrders: { type: Number, default: 0 },
+        bonusAmount: { type: Number, required: true },
+        status: { type: String, enum: ['active', 'completed', 'claimed'], default: 'active' },
+        createdAt: { type: Date, default: Date.now },
+        completedAt: { type: Date, default: null },
+        expiresAt: { type: Date, default: null },
+        adminNote: { type: String, default: '' },
+      },
+    ],
+    // Account Health & Compliance Rating (0 to 100)
+    accountHealth: {
+      score: { type: Number, default: 100, min: 0, max: 100 },
+      status: {
+        type: String,
+        enum: ['healthy', 'at_risk', 'critical_risk', 'frozen', 'suspended'],
+        default: 'healthy',
+      },
+      history: [
+        {
+          previousScore: Number,
+          newScore: Number,
+          delta: Number,
+          reason: { type: String, default: '' },
+          changedBy: { type: String, default: 'Admin' },
+          createdAt: { type: Date, default: Date.now },
+        },
+      ],
+      lateShipmentRate: { type: Number, default: 0 },
+      orderDefectRate: { type: Number, default: 0 },
+      policyViolations: { type: Number, default: 0 },
+      lastEvaluatedAt: { type: Date, default: Date.now },
+    },
+    // Tiered Withdrawal Limit & Upgrade System (Banking Model)
+    withdrawalLimit: {
+      maxAmount: { type: Number, default: 500 }, // Maximum single withdrawal amount (USD)
+      minAmount: { type: Number, default: 10 },  // Minimum single withdrawal amount (USD)
+      requiredWithdrawalsForIncrease: { type: Number, default: 10 }, // Required successful withdrawals to unlock upgrade
+      successfulWithdrawalCount: { type: Number, default: 0 }, // Counter of approved withdrawals at current tier
+      upgradeFee: { type: Number, default: 50 }, // Upgrade processing fee charged to seller
+      currentTierName: { type: String, default: 'Tier 1 - Standard ($500 Max)' },
+      pendingIncreaseRequest: {
+        requestedLimit: { type: Number, default: null },
+        reason: { type: String, default: '' },
+        status: {
+          type: String,
+          enum: ['none', 'pending', 'offered', 'accepted_by_seller', 'approved', 'rejected', 'declined_by_seller'],
+          default: 'none',
+        },
+        offeredLimit: { type: Number, default: null },
+        offeredFee: { type: Number, default: null },
+        offeredNextCount: { type: Number, default: null },
+        offeredTierName: { type: String, default: '' },
+        upgradeFeeCharged: { type: Number, default: 0 },
+        offeredAt: { type: Date, default: null },
+        sellerAcceptedAt: { type: Date, default: null },
+        createdAt: { type: Date, default: null },
+        adminNote: { type: String, default: '' },
+      },
     },
   },
   { timestamps: true }

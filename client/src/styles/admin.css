@@ -1,0 +1,6 @@
+/* ==========================================================================
+   BAZARIO DESIGN SYSTEM — ADMIN CONTROL CENTER (admin.css)
+   Clean Master Wrapper importing Modular Admin Sub-Stylesheets
+   ========================================================================== */
+
+@import './admin/index.css';

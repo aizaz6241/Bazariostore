@@ -1,0 +1,182 @@
+/* ==========================================================================
+   ADMIN CONTROL CENTER — DASHBOARD STYLES (dashboard.css)
+   (client/src/styles/admin/dashboard.css)
+   ========================================================================== */
+
+/* ─── 1. METRIC STAT GRIDS ─── */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.stat-grid-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.stat-card {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-decoration: none;
+  color: inherit;
+  transition: all 0.18s ease;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+  border-color: #cbd5e1;
+}
+
+.stat-card i {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.stat-card div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.stat-card b {
+  font-size: 20px;
+  font-weight: 900;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.stat-card small {
+  font-size: 11.5px;
+  color: #64748b;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+/* ─── 2. CHARTS GRID ─── */
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.chart-card {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.chart-card h3 {
+  font-size: 15px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 16px 0;
+}
+
+.chart-wide {
+  grid-column: span 1;
+}
+
+/* ─── 3. DASHBOARD SUMMARY LISTS ─── */
+.dash-lists {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1.5px solid #f1f5f9;
+}
+
+.card-head h3 {
+  font-size: 15px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+}
+
+.see-all {
+  font-size: 12px;
+  font-weight: 700;
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.see-all:hover {
+  text-decoration: underline;
+}
+
+.os-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 13px;
+}
+
+.os-item:last-child {
+  border-bottom: none;
+}
+
+.os-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  color: #0f172a;
+  font-weight: 700;
+  min-width: 0;
+}
+
+.os-name small {
+  color: #64748b;
+  font-weight: 500;
+  font-size: 11.5px;
+}
+
+/* ─── 4. RESPONSIVE BREAKPOINTS ─── */
+@media (max-width: 1024px) {
+  .stat-grid-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .chart-grid {
+    grid-template-columns: 1fr;
+  }
+  .dash-lists {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .stat-grid-4 {
+    grid-template-columns: 1fr;
+  }
+  .stat-card b {
+    font-size: 18px;
+  }
+}

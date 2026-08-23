@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useCart } from '../cart.jsx';
-import { money } from '../api.js';
+import { useCurrency } from '../context/CurrencyContext.jsx';
 import { badgeFor } from '../data.js';
 import Ic from './Icons.jsx';
 import Stars from './Stars.jsx';
 
 export default function ProductCard({ p }) {
   const { add } = useCart();
+  const { formatMoney } = useCurrency();
   const [liked, setLiked] = useState(false);
   const badge = badgeFor(p);
   const out = p.stock <= 0;
@@ -17,7 +18,7 @@ export default function ProductCard({ p }) {
   return (
     <div className={'pcard' + (out ? ' pcard-out' : '')}>
       <Link to={`/product/${p.slug}`} className="pcard-img">
-        {discountPercent > 0 && <span className="discount-tag-badge">{discountPercent}% OFF</span>}
+        {discountPercent > 0 && <span className="discount-tag-badge">-{discountPercent}%</span>}
         {badge && !discountPercent && <span className={`pbadge pbadge-${badge.cls}`}>{badge.text}</span>}
         <img src={p.image || p.images?.[0]?.url || '/img/products/serum.svg'} alt={p.name} loading="lazy" />
       </Link>
@@ -43,8 +44,8 @@ export default function ProductCard({ p }) {
         </div>
 
         <div className="pcard-price">
-          <b>{money(p.price)}</b>
-          {p.oldPrice && <s>{money(p.oldPrice)}</s>}
+          <b>{formatMoney(p.price)}</b>
+          {p.oldPrice && <s>{formatMoney(p.oldPrice)}</s>}
         </div>
 
         {/* Prime / Express Badge */}

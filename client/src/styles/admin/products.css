@@ -1,0 +1,10 @@
+/* ==========================================================================
+   ADMIN CONTROL CENTER — PRODUCTS & CATEGORIES STYLES
+   (client/src/styles/admin/products.css)
+   ========================================================================== */
+
+.admin-products-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}

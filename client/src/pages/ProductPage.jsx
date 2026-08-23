@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, money } from '../api.js';
+import { api } from '../api.js';
 import { useCart } from '../cart.jsx';
+import { useCurrency } from '../context/CurrencyContext.jsx';
 import Ic from '../components/Icons.jsx';
 import Stars from '../components/Stars.jsx';
 import ProductCard from '../components/ProductCard.jsx';
@@ -19,6 +20,7 @@ export default function ProductPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
   const { add } = useCart();
+  const { formatMoney } = useCurrency();
 
   const [p, setP] = useState(null);
   const [related, setRelated] = useState([]);
@@ -132,9 +134,9 @@ export default function ProductPage() {
             </div>
 
             <div className="pdp-price">
-              <b>{money(activePrice)}</b>
-              {p.oldPrice && <s>{money(p.oldPrice)}</s>}
-              {off > 0 && <span className="off-chip">{off}% OFF</span>}
+              <b>{formatMoney(activePrice)}</b>
+              {p.oldPrice && <s>{formatMoney(p.oldPrice)}</s>}
+              {off > 0 && <span className="off-chip">-{off}%</span>}
             </div>
             <p className="pdp-short">{p.shortDescription}</p>
 

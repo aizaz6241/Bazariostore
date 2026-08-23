@@ -1,0 +1,15 @@
+/* ==========================================================================
+   BAZARIO STOREFRONT MASTER STYLESHEET (storefront/index.css)
+   Imports all modular domain stylesheets for Customer Storefront
+   ========================================================================== */
+
+@import './layout.css';
+@import './auth.css';
+@import './home.css';
+@import './shop.css';
+@import './product.css';
+@import './cart.css';
+@import './checkout.css';
+@import './track.css';
+@import './account.css';
+@import './policy.css';

@@ -34,10 +34,19 @@ import sellerRoutes from './routes/sellers.js';
 import { Conversation, Message } from './models/Chat.js';
 import Seller from './models/Seller.js';
 import { notify } from './utils/notify.js';
+import { processOrderPenalties } from './routes/sellers/orders.routes.js';
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
+
+// Background order penalties scheduler (runs every 5 minutes)
+setInterval(() => {
+  processOrderPenalties(app);
+}, 5 * 60 * 1000);
+setTimeout(() => {
+  processOrderPenalties(app);
+}, 8000);
 
 app.get(['/api/health', '/health'], (req, res) => res.json({ ok: true, name: 'Bazario Multi-Vendor Marketplace API' }));
 app.use('/api/products', productRoutes);
@@ -154,6 +163,13 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Guest joins their support room
+  socket.on('guest:join', ({ guestId }) => {
+    if (guestId) {
+      socket.join(`guest:${guestId}`);
+    }
+  });
+
   // Admin or Staff joins the admin room
   socket.on('admin:join', ({ token }) => {
     try {
@@ -162,6 +178,7 @@ io.on('connection', (socket) => {
         socket.data.isAdmin = true;
         socket.data.adminId = payload.id;
         socket.join('admins');
+        socket.join(`admin:${payload.id}`);
       }
     } catch {
       /* invalid token */

@@ -1,0 +1,404 @@
+/* ==========================================================================
+   BAZARIO CUSTOMER STOREFRONT — ACCOUNT & ORDERS (account.css)
+   (client/src/styles/storefront/account.css)
+   ========================================================================== */
+
+/* ─── 1. ACCOUNT PAGE WRAPPER ─── */
+.account-page {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 36px 16px 64px 16px;
+  box-sizing: border-box;
+}
+
+.account-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+  border-bottom: 1.5px solid #e2e8f0;
+  padding-bottom: 14px;
+}
+
+.account-head .page-title {
+  font-size: 28px;
+  font-weight: 900;
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: -0.5px;
+}
+
+.account-head .muted {
+  font-size: 14px;
+  color: #64748b;
+}
+
+.account-head .muted b {
+  color: #0f172a;
+}
+
+/* ─── 2. ACCOUNT TABS ─── */
+.account-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+
+.account-tabs .chip {
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 9999px;
+  padding: 9px 20px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.account-tabs .chip:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  transform: translateY(-1px);
+}
+
+.account-tabs .chip.chip-on {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.2);
+}
+
+/* ─── 3. PROFILE & PASSWORD GRIDS ─── */
+.account-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.account-grid .form-card {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 24px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.account-grid .btn-primary,
+.account-grid .btn-outline {
+  margin-top: 8px;
+  padding: 11px 20px;
+  font-weight: 800;
+  font-size: 13px;
+  border-radius: 8px;
+  width: fit-content;
+}
+
+/* ─── 4. ORDER HISTORY LIST & ACCORDION ─── */
+.account-orders {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.account-order {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+  transition: border-color 0.15s ease;
+}
+
+.account-order:hover {
+  border-color: #cbd5e1;
+}
+
+.account-order-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: #f8fafc;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  gap: 12px;
+  transition: background 0.15s ease;
+}
+
+.account-order-head:hover {
+  background: #f1f5f9;
+}
+
+.account-order-head > span:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.account-order-head b {
+  font-size: 14.5px;
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.account-order-head small {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.account-order-body {
+  padding: 24px 20px;
+  border-top: 1.5px solid #f1f5f9;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  background: #ffffff;
+  animation: orderBodyIn 0.2s ease-out;
+}
+
+@keyframes orderBodyIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.account-order-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 16px;
+  border-top: 1.5px solid #f1f5f9;
+}
+
+.account-order-actions .btn-outline {
+  padding: 9px 18px;
+  font-size: 12.5px;
+  font-weight: 700;
+  border-radius: 6px;
+  text-decoration: none;
+}
+
+/* ─── 5. SAVED ADDRESSES GRID ─── */
+.addr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 18px;
+  margin-bottom: 24px;
+}
+
+.addr-card {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 160px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+}
+
+.addr-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1.5px solid #f1f5f9;
+}
+
+.addr-card-head b {
+  font-size: 14px;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.row-link {
+  background: none;
+  border: none;
+  color: #2563eb;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 4px;
+  transition: color 0.15s ease;
+}
+
+.row-link:hover {
+  text-decoration: underline;
+}
+
+.row-link.danger {
+  color: #dc2626;
+}
+
+.addr-add {
+  border: 2px dashed #cbd5e1;
+  background: #f8fafc;
+  border-radius: 14px;
+  min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.addr-add:hover {
+  border-color: var(--brand, #f59e0b);
+  background: #fffbeb;
+  color: #0f172a;
+  transform: translateY(-2px);
+}
+
+.addr-form {
+  margin-top: 20px;
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.form-actions button {
+  padding: 10px 20px;
+  font-weight: 800;
+  font-size: 13px;
+  border-radius: 8px;
+}
+
+/* ─── 6. REFUND REQUEST MODAL ─── */
+.modal-back {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(4px);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: modalFadeIn 0.2s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 26px;
+  width: 100%;
+  max-width: 500px;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
+  border: 1px solid #e2e8f0;
+  animation: modalPop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modalPop {
+  from { transform: scale(0.94) translateY(8px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.modal h3 {
+  font-size: 17px;
+  font-weight: 900;
+  color: #0f172a;
+  margin: 0 0 16px 0;
+}
+
+/* Alerts */
+.alert-ok {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 18px;
+}
+
+.alert-error {
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  color: #991b1b;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.alert-info {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e40af;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ─── 7. RESPONSIVE BREAKPOINTS ─── */
+@media (max-width: 800px) {
+  .account-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .account-page {
+    padding: 20px 12px 48px 12px;
+  }
+  .account-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .account-order-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px 16px;
+  }
+  .account-order-head .order-list-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .account-order-body {
+    padding: 16px 12px;
+  }
+  .addr-grid {
+    grid-template-columns: 1fr;
+  }
+}

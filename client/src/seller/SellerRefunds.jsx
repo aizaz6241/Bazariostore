@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { sapi, money, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
+import { useCurrency } from '../context/CurrencyContext.jsx';
 
 export default function SellerRefunds() {
+  const { formatMoney } = useCurrency();
   const [refunds, setRefunds] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -81,7 +83,7 @@ export default function SellerRefunds() {
                     <b>{ref.reason}</b>
                     {ref.notes && <small className="muted block">{ref.notes}</small>}
                   </td>
-                  <td><b className="text-red">{money(ref.amount)}</b></td>
+                  <td><b className="text-red">{formatMoney(ref.amount)}</b></td>
                   <td>
                     <span className={`status-tag status-${ref.status}`}>
                       {ref.status}

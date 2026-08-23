@@ -1,11 +1,12 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../cart.jsx';
-import { money } from '../api.js';
+import { useCurrency } from '../context/CurrencyContext.jsx';
 import Ic from '../components/Icons.jsx';
 import { StepsBar, TrustStrip } from '../components/Bits.jsx';
 
 export default function CartPage() {
   const { items, setQty, remove, subtotal } = useCart();
+  const { formatMoney } = useCurrency();
   const navigate = useNavigate();
 
   return (
@@ -37,13 +38,13 @@ export default function CartPage() {
                       {i.size && <small className="muted">Size: {i.size}</small>}
                     </div>
                   </div>
-                  <span data-th="Price">{money(i.price)}</span>
+                  <span data-th="Price">{formatMoney(i.price)}</span>
                   <div className="qty-box" data-th="Qty">
                     <button onClick={() => setQty(i.key, i.qty - 1)} aria-label="Decrease"><Ic name="minus" size={13} /></button>
                     <span>{i.qty}</span>
                     <button onClick={() => setQty(i.key, i.qty + 1)} aria-label="Increase"><Ic name="plus" size={13} /></button>
                   </div>
-                  <b data-th="Total">{money(i.price * i.qty)}</b>
+                  <b data-th="Total">{formatMoney(i.price * i.qty)}</b>
                   <button className="cart-remove" onClick={() => remove(i.key)} aria-label="Remove"><Ic name="x" size={15} /></button>
                 </div>
               ))}
@@ -51,10 +52,10 @@ export default function CartPage() {
 
             <aside className="card order-summary">
               <h3>Order Summary</h3>
-              <div className="sum-row"><span>Subtotal</span><span>{money(subtotal)}</span></div>
+              <div className="sum-row"><span>Subtotal</span><span>{formatMoney(subtotal)}</span></div>
               <div className="sum-row"><span>Shipping</span><span className="free">FREE</span></div>
               <div className="sum-row muted-sm"><span>Promo code</span><span>Apply at checkout</span></div>
-              <div className="sum-total"><span>Total</span><b>{money(subtotal)}</b></div>
+              <div className="sum-total"><span>Total</span><b>{formatMoney(subtotal)}</b></div>
               <button className="btn-primary btn-block" onClick={() => navigate('/checkout')}>
                 PROCEED TO CHECKOUT <Ic name="arrowRight" size={16} />
               </button>

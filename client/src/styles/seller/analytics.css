@@ -1,0 +1,67 @@
+/* ==========================================================================
+   SELLER PORTAL — ANALYTICS & REPORTS STYLES
+   (client/src/styles/seller/analytics.css)
+   ========================================================================== */
+
+.period-tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.period-tab {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.period-tab.active {
+  background: #2563eb;
+  color: #ffffff;
+  border-color: #2563eb;
+}
+
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.analytics-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 18px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.analytics-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.analytics-val {
+  font-size: 22px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.analytics-label {
+  font-size: 12.5px;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.analytics-sub {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 2px;
+}

@@ -8,8 +8,27 @@ function AuthShell({ title, sub, children }) {
   return (
     <div className="auth-page">
       <div className="card auth-card">
-        <h2 className="serif">{title}</h2>
-        <p className="muted-sm">{sub}</p>
+        <div className="seller-auth-brand">
+          <div className="amazon-logo-seller">
+            <span className="brand-prime" style={{ fontWeight: 900, letterSpacing: '-1px', color: '#0f172a' }}>Bazario</span>
+            <span className="brand-hub" style={{ background: 'linear-gradient(135deg, #2563eb, #1d4ed8)' }}>Customer</span>
+          </div>
+          <p className="seller-auth-sub">{sub || 'Manage your account, order tracking & fast checkout'}</p>
+        </div>
+
+        {/* Role / Portal Switcher Tabs */}
+        <div className="login-portal-tabs">
+          <Link to="/login" className="portal-tab active">
+            <Ic name="user" size={15} /> Customer
+          </Link>
+          <Link to="/seller/login" className="portal-tab">
+            <Ic name="tag" size={15} /> Seller Hub
+          </Link>
+          <Link to="/admin/login" className="portal-tab">
+            <Ic name="shield" size={15} /> Super Admin
+          </Link>
+        </div>
+
         {children}
       </div>
     </div>
@@ -42,20 +61,7 @@ export function Login() {
   };
 
   return (
-    <AuthShell title="Sign In" sub="Select your account portal to continue">
-      {/* Role / Portal Switcher Tabs */}
-      <div className="login-portal-tabs">
-        <Link to="/login" className="portal-tab active">
-          <Ic name="user" size={15} /> Customer
-        </Link>
-        <Link to="/seller/login" className="portal-tab">
-          <Ic name="tag" size={15} /> Seller Hub
-        </Link>
-        <Link to="/admin/login" className="portal-tab">
-          <Ic name="shield" size={15} /> Super Admin
-        </Link>
-      </div>
-
+    <AuthShell title="Sign In" sub="Sign in to your customer account">
       <form onSubmit={submit} className="auth-form-clean">
         {error && <div className="alert-error"><Ic name="x" size={14} /> {error}</div>}
         <div className="field">
@@ -70,7 +76,10 @@ export function Login() {
           />
         </div>
         <div className="field">
-          <label>Password</label>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+            <label style={{ margin: 0 }}>Password</label>
+            <Link to="/forgot-password" style={{ fontSize: 12, fontWeight: 600, color: '#2563eb' }}>Forgot password?</Link>
+          </div>
           <div className="pw-wrap" style={{ position: 'relative' }}>
             <input
               type={showPassword ? 'text' : 'password'}
@@ -78,6 +87,7 @@ export function Login() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               required
+              style={{ paddingRight: 38 }}
             />
             <button
               type="button"
@@ -95,32 +105,21 @@ export function Login() {
         </button>
       </form>
 
-      <div className="auth-links">
-        <Link to="/forgot-password">Forgot password?</Link>
-        <span>New customer? <Link to="/register" style={{ fontWeight: 700 }}>Create an account</Link></span>
+      <div className="auth-links" style={{ justifyContent: 'center', marginTop: 16 }}>
+        <span>New customer? <Link to="/register" style={{ fontWeight: 700, color: '#2563eb' }}>Create an account</Link></span>
       </div>
 
-      {/* Direct Quick Portal Cards */}
-      <div className="login-portals-grid">
-        <Link to="/seller/login" className="portal-quick-card seller-card-link">
-          <div className="pqc-icon-wrap seller">
-            <Ic name="tag" size={18} />
-          </div>
-          <div className="pqc-meta">
-            <b>Seller Central</b>
-            <span>Manage Store & Orders →</span>
-          </div>
-        </Link>
-
-        <Link to="/admin/login" className="portal-quick-card admin-card-link">
-          <div className="pqc-icon-wrap admin">
-            <Ic name="shield" size={18} />
-          </div>
-          <div className="pqc-meta">
-            <b>Super Admin</b>
-            <span>Platform Governance →</span>
-          </div>
-        </Link>
+      {/* Compact Quick Portal Links */}
+      <div className="auth-quick-portals">
+        <span className="aqp-label">Looking for other portals?</span>
+        <div className="aqp-links">
+          <Link to="/seller/login" className="aqp-pill seller-pill">
+            <Ic name="tag" size={13} /> Seller Central
+          </Link>
+          <Link to="/admin/login" className="aqp-pill admin-pill">
+            <Ic name="shield" size={13} /> Super Admin
+          </Link>
+        </div>
       </div>
     </AuthShell>
   );
@@ -150,17 +149,17 @@ export function Register() {
   };
 
   return (
-    <AuthShell title="Create Account" sub="Naya account banayein — order history aur addresses save karein">
-      <form onSubmit={submit}>
+    <AuthShell title="Create Account" sub="Create your customer account — save addresses and order history">
+      <form onSubmit={submit} className="auth-form-clean">
         {error && <div className="alert-error"><Ic name="x" size={14} /> {error}</div>}
-        <div className="field"><label>Full Name</label><input value={form.name} onChange={set('name')} placeholder="Your full name" autoFocus /></div>
-        <div className="field"><label>Email</label><input type="email" value={form.email} onChange={set('email')} placeholder="you@example.com" /></div>
-        <div className="field"><label>Phone</label><input value={form.phone} onChange={set('phone')} placeholder="03XX XXXXXXX" /></div>
-        <div className="field"><label>Password</label><input type="password" value={form.password} onChange={set('password')} placeholder="At least 6 characters" /></div>
-        <button className="btn-primary btn-block" disabled={busy}>{busy ? 'Creating…' : 'CREATE ACCOUNT'}</button>
+        <div className="field"><label>Full Name</label><input value={form.name} onChange={set('name')} placeholder="Your full name" required autoFocus /></div>
+        <div className="field"><label>Email Address</label><input type="email" value={form.email} onChange={set('email')} placeholder="you@example.com" required /></div>
+        <div className="field"><label>Phone Number</label><input value={form.phone} onChange={set('phone')} placeholder="+91 / +92 3XX XXXXXXX" required /></div>
+        <div className="field"><label>Password</label><input type="password" value={form.password} onChange={set('password')} placeholder="At least 6 characters" required /></div>
+        <button className="btn-primary btn-block btn-auth-submit" disabled={busy}>{busy ? 'Creating…' : 'CREATE ACCOUNT'}</button>
       </form>
-      <div className="auth-links">
-        <span>Already have an account? <Link to="/login">Login</Link></span>
+      <div className="auth-links" style={{ justifyContent: 'center', marginTop: 16 }}>
+        <span>Already have an account? <Link to="/login" style={{ fontWeight: 700, color: '#2563eb' }}>Sign In</Link></span>
       </div>
     </AuthShell>
   );
@@ -186,25 +185,29 @@ export function Forgot() {
   };
 
   return (
-    <AuthShell title="Forgot Password" sub="Apna email enter karein — hum reset link bhejenge">
+    <AuthShell title="Forgot Password" sub="Enter your registered email address to receive password reset link">
       {result ? (
         <div className="forgot-result">
-          <p className="promo-ok"><Ic name="check" size={15} /> {result.message}</p>
+          <p className="promo-ok" style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, margin: '0 0 8px 0' }}>
+            <Ic name="badgeCheck" size={16} /> {result.message}
+          </p>
           {result.resetUrl && (
-            <p className="muted-sm">
+            <p className="muted-sm" style={{ margin: 0 }}>
               {result.devNote}<br />
-              <Link className="btn-primary" style={{ marginTop: 10 }} to={result.resetUrl}>OPEN RESET LINK</Link>
+              <Link className="btn-primary" style={{ marginTop: 10, display: 'inline-block' }} to={result.resetUrl}>OPEN RESET LINK</Link>
             </p>
           )}
         </div>
       ) : (
-        <form onSubmit={submit}>
+        <form onSubmit={submit} className="auth-form-clean">
           {error && <div className="alert-error"><Ic name="x" size={14} /> {error}</div>}
-          <div className="field"><label>Email</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoFocus /></div>
-          <button className="btn-primary btn-block" disabled={busy}>{busy ? 'Sending…' : 'SEND RESET LINK'}</button>
+          <div className="field"><label>Email Address</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required autoFocus /></div>
+          <button className="btn-primary btn-block btn-auth-submit" disabled={busy}>{busy ? 'Sending…' : 'SEND RESET LINK'}</button>
         </form>
       )}
-      <div className="auth-links"><Link to="/login">Back to login</Link></div>
+      <div className="auth-links" style={{ justifyContent: 'center', marginTop: 16 }}>
+        <Link to="/login" style={{ fontWeight: 700, color: '#2563eb' }}>← Back to login</Link>
+      </div>
     </AuthShell>
   );
 }
@@ -220,7 +223,7 @@ export function Reset() {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (password !== confirm) return setError('Dono passwords match nahi karte');
+    if (password !== confirm) return setError('Passwords do not match');
     setBusy(true);
     setError('');
     try {
@@ -235,13 +238,14 @@ export function Reset() {
   };
 
   return (
-    <AuthShell title="Reset Password" sub="Naya password set karein">
-      <form onSubmit={submit}>
+    <AuthShell title="Reset Password" sub="Set a new secure password for your customer account">
+      <form onSubmit={submit} className="auth-form-clean">
         {error && <div className="alert-error"><Ic name="x" size={14} /> {error}</div>}
-        <div className="field"><label>New Password</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus /></div>
-        <div className="field"><label>Confirm Password</label><input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} /></div>
-        <button className="btn-primary btn-block" disabled={busy}>{busy ? 'Saving…' : 'RESET PASSWORD'}</button>
+        <div className="field"><label>New Password</label><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoFocus /></div>
+        <div className="field"><label>Confirm Password</label><input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required /></div>
+        <button className="btn-primary btn-block btn-auth-submit" disabled={busy}>{busy ? 'Saving…' : 'RESET PASSWORD'}</button>
       </form>
     </AuthShell>
   );
 }
+

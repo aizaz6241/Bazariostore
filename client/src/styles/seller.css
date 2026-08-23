@@ -1,0 +1,6 @@
+/* ==========================================================================
+   BAZARIO DESIGN SYSTEM — SELLER CENTRAL (seller.css)
+   Clean Master Wrapper importing Modular Seller Central Sub-Stylesheets
+   ========================================================================== */
+
+@import './seller/index.css';

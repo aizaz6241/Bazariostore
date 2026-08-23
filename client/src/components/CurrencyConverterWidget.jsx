@@ -106,7 +106,7 @@ export default function CurrencyConverterWidget({
           <div>
             <b className="ccc-title">{title}</b>
             <span className="ccc-subtitle">
-              Platform operates in <b>USD ($)</b>. Enter your local currency to calculate exact Dollars.
+              Enter amount in <b>{targetCurr.code}</b> or <b>USD ($)</b> — both convert in real-time.
             </span>
           </div>
         </div>
@@ -127,16 +127,18 @@ export default function CurrencyConverterWidget({
         </div>
       </div>
 
-      {/* Dual Converter Input Box */}
-      <div className="ccc-inputs-grid">
-        {/* Local Currency Input */}
-        <div className="ccc-field">
-          <label>
-            <span>Amount in {targetCurr.name} ({targetCurr.symbol})</span>
-            <small className="ccc-badge-sub">Local Currency</small>
-          </label>
-          <div className="ccc-input-group">
-            <span className="ccc-prefix">{targetCurr.symbol}</span>
+      {/* Dual Converter Blocks (Both inputs guaranteed 100% visible) */}
+      <div className="ccc-dual-converter-box">
+        {/* Block 1: Local Currency Input */}
+        <div className="ccc-currency-block local-block">
+          <div className="ccc-block-top">
+            <span className="ccc-block-title">
+              {targetCurr.flag} Amount in {targetCurr.name} ({targetCurr.symbol})
+            </span>
+            <span className="ccc-badge-sub">Local Currency</span>
+          </div>
+          <div className="ccc-input-container">
+            <span className="ccc-input-symbol">{targetCurr.symbol}</span>
             <input
               type="number"
               min="0"
@@ -145,36 +147,42 @@ export default function CurrencyConverterWidget({
               onFocus={() => { lastActiveSource.current = 'local'; }}
               onChange={(e) => handleLocalInput(e.target.value)}
               placeholder={`e.g. 30,000 ${targetCurr.code}`}
+              className="ccc-main-input"
             />
-            <span className="ccc-suffix">{targetCurr.code}</span>
+            <span className="ccc-input-tag">{targetCurr.code}</span>
           </div>
         </div>
 
-        {/* Swap / Equals Indicator */}
-        <div className="ccc-swap-indicator">
-          <div className="ccc-equals-sign">⇄</div>
-          <span className="ccc-live-rate-tag">1 USD ≈ {rate.toFixed(2)} {targetCurr.code}</span>
+        {/* Bridge Indicator */}
+        <div className="ccc-bridge-divider">
+          <div className="ccc-bridge-badge">
+            <span className="bridge-icon">⇅</span>
+            <span className="bridge-rate">1 USD ≈ {rate.toFixed(2)} {targetCurr.code}</span>
+          </div>
         </div>
 
-        {/* Converted USD Input */}
-        <div className="ccc-field highlight-usd">
-          <label>
-            <span>Amount in US Dollars ($) *</span>
-            <small className="ccc-badge-primary">Main Platform Currency</small>
-          </label>
-          <div className="ccc-input-group usd-group">
-            <span className="ccc-prefix">$</span>
+        {/* Block 2: Converted Main USD Input */}
+        <div className="ccc-currency-block usd-block">
+          <div className="ccc-block-top">
+            <span className="ccc-block-title text-blue">
+              💵 Amount in US Dollars ($) *
+            </span>
+            <span className="ccc-badge-primary">Main Platform Currency</span>
+          </div>
+          <div className="ccc-input-container usd-focused">
+            <span className="ccc-input-symbol usd-sym">$</span>
             <input
               type="number"
-              min="1"
+              min="0.01"
               step="any"
               value={usdValue}
               onFocus={() => { lastActiveSource.current = 'usd'; }}
               onChange={(e) => handleUsdInput(e.target.value)}
               placeholder="e.g. 100.00"
               required
+              className="ccc-main-input usd-input"
             />
-            <span className="ccc-suffix">USD ($)</span>
+            <span className="ccc-input-tag usd-tag">USD ($)</span>
           </div>
         </div>
       </div>
@@ -199,15 +207,15 @@ export default function CurrencyConverterWidget({
         </div>
       </div>
 
-      {/* Real-Time Calculation Note */}
+      {/* Real-Time Calculation Summary Note */}
       {parsedUsd > 0 && (
         <div className="ccc-summary-pill">
           <Ic name="checkCircle" size={16} />
           <span>
-            {mode === 'deposit' ? '💰 Deposit Summary:' : '💸 Withdrawal Summary:'}{' '}
+            {mode === 'deposit' ? '💰 Deposit Summary:' : '💸 Withdrawal / Adjustment Summary:'}{' '}
             <b>{targetCurr.symbol}{parsedLocal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {targetCurr.code}</b>{' '}
             = <b>${parsedUsd.toFixed(2)} USD</b>{' '}
-            {mode === 'deposit' ? 'will be added to your Available Balance' : 'will be deducted from your Available Balance'} (Rate: 1 USD = {targetCurr.symbol}{rate.toFixed(2)} {targetCurr.code}).
+            {mode === 'deposit' ? 'will be credited to seller wallet' : 'will be processed in wallet'} (Rate: 1 USD = {targetCurr.symbol}{rate.toFixed(2)} {targetCurr.code}).
           </span>
         </div>
       )}

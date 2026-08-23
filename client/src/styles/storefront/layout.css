@@ -1,0 +1,680 @@
+/* ==========================================================================
+   BAZARIO CUSTOMER STOREFRONT — LAYOUT, HEADER, NAVBAR & FOOTER
+   (client/src/styles/storefront/layout.css)
+   ========================================================================== */
+
+/* ─── 1. TOPBAR ─── */
+.topbar {
+  background: var(--amazon-nav, #131921);
+  color: #cbd5e1;
+  font-size: 11.5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 5px 0;
+}
+
+.topbar-in {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.topbar-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.topbar-mid {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.topbar-link {
+  color: #cbd5e1;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+  transition: color 0.15s ease;
+}
+
+.topbar-link:hover {
+  color: var(--brand, #f59e0b);
+}
+
+.topbar-seller-link {
+  color: #febd69;
+  background: rgba(254, 189, 105, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(254, 189, 105, 0.25);
+}
+
+.topbar-seller-link:hover {
+  background: rgba(254, 189, 105, 0.2);
+  color: #ffffff;
+}
+
+/* ─── 2. AMAZON-STYLE MAIN HEADER ─── */
+.amazon-header, .header {
+  background: var(--amazon-nav, #131921);
+  color: #ffffff;
+  padding: 10px 0;
+  position: sticky;
+  top: 0;
+  z-index: 500;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.header-in {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+/* Brand Logo Group */
+.amazon-brand, .brand {
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  transition: border-color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.amazon-brand:hover {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.amazon-logo-group {
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+}
+
+.brand-name {
+  font-size: 26px;
+  font-weight: 900;
+  color: #ffffff;
+  letter-spacing: -0.8px;
+}
+
+.brand-dot {
+  color: var(--brand, #f59e0b);
+  font-weight: 800;
+}
+
+.brand-slogan-sub {
+  font-size: 8px;
+  color: #94a3b8;
+  letter-spacing: 1.5px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+/* Search Bar */
+.amazon-search-bar, .search-bar {
+  flex: 1;
+  max-width: 720px;
+  display: flex;
+  align-items: stretch;
+  height: 42px;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  transition: box-shadow 0.15s ease;
+}
+
+.amazon-search-bar:focus-within {
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.5);
+}
+
+.amazon-search-bar input {
+  flex: 1;
+  border: none;
+  padding: 0 16px;
+  font-size: 14px;
+  outline: none;
+  background: #ffffff;
+  color: #0f172a;
+  min-width: 0;
+}
+
+.amazon-search-bar input::placeholder {
+  color: #94a3b8;
+}
+
+.search-btn {
+  background: var(--brand, #f59e0b);
+  border: none;
+  width: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #0f172a;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.search-btn:hover {
+  background: #d97706;
+}
+
+/* Header Right Actions */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+/* Account Dropdown */
+.header-account-drop {
+  position: relative;
+}
+
+.header-account {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #ffffff;
+  text-decoration: none;
+  transition: border-color 0.15s ease;
+}
+
+.header-account:hover {
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.header-account span {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.header-account small {
+  font-size: 11px;
+  color: #cbd5e1;
+  font-weight: 500;
+}
+
+.header-account b {
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-drop-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 220px;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  border: 1px solid #e2e8f0;
+  padding: 10px;
+  display: none;
+  flex-direction: column;
+  z-index: 1000;
+  animation: dropPop 0.18s ease;
+}
+
+@keyframes dropPop {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.nav-drop:hover .nav-drop-menu {
+  display: flex;
+}
+
+.btn-menu-signin {
+  background: linear-gradient(180deg, #fde047 0%, #f59e0b 100%);
+  color: #0f172a !important;
+  text-align: center;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 8px;
+  border-radius: 6px;
+  text-decoration: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-bottom: 6px;
+}
+
+.menu-new-cust {
+  text-align: center;
+  font-size: 11.5px;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
+.menu-new-cust a {
+  color: #2563eb;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.menu-divider {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 6px 0;
+}
+
+.nav-drop-menu a {
+  color: #334155;
+  text-decoration: none;
+  font-size: 12.5px;
+  padding: 7px 10px;
+  border-radius: 4px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.nav-drop-menu a:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+/* Returns & Orders Link */
+.header-orders-link {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #ffffff;
+  text-decoration: none;
+  line-height: 1.2;
+  transition: border-color 0.15s ease;
+}
+
+.header-orders-link:hover {
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.header-orders-link small {
+  font-size: 11px;
+  color: #cbd5e1;
+}
+
+.header-orders-link b {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* Header Cart */
+.header-cart {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: #ffffff;
+  text-decoration: none;
+  transition: border-color 0.15s ease;
+}
+
+.header-cart:hover {
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.cart-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.cart-badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  background: var(--brand, #f59e0b);
+  color: #0f172a;
+  font-size: 11px;
+  font-weight: 900;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.cart-text b {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+/* ─── 3. SUB-NAVBAR & CATEGORY STRIP ─── */
+.navbar {
+  background: var(--amazon-subnav, #232f3e);
+  padding: 0;
+  font-size: 13px;
+}
+
+.navbar-in {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.navbar-in::-webkit-scrollbar {
+  display: none;
+}
+
+.allcat-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 700;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: border-color 0.15s ease;
+}
+
+.allcat-btn:hover {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-links a {
+  color: #ffffff;
+  text-decoration: none;
+  padding: 7px 10px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  transition: border-color 0.15s ease;
+}
+
+.nav-links a:hover,
+.nav-links a.active {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.nav-seller-pill {
+  color: #febd69 !important;
+  font-weight: 700 !important;
+}
+
+/* ─── 4. STOREFRONT FOOTER ─── */
+.footer {
+  background: var(--amazon-subnav, #232f3e);
+  color: #ffffff;
+  margin-top: 60px;
+}
+
+.back-to-top-btn {
+  width: 100%;
+  background: #37475a;
+  color: #ffffff;
+  border: none;
+  padding: 14px 0;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  text-align: center;
+}
+
+.back-to-top-btn:hover {
+  background: #485769;
+}
+
+.footer-grid {
+  padding: 48px 16px 36px 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 32px;
+}
+
+.footer-h {
+  font-size: 14px;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0 0 14px 0;
+  letter-spacing: 0.5px;
+}
+
+.footer-links {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 0;
+  margin: 0;
+}
+
+.footer-links a {
+  color: #cbd5e1;
+  text-decoration: none;
+  font-size: 12.5px;
+  transition: color 0.15s ease;
+}
+
+.footer-links a:hover {
+  color: #febd69;
+  text-decoration: underline;
+}
+
+.footer-contact p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: #cbd5e1;
+  margin: 0 0 8px 0;
+}
+
+.footer-track-btn {
+  display: inline-block;
+  background: var(--brand, #f59e0b);
+  color: #0f172a;
+  font-weight: 800;
+  font-size: 12.5px;
+  padding: 8px 14px;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+
+.footer-track-btn:hover {
+  background: #d97706;
+}
+
+.footer-bottom {
+  background: var(--amazon-nav, #131921);
+  padding: 24px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.footer-bottom-in {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.footer-pay {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+}
+
+.footer-pay .pay {
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+/* ─── 5. MOBILE BOTTOM NAVIGATION ─── */
+.mobile-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 58px;
+  background: #ffffff;
+  border-top: 1px solid #e2e8f0;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.08);
+  z-index: 400;
+}
+
+.mobile-nav a {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: #64748b;
+  text-decoration: none;
+  font-size: 10.5px;
+  font-weight: 600;
+  transition: color 0.15s ease;
+  position: relative;
+}
+
+.mobile-nav a.active {
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.mobile-nav .mn-badge {
+  position: absolute;
+  top: 4px;
+  right: calc(50% - 16px);
+  background: var(--brand, #f59e0b);
+  color: #0f172a;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 900;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Customer Storefront Toast Notification */
+.toast {
+  position: fixed;
+  bottom: 74px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0f172a;
+  color: #ffffff;
+  padding: 11px 22px;
+  border-radius: 9999px;
+  font-size: 13.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 10000;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  animation: toastPopIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+@keyframes toastPopIn {
+  from { opacity: 0; transform: translate(-50%, 14px) scale(0.95); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+@media (min-width: 769px) {
+  .toast {
+    bottom: 28px;
+  }
+}
+
+/* ─── 6. RESPONSIVE BREAKPOINTS ─── */
+@media (max-width: 768px) {
+  main {
+    padding-bottom: 74px;
+  }
+  .topbar {
+    display: none;
+  }
+  .header-in {
+    gap: 10px;
+  }
+  .brand-name {
+    font-size: 22px;
+  }
+  .brand-slogan-sub {
+    display: none;
+  }
+  .header-orders-link {
+    display: none;
+  }
+  .header-account span {
+    display: none;
+  }
+  .navbar-in {
+    padding: 0 12px;
+  }
+  .footer-grid {
+    grid-template-columns: 1fr;
+    gap: 24px;
+    padding: 32px 16px;
+  }
+  .footer-bottom-in {
+    flex-direction: column;
+    text-align: center;
+  }
+  .mobile-nav {
+    display: flex;
+  }
+}

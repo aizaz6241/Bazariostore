@@ -1,0 +1,17 @@
+/* ==========================================================================
+   BAZARIO SELLER CENTRAL MASTER STYLESHEET (seller/index.css)
+   Imports all modular domain stylesheets for Seller Central
+   ========================================================================== */
+
+@import './layout.css';
+@import './dashboard.css';
+@import './products.css';
+@import './orders.css';
+@import './refunds.css';
+@import './inventory.css';
+@import './discounts.css';
+@import './analytics.css';
+@import './wallet.css';
+@import './shipping.css';
+@import './support.css';
+@import './settings.css';

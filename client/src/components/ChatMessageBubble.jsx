@@ -18,7 +18,7 @@ export function scrollToQuotedMessage(messageId) {
   }
 }
 
-export default function ChatMessageBubble({ msg, isMe, myRole = 'seller', onReply }) {
+export default function ChatMessageBubble({ msg, isMe, myRole = 'seller', onReply, onEdit, onDelete }) {
   const [dragOffset, setDragOffset] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
   const touchStartRef = useRef({ x: 0, y: 0 });
@@ -44,7 +44,7 @@ export default function ChatMessageBubble({ msg, isMe, myRole = 'seller', onRepl
   };
 
   const handleTouchEnd = () => {
-    if (Math.abs(dragOffset) >= 32 && onReply) {
+    if (Math.abs(dragOffset) >= 32 && onReply && !msg.isDeleted) {
       onReply(msg);
     }
     setDragOffset(0);
@@ -54,7 +54,7 @@ export default function ChatMessageBubble({ msg, isMe, myRole = 'seller', onRepl
   const isTriggered = Math.abs(dragOffset) >= 32;
 
   // Determine quoted author name
-  const isReply = !!(msg.replyTo && (msg.replyTo.text || msg.replyTo.attachmentName || msg.replyTo.attachmentType));
+  const isReply = !msg.isDeleted && !!(msg.replyTo && (msg.replyTo.text || msg.replyTo.attachmentName || msg.replyTo.attachmentType));
   const quotedSenderIsMe = msg.replyTo?.sender === (myRole === 'seller' ? 'seller' : 'admin');
   const quotedAuthor = quotedSenderIsMe
     ? 'You'
@@ -73,7 +73,7 @@ export default function ChatMessageBubble({ msg, isMe, myRole = 'seller', onRepl
       onTouchCancel={handleTouchEnd}
     >
       {/* Swipe-to-Reply Background Pop Indicator on Mobile */}
-      {isSwiping && (
+      {isSwiping && !msg.isDeleted && (
         <div
           className={`swipe-reply-indicator ${dragOffset > 0 ? 'swipe-ltr' : 'swipe-rtl'} ${isTriggered ? 'triggered' : ''}`}
         >
@@ -83,82 +83,158 @@ export default function ChatMessageBubble({ msg, isMe, myRole = 'seller', onRepl
         </div>
       )}
 
-      {/* Main Message Bubble */}
-      <div
-        className="chat-bubble-inner"
-        style={{
-          transform: `translateX(${dragOffset}px)`,
-          transition: isSwiping ? 'none' : 'transform 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-        }}
-      >
-        {/* Incoming sender label (like WhatsApp group/support name) */}
-        {incomingSenderLabel && (
-          <div className="chat-bubble-author-title">
-            <span>{incomingSenderLabel}</span>
+      {/* Bubble Row with adjacent Hover Reply & Action Buttons */}
+      <div className="chat-bubble-row">
+        {isMe && !msg.isDeleted && (
+          <div className="chat-bubble-actions-hover">
+            {onReply && (
+              <button
+                type="button"
+                className="chat-hover-reply-btn"
+                onClick={(e) => { e.stopPropagation(); onReply(msg); }}
+                title="Reply"
+              >
+                <Ic name="cornerDownRight" size={13} />
+              </button>
+            )}
+            {myRole === 'admin' && onEdit && (
+              <button
+                type="button"
+                className="chat-hover-reply-btn"
+                onClick={(e) => { e.stopPropagation(); onEdit(msg); }}
+                title="Edit message"
+              >
+                <Ic name="edit" size={13} />
+              </button>
+            )}
+            {myRole === 'admin' && onDelete && (
+              <button
+                type="button"
+                className="chat-hover-reply-btn"
+                onClick={(e) => { e.stopPropagation(); onDelete(msg); }}
+                title="Delete message"
+                style={{ color: '#dc2626' }}
+              >
+                <Ic name="trash" size={13} />
+              </button>
+            )}
           </div>
         )}
 
-        {/* WhatsApp-Style Clickable Quoted Preview (ONLY when msg was a reply) */}
-        {isReply && (
-          <div
-            className="chat-quoted-msg clickable"
-            onClick={() => scrollToQuotedMessage(msg.replyTo.messageId)}
-            title="Click to view quoted message"
-            role="button"
-            tabIndex={0}
-          >
-            <div className="cqm-left-bar" />
-            <div className="cqm-content">
-              <div className="cqm-header">
-                <span className="cqm-reply-icon">↩</span>
-                <b className="cqm-author">{quotedAuthor}</b>
-              </div>
-              <span className="cqm-text">
-                {msg.replyTo.text ||
-                  (msg.replyTo.attachmentType === 'pdf'
-                    ? `📄 ${msg.replyTo.attachmentName || 'PDF Document'}`
-                    : '📷 Photo Attachment')}
-              </span>
+        {/* Main Message Bubble */}
+        <div
+          className={`chat-bubble-inner ${msg.isDeleted ? 'msg-deleted-bubble' : ''}`}
+          style={{
+            transform: `translateX(${dragOffset}px)`,
+            transition: isSwiping ? 'none' : 'transform 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+          }}
+        >
+          {/* Incoming sender label */}
+          {incomingSenderLabel && (
+            <div className="chat-bubble-author-title">
+              <span>{incomingSenderLabel}</span>
+              {msg.isAutoReply && <span style={{ fontSize: 10, background: '#fef3c7', color: '#92400e', padding: '1px 5px', borderRadius: 4, marginLeft: 5 }}>🤖 Auto-Reply</span>}
             </div>
+          )}
+
+          {/* Quoted Preview */}
+          {isReply && (
+            <div
+              className="chat-quoted-msg clickable"
+              onClick={() => scrollToQuotedMessage(msg.replyTo.messageId)}
+              title="Click to view quoted message"
+              role="button"
+              tabIndex={0}
+            >
+              <div className="cqm-left-bar" />
+              <div className="cqm-content">
+                <div className="cqm-header">
+                  <span className="cqm-reply-icon">↩</span>
+                  <b className="cqm-author">{quotedAuthor}</b>
+                </div>
+                <span className="cqm-text">
+                  {msg.replyTo.text ||
+                    (msg.replyTo.attachmentType === 'pdf'
+                      ? `📄 ${msg.replyTo.attachmentName || 'PDF Document'}`
+                      : '📷 Photo Attachment')}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Deleted State vs Regular Content */}
+          {msg.isDeleted ? (
+            <div className="chat-text-content" style={{ fontStyle: 'italic', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>🚫</span> <span>This message was deleted by administrator</span>
+            </div>
+          ) : (
+            <>
+              {/* Attachment (Image or PDF) */}
+              {msg.attachment ? (
+                <ChatAttachment msg={msg} />
+              ) : typeof msg.text === 'string' &&
+                (msg.text.startsWith('http') ||
+                  msg.text.startsWith('/uploads/') ||
+                  msg.text.startsWith('img/') ||
+                  msg.text.startsWith('/img/')) &&
+                msg.text.match(/\.(jpeg|jpg|png|gif|webp|svg|pdf)(\?.*)?$/i) ? (
+                <ChatAttachment url={msg.text} />
+              ) : null}
+
+              {/* Message Text Content */}
+              {msg.text && (!msg.text.match(/\.(jpeg|jpg|png|gif|webp|svg|pdf)(\?.*)?$/i) || msg.attachment) && (
+                <div className="chat-text-content">{msg.text}</div>
+              )}
+            </>
+          )}
+
+          {/* Timestamp & Edited Indicator */}
+          <div className="chat-bubble-footer">
+            <span className="chat-bubble-time">{fmtDate(msg.createdAt)}</span>
+            {msg.isEdited && !msg.isDeleted && (
+              <span className="chat-bubble-edited-tag" style={{ fontSize: 10, color: '#94a3b8', fontStyle: 'italic', marginLeft: 4 }}>
+                (edited)
+              </span>
+            )}
+          </div>
+        </div>
+
+        {!isMe && !msg.isDeleted && (
+          <div className="chat-bubble-actions-hover">
+            {onReply && (
+              <button
+                type="button"
+                className="chat-hover-reply-btn"
+                onClick={(e) => { e.stopPropagation(); onReply(msg); }}
+                title="Reply"
+              >
+                <Ic name="cornerDownRight" size={13} />
+              </button>
+            )}
+            {myRole === 'admin' && onEdit && (
+              <button
+                type="button"
+                className="chat-hover-reply-btn"
+                onClick={(e) => { e.stopPropagation(); onEdit(msg); }}
+                title="Edit message"
+              >
+                <Ic name="edit" size={13} />
+              </button>
+            )}
+            {myRole === 'admin' && onDelete && (
+              <button
+                type="button"
+                className="chat-hover-reply-btn"
+                onClick={(e) => { e.stopPropagation(); onDelete(msg); }}
+                title="Delete message"
+                style={{ color: '#dc2626' }}
+              >
+                <Ic name="trash" size={13} />
+              </button>
+            )}
           </div>
         )}
-
-        {/* Attachment (Image or PDF) */}
-        {msg.attachment ? (
-          <ChatAttachment msg={msg} />
-        ) : typeof msg.text === 'string' &&
-          (msg.text.startsWith('http') ||
-            msg.text.startsWith('/uploads/') ||
-            msg.text.startsWith('img/') ||
-            msg.text.startsWith('/img/')) &&
-          msg.text.match(/\.(jpeg|jpg|png|gif|webp|svg|pdf)(\?.*)?$/i) ? (
-          <ChatAttachment url={msg.text} />
-        ) : null}
-
-        {/* Message Text Content */}
-        {msg.text && (!msg.text.match(/\.(jpeg|jpg|png|gif|webp|svg|pdf)(\?.*)?$/i) || msg.attachment) && (
-          <div className="chat-text-content">{msg.text}</div>
-        )}
-
-        {/* Timestamp */}
-        <div className="chat-bubble-footer">
-          <span className="chat-bubble-time">{fmtDate(msg.createdAt)}</span>
-        </div>
       </div>
-
-      {/* Floating Hover Reply Button (Revealed on hover for desktop & tap for mobile) */}
-      <button
-        type="button"
-        className="chat-hover-reply-btn"
-        onClick={(e) => {
-          e.stopPropagation();
-          onReply(msg);
-        }}
-        title="Reply to message"
-        aria-label="Reply to message"
-      >
-        <Ic name="cornerDownRight" size={14} />
-      </button>
     </div>
   );
 }

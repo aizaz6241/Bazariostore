@@ -1,0 +1,6 @@
+/* ==========================================================================
+   BAZARIO DESIGN SYSTEM — CUSTOMER STOREFRONT (storefront.css)
+   Clean Master Wrapper importing Modular Storefront Sub-Stylesheets
+   ========================================================================== */
+
+@import './storefront/index.css';

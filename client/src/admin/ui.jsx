@@ -2,11 +2,13 @@ import Ic from '../components/Icons.jsx';
 
 export function Modal({ title, onClose, children, wide }) {
   return (
-    <div className="modal-back" onClick={onClose}>
-      <div className={'card modal' + (wide ? ' modal-wide' : '')} onClick={(e) => e.stopPropagation()}>
-        <div className="modal-head">
+    <div className="admin-modal-overlay modal-back" onClick={onClose}>
+      <div className={'admin-modal-box modal' + (wide ? ' large modal-wide' : '')} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-top modal-head">
           <h3>{title}</h3>
-          <button onClick={onClose} aria-label="Close"><Ic name="x" size={16} /></button>
+          <button type="button" onClick={onClose} aria-label="Close" className="btn-close-modal">
+            <Ic name="x" size={18} />
+          </button>
         </div>
         {children}
       </div>

@@ -1,11 +1,12 @@
 import { Link, Navigate, useLocation } from 'react-router-dom';
-import { money } from '../api.js';
+import { useCurrency } from '../context/CurrencyContext.jsx';
 import { PAYMENT_LABELS } from '../data.js';
 import Ic from '../components/Icons.jsx';
 import { TrustStrip } from '../components/Bits.jsx';
 
 export default function OrderSuccess() {
   const { state } = useLocation();
+  const { formatMoney } = useCurrency();
   const order = state?.order;
   if (!order) return <Navigate to="/" replace />;
   const payLabel = PAYMENT_LABELS[order.paymentMethod] || order.paymentMethod;
@@ -41,15 +42,15 @@ export default function OrderSuccess() {
             <div className="os-item" key={n}>
               <span className="cart-thumb"><img src={i.image} alt="" /></span>
               <span className="os-name">{i.name}{i.size ? ` ${i.size}` : ''}{i.variant ? ` — ${i.variant}` : ''}<small className="muted">Qty: {i.qty}</small></span>
-              <b>{money(i.price * i.qty)}</b>
+              <b>{formatMoney(i.price * i.qty)}</b>
             </div>
           ))}
-          <div className="sum-row"><span>Subtotal</span><span>{money(order.subtotal)}</span></div>
-          <div className="sum-row"><span>Shipping ({order.shipping?.name})</span><span className={order.shipping?.cost ? '' : 'free'}>{order.shipping?.cost ? money(order.shipping.cost) : 'FREE'}</span></div>
+          <div className="sum-row"><span>Subtotal</span><span>{formatMoney(order.subtotal)}</span></div>
+          <div className="sum-row"><span>Shipping ({order.shipping?.name})</span><span className={order.shipping?.cost ? '' : 'free'}>{order.shipping?.cost ? formatMoney(order.shipping.cost) : 'FREE'}</span></div>
           {(order.discounts || []).map((d, i) => (
-            <div className="sum-row discount" key={i}><span>{d.label}{d.code ? ` (${d.code})` : ''}</span><span>- {money(d.amount)}</span></div>
+            <div className="sum-row discount" key={i}><span>{d.label}{d.code ? ` (${d.code})` : ''}</span><span>- {formatMoney(d.amount)}</span></div>
           ))}
-          <div className="sum-total"><span>Total ({payLabel})</span><b>{money(order.total)}</b></div>
+          <div className="sum-total"><span>Total ({payLabel})</span><b>{formatMoney(order.total)}</b></div>
           <p className="muted-sm">
             Delivery to: {order.shippingAddress?.fullName}, {order.shippingAddress?.street}, {order.shippingAddress?.city},{' '}
             {order.shippingAddress?.state}

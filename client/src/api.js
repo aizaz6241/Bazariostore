@@ -75,9 +75,11 @@ export async function downloadFile(path, filename) {
 export const CURRENCY_SYMBOLS = {
   USD: '$',
   INR: '₹',
+  PKR: '₨ ',
   EUR: '€',
   GBP: '£',
   AED: 'AED ',
+  SAR: 'SAR ',
   CAD: 'CA$',
   AUD: 'A$',
 };
@@ -85,9 +87,11 @@ export const CURRENCY_SYMBOLS = {
 export const DEFAULT_CURRENCY_RATES = {
   USD: 1.0,
   INR: 83.50,
+  PKR: 278.50,
   EUR: 0.92,
   GBP: 0.79,
   AED: 3.67,
+  SAR: 3.75,
   CAD: 1.36,
   AUD: 1.52,
 };

@@ -1,5 +1,5 @@
-// Bazario PWA Service Worker
-const CACHE_NAME = 'bazario-cache-v1';
+// Bazario PWA Service Worker (v2)
+const CACHE_NAME = 'bazario-cache-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -28,21 +28,24 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch Event — Network First for API/Dynamic, Cache First for static images/fonts
+// Fetch Event — Network First everywhere on dev/localhost, Cache First for static images in production
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-GET requests and API calls
+  // Skip non-GET requests, API calls, and socket.io
   if (request.method !== 'GET' || url.pathname.startsWith('/api') || url.pathname.startsWith('/socket.io')) {
     return;
   }
 
-  // Static assets (images, fonts, svg, icons): Cache first
-  if (
-    url.pathname.match(/\.(png|jpg|jpeg|svg|webp|gif|woff|woff2|ttf|eot|ico)$/) ||
-    url.pathname.startsWith('/assets/')
-  ) {
+  // Bypass cache completely for localhost / 127.0.0.1 (Live development)
+  if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+    event.respondWith(fetch(request));
+    return;
+  }
+
+  // Production: Static assets (images, fonts, svg, icons): Cache first
+  if (url.pathname.match(/\.(png|jpg|jpeg|svg|webp|gif|woff|woff2|ttf|eot|ico)$/)) {
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) return cached;
@@ -58,7 +61,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // HTML pages / SPA Navigation: Network first, fall back to cached index.html
+  // Production: HTML pages / JS / CSS: Network first, fall back to cached index.html
   event.respondWith(
     fetch(request)
       .then((response) => {

@@ -45,16 +45,28 @@ export default function Sellers() {
   });
   const [placingOrder, setPlacingOrder] = useState(false);
 
-  // Compliance / Freeze & Warning Modal
+  // Compliance / Freeze & Warning & Health Modal
   const [compModalOpen, setCompModalOpen] = useState(false);
   const [compSeller, setCompSeller] = useState(null);
-  const [compTab, setCompTab] = useState('freeze'); // 'freeze' | 'warn'
+  const [compTab, setCompTab] = useState('freeze'); // 'freeze' | 'warn' | 'health'
   const [freezeStatus, setFreezeStatus] = useState('frozen');
   const [freezeReason, setFreezeReason] = useState('');
   const [warnActive, setWarnActive] = useState(true);
   const [warnLevel, setWarnLevel] = useState('warning');
   const [warnMessage, setWarnMessage] = useState('');
+  const [healthScore, setHealthScore] = useState(100);
+  const [healthReason, setHealthReason] = useState('');
   const [submittingComp, setSubmittingComp] = useState(false);
+  const [submittingHealth, setSubmittingHealth] = useState(false);
+
+  // Admin Direct Withdrawal Limit Settings
+  const [limitMaxAmount, setLimitMaxAmount] = useState('500');
+  const [limitMinAmount, setLimitMinAmount] = useState('10');
+  const [limitRequiredCount, setLimitRequiredCount] = useState('10');
+  const [limitSuccessCount, setLimitSuccessCount] = useState('0');
+  const [limitUpgradeFee, setLimitUpgradeFee] = useState('50');
+  const [limitTierName, setLimitTierName] = useState('');
+  const [submittingLimitEdit, setSubmittingLimitEdit] = useState(false);
 
   // Admin Reset Seller Password Modal
   const [resetModalOpen, setResetModalOpen] = useState(false);
@@ -66,6 +78,32 @@ export default function Sellers() {
   const [resetError, setResetError] = useState('');
   const [showAdminSellerPw, setShowAdminSellerPw] = useState(false);
 
+  // Top Action Navigation Tabs
+  const [adminTab, setAdminTab] = useState('sellers'); // 'sellers' | 'pending' | 'targets' | 'referral'
+
+  // Pending Approvals & KYC Modal
+  const [pendingApproveModal, setPendingApproveModal] = useState(null);
+  const [pendingRejectModal, setPendingRejectModal] = useState(null);
+  const [kycDocModal, setKycDocModal] = useState(null);
+  const [approving, setApproving] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+
+  // Master Referral Code State
+  const [masterRefCode, setMasterRefCode] = useState('');
+  const [savingMasterRef, setSavingMasterRef] = useState(false);
+
+  // Targets State
+  const [allTargets, setAllTargets] = useState([]);
+  const [targetModalOpen, setTargetModalOpen] = useState(false);
+  const [targetForm, setTargetForm] = useState({
+    sellerId: '',
+    title: 'Process 10 Orders Milestone',
+    targetOrderCount: 10,
+    bonusAmount: 50,
+    description: 'Complete 10 delivered orders to receive $50 bonus.',
+  });
+  const [creatingTarget, setCreatingTarget] = useState(false);
+
   const loadSellers = () => {
     setLoading(true);
     api('/sellers')
@@ -74,19 +112,91 @@ export default function Sellers() {
       .finally(() => setLoading(false));
   };
 
+  const loadMasterReferral = () => {
+    api('/sellers/master-referral')
+      .then((res) => {
+        if (res?.masterReferralCode) setMasterRefCode(res.masterReferralCode);
+      })
+      .catch(() => {});
+  };
+
+  const loadTargets = () => {
+    api('/sellers/targets/all')
+      .then((res) => setAllTargets(res || []))
+      .catch(() => {});
+  };
+
   useEffect(() => {
     loadSellers();
+    loadMasterReferral();
+    loadTargets();
   }, []);
 
-  const handleOpenCompliance = (seller) => {
+  const handleOpenCompliance = (seller, tab = 'freeze') => {
     setCompSeller(seller);
     setFreezeStatus(seller.status || 'active');
     setFreezeReason(seller.freezeReason || '');
     setWarnActive(Boolean(seller.warning?.active));
     setWarnLevel(seller.warning?.level || 'warning');
     setWarnMessage(seller.warning?.message || '');
-    setCompTab(seller.status !== 'active' ? 'freeze' : seller.warning?.active ? 'warn' : 'freeze');
+    setHealthScore(seller.accountHealth?.score !== undefined ? seller.accountHealth.score : 100);
+    setHealthReason('');
+    setLimitMaxAmount(seller.withdrawalLimit?.maxAmount !== undefined ? seller.withdrawalLimit.maxAmount : 500);
+    setLimitMinAmount(seller.withdrawalLimit?.minAmount !== undefined ? seller.withdrawalLimit.minAmount : 10);
+    setLimitRequiredCount(seller.withdrawalLimit?.requiredWithdrawalsForIncrease || 10);
+    setLimitSuccessCount(seller.withdrawalLimit?.successfulWithdrawalCount || 0);
+    setLimitUpgradeFee(seller.withdrawalLimit?.upgradeFee !== undefined ? seller.withdrawalLimit.upgradeFee : 50);
+    setLimitTierName(seller.withdrawalLimit?.currentTierName || 'Tier 1 - Standard ($500 Max)');
+    setCompTab(tab || (seller.status !== 'active' ? 'freeze' : seller.warning?.active ? 'warn' : 'freeze'));
     setCompModalOpen(true);
+  };
+
+  const handleHealthSubmit = async (e) => {
+    e.preventDefault();
+    if (!compSeller) return;
+    setSubmittingHealth(true);
+    try {
+      await api(`/sellers/${compSeller._id}/health`, {
+        method: 'POST',
+        body: {
+          score: Number(healthScore),
+          reason: healthReason.trim() || 'Health score evaluated by Platform Compliance Desk',
+        },
+      });
+      alert(`Seller Account Health updated to ${healthScore}/100! ✅`);
+      setCompModalOpen(false);
+      loadSellers();
+    } catch (err) {
+      alert('Error updating health: ' + err.message);
+    } finally {
+      setSubmittingHealth(false);
+    }
+  };
+
+  const handleLimitEditSubmit = async (e) => {
+    e.preventDefault();
+    if (!compSeller) return;
+    setSubmittingLimitEdit(true);
+    try {
+      await api(`/sellers/${compSeller._id}/withdrawal-limit`, {
+        method: 'POST',
+        body: {
+          maxAmount: Number(limitMaxAmount),
+          minAmount: Number(limitMinAmount),
+          requiredWithdrawalsForIncrease: Number(limitRequiredCount),
+          successfulWithdrawalCount: Number(limitSuccessCount),
+          upgradeFee: Number(limitUpgradeFee),
+          currentTierName: limitTierName.trim(),
+        },
+      });
+      alert(`Withdrawal limit settings updated for ${compSeller.storeName}! ✅`);
+      setCompModalOpen(false);
+      loadSellers();
+    } catch (err) {
+      alert('Error updating limits: ' + err.message);
+    } finally {
+      setSubmittingLimitEdit(false);
+    }
   };
 
   const handleFreezeSubmit = async (e) => {
@@ -315,7 +425,108 @@ export default function Sellers() {
     }
   };
 
+  const handleApproveSubmit = async (e) => {
+    e.preventDefault();
+    if (!pendingApproveModal?.seller) return;
+    setApproving(true);
+    try {
+      await api(`/sellers/${pendingApproveModal.seller._id}/approve`, {
+        method: 'POST',
+        body: {
+          securityDepositAmount: Number(pendingApproveModal.securityDepositAmount || 0),
+          securityDepositPaid: Boolean(pendingApproveModal.securityDepositPaid),
+          assignedReferralCode: pendingApproveModal.referralCode?.trim() || '',
+        },
+      });
+      alert(`🎉 Store "${pendingApproveModal.seller.storeName}" has been successfully approved! Notification sent.`);
+      setPendingApproveModal(null);
+      loadSellers();
+    } catch (err) {
+      alert('Error approving seller: ' + err.message);
+    } finally {
+      setApproving(false);
+    }
+  };
+
+  const handleRejectSubmit = async (e) => {
+    e.preventDefault();
+    if (!pendingRejectModal?.seller) return;
+    setRejecting(true);
+    try {
+      await api(`/sellers/${pendingRejectModal.seller._id}/reject`, {
+        method: 'POST',
+        body: {
+          reason: pendingRejectModal.reason?.trim() || 'Application does not meet platform merchant criteria.',
+        },
+      });
+      alert(`Seller application for "${pendingRejectModal.seller.storeName}" has been rejected.`);
+      setPendingRejectModal(null);
+      loadSellers();
+    } catch (err) {
+      alert('Error rejecting seller: ' + err.message);
+    } finally {
+      setRejecting(false);
+    }
+  };
+
+  const handleSaveMasterReferral = async (e) => {
+    e.preventDefault();
+    setSavingMasterRef(true);
+    try {
+      const res = await api('/sellers/master-referral', {
+        method: 'POST',
+        body: { referralCode: masterRefCode.trim().toUpperCase() },
+      });
+      setMasterRefCode(res.masterReferralCode);
+      alert('✅ Master Referral Code updated successfully!');
+    } catch (err) {
+      alert('Error updating referral code: ' + err.message);
+    } finally {
+      setSavingMasterRef(false);
+    }
+  };
+
+  const handleCreateTargetSubmit = async (e) => {
+    e.preventDefault();
+    if (!targetForm.sellerId) return alert('Please select a seller.');
+    setCreatingTarget(true);
+    try {
+      await api(`/sellers/${targetForm.sellerId}/targets`, {
+        method: 'POST',
+        body: {
+          title: targetForm.title.trim(),
+          targetOrderCount: Number(targetForm.targetOrderCount),
+          bonusAmount: Number(targetForm.bonusAmount),
+          description: targetForm.description.trim(),
+        },
+      });
+      alert('🎯 Milestone Target assigned to seller successfully!');
+      setTargetModalOpen(false);
+      loadTargets();
+      loadSellers();
+    } catch (err) {
+      alert('Error assigning target: ' + err.message);
+    } finally {
+      setCreatingTarget(false);
+    }
+  };
+
+  const handleDeleteTarget = async (sellerId, targetId) => {
+    if (!window.confirm('Are you sure you want to remove this performance target?')) return;
+    try {
+      await api(`/sellers/${sellerId}/targets/${targetId}`, {
+        method: 'DELETE',
+      });
+      alert('Target removed successfully.');
+      loadTargets();
+      loadSellers();
+    } catch (err) {
+      alert('Error deleting target: ' + err.message);
+    }
+  };
+
   const filtered = sellers.filter((s) => {
+    if (s.status === 'pending_approval') return false; // Shown in Pending tab
     if (!q) return true;
     const match =
       s.storeName?.toLowerCase().includes(q.toLowerCase()) ||
@@ -323,6 +534,8 @@ export default function Sellers() {
       s.email?.toLowerCase().includes(q.toLowerCase());
     return match;
   });
+
+  const pendingList = sellers.filter((s) => s.status === 'pending_approval');
 
   return (
     <div className="admin-sellers-page">
@@ -336,175 +549,402 @@ export default function Sellers() {
         </button>
       </div>
 
-      {/* Search Bar & Summary Stats */}
-      <div className="admin-sellers-stats-bar">
-        <div className="stat-box">
-          <span className="lbl">Total Registered Sellers</span>
-          <b className="val">{sellers.length}</b>
-        </div>
-        <div className="stat-box">
-          <span className="lbl">Active Sellers</span>
-          <b className="val text-green">{sellers.filter((s) => s.status === 'active').length}</b>
-        </div>
-        <div className="stat-box">
-          <span className="lbl">Total Vendor Products</span>
-          <b className="val">{sellers.reduce((a, b) => a + (b.productCount || 0), 0)}</b>
-        </div>
-        <div className="stat-box">
-          <span className="lbl">Total Vendor GMV</span>
-          <b className="val text-blue">{money(sellers.reduce((a, b) => a + (b.lifetimeSales || 0), 0))}</b>
-        </div>
+      {/* Action Navigation Tabs */}
+      <div className="wallet-action-tabs" style={{ marginBottom: 18 }}>
+        <button
+          type="button"
+          className={`wallet-action-tab ${adminTab === 'sellers' ? 'active' : ''}`}
+          onClick={() => setAdminTab('sellers')}
+        >
+          🏢 All Registered Merchants ({sellers.filter((s) => s.status !== 'pending_approval').length})
+        </button>
+        <button
+          type="button"
+          className={`wallet-action-tab ${adminTab === 'pending' ? 'active' : ''}`}
+          onClick={() => setAdminTab('pending')}
+        >
+          ⏳ Pending Applications ({pendingList.length})
+        </button>
+        <button
+          type="button"
+          className={`wallet-action-tab ${adminTab === 'targets' ? 'active' : ''}`}
+          onClick={() => { setAdminTab('targets'); loadTargets(); }}
+        >
+          🎯 Targets &amp; Cash Bonuses ({allTargets.length})
+        </button>
+        <button
+          type="button"
+          className={`wallet-action-tab ${adminTab === 'referral' ? 'active' : ''}`}
+          onClick={() => { setAdminTab('referral'); loadMasterReferral(); }}
+        >
+          🔑 Master Referral Code
+        </button>
       </div>
 
-      <div className="table-search-row">
-        <div className="search-field">
-          <Ic name="search" size={16} />
-          <input
-            type="text"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search sellers by store name, owner, or email..."
-          />
+      {/* ─── TAB 1: ACTIVE & REGISTERED MERCHANTS ─── */}
+      {adminTab === 'sellers' && (
+        <>
+          {/* Search Bar & Summary Stats */}
+          <div className="admin-sellers-stats-bar">
+            <div className="stat-box">
+              <span className="lbl">Total Active Sellers</span>
+              <b className="val">{sellers.filter((s) => s.status !== 'pending_approval').length}</b>
+            </div>
+            <div className="stat-box">
+              <span className="lbl">Healthy Accounts</span>
+              <b className="val text-green">{sellers.filter((s) => s.status === 'active' && (s.accountHealth?.score ?? 100) >= 80).length}</b>
+            </div>
+            <div className="stat-box">
+              <span className="lbl">Total Vendor Products</span>
+              <b className="val">{sellers.reduce((a, b) => a + (b.productCount || 0), 0)}</b>
+            </div>
+            <div className="stat-box">
+              <span className="lbl">Total Vendor GMV</span>
+              <b className="val text-blue">{money(sellers.reduce((a, b) => a + (b.lifetimeSales || 0), 0))}</b>
+            </div>
+          </div>
+
+          {/* ─── AT-RISK ACCOUNT HEALTH ALERT PANEL (SCORE <= 30) ─── */}
+          {(() => {
+            const atRiskSellers = sellers.filter((s) => s.status !== 'pending_approval' && (s.accountHealth?.score !== undefined ? s.accountHealth.score : 100) <= 30);
+            if (atRiskSellers.length === 0) return null;
+            return (
+              <div className="admin-health-alert-box">
+                <div className="ahab-head">
+                  <span className="ahab-title">
+                    ⚠️ URGENT: {atRiskSellers.length} Merchant Account(s) in Critical Health Zone (&le; 30% Score)
+                  </span>
+                  <small className="muted" style={{ fontSize: 11 }}>Review policy performance and take restriction actions</small>
+                </div>
+                <div className="ahab-list">
+                  {atRiskSellers.map((s) => {
+                    const score = s.accountHealth?.score || 0;
+                    const isSuspendTier = score <= 20;
+                    return (
+                      <div key={s._id} className="ahab-item">
+                        <div>
+                          <b className="ahab-store-name">{s.storeName}</b>
+                          <div className="ahab-store-score" style={{ color: isSuspendTier ? '#dc2626' : '#ea580c' }}>
+                            {isSuspendTier ? `⛔ ${score}/100 (Suspension Alert)` : `❄️ ${score}/100 (Freeze Alert)`}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenCompliance(s, 'freeze')}
+                            className="ahab-btn-action"
+                          >
+                            {isSuspendTier ? '⛔ Suspend' : '❄️ Freeze'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenCompliance(s, 'health')}
+                            className="ahab-btn-action"
+                            style={{ background: '#0f172a' }}
+                          >
+                            🛡️ Score
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
+          <div className="table-search-row">
+            <div className="search-field">
+              <Ic name="search" size={16} />
+              <input
+                type="text"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search sellers by store name, owner, or email..."
+              />
+            </div>
+          </div>
+
+          {/* Sellers List Table */}
+          <div className="admin-card">
+            <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th>Store &amp; Owner</th>
+                <th>Login Email &amp; Phone</th>
+                <th>Commission</th>
+                <th>Products</th>
+                <th>Total Sales</th>
+                <th>Wallet &amp; Processing</th>
+                <th>Rating</th>
+                <th>Account Health</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && (
+                <tr>
+                  <td colSpan="10" className="text-center py-8 muted">Loading sellers directory...</td>
+                </tr>
+              )}
+              {!loading && filtered.length === 0 && (
+                <tr>
+                  <td colSpan="10" className="text-center py-8 muted">No sellers found.</td>
+                </tr>
+              )}
+              {filtered.map((s) => (
+                <tr key={s._id}>
+                  <td>
+                    <div className="seller-name-cell">
+                      <div className="avatar-chip">{s.storeName[0]}</div>
+                      <div>
+                        <b>{s.storeName}</b>
+                        <small className="muted block">Owner: {s.ownerName}</small>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <span>{s.email}</span>
+                    <small className="muted block">📞 {s.phone || 'N/A'}</small>
+                  </td>
+                  <td>
+                    <span className="fee-badge">{s.commissionRate || 10}%</span>
+                  </td>
+                  <td><b>{s.productCount || 0}</b> items</td>
+                  <td><b>{money(s.lifetimeSales)}</b></td>
+                  <td>
+                    <div style={{ fontSize: 11.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <div><span className="muted">Avail:</span> <b style={{ color: '#0f172a' }}>{money(s.wallet?.balance || 0)}</b></div>
+                      {s.wallet?.processingFund > 0 && (
+                        <div><span className="muted">Locked:</span> <b style={{ color: '#d97706' }}>{money(s.wallet?.processingFund)}</b></div>
+                      )}
+                      {s.wallet?.totalProfitEarned > 0 && (
+                        <div><span className="muted">Profit:</span> <b style={{ color: '#16a34a' }}>+{money(s.wallet?.totalProfitEarned)}</b></div>
+                      )}
+                    </div>
+                  </td>
+                  <td>⭐ {s.rating || '4.8'}</td>
+                  <td>
+                    {(() => {
+                      const score = s.accountHealth?.score !== undefined ? s.accountHealth.score : 100;
+                      const tier = score >= 80 ? 'healthy' : score >= 31 ? 'warning' : score > 20 ? 'freeze' : 'suspended';
+                      const tierBg = score >= 80 ? '#dcfce7' : score >= 31 ? '#fef9c3' : score > 20 ? '#ffedd5' : '#fee2e2';
+                      const tierColor = score >= 80 ? '#15803d' : score >= 31 ? '#854d0e' : score > 20 ? '#c2410c' : '#b91c1c';
+                      const fillBg = score >= 80 ? '#16a34a' : score >= 31 ? '#eab308' : score > 20 ? '#ea580c' : '#dc2626';
+
+                      return (
+                        <div
+                          className="admin-health-cell"
+                          onClick={() => handleOpenCompliance(s, 'health')}
+                          title="Click to adjust Account Health score"
+                        >
+                          <span
+                            className="admin-health-badge"
+                            style={{ background: tierBg, color: tierColor, border: `1px solid ${tierColor}40` }}
+                          >
+                            {score >= 80 ? '🟢' : score >= 31 ? '🟡' : score > 20 ? '🟠' : '🔴'} {score}/100
+                          </span>
+                          <div className="admin-health-bar-wrap">
+                            <div
+                              className="admin-health-bar-fill"
+                              style={{ width: `${Math.max(4, score)}%`, background: fillBg }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                      <span
+                        style={{
+                          background: s.status === 'active' ? '#ecfdf5' : s.status === 'frozen' ? '#eff6ff' : '#fef2f2',
+                          color: s.status === 'active' ? '#059669' : s.status === 'frozen' ? '#2563eb' : '#dc2626',
+                          border: `1px solid ${s.status === 'active' ? '#a7f3d0' : s.status === 'frozen' ? '#bfdbfe' : '#fecaca'}`,
+                          fontWeight: 700,
+                          padding: '3px 8px',
+                          borderRadius: 12,
+                          fontSize: 11,
+                        }}
+                      >
+                        {s.status === 'active' ? '● Active' : s.status === 'frozen' ? '❄️ Frozen' : '⛔ Suspended'}
+                      </span>
+                      {s.warning?.active && (
+                        <span style={{ fontSize: 10, background: '#fef3c7', color: '#b45309', padding: '2px 6px', borderRadius: 8, fontWeight: 700 }}>
+                          ⚠️ Warned ({s.warning.level || 'warning'})
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td>
+                    <div className="action-buttons-group">
+                      <button
+                        onClick={() => handleOpenCompliance(s)}
+                        className="btn-action-warn"
+                        title="Freeze/Suspend account or broadcast warning announcement"
+                        style={{
+                          background: s.status !== 'active' ? '#fee2e2' : s.warning?.active ? '#fef3c7' : '#f8fafc',
+                          color: s.status !== 'active' ? '#991b1b' : s.warning?.active ? '#92400e' : '#334155',
+                          border: '1px solid #cbd5e1',
+                          fontWeight: 600,
+                          fontSize: 12,
+                          padding: '5px 9px',
+                          borderRadius: 6,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <Ic name="alert" size={13} />
+                        {s.status !== 'active' ? 'Manage Freeze' : s.warning?.active ? 'Manage Warning' : 'Warn / Freeze'}
+                      </button>
+                      <button
+                        onClick={() => handleInspect(s)}
+                        className="btn-action-view"
+                        title="Inspect Seller Dashboard"
+                      >
+                        <Ic name="eye" size={14} /> View Dashboard
+                      </button>
+                      <button
+                        onClick={() => handleOpenResetPassword(s)}
+                        className="btn-action-warn"
+                        title="Change or reset seller login password"
+                        style={{
+                          background: '#f8fafc',
+                          color: '#0f172a',
+                          border: '1px solid #cbd5e1',
+                          fontWeight: 600,
+                          fontSize: 12,
+                          padding: '5px 9px',
+                          borderRadius: 6,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <Ic name="shield" size={13} /> Reset Password
+                      </button>
+                      <button
+                        onClick={() => handleOpenPlaceOrder(s)}
+                        className="btn-action-order"
+                        title="Place an order for this seller"
+                      >
+                        <Ic name="package" size={14} /> Place Order
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
+    </>
+  )}
 
-      {/* Sellers List Table */}
-      <div className="admin-card">
+  {/* ─── TAB 2: PENDING MERCHANT APPLICATIONS ─── */}
+  {adminTab === 'pending' && (
+    <div className="admin-card">
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: 16 }}>⏳ Pending Merchant Self-Registrations</h3>
+          <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#64748b' }}>
+            Review merchant credential submissions, KYC documents (National ID / Passport), and configure security deposits upon approval.
+          </p>
+        </div>
+        <span className="badge-pill" style={{ background: '#fef3c7', color: '#92400e' }}>
+          {pendingList.length} Awaiting Decision
+        </span>
+      </div>
+
+      <div className="admin-table-wrap">
         <table className="admin-table">
           <thead>
             <tr>
-              <th>Store &amp; Owner</th>
-              <th>Login Email &amp; Phone</th>
-              <th>Commission</th>
-              <th>Products</th>
-              <th>Total Sales</th>
-              <th>Wallet &amp; Processing</th>
-              <th>Rating</th>
-              <th>Status</th>
-              <th>Actions</th>
+              <th>Applicant Store</th>
+              <th>Owner &amp; Contacts</th>
+              <th>Referral Code</th>
+              <th>KYC Documents</th>
+              <th>Submitted Date</th>
+              <th>Decision Actions</th>
             </tr>
           </thead>
           <tbody>
-            {loading && (
+            {pendingList.length === 0 && (
               <tr>
-                <td colSpan="9" className="text-center py-8 muted">Loading sellers directory...</td>
+                <td colSpan="6" className="text-center py-8 muted">
+                  🎉 No pending merchant registrations awaiting approval.
+                </td>
               </tr>
             )}
-            {!loading && filtered.length === 0 && (
-              <tr>
-                <td colSpan="9" className="text-center py-8 muted">No sellers found.</td>
-              </tr>
-            )}
-            {filtered.map((s) => (
+            {pendingList.map((s) => (
               <tr key={s._id}>
                 <td>
-                  <div className="seller-name-cell">
-                    <div className="avatar-chip">{s.storeName[0]}</div>
-                    <div>
-                      <b>{s.storeName}</b>
-                      <small className="muted block">Owner: {s.ownerName}</small>
-                    </div>
-                  </div>
+                  <b>{s.storeName}</b>
+                  <small className="muted block">{s.description || 'New Merchant Store'}</small>
                 </td>
                 <td>
-                  <span>{s.email}</span>
+                  <b>{s.ownerName}</b>
+                  <small className="muted block">✉️ {s.email}</small>
                   <small className="muted block">📞 {s.phone || 'N/A'}</small>
                 </td>
                 <td>
-                  <span className="fee-badge">{s.commissionRate || 10}%</span>
-                </td>
-                <td><b>{s.productCount || 0}</b> items</td>
-                <td><b>{money(s.lifetimeSales)}</b></td>
-                <td>
-                  <div style={{ fontSize: 11.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    <div><span className="muted">Avail:</span> <b style={{ color: '#0f172a' }}>{money(s.wallet?.balance || 0)}</b></div>
-                    {s.wallet?.processingFund > 0 && (
-                      <div><span className="muted">Locked:</span> <b style={{ color: '#d97706' }}>{money(s.wallet?.processingFund)}</b></div>
-                    )}
-                    {s.wallet?.totalProfitEarned > 0 && (
-                      <div><span className="muted">Profit:</span> <b style={{ color: '#16a34a' }}>+{money(s.wallet?.totalProfitEarned)}</b></div>
-                    )}
-                  </div>
-                </td>
-                <td>⭐ {s.rating || '4.8'}</td>
-                <td>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                    <span
-                      style={{
-                        background: s.status === 'active' ? '#ecfdf5' : s.status === 'frozen' ? '#eff6ff' : '#fef2f2',
-                        color: s.status === 'active' ? '#059669' : s.status === 'frozen' ? '#2563eb' : '#dc2626',
-                        border: `1px solid ${s.status === 'active' ? '#a7f3d0' : s.status === 'frozen' ? '#bfdbfe' : '#fecaca'}`,
-                        fontWeight: 700,
-                        padding: '3px 8px',
-                        borderRadius: 12,
-                        fontSize: 11,
-                      }}
-                    >
-                      {s.status === 'active' ? '● Active' : s.status === 'frozen' ? '❄️ Frozen' : '⛔ Suspended'}
+                  {s.referralCode ? (
+                    <span style={{ fontSize: 11, fontWeight: 800, background: '#eff6ff', color: '#2563eb', padding: '2px 8px', borderRadius: 4 }}>
+                      🔑 {s.referralCode}
                     </span>
-                    {s.warning?.active && (
-                      <span style={{ fontSize: 10, background: '#fef3c7', color: '#b45309', padding: '2px 6px', borderRadius: 8, fontWeight: 700 }}>
-                        ⚠️ Warned ({s.warning.level || 'warning'})
-                      </span>
+                  ) : (
+                    <span className="muted-sm">Direct / None</span>
+                  )}
+                </td>
+                <td>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {s.kycDocuments?.idCard ? (
+                      <button
+                        type="button"
+                        onClick={() => setKycDocModal({ seller: s, docType: 'idCard', docUrl: s.kycDocuments.idCard })}
+                        style={{ padding: '3px 8px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        🪪 View ID
+                      </button>
+                    ) : (
+                      <small className="muted-sm">No ID</small>
+                    )}
+                    {s.kycDocuments?.passport ? (
+                      <button
+                        type="button"
+                        onClick={() => setKycDocModal({ seller: s, docType: 'passport', docUrl: s.kycDocuments.passport })}
+                        style={{ padding: '3px 8px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        🛂 View Passport
+                      </button>
+                    ) : (
+                      <small className="muted-sm">No Passport</small>
                     )}
                   </div>
                 </td>
                 <td>
-                  <div className="action-buttons-group">
+                  <small>{fmtDate(s.createdAt)}</small>
+                </td>
+                <td>
+                  <div style={{ display: 'flex', gap: 6 }}>
                     <button
-                      onClick={() => handleOpenCompliance(s)}
-                      className="btn-action-warn"
-                      title="Freeze/Suspend account or broadcast warning announcement"
-                      style={{
-                        background: s.status !== 'active' ? '#fee2e2' : s.warning?.active ? '#fef3c7' : '#f8fafc',
-                        color: s.status !== 'active' ? '#991b1b' : s.warning?.active ? '#92400e' : '#334155',
-                        border: '1px solid #cbd5e1',
-                        fontWeight: 600,
-                        fontSize: 12,
-                        padding: '5px 9px',
-                        borderRadius: 6,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 5,
-                        cursor: 'pointer',
-                      }}
+                      type="button"
+                      onClick={() => setPendingApproveModal({ seller: s, securityDepositAmount: 500, securityDepositPaid: true, referralCode: s.referralCode || '' })}
+                      style={{ padding: '6px 12px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 800, cursor: 'pointer' }}
                     >
-                      <Ic name="alert" size={13} />
-                      {s.status !== 'active' ? 'Manage Freeze' : s.warning?.active ? 'Manage Warning' : 'Warn / Freeze'}
+                      ✅ Approve
                     </button>
                     <button
-                      onClick={() => handleInspect(s)}
-                      className="btn-action-view"
-                      title="Inspect Seller Dashboard"
+                      type="button"
+                      onClick={() => setPendingRejectModal({ seller: s, reason: '' })}
+                      style={{ padding: '6px 12px', background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
                     >
-                      <Ic name="eye" size={14} /> View Dashboard
-                    </button>
-                    <button
-                      onClick={() => handleOpenResetPassword(s)}
-                      className="btn-action-warn"
-                      title="Change or reset seller login password"
-                      style={{
-                        background: '#f8fafc',
-                        color: '#0f172a',
-                        border: '1px solid #cbd5e1',
-                        fontWeight: 600,
-                        fontSize: 12,
-                        padding: '5px 9px',
-                        borderRadius: 6,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 5,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <Ic name="shield" size={13} /> Reset Password
-                    </button>
-                    <button
-                      onClick={() => handleOpenPlaceOrder(s)}
-                      className="btn-action-order"
-                      title="Place an order for this seller"
-                    >
-                      <Ic name="package" size={14} /> Place Order
+                      ❌ Reject
                     </button>
                   </div>
                 </td>
@@ -513,6 +953,155 @@ export default function Sellers() {
           </tbody>
         </table>
       </div>
+    </div>
+  )}
+
+  {/* ─── TAB 3: TARGETS & MILESTONE BONUSES ─── */}
+  {adminTab === 'targets' && (
+    <div className="admin-card">
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: 16 }}>🎯 Merchant Target &amp; Bonus Milestone Manager</h3>
+          <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#64748b' }}>
+            Assign delivery volume performance milestones. Bonuses are automatically released to merchant wallets upon delivery completion.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setTargetModalOpen(true)}
+          className="btn-primary"
+        >
+          <Ic name="plus" size={15} /> + Assign New Target Milestone
+        </button>
+      </div>
+
+      <div className="admin-table-wrap">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>Store Name</th>
+              <th>Milestone Title</th>
+              <th>Target Deliveries</th>
+              <th>Progress</th>
+              <th>Bonus ($)</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {allTargets.length === 0 && (
+              <tr>
+                <td colSpan="7" className="text-center py-8 muted">
+                  No performance targets assigned yet. Click "+ Assign New Target Milestone" above.
+                </td>
+              </tr>
+            )}
+            {allTargets.map((tgt) => {
+              const current = tgt.currentOrderCount || 0;
+              const target = tgt.targetOrderCount || 1;
+              const pct = Math.min(100, Math.round((current / target) * 100));
+              const isCompleted = tgt.status === 'completed' || current >= target;
+
+              return (
+                <tr key={tgt._id}>
+                  <td>
+                    <b>{tgt.storeName}</b>
+                    <small className="muted block">Owner: {tgt.ownerName}</small>
+                  </td>
+                  <td>
+                    <b>{tgt.title}</b>
+                    {tgt.description && <small className="muted block">{tgt.description}</small>}
+                  </td>
+                  <td><b>{target} Delivered Orders</b></td>
+                  <td>
+                    <div style={{ minWidth: 120 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 3 }}>
+                        <span>{current}/{target}</span>
+                        <b>{pct}%</b>
+                      </div>
+                      <div style={{ height: 6, background: '#e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: isCompleted ? '#16a34a' : '#f59e0b' }} />
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <b style={{ color: '#16a34a', fontSize: 13 }}>+{money(tgt.bonusAmount)}</b>
+                  </td>
+                  <td>
+                    <span
+                      style={{
+                        padding: '3px 8px',
+                        borderRadius: 6,
+                        fontSize: 11,
+                        fontWeight: 800,
+                        background: isCompleted ? '#dcfce7' : '#fef3c7',
+                        color: isCompleted ? '#166534' : '#92400e',
+                      }}
+                    >
+                      {isCompleted ? '🎉 COMPLETED' : 'IN PROGRESS'}
+                    </span>
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteTarget(tgt.sellerId, tgt._id)}
+                      style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}
+                      title="Remove Target"
+                    >
+                      🗑️ Remove
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )}
+
+  {/* ─── TAB 4: MASTER REFERRAL CODE PROGRAM ─── */}
+  {adminTab === 'referral' && (
+    <div className="admin-card" style={{ maxWidth: 640 }}>
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0' }}>
+        <h3 style={{ margin: 0, fontSize: 16 }}>🔑 Platform Master Referral Code Program</h3>
+        <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#64748b' }}>
+          Configure the global Master Referral Code used during merchant self-onboarding.
+        </p>
+      </div>
+
+      <form onSubmit={handleSaveMasterReferral} style={{ padding: '20px 24px' }}>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 6, color: '#1e293b' }}>
+            Current Master Referral Code:
+          </label>
+          <input
+            type="text"
+            value={masterRefCode}
+            onChange={(e) => setMasterRefCode(e.target.value.toUpperCase())}
+            placeholder="e.g. BAZARIO2026"
+            style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1.5px solid #cbd5e1', fontSize: 16, fontWeight: 800, letterSpacing: 1 }}
+            required
+          />
+        </div>
+
+        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '12px 16px', marginBottom: 20 }}>
+          <b style={{ color: '#166534', fontSize: 13 }}>💡 Referral Link for Applicants:</b>
+          <p style={{ margin: '3px 0 0', fontSize: 12, color: '#15803d', wordBreak: 'break-all' }}>
+            {typeof window !== 'undefined' ? `${window.location.origin}/seller/login?ref=${masterRefCode || 'BAZARIO'}` : `https://bazario.com/seller/login?ref=${masterRefCode}`}
+          </p>
+        </div>
+
+        <button
+          type="submit"
+          className="btn-primary"
+          disabled={savingMasterRef}
+        >
+          {savingMasterRef ? 'Saving...' : '💾 Save Master Referral Code'}
+        </button>
+      </form>
+    </div>
+  )}
 
       {/* Onboard New Seller Modal */}
       {createOpen && (
@@ -865,6 +1454,38 @@ export default function Sellers() {
               >
                 ⚠️ Issue Warning Announcement
               </button>
+              <button
+                type="button"
+                onClick={() => setCompTab('health')}
+                style={{
+                  padding: '10px 16px',
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: compTab === 'health' ? '2px solid #16a34a' : '2px solid transparent',
+                  fontWeight: compTab === 'health' ? 700 : 500,
+                  color: compTab === 'health' ? '#16a34a' : '#64748b',
+                  cursor: 'pointer',
+                  fontSize: 13,
+                }}
+              >
+                🛡️ Adjust Health (0-100)
+              </button>
+              <button
+                type="button"
+                onClick={() => setCompTab('limits')}
+                style={{
+                  padding: '10px 16px',
+                  background: 'none',
+                  border: 'none',
+                  borderBottom: compTab === 'limits' ? '2px solid #2563eb' : '2px solid transparent',
+                  fontWeight: compTab === 'limits' ? 700 : 500,
+                  color: compTab === 'limits' ? '#2563eb' : '#64748b',
+                  cursor: 'pointer',
+                  fontSize: 13,
+                }}
+              >
+                💳 Withdrawal Limits
+              </button>
             </div>
 
             <div style={{ padding: '18px 22px' }}>
@@ -1004,6 +1625,245 @@ export default function Sellers() {
                   </div>
                 </form>
               )}
+
+              {/* TAB 3: ACCOUNT HEALTH RATING (0-100) */}
+              {compTab === 'health' && (
+                <form onSubmit={handleHealthSubmit}>
+                  {/* Current Rating Hero Box */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '12px 16px', borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 16 }}>
+                    <div>
+                      <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#64748b' }}>Current Rating</span>
+                      <div style={{ fontSize: 18, fontWeight: 900, color: '#0f172a' }}>
+                        {compSeller.accountHealth?.score !== undefined ? compSeller.accountHealth.score : 100}/100
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#64748b' }}>Target Tier</span>
+                      <div>
+                        <span className={`sthp-tag health-tag-${Number(healthScore) >= 80 ? 'healthy' : Number(healthScore) >= 31 ? 'warning' : Number(healthScore) > 20 ? 'freeze' : 'suspended'}`}>
+                          {Number(healthScore) >= 80 ? 'Healthy (80-100)' : Number(healthScore) >= 31 ? 'At Risk (31-79)' : Number(healthScore) > 20 ? 'Freeze Alert (21-30)' : 'Suspension Alert (0-20)'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Slider and Number Input */}
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b' }}>
+                        Adjust Health Score (0 to 100) *
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={healthScore}
+                        onChange={(e) => setHealthScore(Math.max(0, Math.min(100, Number(e.target.value))))}
+                        style={{ width: 70, padding: '4px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontWeight: 800, textAlign: 'center' }}
+                      />
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={healthScore}
+                      onChange={(e) => setHealthScore(Number(e.target.value))}
+                      style={{ width: '100%', accentColor: Number(healthScore) >= 80 ? '#16a34a' : Number(healthScore) >= 31 ? '#eab308' : Number(healthScore) > 20 ? '#ea580c' : '#dc2626' }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: '#94a3b8', fontWeight: 700, marginTop: 4 }}>
+                      <span style={{ color: '#dc2626' }}>0 (Suspension)</span>
+                      <span style={{ color: '#ea580c' }}>20-30 (Freeze)</span>
+                      <span style={{ color: '#ca8a04' }}>31-79 (At Risk)</span>
+                      <span style={{ color: '#16a34a' }}>80-100 (Healthy)</span>
+                    </div>
+                  </div>
+
+                  {/* Quick Preset Buttons */}
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 6, textTransform: 'uppercase' }}>
+                      Quick Reason Presets:
+                    </label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHealthScore((prev) => Math.max(0, prev - 15));
+                          setHealthReason('Late order dispatch exceeds platform 48h fulfillment policy.');
+                        }}
+                        style={{ fontSize: 11.5, padding: '4px 8px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer' }}
+                      >
+                        ⏱️ Late Dispatch (-15)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHealthScore((prev) => Math.max(0, prev - 20));
+                          setHealthReason('Customer complaints of counterfeit / defective items received.');
+                        }}
+                        style={{ fontSize: 11.5, padding: '4px 8px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer' }}
+                      >
+                        ⚠️ Defective Item (-20)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHealthScore((prev) => Math.max(0, prev - 30));
+                          setHealthReason('Serious copyright or policy compliance violation.');
+                        }}
+                        style={{ fontSize: 11.5, padding: '4px 8px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer' }}
+                      >
+                        ⛔ Policy Violation (-30)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHealthScore((prev) => Math.min(100, prev + 15));
+                          setHealthReason('Customer dispute satisfactorily resolved with refund.');
+                        }}
+                        style={{ fontSize: 11.5, padding: '4px 8px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer' }}
+                      >
+                        ✅ Dispute Resolved (+15)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setHealthScore(100);
+                          setHealthReason('Clean compliance slate restored by Platform Admin.');
+                        }}
+                        style={{ fontSize: 11.5, padding: '4px 8px', background: '#dcfce7', border: '1px solid #86efac', color: '#166534', borderRadius: 6, cursor: 'pointer', fontWeight: 700 }}
+                      >
+                        🌟 Reset to 100
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Reason Input */}
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 6, color: '#1e293b' }}>
+                      Reason / Notes *
+                    </label>
+                    <textarea
+                      rows="2"
+                      value={healthReason}
+                      onChange={(e) => setHealthReason(e.target.value)}
+                      placeholder="Enter policy reason for health score adjustment..."
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, fontFamily: 'inherit' }}
+                      required
+                    />
+                  </div>
+
+                  <div className="modal-bottom-actions" style={{ marginTop: 20 }}>
+                    <button type="button" onClick={() => setCompModalOpen(false)} className="btn-cancel">Cancel</button>
+                    <button
+                      type="submit"
+                      className="btn-primary"
+                      disabled={submittingHealth}
+                    >
+                      {submittingHealth ? 'Saving...' : `💾 Save Account Health (${healthScore}/100)`}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* TAB 4: WITHDRAWAL LIMITS & TIER CONTROLS */}
+              {compTab === 'limits' && (
+                <form onSubmit={handleLimitEditSubmit}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                        Single Max Withdrawal Limit ($ USD) *
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={limitMaxAmount}
+                        onChange={(e) => setLimitMaxAmount(e.target.value)}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 14, fontWeight: 800, color: '#2563eb' }}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                        Minimum Allowed Payout ($ USD)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={limitMinAmount}
+                        onChange={(e) => setLimitMinAmount(e.target.value)}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                        Required Withdrawals for Next Tier *
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={limitRequiredCount}
+                        onChange={(e) => setLimitRequiredCount(e.target.value)}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                        Completed Withdrawals (Current Tier)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={limitSuccessCount}
+                        onChange={(e) => setLimitSuccessCount(e.target.value)}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, fontWeight: 800, color: '#16a34a' }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                        Upgrade Processing Fee ($ USD)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={limitUpgradeFee}
+                        onChange={(e) => setLimitUpgradeFee(e.target.value)}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 14, fontWeight: 800, color: '#d97706' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                        Tier Name Label
+                      </label>
+                      <input
+                        type="text"
+                        value={limitTierName}
+                        onChange={(e) => setLimitTierName(e.target.value)}
+                        placeholder="e.g. Tier 1 - Standard ($500 Max)"
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="modal-bottom-actions" style={{ marginTop: 20 }}>
+                    <button type="button" onClick={() => setCompModalOpen(false)} className="btn-cancel">Cancel</button>
+                    <button
+                      type="submit"
+                      className="btn-primary"
+                      disabled={submittingLimitEdit}
+                    >
+                      {submittingLimitEdit ? 'Saving...' : '💾 Save Withdrawal Limit Settings'}
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
           </div>
         </div>
@@ -1099,6 +1959,264 @@ export default function Sellers() {
                   style={{ background: '#0f172a', borderColor: '#0f172a' }}
                 >
                   {resettingPw ? 'Updating...' : '🔒 Reset Seller Password'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Modal 1: Approve Seller Application ─── */}
+      {pendingApproveModal && (
+        <div className="admin-modal-overlay" onClick={() => setPendingApproveModal(null)}>
+          <div className="admin-modal-box" style={{ maxWidth: 500 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-top">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 24 }}>✅</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16 }}>Approve Merchant: <b>{pendingApproveModal.seller.storeName}</b></h3>
+                  <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>Configure security deposit collateral &amp; activate account</p>
+                </div>
+              </div>
+              <button onClick={() => setPendingApproveModal(null)} className="btn-close-modal">✕</button>
+            </div>
+
+            <form onSubmit={handleApproveSubmit} style={{ padding: '18px 22px' }}>
+              <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 16 }}>
+                <div style={{ fontSize: 13, color: '#1e293b' }}>
+                  <b>Applicant:</b> {pendingApproveModal.seller.ownerName} &bull; <b>Email:</b> {pendingApproveModal.seller.email}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px 16px', borderRadius: 8 }}>
+                <div>
+                  <b style={{ color: '#166534', fontSize: 13.5, display: 'block' }}>Security Deposit Paid by Merchant</b>
+                  <small style={{ color: '#15803d', fontSize: 12 }}>Lock collateral in seller wallet ledger</small>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={pendingApproveModal.securityDepositPaid}
+                  onChange={(e) => setPendingApproveModal({ ...pendingApproveModal, securityDepositPaid: e.target.checked })}
+                  style={{ width: 20, height: 20, cursor: 'pointer' }}
+                />
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                  Security Deposit Collateral ($ USD):
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={pendingApproveModal.securityDepositAmount}
+                  onChange={(e) => setPendingApproveModal({ ...pendingApproveModal, securityDepositAmount: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 14 }}
+                  required
+                />
+                <small className="muted-sm">This amount will show in the seller's wallet as Security Deposit.</small>
+              </div>
+
+              <div style={{ marginBottom: 18 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                  Affiliate / Referral Code (Optional):
+                </label>
+                <input
+                  type="text"
+                  value={pendingApproveModal.referralCode}
+                  onChange={(e) => setPendingApproveModal({ ...pendingApproveModal, referralCode: e.target.value.toUpperCase() })}
+                  placeholder="e.g. BAZARIO"
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                />
+              </div>
+
+              <div className="modal-bottom-actions">
+                <button type="button" onClick={() => setPendingApproveModal(null)} className="btn-cancel">Cancel</button>
+                <button type="submit" className="btn-primary" disabled={approving} style={{ background: '#16a34a', borderColor: '#16a34a' }}>
+                  {approving ? 'Approving...' : '🎉 Approve Merchant & Send Welcome Notice'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Modal 2: Reject Seller Application ─── */}
+      {pendingRejectModal && (
+        <div className="admin-modal-overlay" onClick={() => setPendingRejectModal(null)}>
+          <div className="admin-modal-box" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-top">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 22 }}>❌</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16 }}>Reject Application: <b>{pendingRejectModal.seller.storeName}</b></h3>
+                  <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>Provide a reason for rejection</p>
+                </div>
+              </div>
+              <button onClick={() => setPendingRejectModal(null)} className="btn-close-modal">✕</button>
+            </div>
+
+            <form onSubmit={handleRejectSubmit} style={{ padding: '18px 22px' }}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 6 }}>
+                  Rejection Reason:
+                </label>
+                <textarea
+                  rows={4}
+                  value={pendingRejectModal.reason}
+                  onChange={(e) => setPendingRejectModal({ ...pendingRejectModal, reason: e.target.value })}
+                  placeholder="e.g. Submitted ID documents are blurry or invalid. Please re-apply with a clear passport copy."
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, fontFamily: 'inherit' }}
+                  required
+                />
+              </div>
+
+              <div className="modal-bottom-actions">
+                <button type="button" onClick={() => setPendingRejectModal(null)} className="btn-cancel">Cancel</button>
+                <button type="submit" className="btn-primary" disabled={rejecting} style={{ background: '#dc2626', borderColor: '#dc2626' }}>
+                  {rejecting ? 'Rejecting...' : 'Confirm Rejection'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Modal 3: View KYC Documents ─── */}
+      {kycDocModal && (
+        <div className="admin-modal-overlay" onClick={() => setKycDocModal(null)}>
+          <div className="admin-modal-box" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-top">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 22 }}>📄</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16 }}>KYC Document: <b>{kycDocModal.docType === 'idCard' ? 'National ID Card' : 'Passport'}</b></h3>
+                  <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>Merchant: {kycDocModal.seller.storeName} ({kycDocModal.seller.ownerName})</p>
+                </div>
+              </div>
+              <button onClick={() => setKycDocModal(null)} className="btn-close-modal">✕</button>
+            </div>
+
+            <div style={{ padding: '20px', textAlign: 'center', background: '#0f172a', borderRadius: '0 0 8px 8px' }}>
+              {kycDocModal.docUrl?.toLowerCase().endsWith('.pdf') ? (
+                <div style={{ padding: '30px 20px', color: '#fff' }}>
+                  <p style={{ fontSize: 15, marginBottom: 14 }}>📄 PDF Document Uploaded</p>
+                  <a
+                    href={kycDocModal.docUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ display: 'inline-block', padding: '10px 18px', background: '#3b82f6', color: '#fff', borderRadius: 6, fontWeight: 700, textDecoration: 'none' }}
+                  >
+                    Open PDF in New Window ↗
+                  </a>
+                </div>
+              ) : (
+                <img
+                  src={kycDocModal.docUrl}
+                  alt="KYC Document Preview"
+                  style={{ maxWidth: '100%', maxHeight: 480, objectFit: 'contain', borderRadius: 6 }}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Modal 4: Assign New Milestone Target ─── */}
+      {targetModalOpen && (
+        <div className="admin-modal-overlay" onClick={() => setTargetModalOpen(false)}>
+          <div className="admin-modal-box" style={{ maxWidth: 500 }} onClick={(e) => e.stopPropagation()}>
+            <div className="modal-top">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 22 }}>🎯</span>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16 }}>Assign Milestone Target &amp; Bonus</h3>
+                  <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>Reward sellers upon reaching order delivery targets</p>
+                </div>
+              </div>
+              <button onClick={() => setTargetModalOpen(false)} className="btn-close-modal">✕</button>
+            </div>
+
+            <form onSubmit={handleCreateTargetSubmit} style={{ padding: '18px 22px' }}>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                  Select Target Merchant *:
+                </label>
+                <select
+                  value={targetForm.sellerId}
+                  onChange={(e) => setTargetForm({ ...targetForm, sellerId: e.target.value })}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                  required
+                >
+                  <option value="">-- Choose an active seller --</option>
+                  {sellers.filter((s) => s.status !== 'pending_approval').map((s) => (
+                    <option key={s._id} value={s._id}>
+                      {s.storeName} ({s.ownerName})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                  Milestone Title *:
+                </label>
+                <input
+                  type="text"
+                  value={targetForm.title}
+                  onChange={(e) => setTargetForm({ ...targetForm, title: e.target.value })}
+                  placeholder="e.g. Spring Rush: Deliver 10 Orders"
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                  required
+                />
+              </div>
+
+              <div className="form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                    Target Deliveries (Count) *:
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={targetForm.targetOrderCount}
+                    onChange={(e) => setTargetForm({ ...targetForm, targetOrderCount: e.target.value })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                    required
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                    Cash Bonus Amount ($ USD) *:
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={targetForm.bonusAmount}
+                    onChange={(e) => setTargetForm({ ...targetForm, bonusAmount: e.target.value })}
+                    style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 18 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                  Description / Terms:
+                </label>
+                <textarea
+                  rows={2}
+                  value={targetForm.description}
+                  onChange={(e) => setTargetForm({ ...targetForm, description: e.target.value })}
+                  placeholder="e.g. Complete 10 delivered orders to receive $50 bonus credited to your wallet."
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, fontFamily: 'inherit' }}
+                />
+              </div>
+
+              <div className="modal-bottom-actions">
+                <button type="button" onClick={() => setTargetModalOpen(false)} className="btn-cancel">Cancel</button>
+                <button type="submit" className="btn-primary" disabled={creatingTarget}>
+                  {creatingTarget ? 'Assigning...' : '🎯 Assign Milestone Target'}
                 </button>
               </div>
             </form>

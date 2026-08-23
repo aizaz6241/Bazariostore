@@ -80,8 +80,33 @@ const orderSchema = new mongoose.Schema(
     refundId: { type: mongoose.Schema.Types.ObjectId, ref: 'Refund', default: null },
     stockRestored: { type: Boolean, default: false },
     adminNotes: { type: String, default: '' },
+    warning24hSent: { type: Boolean, default: false },
+    penalty48hApplied: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
+
+orderSchema.pre('save', async function (next) {
+  try {
+    if (this.items && this.items.length > 0) {
+      for (const it of this.items) {
+        if (!it.seller && it.product) {
+          const prod = await mongoose.model('Product').findById(it.product).populate('seller');
+          if (prod) {
+            it.seller = prod.seller?._id || prod.seller || null;
+            it.sellerName = prod.seller?.storeName || prod.sellerName || 'Verified Store';
+            if (!it.costPrice && it.price) it.costPrice = Math.round(it.price * 0.8);
+          }
+        }
+      }
+      if (!this.seller && this.items[0]?.seller) {
+        this.seller = this.items[0].seller;
+      }
+    }
+  } catch (err) {
+    console.error('order pre-save seller auto-resolve error:', err.message);
+  }
+  next();
+});
 
 export default mongoose.model('Order', orderSchema);
