@@ -1,13 +1,11 @@
 export function getApiBase() {
   let customUrl = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
-  // Safeguard: If running on Vercel and VITE_API_URL is pointing to an old/suspended Render backend, ignore it and use native Vercel /api
-  if (typeof window !== 'undefined' && window.location.hostname.includes('vercel.app')) {
-    if (customUrl.includes('onrender.com') || customUrl.includes('render.com')) {
-      customUrl = '';
-    }
+  // Ignore legacy/suspended render URLs across all hostnames
+  if (customUrl.includes('onrender.com') || customUrl.includes('render.com')) {
+    customUrl = '';
   }
   if (customUrl) return customUrl;
-  // Default to relative '/api' on the same domain (works seamlessly on Vercel, localhost, etc.)
+  // Default to relative '/api' on the same domain (works seamlessly on Vercel, localhost, mobile, etc.)
   return '';
 }
 
@@ -25,7 +23,7 @@ async function request(path, opts = {}, token) {
       body: opts.body instanceof FormData ? opts.body : opts.body ? JSON.stringify(opts.body) : undefined,
     });
   } catch (netErr) {
-    throw new Error('Unable to connect to backend server. Please check your connection or verify backend service is active.');
+    throw new Error('Unable to connect to backend server. Please check your internet connection.');
   }
 
   let data;
@@ -36,7 +34,7 @@ async function request(path, opts = {}, token) {
   }
 
   if (!res.ok) {
-    const msg = data?.message || (res.status === 404 ? 'API route not found (404)' : `Server request failed (status ${res.status})`);
+    const msg = data?.message || data?.error || (res.status === 404 ? 'API route not found (404)' : `Server request failed (status ${res.status})`);
     const err = new Error(msg);
     err.status = res.status;
     throw err;

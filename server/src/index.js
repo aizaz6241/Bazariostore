@@ -40,35 +40,37 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
-// Background order penalties scheduler (runs every 5 minutes)
-setInterval(() => {
-  processOrderPenalties(app);
-}, 5 * 60 * 1000);
-setTimeout(() => {
-  processOrderPenalties(app);
-}, 8000);
+// Background order penalties scheduler (runs only in long-running standalone server)
+if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  setInterval(() => {
+    processOrderPenalties(app);
+  }, 5 * 60 * 1000);
+  setTimeout(() => {
+    processOrderPenalties(app);
+  }, 8000);
+}
 
 app.get(['/api/health', '/health'], (req, res) => res.json({ ok: true, name: 'Bazario Multi-Vendor Marketplace API' }));
-app.use('/api/products', productRoutes);
-app.use('/api/categories', categoryRoutes);
-app.use('/api/orders', orderRoutes);
-app.use('/api/refunds', refundRoutes);
-app.use('/api/discounts', discountRoutes);
-app.use('/api/shipping', shippingRoutes);
-app.use('/api/inventory', inventoryRoutes);
-app.use('/api/finance', financeRoutes);
-app.use('/api/analytics', analyticsRoutes);
-app.use('/api/reports', reportRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/audit', auditRoutes);
-app.use('/api/admins', adminRoutes);
-app.use('/api/content', contentRoutes);
-app.use('/api/settings', settingsRoutes);
-app.use('/api/uploads', uploadRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/user', userRoutes);
-app.use('/api/chat', chatRoutes);
-app.use('/api/sellers', sellerRoutes);
+app.use(['/api/products', '/products'], productRoutes);
+app.use(['/api/categories', '/categories'], categoryRoutes);
+app.use(['/api/orders', '/orders'], orderRoutes);
+app.use(['/api/refunds', '/refunds'], refundRoutes);
+app.use(['/api/discounts', '/discounts'], discountRoutes);
+app.use(['/api/shipping', '/shipping'], shippingRoutes);
+app.use(['/api/inventory', '/inventory'], inventoryRoutes);
+app.use(['/api/finance', '/finance'], financeRoutes);
+app.use(['/api/analytics', '/analytics'], analyticsRoutes);
+app.use(['/api/reports', '/reports'], reportRoutes);
+app.use(['/api/notifications', '/notifications'], notificationRoutes);
+app.use(['/api/audit', '/audit'], auditRoutes);
+app.use(['/api/admins', '/admins'], adminRoutes);
+app.use(['/api/content', '/content'], contentRoutes);
+app.use(['/api/settings', '/settings'], settingsRoutes);
+app.use(['/api/uploads', '/uploads'], uploadRoutes);
+app.use(['/api/auth', '/auth'], authRoutes);
+app.use(['/api/user', '/user'], userRoutes);
+app.use(['/api/chat', '/chat'], chatRoutes);
+app.use(['/api/sellers', '/sellers'], sellerRoutes);
 
 // Static uploads serving (both server/uploads and root/uploads)
 const serverUploadsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../uploads');
@@ -78,10 +80,10 @@ try { if (!fs.existsSync(rootUploadsDir)) fs.mkdirSync(rootUploadsDir, { recursi
 app.use('/uploads', express.static(serverUploadsDir));
 app.use('/uploads', express.static(rootUploadsDir));
 
-// Production: serve built React frontend from same single port
+// Production: serve built React frontend from same single port (only in persistent node server)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
-if (fs.existsSync(clientDist)) {
+if (!process.env.VERCEL && fs.existsSync(clientDist)) {
   app.use(
     express.static(clientDist, {
       setHeaders: (res, filePath) => {
@@ -95,7 +97,7 @@ if (fs.existsSync(clientDist)) {
     res.setHeader('Cache-Control', 'no-cache');
     res.sendFile(path.join(clientDist, 'index.html'));
   });
-} else {
+} else if (!process.env.VERCEL) {
   // Pure API Server Landing Page (when frontend is deployed separately on Netlify)
   app.get('/', (req, res) => {
     res.setHeader('Content-Type', 'text/html');
@@ -125,7 +127,7 @@ if (fs.existsSync(clientDist)) {
         <div class="card">
           <div class="badge"><span class="dot"></span> Backend Engine Live & Healthy</div>
           <h1>🚀 Bazario Marketplace API</h1>
-          <p>The backend REST API and Real-Time WebSockets server are active on Render. Connect your Netlify frontend via <code>VITE_API_URL</code>.</p>
+          <p>The backend REST API and Real-Time WebSockets server are active.</p>
           <div class="links">
             <a href="/api/health" class="btn">🔍 Health Check (/api/health)</a>
             <a href="/api/products" class="btn btn-sec">📦 Products API (/api/products)</a>
@@ -139,6 +141,28 @@ if (fs.existsSync(clientDist)) {
     `);
   });
 }
+
+// 404 Fallback for unmatched API routes
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api') || req.path.startsWith('/user') || req.path.startsWith('/sellers') || req.path.startsWith('/auth')) {
+    return res.status(404).json({
+      ok: false,
+      message: `API Route not found: ${req.method} ${req.originalUrl || req.url}`,
+    });
+  }
+  next();
+});
+
+// Global Express error handler
+app.use((err, req, res, next) => {
+  console.error('[server-error]', err);
+  if (!res.headersSent) {
+    res.status(err.status || 500).json({
+      ok: false,
+      message: err.message || 'Internal Server Error',
+    });
+  }
+});
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
