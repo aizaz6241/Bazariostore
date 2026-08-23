@@ -49,6 +49,8 @@ export function cleanEmail(raw) {
   return String(raw || '')
     .normalize('NFKC')
     .replace(INVISIBLE, '')
+    .replace(NBSP, '')
     .replace(/\s+/g, '')
+    .trim()
     .toLowerCase();
 }

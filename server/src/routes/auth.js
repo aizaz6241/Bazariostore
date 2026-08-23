@@ -43,7 +43,9 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid email or password' });
     };
 
-    const admin = await Admin.findOne({ email });
+    const admin = await Admin.findOne({
+      $or: [{ email }, { email: { $regex: new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }],
+    });
     if (!admin) return fail('email_not_found');
     if (!admin.active) return fail('account_disabled');
     if (!(await comparePassword(password, admin.passwordHash))) return fail('wrong_password');

@@ -34,10 +34,11 @@ if ('serviceWorker' in navigator) {
       navigator.serviceWorker
         .register('/sw.js')
         .then((reg) => {
-          console.log('✅ Bazario PWA Service Worker Registered:', reg.scope);
+          reg.update().catch(() => {});
+          console.log('✅ Bazario PWA Service Worker Active:', reg.scope);
         })
         .catch((err) => {
-          console.log('SW registration note:', err.message);
+          console.log('SW note:', err.message);
         });
     });
   }

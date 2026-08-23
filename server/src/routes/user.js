@@ -184,7 +184,9 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: 'Email and password are required' });
     }
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({
+      $or: [{ email }, { email: { $regex: new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }],
+    });
     const ok = user && user.active !== false && (await comparePassword(password, user.passwordHash));
     if (!ok) {
       console.log(`[user-login-failed] email="${email}"`);

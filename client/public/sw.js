@@ -1,5 +1,5 @@
-// Bazario PWA Service Worker (v2)
-const CACHE_NAME = 'bazario-cache-v2';
+// Bazario PWA Service Worker (v10 - Forced Cache Invalidation)
+const CACHE_NAME = 'bazario-cache-v10';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -8,21 +8,27 @@ const STATIC_ASSETS = [
   '/icon-512.svg',
 ];
 
-// Install Event — cache critical shell assets
+// Install Event — immediately activate new worker
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(STATIC_ASSETS);
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 
-// Activate Event — cleanup outdated caches
+// Activate Event — purge all previous cache versions immediately
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
       return Promise.all(
-        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+        keys.map((key) => {
+          if (key !== CACHE_NAME) {
+            console.log('Purging old cache:', key);
+            return caches.delete(key);
+          }
+        })
       );
     }).then(() => self.clients.claim())
   );
