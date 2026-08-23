@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { Conversation, Message, ChatSettings } from '../models/Chat.js';
 import Seller from '../models/Seller.js';
 import Admin from '../models/Admin.js';
-import { authAdmin, authSeller } from '../middleware/auth.js';
+import { authAdmin, authSeller, authSellerOrAdmin } from '../middleware/auth.js';
 import { notify } from '../utils/notify.js';
 
 const router = Router();
@@ -637,14 +637,21 @@ router.post('/settings/auto-reply', authAdmin('chat'), async (req, res) => {
 // 5. MESSAGE EDIT & DELETE (ADMIN & PARTICIPANTS)
 // ----------------------------------------------------
 
-// PUT /api/chat/messages/:id (Edit a message)
-router.put('/messages/:id', async (req, res) => {
+// PUT /api/chat/messages/:id (Edit a message — requires Admin or author Seller)
+router.put('/messages/:id', authSellerOrAdmin, async (req, res) => {
   try {
     const { text } = req.body || {};
     if (!text || !text.trim()) return res.status(400).json({ message: 'Text is required to edit message' });
 
     const msg = await Message.findById(req.params.id);
     if (!msg) return res.status(404).json({ message: 'Message not found' });
+
+    // Authorization check: Admin can edit, or seller if they are the original sender
+    const isAdmin = Boolean(req.admin);
+    const isAuthorSeller = req.seller && msg.seller && String(msg.seller) === String(req.seller.id) && msg.sender === 'seller';
+    if (!isAdmin && !isAuthorSeller) {
+      return res.status(403).json({ message: 'You do not have permission to edit this message' });
+    }
 
     msg.text = text.trim();
     msg.isEdited = true;
@@ -665,11 +672,18 @@ router.put('/messages/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/chat/messages/:id (Delete a message)
-router.delete('/messages/:id', async (req, res) => {
+// DELETE /api/chat/messages/:id (Delete a message — requires Admin or author Seller)
+router.delete('/messages/:id', authSellerOrAdmin, async (req, res) => {
   try {
     const msg = await Message.findById(req.params.id);
     if (!msg) return res.status(404).json({ message: 'Message not found' });
+
+    // Authorization check: Admin can delete, or seller if they are the original sender
+    const isAdmin = Boolean(req.admin);
+    const isAuthorSeller = req.seller && msg.seller && String(msg.seller) === String(req.seller.id) && msg.sender === 'seller';
+    if (!isAdmin && !isAuthorSeller) {
+      return res.status(403).json({ message: 'You do not have permission to delete this message' });
+    }
 
     msg.isDeleted = true;
     msg.deletedAt = new Date();

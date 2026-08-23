@@ -92,14 +92,25 @@ router.post('/', authSellerOrAdmin, upload.array('files', 5), async (req, res) =
 // DELETE /api/uploads/:key — frees file
 router.delete('/:key', authSellerOrAdmin, async (req, res) => {
   try {
-    const key = req.params.key;
-    if (process.env.UPLOADTHING_TOKEN) {
-      await deleteKeys([key]);
+    const rawKey = req.params.key || '';
+    const safeKey = path.basename(rawKey);
+    if (!safeKey || safeKey === '.' || safeKey === '..') {
+      return res.status(400).json({ message: 'Invalid file key' });
     }
-    const localFile1 = path.join(serverUploadsDir, key);
-    const localFile2 = path.join(rootUploadsDir, key);
-    if (fs.existsSync(localFile1)) fs.unlinkSync(localFile1);
-    if (fs.existsSync(localFile2)) fs.unlinkSync(localFile2);
+    
+    if (process.env.UPLOADTHING_TOKEN) {
+      await deleteKeys([safeKey]);
+    }
+    const localFile1 = path.join(serverUploadsDir, safeKey);
+    const localFile2 = path.join(rootUploadsDir, safeKey);
+    
+    // Boundary check: ensure resolved path starts with uploads directory
+    if (localFile1.startsWith(serverUploadsDir) && fs.existsSync(localFile1)) {
+      fs.unlinkSync(localFile1);
+    }
+    if (localFile2.startsWith(rootUploadsDir) && fs.existsSync(localFile2)) {
+      fs.unlinkSync(localFile2);
+    }
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ message: e.message });

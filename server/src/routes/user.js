@@ -49,18 +49,19 @@ router.post('/login', async (req, res) => {
   res.json({ token: signUser(user), user: publicUser(user) });
 });
 
-// POST /api/user/forgot — email service abhi configure nahi, is liye dev mode
-// mein reset link response mein wapas aata hai (SMTP add hotay hi email bhejenge).
+// POST /api/user/forgot
 router.post('/forgot', async (req, res) => {
   const user = await User.findOne({ email: (req.body?.email || '').toLowerCase().trim() });
-  if (!user) return res.json({ ok: true, message: 'Agar account mojood hai to reset link bhej diya gaya hai.' });
+  if (!user) return res.json({ ok: true, message: 'Agar account mojood hai to password reset ki hidayat bhej di gayi hai.' });
   const token = crypto.randomBytes(24).toString('hex');
   user.resetToken = token;
   user.resetExpires = new Date(Date.now() + 60 * 60 * 1000);
   await user.save();
-  const resetUrl = `/reset-password?token=${token}`;
-  console.log(`[password-reset] ${user.email}: ${resetUrl}`);
-  res.json({ ok: true, message: 'Reset link generate ho gaya hai.', resetUrl, devNote: 'Email service configure honay tak link yahan diya gaya hai.' });
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log(`[password-reset-dev] ${user.email}: /reset-password?token=${token}`);
+  }
+  res.json({ ok: true, message: 'Agar account mojood hai to password reset ki hidayat bhej di gayi hai.' });
 });
 
 // POST /api/user/reset

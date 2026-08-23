@@ -145,21 +145,25 @@ const io = new Server(server, { cors: { origin: '*' } });
 app.set('io', io);
 
 io.on('connection', (socket) => {
-  // Seller joins their support room
+  // Seller joins their support room (requires valid seller or admin JWT token)
   socket.on('seller:join', ({ token, sellerId }) => {
     try {
-      let id = sellerId;
-      if (token) {
-        const payload = jwt.verify(token, process.env.JWT_SECRET);
-        if (payload.t === 'seller') id = payload.id;
+      if (!token) return;
+      const payload = jwt.verify(token, process.env.JWT_SECRET);
+      let id = null;
+      if (payload.t === 'seller') {
+        id = payload.id;
+      } else if (payload.t === 'admin' && sellerId) {
+        id = sellerId;
       }
       if (id) {
         socket.join(`seller:${id}`);
         socket.data.sellerId = id;
-        socket.data.isSeller = true;
+        socket.data.isSeller = payload.t === 'seller';
+        socket.data.isAdmin = payload.t === 'admin';
       }
     } catch (e) {
-      console.error('seller:join error:', e.message);
+      console.error('seller:join auth error:', e.message);
     }
   });
 
@@ -167,12 +171,14 @@ io.on('connection', (socket) => {
   socket.on('guest:join', ({ guestId }) => {
     if (guestId) {
       socket.join(`guest:${guestId}`);
+      socket.data.guestId = guestId;
     }
   });
 
   // Admin or Staff joins the admin room
   socket.on('admin:join', ({ token }) => {
     try {
+      if (!token) return;
       const payload = jwt.verify(token, process.env.JWT_SECRET);
       if (payload.t === 'admin') {
         socket.data.isAdmin = true;
@@ -191,6 +197,11 @@ io.on('connection', (socket) => {
       const { sellerId, text, attachment } = payload || {};
       const clean = (text || '').trim().slice(0, 2000);
       if (!sellerId || (!clean && !attachment)) return;
+
+      // Socket authentication check: must be verified seller matching sellerId or admin
+      if (!socket.data?.isAdmin && (!socket.data?.isSeller || String(socket.data?.sellerId) !== String(sellerId))) {
+        return cb?.({ error: 'Unauthorized: invalid session' });
+      }
 
       const seller = await Seller.findById(sellerId);
       if (!seller) return;

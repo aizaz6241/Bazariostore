@@ -11,27 +11,33 @@ import { audit } from '../../utils/audit.js';
 
 const router = express.Router();
 
-// Helper: robustly find seller from token payload or request
+// Helper: securely find seller from authenticated token payload or verified admin request
 async function getSellerFromReq(req) {
-  const sId = req.seller?.id || req.seller?._id || req.params?.id || req.body?.sellerId || req.query?.sellerId;
-  if (sId && mongoose.Types.ObjectId.isValid(sId)) {
-    const s = await Seller.findById(sId);
-    if (s) return s;
+  // If caller is an Admin, allow targeting specific seller via params / body / query
+  if (req.admin) {
+    const sId = req.params?.id || req.body?.sellerId || req.query?.sellerId || req.seller?.id || req.seller?._id;
+    if (sId && mongoose.Types.ObjectId.isValid(sId)) {
+      const s = await Seller.findById(sId);
+      if (s) return s;
+    }
   }
-  if (req.seller?.email) {
-    const s = await Seller.findOne({ email: req.seller.email.toLowerCase() });
-    if (s) return s;
+
+  // If caller is a Seller, strictly use authenticated seller token payload
+  if (req.seller) {
+    const sId = req.seller.id || req.seller._id;
+    if (sId && mongoose.Types.ObjectId.isValid(sId)) {
+      const s = await Seller.findById(sId);
+      if (s) return s;
+    }
+    if (req.seller.email) {
+      const s = await Seller.findOne({ email: req.seller.email.toLowerCase() });
+      if (s) return s;
+    }
+    if (req.seller.storeSlug) {
+      const s = await Seller.findOne({ storeSlug: req.seller.storeSlug });
+      if (s) return s;
+    }
   }
-  if (req.seller?.storeSlug) {
-    const s = await Seller.findOne({ storeSlug: req.seller.storeSlug });
-    if (s) return s;
-  }
-  if (req.seller?.storeName) {
-    const s = await Seller.findOne({ storeName: req.seller.storeName });
-    if (s) return s;
-  }
-  const first = await Seller.findOne({ status: { $ne: 'suspended' } });
-  if (first) return first;
 
   return null;
 }
@@ -566,8 +572,11 @@ export const handleStatusUpdate = async (req, res) => {
       const itSellerId = it.seller ? it.seller.toString() : '';
       const ordSellerId = order.seller ? order.seller.toString() : '';
 
-      if (itSellerId === sellerId || sellerProdIds.includes(itProdId) || ordSellerId === sellerId || !it.seller) {
-        if (seller) {
+      const isOwnedBySeller = itSellerId === sellerId || sellerProdIds.includes(itProdId) || ordSellerId === sellerId;
+      const isAdmin = Boolean(req.admin);
+
+      if (isOwnedBySeller || isAdmin) {
+        if (seller && isOwnedBySeller) {
           it.seller = seller._id;
           it.sellerName = storeName;
         }
@@ -577,16 +586,8 @@ export const handleStatusUpdate = async (req, res) => {
       }
     });
 
-    if (!updatedAny) {
-      order.items.forEach((it) => {
-        if (seller) {
-          it.seller = seller._id;
-          it.sellerName = storeName;
-        }
-        if (status) it.itemStatus = status;
-        if (trackingNumber) it.trackingNumber = trackingNumber;
-      });
-      updatedAny = true;
+    if (!updatedAny && !req.admin) {
+      return res.status(403).json({ message: 'Access denied: this order does not contain products from your store' });
     }
 
     // Financial settlement triggers

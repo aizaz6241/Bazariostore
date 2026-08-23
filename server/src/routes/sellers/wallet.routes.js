@@ -9,31 +9,33 @@ import { audit } from '../../utils/audit.js';
 
 const router = express.Router();
 
-// Helper: robustly find seller from token payload or request
+// Helper: securely find seller from authenticated token payload or verified admin request
 async function getSellerFromReq(req) {
-  const sId = req.seller?.id || req.seller?._id || req.params?.id || req.body?.sellerId || req.query?.sellerId;
-  if (sId && mongoose.Types.ObjectId.isValid(sId)) {
-    const s = await Seller.findById(sId);
-    if (s) return s;
+  // If caller is an Admin, allow targeting specific seller via params / body / query
+  if (req.admin) {
+    const sId = req.params?.id || req.body?.sellerId || req.query?.sellerId || req.seller?.id || req.seller?._id;
+    if (sId && mongoose.Types.ObjectId.isValid(sId)) {
+      const s = await Seller.findById(sId);
+      if (s) return s;
+    }
   }
-  if (req.seller?.email) {
-    const s = await Seller.findOne({ email: req.seller.email.toLowerCase() });
-    if (s) return s;
-  }
-  if (req.seller?.storeSlug) {
-    const s = await Seller.findOne({ storeSlug: req.seller.storeSlug });
-    if (s) return s;
-  }
-  if (req.seller?.storeName) {
-    const s = await Seller.findOne({ storeName: req.seller.storeName });
-    if (s) return s;
-  }
-  // Fallback for admin or multi-session test
-  const withOffer = await Seller.findOne({ 'withdrawalLimit.pendingIncreaseRequest.status': { $in: ['offered', 'pending', 'accepted_by_seller'] } });
-  if (withOffer) return withOffer;
 
-  const first = await Seller.findOne({ status: { $ne: 'suspended' } });
-  if (first) return first;
+  // If caller is a Seller, strictly use authenticated seller token payload
+  if (req.seller) {
+    const sId = req.seller.id || req.seller._id;
+    if (sId && mongoose.Types.ObjectId.isValid(sId)) {
+      const s = await Seller.findById(sId);
+      if (s) return s;
+    }
+    if (req.seller.email) {
+      const s = await Seller.findOne({ email: req.seller.email.toLowerCase() });
+      if (s) return s;
+    }
+    if (req.seller.storeSlug) {
+      const s = await Seller.findOne({ storeSlug: req.seller.storeSlug });
+      if (s) return s;
+    }
+  }
 
   return null;
 }

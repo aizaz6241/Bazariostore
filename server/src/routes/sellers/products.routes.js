@@ -92,12 +92,40 @@ router.put('/products/:id', authSeller, async (req, res) => {
     const product = await Product.findOne({ _id: req.params.id, seller: req.seller.id });
     if (!product) return res.status(404).json({ message: 'Product not found or access denied' });
 
-    const data = req.body;
-    Object.assign(product, data);
+    const data = req.body || {};
+    
+    // Explicit whitelist of user-editable product fields
+    if (data.name !== undefined) product.name = String(data.name).trim();
+    if (data.description !== undefined) product.description = String(data.description);
+    if (data.price !== undefined) product.price = Number(data.price);
+    if (data.compareAtPrice !== undefined) product.compareAtPrice = Number(data.compareAtPrice);
+    if (data.stock !== undefined) product.stock = Math.max(0, Number(data.stock));
+    if (data.lowStockThreshold !== undefined) product.lowStockThreshold = Number(data.lowStockThreshold);
+    if (data.sku !== undefined) product.sku = String(data.sku).trim();
+    if (data.barcode !== undefined) product.barcode = String(data.barcode).trim();
+    if (data.brand !== undefined) product.brand = String(data.brand).trim();
+    if (data.category !== undefined) product.category = data.category;
+    if (data.active !== undefined) product.active = Boolean(data.active);
+    if (Array.isArray(data.tags)) product.tags = data.tags;
+    if (Array.isArray(data.labels)) product.labels = data.labels;
+    if (Array.isArray(data.variants)) product.variants = data.variants;
+    if (data.weight !== undefined) product.weight = data.weight;
+    if (data.dimensions !== undefined) product.dimensions = data.dimensions;
+    if (data.warranty !== undefined) product.warranty = data.warranty;
 
+    if (!product.costs) product.costs = {};
+    if (data.costs && typeof data.costs === 'object') {
+      if (data.costs.delivery !== undefined) product.costs.delivery = Number(data.costs.delivery);
+      if (data.costs.packaging !== undefined) product.costs.packaging = Number(data.costs.packaging);
+      if (data.costs.tax !== undefined) product.costs.tax = Number(data.costs.tax);
+      if (data.costs.other !== undefined) product.costs.other = Number(data.costs.other);
+    }
     if (data.costPrice !== undefined) {
       product.costs.purchase = Number(data.costPrice);
+    } else if (data.costs?.purchase !== undefined) {
+      product.costs.purchase = Number(data.costs.purchase);
     }
+
     if (data.images && Array.isArray(data.images)) {
       product.images = data.images.map((img) => (typeof img === 'string' ? { url: img, key: null } : img));
       if (product.images.length) product.image = product.images[0].url;

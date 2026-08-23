@@ -5,6 +5,7 @@ import Seller from '../models/Seller.js';
 import { authAdmin } from '../middleware/auth.js';
 import { audit } from '../utils/audit.js';
 import { deleteKeys, removedKeys } from '../services/uploads.js';
+import { escapeRegex } from '../utils/sanitize.js';
 
 const router = Router();
 
@@ -28,12 +29,13 @@ router.get('/', async (req, res) => {
     if (featured) filter.labels = { $in: ['featured'] };
     else if (label || badge) filter.labels = { $in: [label || badge] };
 
-    if (q) {
+    if (q && typeof q === 'string' && q.trim()) {
+      const safeQ = escapeRegex(q.trim());
       filter.$or = [
-        { name: { $regex: q, $options: 'i' } },
-        { brand: { $regex: q, $options: 'i' } },
-        { sellerName: { $regex: q, $options: 'i' } },
-        { tags: { $regex: q, $options: 'i' } },
+        { name: { $regex: safeQ, $options: 'i' } },
+        { brand: { $regex: safeQ, $options: 'i' } },
+        { sellerName: { $regex: safeQ, $options: 'i' } },
+        { tags: { $regex: safeQ, $options: 'i' } },
       ];
     }
 
@@ -77,7 +79,10 @@ router.get('/related/:slug', async (req, res) => {
 router.get('/admin/list', authAdmin('products'), async (req, res) => {
   const { q, category, seller, status } = req.query;
   const filter = {};
-  if (q) filter.$or = [{ name: { $regex: q, $options: 'i' } }, { sku: { $regex: q, $options: 'i' } }, { sellerName: { $regex: q, $options: 'i' } }];
+  if (q && typeof q === 'string' && q.trim()) {
+    const safeQ = escapeRegex(q.trim());
+    filter.$or = [{ name: { $regex: safeQ, $options: 'i' } }, { sku: { $regex: safeQ, $options: 'i' } }, { sellerName: { $regex: safeQ, $options: 'i' } }];
+  }
   if (category) filter.category = category;
   if (seller) filter.seller = seller;
   if (status === 'active') filter.active = true;
