@@ -5,6 +5,12 @@ export default async function handler(req, res) {
     await connectDB();
   } catch (err) {
     console.error('Vercel serverless DB connect error:', err.message);
+    if (!res.headersSent) {
+      return res.status(503).json({
+        ok: false,
+        message: `Database Connection Failed: ${err.message}. Please check MongoDB Atlas connection.`,
+      });
+    }
   }
 
   // Handle URL normalization if /api prefix was stripped by Vercel rewrite

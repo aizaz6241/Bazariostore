@@ -285,27 +285,45 @@ const DEFAULT_ATLAS_URI = 'mongodb+srv://aizazkhan6241_db_user:98av24298@cluster
 // Serverless-friendly cached MongoDB connection
 let cachedConn = null;
 export async function connectDB() {
-  if (mongoose.connection.readyState >= 1) {
+  if (mongoose.connection.readyState === 1) {
     return mongoose.connection;
   }
-  if (cachedConn) {
+  if (cachedConn && mongoose.connection.readyState === 1) {
     return cachedConn;
   }
 
-  let mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI;
+  let mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || DEFAULT_ATLAS_URI;
   if (!mongoUri || mongoUri.includes('<db_username>') || mongoUri.includes('<db_password>') || mongoUri.includes('aizaz6241_db_user:') || mongoUri.includes('u2IODhWhiXehEOy8')) {
     mongoUri = DEFAULT_ATLAS_URI;
   }
 
   try {
     cachedConn = await mongoose.connect(mongoUri, {
-      serverSelectionTimeoutMS: 3000,
-      connectTimeoutMS: 3000,
+      serverSelectionTimeoutMS: 15000,
+      connectTimeoutMS: 15000,
+      maxPoolSize: 10,
     });
     console.log('✅ MongoDB connected successfully to database');
     return cachedConn;
   } catch (err) {
-    console.error('MongoDB connection error:', err.message);
+    cachedConn = null;
+    console.error('MongoDB primary connection error:', err.message);
+    if (mongoUri !== DEFAULT_ATLAS_URI) {
+      try {
+        console.log('🔄 Retrying MongoDB with default Atlas cluster URI...');
+        cachedConn = await mongoose.connect(DEFAULT_ATLAS_URI, {
+          serverSelectionTimeoutMS: 15000,
+          connectTimeoutMS: 15000,
+          maxPoolSize: 10,
+        });
+        console.log('✅ MongoDB connected successfully via fallback URI');
+        return cachedConn;
+      } catch (fallbackErr) {
+        cachedConn = null;
+        console.error('MongoDB fallback connection error:', fallbackErr.message);
+        throw fallbackErr;
+      }
+    }
     throw err;
   }
 }
