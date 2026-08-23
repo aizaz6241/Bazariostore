@@ -177,16 +177,24 @@ router.post('/register', async (req, res) => {
 
 // POST /api/user/login
 router.post('/login', async (req, res) => {
-  const email = cleanEmail(req.body?.email);
-  const password = String(req.body?.password || '');
-  const user = await User.findOne({ email });
+  try {
+    const email = cleanEmail(req.body?.email);
+    const password = String(req.body?.password || '');
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email and password are required' });
+    }
 
-  const ok = user && user.active && (await comparePassword(password, user.passwordHash));
-  if (!ok) {
-    console.log(`[user-login-failed] email="${email}"`);
-    return res.status(401).json({ message: 'Invalid email or password' });
+    const user = await User.findOne({ email });
+    const ok = user && user.active !== false && (await comparePassword(password, user.passwordHash));
+    if (!ok) {
+      console.log(`[user-login-failed] email="${email}"`);
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
+    res.json({ token: signUser(user), user: publicUser(user) });
+  } catch (err) {
+    console.error('[user-login-error]', err);
+    res.status(500).json({ message: err.message || 'Login failed. Please try again.' });
   }
-  res.json({ token: signUser(user), user: publicUser(user) });
 });
 
 // POST /api/user/forgot (Password recovery with real email link & 6-digit OTP)

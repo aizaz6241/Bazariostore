@@ -31,8 +31,15 @@ export function passwordCandidates(raw) {
 }
 
 export async function comparePassword(raw, hash) {
-  for (const candidate of passwordCandidates(raw)) {
-    if (await bcrypt.compare(candidate, hash)) return true;
+  if (!raw || !hash || typeof hash !== 'string') return false;
+  try {
+    for (const candidate of passwordCandidates(raw)) {
+      try {
+        if (await bcrypt.compare(candidate, hash)) return true;
+      } catch {}
+    }
+  } catch {
+    return false;
   }
   return false;
 }

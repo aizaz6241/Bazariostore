@@ -6,6 +6,7 @@ import Seller from '../../models/Seller.js';
 import { authSeller } from '../../middleware/auth.js';
 import { slugify } from './helpers.js';
 import { notify } from '../../utils/notify.js';
+import { comparePassword, cleanEmail } from '../../utils/password.js';
 import { sendVerificationOtpEmail, sendPasswordResetEmail, sendWelcomeEmail } from '../../services/email.service.js';
 
 const router = express.Router();
@@ -194,10 +195,11 @@ router.post('/register', async (req, res) => {
 // POST /api/sellers/login
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body || {};
+    const email = cleanEmail(req.body?.email);
+    const password = String(req.body?.password || '');
     if (!email || !password) return res.status(400).json({ message: 'Email and password are required' });
 
-    const seller = await Seller.findOne({ email: email.toLowerCase().trim() });
+    const seller = await Seller.findOne({ email });
     if (!seller) return res.status(401).json({ message: 'Invalid email or password' });
 
     if (seller.status === 'suspended') {
@@ -211,7 +213,7 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    const match = await bcrypt.compare(password, seller.passwordHash);
+    const match = await comparePassword(password, seller.passwordHash);
     if (!match) return res.status(401).json({ message: 'Invalid email or password' });
 
     seller.lastLoginAt = new Date();
@@ -225,7 +227,7 @@ router.post('/login', async (req, res) => {
         email: seller.email,
         storeSlug: seller.storeSlug,
       },
-      process.env.JWT_SECRET,
+      process.env.JWT_SECRET || 'bazario_super_secure_jwt_secret_2026_xyz',
       { expiresIn: '365d' }
     );
 
@@ -234,7 +236,8 @@ router.post('/login', async (req, res) => {
 
     res.json({ token, seller: safeSeller });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error('[seller-login-error]', err);
+    res.status(500).json({ message: err.message || 'Login failed. Please try again.' });
   }
 });
 
