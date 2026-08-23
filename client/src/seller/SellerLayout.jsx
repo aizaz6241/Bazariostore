@@ -129,6 +129,18 @@ export default function SellerLayout() {
       }
     };
 
+    const onLimitUpdate = (payload) => {
+      if (payload?.withdrawalLimit) {
+        setSeller((prev) => {
+          if (!prev) return prev;
+          const updated = { ...prev, withdrawalLimit: payload.withdrawalLimit };
+          localStorage.setItem('ng_seller', JSON.stringify(updated));
+          return updated;
+        });
+      }
+      refreshSeller();
+    };
+
     const onTargetsUpdate = ({ targets }) => {
       setSeller((prev) => {
         if (!prev) return prev;
@@ -143,6 +155,8 @@ export default function SellerLayout() {
     socket.on('wallet:update', onWalletUpdate);
     socket.on('seller:health_update', onHealthUpdate);
     socket.on('seller:status_update', onStatusUpdate);
+    socket.on('seller:limit_update', onLimitUpdate);
+    socket.on('limit:update', onLimitUpdate);
     socket.on('seller:targets_update', onTargetsUpdate);
 
     return () => {
@@ -151,6 +165,8 @@ export default function SellerLayout() {
       socket.off('wallet:update', onWalletUpdate);
       socket.off('seller:health_update', onHealthUpdate);
       socket.off('seller:status_update', onStatusUpdate);
+      socket.off('seller:limit_update', onLimitUpdate);
+      socket.off('limit:update', onLimitUpdate);
       socket.off('seller:targets_update', onTargetsUpdate);
     };
   }, [token]);

@@ -3,6 +3,49 @@
    (client/src/styles/seller/shipping.css)
    ========================================================================== */
 
+.shipping-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.shipping-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.shipping-field label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.shipping-field input {
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 13.5px;
+  background: #f8fafc;
+  color: #0f172a;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+.shipping-field input:focus {
+  border-color: #2563eb;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.shipping-field-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
 .shipping-methods-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -12,12 +55,12 @@
 .shipping-method-card {
   background: #ffffff;
   border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 16px 20px;
+  border-radius: 10px;
+  padding: 18px 20px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
 
 .shipping-method-head {
@@ -42,4 +85,11 @@
   font-size: 12.5px;
   color: #64748b;
   margin: 0;
+}
+
+@media (max-width: 640px) {
+  .shipping-form-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
 }

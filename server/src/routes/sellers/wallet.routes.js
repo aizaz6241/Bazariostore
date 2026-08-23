@@ -1312,8 +1312,21 @@ router.post('/:id/withdrawal-limit', authAdmin('finance'), async (req, res) => {
 
     const io = req.app.get('io');
     if (io) {
-      io.to(`seller:${seller._id}`).emit('seller:limit_update', { withdrawalLimit: seller.withdrawalLimit });
+      io.to(`seller:${seller._id}`).emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.to(`seller:${seller._id}`).emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.emit('wallet:update', { sellerId: seller._id });
+      io.emit('limit:update', { sellerId: seller._id });
     }
+
+    notify(req.app, {
+      recipientType: 'seller',
+      sellerId: seller._id,
+      type: 'approval',
+      title: '💼 Withdrawal Limit Updated',
+      body: `Your store withdrawal limit has been updated to $${(seller.withdrawalLimit.maxAmount || 500).toLocaleString('en-US')} by Platform Administration.`,
+      link: '/seller/wallet?tab=withdraw',
+    });
 
     audit(req, 'update', 'seller_limit', seller._id, `Directly updated withdrawal limit settings for ${seller.storeName}`);
 

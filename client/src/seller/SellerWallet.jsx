@@ -130,11 +130,19 @@ export default function SellerWallet() {
     load();
 
     const socket = getSocket();
-    const onWalletUpdate = () => load();
+    const onWalletUpdate = (payload) => {
+      if (payload?.withdrawalLimit) {
+        setWithdrawalLimit(payload.withdrawalLimit);
+      }
+      load();
+    };
+
     socket.on('wallet:update', onWalletUpdate);
     socket.on('withdrawal:update', onWalletUpdate);
     socket.on('withdrawal:new', onWalletUpdate);
     socket.on('seller:limit_update', onWalletUpdate);
+    socket.on('limit:update', onWalletUpdate);
+    socket.on('seller:status_update', onWalletUpdate);
     socket.on('order:new', onWalletUpdate);
 
     return () => {
@@ -142,6 +150,8 @@ export default function SellerWallet() {
       socket.off('withdrawal:update', onWalletUpdate);
       socket.off('withdrawal:new', onWalletUpdate);
       socket.off('seller:limit_update', onWalletUpdate);
+      socket.off('limit:update', onWalletUpdate);
+      socket.off('seller:status_update', onWalletUpdate);
       socket.off('order:new', onWalletUpdate);
     };
   }, []);
