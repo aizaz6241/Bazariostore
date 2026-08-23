@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { sapi, fmtDay, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import CurrencySelector from '../components/CurrencySelector.jsx';
@@ -1158,7 +1158,7 @@ export default function SellerWallet() {
                             {activeSavedKey === 'bankTransfer' && method === 'bank' && <span className="swm-selected-badge">✓ Active</span>}
                           </div>
                           <div className="swm-card-detail">{wm.bankTransfer.bankName || 'State Bank of India'}</div>
-                          <div className="swm-card-acc">A/C: •••• {wm.bankTransfer.accountNumber.slice(-4)} ({wm.bankTransfer.accountTitle})</div>
+                          <div className="swm-card-acc">A/C: •••• {String(wm.bankTransfer.accountNumber || '').slice(-4)} ({wm.bankTransfer.accountTitle || 'Account'})</div>
                           <div className="swm-card-ifsc">IFSC: {wm.bankTransfer.ifscCode || '—'}</div>
                         </div>
                       )}
@@ -1234,7 +1234,7 @@ export default function SellerWallet() {
                             {activeSavedKey === 'usdt' && method === 'usdt' && <span className="swm-selected-badge">✓ Active</span>}
                           </div>
                           <div className="swm-card-detail" style={{ fontFamily: 'monospace', fontSize: 11 }}>
-                            {wm.usdt.walletAddress.slice(0, 8)}...{wm.usdt.walletAddress.slice(-6)}
+                            {String(wm.usdt.walletAddress || '').slice(0, 8)}...{String(wm.usdt.walletAddress || '').slice(-6)}
                           </div>
                           <div className="swm-card-acc">{wm.usdt.network || 'TRC-20'} Crypto Payout</div>
                         </div>
