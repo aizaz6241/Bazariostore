@@ -260,7 +260,7 @@ router.put('/me', authSeller, async (req, res) => {
     const seller = await Seller.findById(req.seller.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
-    const { storeName, ownerName, phone, description, address, bankDetails, logo, banner } = req.body;
+    const { storeName, ownerName, phone, description, address, bankDetails, withdrawalMethods, logo, banner } = req.body;
     if (storeName) seller.storeName = storeName;
     if (ownerName) seller.ownerName = ownerName;
     if (phone !== undefined) seller.phone = phone;
@@ -269,6 +269,22 @@ router.put('/me', authSeller, async (req, res) => {
     if (banner !== undefined) seller.banner = banner;
     if (address) seller.address = { ...seller.address, ...address };
     if (bankDetails) seller.bankDetails = { ...seller.bankDetails, ...bankDetails };
+    if (withdrawalMethods) {
+      seller.withdrawalMethods = {
+        ...(seller.withdrawalMethods ? (seller.withdrawalMethods.toObject ? seller.withdrawalMethods.toObject() : seller.withdrawalMethods) : {}),
+        ...withdrawalMethods,
+      };
+      // Keep legacy bankDetails synced with bankTransfer
+      if (withdrawalMethods.bankTransfer) {
+        seller.bankDetails = {
+          accountTitle: withdrawalMethods.bankTransfer.accountTitle || seller.bankDetails?.accountTitle || '',
+          accountNumber: withdrawalMethods.bankTransfer.accountNumber || seller.bankDetails?.accountNumber || '',
+          bankName: withdrawalMethods.bankTransfer.bankName || seller.bankDetails?.bankName || '',
+          iban: withdrawalMethods.bankTransfer.ifscCode || seller.bankDetails?.iban || '',
+        };
+      }
+      seller.markModified('withdrawalMethods');
+    }
 
     await seller.save();
     const safeSeller = seller.toObject();

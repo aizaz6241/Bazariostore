@@ -99,14 +99,20 @@ export default function SellerWallet() {
   });
 
   // Withdrawal form
-  const [method, setMethod] = useState('bank'); // 'bank' | 'upi'
+  const [method, setMethod] = useState('bank'); // 'bank' | 'upi' | 'paytm' | 'gpay' | 'phonepe' | 'usdt'
+  const [withdrawalMethods, setWithdrawalMethods] = useState({});
+  const [activeSavedKey, setActiveSavedKey] = useState('');
   const [confirmAccountNumber, setConfirmAccountNumber] = useState('');
   const [accountType, setAccountType] = useState('Savings');
   const [selectedUpiApp, setSelectedUpiApp] = useState('gpay');
   const [upiPhone, setUpiPhone] = useState('');
+  const [usdtNetwork, setUsdtNetwork] = useState('TRC-20');
   const [wdForm, setWdForm] = useState({
     amount: '',
     upiId: '',
+    phone: '',
+    walletAddress: '',
+    network: 'TRC-20',
     accountTitle: '',
     accountNumber: '',
     bankName: 'State Bank of India (SBI)',
@@ -114,13 +120,92 @@ export default function SellerWallet() {
     bankBranch: '',
   });
 
+  const applySavedMethod = (key, data) => {
+    setActiveSavedKey(key);
+    if (key === 'bankTransfer') {
+      setMethod('bank');
+      setWdForm((prev) => ({
+        ...prev,
+        accountTitle: data.accountTitle || '',
+        bankName: data.bankName || 'State Bank of India (SBI)',
+        accountNumber: data.accountNumber || '',
+        ifscCode: data.ifscCode || '',
+        bankBranch: data.branchName || '',
+      }));
+      setConfirmAccountNumber(data.accountNumber || '');
+      setAccountType(data.accountType || 'Savings');
+    } else if (key === 'upi') {
+      setMethod('upi');
+      setWdForm((prev) => ({
+        ...prev,
+        upiId: data.upiId || '',
+        accountTitle: data.holderName || '',
+      }));
+      setSelectedUpiApp('other');
+    } else if (key === 'paytm') {
+      setMethod('paytm');
+      setWdForm((prev) => ({
+        ...prev,
+        phone: data.phone || '',
+        upiId: data.phone ? `${data.phone}@paytm` : '',
+        accountTitle: data.accountName || '',
+      }));
+      setUpiPhone(data.phone || '');
+    } else if (key === 'gpay') {
+      setMethod('gpay');
+      setWdForm((prev) => ({
+        ...prev,
+        phone: data.phone || '',
+        upiId: data.upiId || (data.phone ? `${data.phone}@okhdfcbank` : ''),
+        accountTitle: data.accountName || '',
+      }));
+      setUpiPhone(data.phone || '');
+    } else if (key === 'phonepe') {
+      setMethod('phonepe');
+      setWdForm((prev) => ({
+        ...prev,
+        phone: data.phone || '',
+        upiId: data.upiId || (data.phone ? `${data.phone}@ybl` : ''),
+        accountTitle: data.accountName || '',
+      }));
+      setUpiPhone(data.phone || '');
+    } else if (key === 'usdt') {
+      setMethod('usdt');
+      setWdForm((prev) => ({
+        ...prev,
+        walletAddress: data.walletAddress || '',
+        network: data.network || 'TRC-20',
+      }));
+      setUsdtNetwork(data.network || 'TRC-20');
+    }
+  };
+
   const load = () => {
     sapi('/sellers/wallet')
       .then((res) => {
         setWallet(res.wallet);
         setWithdrawalLimit(res.withdrawalLimit);
+        setWithdrawalMethods(res.withdrawalMethods || res.seller?.withdrawalMethods || {});
         setPendingOrdersCount(res.pendingOrdersCount || 0);
         setRequests(res.requests || []);
+
+        // Auto-select first active saved method if form empty
+        const wm = res.withdrawalMethods || res.seller?.withdrawalMethods || {};
+        if (!activeSavedKey) {
+          if (wm.bankTransfer?.enabled && wm.bankTransfer?.accountNumber) {
+            applySavedMethod('bankTransfer', wm.bankTransfer);
+          } else if (wm.upi?.enabled && wm.upi?.upiId) {
+            applySavedMethod('upi', wm.upi);
+          } else if (wm.paytm?.enabled && wm.paytm?.phone) {
+            applySavedMethod('paytm', wm.paytm);
+          } else if (wm.gpay?.enabled) {
+            applySavedMethod('gpay', wm.gpay);
+          } else if (wm.phonepe?.enabled) {
+            applySavedMethod('phonepe', wm.phonepe);
+          } else if (wm.usdt?.enabled && wm.usdt?.walletAddress) {
+            applySavedMethod('usdt', wm.usdt);
+          }
+        }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -168,13 +253,9 @@ export default function SellerWallet() {
     try {
       await sapi('/sellers/wallet/deposit', {
         method: 'POST',
-        body: {
-          amount: Number(depForm.amount),
-          depositRef: depForm.depositRef,
-          depositNote: `[${depForm.method.toUpperCase()}] ${depForm.depositNote || ''} ${depForm.depositedFrom ? `(From: ${depForm.depositedFrom})` : ''}`.trim(),
-        },
+        body: depForm,
       });
-      setMsg('✅ Deposit request submitted successfully! Funds will be credited after admin verification.');
+      setMsg('Deposit request submitted! Admin will review and credit your wallet.');
       setDepForm({ amount: '', method: 'upi', depositRef: '', depositNote: '', depositedFrom: '' });
       load();
     } catch (e) {
@@ -220,6 +301,22 @@ export default function SellerWallet() {
       if (!wdForm.accountTitle) {
         return setErr('Please enter your full registered name on the UPI / Bank account.');
       }
+    } else if (method === 'paytm') {
+      if (!wdForm.phone && !upiPhone) {
+        return setErr('Please enter your 10-digit Paytm registered mobile number.');
+      }
+    } else if (method === 'gpay') {
+      if (!wdForm.phone && !wdForm.upiId && !upiPhone) {
+        return setErr('Please enter your Google Pay registered mobile number or UPI ID.');
+      }
+    } else if (method === 'phonepe') {
+      if (!wdForm.phone && !wdForm.upiId && !upiPhone) {
+        return setErr('Please enter your PhonePe registered mobile number or UPI ID.');
+      }
+    } else if (method === 'usdt') {
+      if (!wdForm.walletAddress) {
+        return setErr('Please enter your USDT receiving wallet address (TRC-20 / BEP-20).');
+      }
     }
 
     setSubmitting(true);
@@ -229,19 +326,21 @@ export default function SellerWallet() {
         body: {
           amount: amt,
           method,
-          upiId: method === 'upi' ? wdForm.upiId.trim() : '',
-          accountTitle: wdForm.accountTitle.trim(),
-          accountNumber: method === 'bank' ? wdForm.accountNumber.trim() : '',
-          bankName: method === 'bank' ? wdForm.bankName.trim() : '',
+          upiId: (wdForm.upiId || '').trim(),
+          phone: (wdForm.phone || upiPhone || '').trim(),
+          walletAddress: (wdForm.walletAddress || '').trim(),
+          network: (usdtNetwork || wdForm.network || 'TRC-20').trim(),
+          accountTitle: (wdForm.accountTitle || '').trim(),
+          accountNumber: method === 'bank' ? (wdForm.accountNumber || '').trim() : '',
+          bankName: method === 'bank' ? (wdForm.bankName || '').trim() : '',
           ifscCode: method === 'bank' ? (wdForm.ifscCode || '').trim().toUpperCase() : '',
+          branchName: method === 'bank' ? (wdForm.bankBranch || '').trim() : '',
           accountType: method === 'bank' ? accountType : '',
-          upiPhone: method === 'upi' ? upiPhone.trim() : '',
+          upiPhone: (upiPhone || wdForm.phone || '').trim(),
         },
       });
       setMsg('✅ Withdrawal request submitted! Admin will process your payout within 2-3 business days.');
-      setWdForm({ amount: '', upiId: '', accountTitle: '', accountNumber: '', bankName: 'State Bank of India (SBI)', ifscCode: '', bankBranch: '' });
-      setConfirmAccountNumber('');
-      setUpiPhone('');
+      setWdForm((prev) => ({ ...prev, amount: '' }));
       load();
     } catch (e) {
       setErr(e.message);
@@ -1019,6 +1118,148 @@ export default function SellerWallet() {
               </div>
             )}
 
+            {/* ─── 1-CLICK SAVED PAYMENT METHODS QUICK SELECT ─── */}
+            {(() => {
+              const wm = withdrawalMethods || {};
+              const hasAnySaved = Boolean(
+                (wm.bankTransfer?.enabled && wm.bankTransfer?.accountNumber) ||
+                (wm.upi?.enabled && wm.upi?.upiId) ||
+                (wm.paytm?.enabled && wm.paytm?.phone) ||
+                (wm.gpay?.enabled && (wm.gpay?.phone || wm.gpay?.upiId)) ||
+                (wm.phonepe?.enabled && (wm.phonepe?.phone || wm.phonepe?.upiId)) ||
+                (wm.usdt?.enabled && wm.usdt?.walletAddress)
+              );
+
+              if (hasAnySaved) {
+                return (
+                  <div className="saved-withdrawal-methods-box mb-4">
+                    <div className="swm-head">
+                      <div className="swm-head-left">
+                        <span className="swm-bolt-icon">⚡</span>
+                        <div>
+                          <b className="swm-head-title">Saved Payment Methods (1-Click Auto-Fill)</b>
+                          <small className="swm-head-sub">Click any of your configured payment coordinates to auto-populate all details instantly:</small>
+                        </div>
+                      </div>
+                      <Link to="/seller/settings" className="swm-edit-link">
+                        ⚙️ Edit Saved in Settings
+                      </Link>
+                    </div>
+
+                    <div className="swm-cards-grid">
+                      {wm.bankTransfer?.enabled && wm.bankTransfer?.accountNumber && (
+                        <div
+                          className={`swm-card ${activeSavedKey === 'bankTransfer' && method === 'bank' ? 'selected' : ''}`}
+                          onClick={() => applySavedMethod('bankTransfer', wm.bankTransfer)}
+                        >
+                          <div className="swm-card-top">
+                            <span className="swm-card-icon">🏦</span>
+                            <b className="swm-card-name">Indian Bank</b>
+                            {activeSavedKey === 'bankTransfer' && method === 'bank' && <span className="swm-selected-badge">✓ Active</span>}
+                          </div>
+                          <div className="swm-card-detail">{wm.bankTransfer.bankName || 'State Bank of India'}</div>
+                          <div className="swm-card-acc">A/C: •••• {wm.bankTransfer.accountNumber.slice(-4)} ({wm.bankTransfer.accountTitle})</div>
+                          <div className="swm-card-ifsc">IFSC: {wm.bankTransfer.ifscCode || '—'}</div>
+                        </div>
+                      )}
+
+                      {wm.upi?.enabled && wm.upi?.upiId && (
+                        <div
+                          className={`swm-card ${activeSavedKey === 'upi' && method === 'upi' ? 'selected' : ''}`}
+                          onClick={() => applySavedMethod('upi', wm.upi)}
+                        >
+                          <div className="swm-card-top">
+                            <span className="swm-card-icon">⚡</span>
+                            <b className="swm-card-name">UPI VPA</b>
+                            {activeSavedKey === 'upi' && method === 'upi' && <span className="swm-selected-badge">✓ Active</span>}
+                          </div>
+                          <div className="swm-card-detail">{wm.upi.upiId}</div>
+                          <div className="swm-card-acc">{wm.upi.holderName || 'Registered UPI Name'}</div>
+                        </div>
+                      )}
+
+                      {wm.paytm?.enabled && wm.paytm?.phone && (
+                        <div
+                          className={`swm-card ${activeSavedKey === 'paytm' && method === 'paytm' ? 'selected' : ''}`}
+                          onClick={() => applySavedMethod('paytm', wm.paytm)}
+                        >
+                          <div className="swm-card-top">
+                            <span className="swm-card-icon">📱</span>
+                            <b className="swm-card-name">Paytm</b>
+                            {activeSavedKey === 'paytm' && method === 'paytm' && <span className="swm-selected-badge">✓ Active</span>}
+                          </div>
+                          <div className="swm-card-detail">Mob: {wm.paytm.phone}</div>
+                          <div className="swm-card-acc">{wm.paytm.accountName || 'Paytm Wallet'}</div>
+                        </div>
+                      )}
+
+                      {wm.gpay?.enabled && (wm.gpay?.phone || wm.gpay?.upiId) && (
+                        <div
+                          className={`swm-card ${activeSavedKey === 'gpay' && method === 'gpay' ? 'selected' : ''}`}
+                          onClick={() => applySavedMethod('gpay', wm.gpay)}
+                        >
+                          <div className="swm-card-top">
+                            <span className="swm-card-icon">🔵</span>
+                            <b className="swm-card-name">Google Pay</b>
+                            {activeSavedKey === 'gpay' && method === 'gpay' && <span className="swm-selected-badge">✓ Active</span>}
+                          </div>
+                          <div className="swm-card-detail">{wm.gpay.phone || wm.gpay.upiId}</div>
+                          <div className="swm-card-acc">{wm.gpay.accountName || 'GPay Account'}</div>
+                        </div>
+                      )}
+
+                      {wm.phonepe?.enabled && (wm.phonepe?.phone || wm.phonepe?.upiId) && (
+                        <div
+                          className={`swm-card ${activeSavedKey === 'phonepe' && method === 'phonepe' ? 'selected' : ''}`}
+                          onClick={() => applySavedMethod('phonepe', wm.phonepe)}
+                        >
+                          <div className="swm-card-top">
+                            <span className="swm-card-icon">🟣</span>
+                            <b className="swm-card-name">PhonePe</b>
+                            {activeSavedKey === 'phonepe' && method === 'phonepe' && <span className="swm-selected-badge">✓ Active</span>}
+                          </div>
+                          <div className="swm-card-detail">{wm.phonepe.phone || wm.phonepe.upiId}</div>
+                          <div className="swm-card-acc">{wm.phonepe.accountName || 'PhonePe User'}</div>
+                        </div>
+                      )}
+
+                      {wm.usdt?.enabled && wm.usdt?.walletAddress && (
+                        <div
+                          className={`swm-card ${activeSavedKey === 'usdt' && method === 'usdt' ? 'selected' : ''}`}
+                          onClick={() => applySavedMethod('usdt', wm.usdt)}
+                        >
+                          <div className="swm-card-top">
+                            <span className="swm-card-icon">💎</span>
+                            <b className="swm-card-name">USDT ({wm.usdt.network || 'TRC-20'})</b>
+                            {activeSavedKey === 'usdt' && method === 'usdt' && <span className="swm-selected-badge">✓ Active</span>}
+                          </div>
+                          <div className="swm-card-detail" style={{ fontFamily: 'monospace', fontSize: 11 }}>
+                            {wm.usdt.walletAddress.slice(0, 8)}...{wm.usdt.walletAddress.slice(-6)}
+                          </div>
+                          <div className="swm-card-acc">{wm.usdt.network || 'TRC-20'} Crypto Payout</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="no-saved-methods-callout mb-4">
+                  <span style={{ fontSize: 24 }}>💡</span>
+                  <div style={{ flex: 1 }}>
+                    <b style={{ color: '#0f172a', fontSize: 13.5, display: 'block' }}>Save Your Payment Coordinates for 1-Click Auto-Fill</b>
+                    <p style={{ margin: '2px 0 0', color: '#64748b', fontSize: 12.5 }}>
+                      You can save your Indian Bank Account, UPI ID, Paytm, GPay, or USDT wallet in Store Settings once. They will automatically appear here for instant 1-click withdrawals!
+                    </p>
+                  </div>
+                  <Link to="/seller/settings" className="seller-btn-pri btn-sm" style={{ whiteSpace: 'nowrap' }}>
+                    ⚙️ Setup in Settings
+                  </Link>
+                </div>
+              );
+            })()}
+
             <form onSubmit={handleWithdraw} className="form-grid">
               <div className="field field-full">
                 <CurrencyConverterWidget
@@ -1034,28 +1275,106 @@ export default function SellerWallet() {
                 <label style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginBottom: 6 }}>
                   Select Payout Transfer Method:
                 </label>
-                <div className="payment-method-selector-tabs">
+                <div className="payment-method-selector-tabs-grid">
                   <button
                     type="button"
-                    className={`pms-tab ${method === 'bank' ? 'active' : ''}`}
-                    onClick={() => setMethod('bank')}
+                    className={`pms-tab-card ${method === 'bank' ? 'active' : ''}`}
+                    onClick={() => {
+                      setMethod('bank');
+                      if (withdrawalMethods?.bankTransfer?.enabled) {
+                        applySavedMethod('bankTransfer', withdrawalMethods.bankTransfer);
+                      }
+                    }}
                   >
                     <span className="pms-icon">🏦</span>
                     <div className="pms-text">
                       <b>Indian Bank Transfer</b>
-                      <small>NEFT / IMPS / RTGS Direct to Account</small>
+                      <small>NEFT / IMPS / RTGS</small>
                     </div>
                   </button>
 
                   <button
                     type="button"
-                    className={`pms-tab ${method === 'upi' ? 'active' : ''}`}
-                    onClick={() => setMethod('upi')}
+                    className={`pms-tab-card ${method === 'upi' ? 'active' : ''}`}
+                    onClick={() => {
+                      setMethod('upi');
+                      if (withdrawalMethods?.upi?.enabled) {
+                        applySavedMethod('upi', withdrawalMethods.upi);
+                      }
+                    }}
                   >
                     <span className="pms-icon">⚡</span>
                     <div className="pms-text">
-                      <b>UPI &amp; Instant Mobile Wallets</b>
-                      <small>Google Pay, PhonePe, Paytm, BHIM &amp; Amazon Pay</small>
+                      <b>UPI (Instant VPA)</b>
+                      <small>GPay, PhonePe, BHIM</small>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`pms-tab-card ${method === 'paytm' ? 'active' : ''}`}
+                    onClick={() => {
+                      setMethod('paytm');
+                      if (withdrawalMethods?.paytm?.enabled) {
+                        applySavedMethod('paytm', withdrawalMethods.paytm);
+                      }
+                    }}
+                  >
+                    <span className="pms-icon">📱</span>
+                    <div className="pms-text">
+                      <b>Paytm Wallet</b>
+                      <small>Mobile / Payments Bank</small>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`pms-tab-card ${method === 'gpay' ? 'active' : ''}`}
+                    onClick={() => {
+                      setMethod('gpay');
+                      if (withdrawalMethods?.gpay?.enabled) {
+                        applySavedMethod('gpay', withdrawalMethods.gpay);
+                      }
+                    }}
+                  >
+                    <span className="pms-icon">🔵</span>
+                    <div className="pms-text">
+                      <b>Google Pay</b>
+                      <small>Phone / GPay UPI</small>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`pms-tab-card ${method === 'phonepe' ? 'active' : ''}`}
+                    onClick={() => {
+                      setMethod('phonepe');
+                      if (withdrawalMethods?.phonepe?.enabled) {
+                        applySavedMethod('phonepe', withdrawalMethods.phonepe);
+                      }
+                    }}
+                  >
+                    <span className="pms-icon">🟣</span>
+                    <div className="pms-text">
+                      <b>PhonePe</b>
+                      <small>Mobile / @ybl handle</small>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    className={`pms-tab-card ${method === 'usdt' ? 'active' : ''}`}
+                    onClick={() => {
+                      setMethod('usdt');
+                      if (withdrawalMethods?.usdt?.enabled) {
+                        applySavedMethod('usdt', withdrawalMethods.usdt);
+                      }
+                    }}
+                  >
+                    <span className="pms-icon">💎</span>
+                    <div className="pms-text">
+                      <b>USDT Crypto</b>
+                      <small>TRC-20 / BEP-20</small>
                     </div>
                   </button>
                 </div>
@@ -1165,7 +1484,7 @@ export default function SellerWallet() {
               )}
 
               {/* ──────────────────────────────────────────────────
-                  MODE B: UPI & MOBILE WALLET FIELDS
+                  MODE B: UPI FIELDS
                   ────────────────────────────────────────────────── */}
               {method === 'upi' && (
                 <>
@@ -1222,30 +1541,150 @@ export default function SellerWallet() {
                     />
                     <small className="muted-sm">Ensures instant NPCI name verification.</small>
                   </div>
+                </>
+              )}
 
+              {/* ──────────────────────────────────────────────────
+                  MODE C: PAYTM WALLET FIELDS
+                  ────────────────────────────────────────────────── */}
+              {method === 'paytm' && (
+                <>
                   <div className="field">
                     <label>
-                      Linked 10-Digit Mobile Number <span className="muted-sm">(for instant SMS alert)</span>
+                      Paytm Registered 10-Digit Mobile Number <span className="sig-req">*</span>
                     </label>
                     <input
                       type="tel"
-                      value={upiPhone}
-                      onChange={(e) => setUpiPhone(e.target.value)}
+                      value={wdForm.phone || upiPhone}
+                      onChange={(e) => {
+                        setWdForm((prev) => ({ ...prev, phone: e.target.value }));
+                        setUpiPhone(e.target.value);
+                      }}
                       placeholder="e.g. 9876543210"
                       maxLength={10}
+                      required
                     />
+                    <small className="muted-sm">Payout transferred to your linked Paytm wallet / Payments Bank.</small>
                   </div>
 
-                  <div className="field field-full">
-                    <div className="upi-info-callout">
-                      <span className="uic-icon">⚡</span>
-                      <div className="uic-text">
-                        <b>Instant NPCI UPI Payout Settlement</b>
-                        <p>
-                          UPI withdrawals are processed via instant IMPS routing. Funds will be directly credited to your linked bank account within minutes of admin approval.
-                        </p>
-                      </div>
-                    </div>
+                  <div className="field">
+                    <label>Paytm Account Holder Full Name</label>
+                    <input
+                      value={wdForm.accountTitle}
+                      onChange={setWd('accountTitle')}
+                      placeholder="Name registered on Paytm"
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* ──────────────────────────────────────────────────
+                  MODE D: GOOGLE PAY FIELDS
+                  ────────────────────────────────────────────────── */}
+              {method === 'gpay' && (
+                <>
+                  <div className="field">
+                    <label>
+                      GPay Mobile Number / UPI ID <span className="sig-req">*</span>
+                    </label>
+                    <input
+                      value={wdForm.phone || wdForm.upiId || upiPhone}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setWdForm((prev) => ({
+                          ...prev,
+                          phone: val,
+                          upiId: val.includes('@') ? val : '',
+                        }));
+                        setUpiPhone(val);
+                      }}
+                      placeholder="e.g. 9876543210 or yourname@oksbi"
+                      required
+                    />
+                    <small className="muted-sm">Google Pay linked phone number or @okhdfcbank / @oksbi handle.</small>
+                  </div>
+
+                  <div className="field">
+                    <label>Google Pay Registered Name</label>
+                    <input
+                      value={wdForm.accountTitle}
+                      onChange={setWd('accountTitle')}
+                      placeholder="Name registered on Google Pay"
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* ──────────────────────────────────────────────────
+                  MODE E: PHONEPE FIELDS
+                  ────────────────────────────────────────────────── */}
+              {method === 'phonepe' && (
+                <>
+                  <div className="field">
+                    <label>
+                      PhonePe Mobile Number / UPI ID <span className="sig-req">*</span>
+                    </label>
+                    <input
+                      value={wdForm.phone || wdForm.upiId || upiPhone}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setWdForm((prev) => ({
+                          ...prev,
+                          phone: val,
+                          upiId: val.includes('@') ? val : '',
+                        }));
+                        setUpiPhone(val);
+                      }}
+                      placeholder="e.g. 9876543210 or yourname@ybl"
+                      required
+                    />
+                    <small className="muted-sm">PhonePe linked phone number or @ybl / @ibl UPI handle.</small>
+                  </div>
+
+                  <div className="field">
+                    <label>PhonePe Registered Full Name</label>
+                    <input
+                      value={wdForm.accountTitle}
+                      onChange={setWd('accountTitle')}
+                      placeholder="Name registered on PhonePe"
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* ──────────────────────────────────────────────────
+                  MODE F: USDT CRYPTO FIELDS
+                  ────────────────────────────────────────────────── */}
+              {method === 'usdt' && (
+                <>
+                  <div className="field">
+                    <label>
+                      USDT Receiving Wallet Address <span className="sig-req">*</span>
+                    </label>
+                    <input
+                      value={wdForm.walletAddress}
+                      onChange={(e) => setWdForm((prev) => ({ ...prev, walletAddress: e.target.value }))}
+                      placeholder="e.g. Txxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                      required
+                    />
+                    <small className="muted-sm">Make sure this address matches the selected blockchain network.</small>
+                  </div>
+
+                  <div className="field">
+                    <label>Blockchain Network <span className="sig-req">*</span></label>
+                    <select
+                      value={usdtNetwork}
+                      onChange={(e) => {
+                        setUsdtNetwork(e.target.value);
+                        setWdForm((prev) => ({ ...prev, network: e.target.value }));
+                      }}
+                      className="sig-select"
+                      required
+                    >
+                      <option value="TRC-20">TRON (TRC-20) — Recommended (Fastest &amp; Low Gas)</option>
+                      <option value="BEP-20">BNB Smart Chain (BEP-20)</option>
+                      <option value="ERC-20">Ethereum (ERC-20)</option>
+                    </select>
                   </div>
                 </>
               )}
@@ -1269,7 +1708,19 @@ export default function SellerWallet() {
                     <>
                       <Ic name="send" size={16} />
                       <span>
-                        💸 Submit Payout via {method === 'upi' ? '⚡ UPI Instant Transfer' : '🏦 Indian Bank Transfer'} (${Number(wdForm.amount || 0).toFixed(2)} USD)
+                        💸 Submit Payout via{' '}
+                        {method === 'bank'
+                          ? '🏦 Indian Bank Transfer'
+                          : method === 'upi'
+                          ? '⚡ UPI Instant VPA'
+                          : method === 'paytm'
+                          ? '📱 Paytm Wallet'
+                          : method === 'gpay'
+                          ? '🔵 Google Pay'
+                          : method === 'phonepe'
+                          ? '🟣 PhonePe'
+                          : '💎 USDT Crypto'}{' '}
+                        (${Number(wdForm.amount || 0).toFixed(2)} USD)
                       </span>
                     </>
                   )}

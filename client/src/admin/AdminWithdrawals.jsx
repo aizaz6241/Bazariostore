@@ -472,20 +472,54 @@ export default function AdminWithdrawals() {
                     <>
                       <div>
                         <span className="muted-sm block">Method:</span>
-                        <small><b>{r.method?.toUpperCase() || 'BANK'}</b></small>
+                        <small>
+                          <b style={{ color: '#2563eb' }}>
+                            {r.method === 'bank' ? '🏦 BANK TRANSFER' : r.method === 'upi' ? '⚡ UPI VPA' : r.method === 'paytm' ? '📱 PAYTM' : r.method === 'gpay' ? '🔵 GOOGLE PAY' : r.method === 'phonepe' ? '🟣 PHONEPE' : r.method === 'usdt' ? '💎 USDT CRYPTO' : (r.method?.toUpperCase() || 'BANK')}
+                          </b>
+                        </small>
                       </div>
-                      <div>
-                        <span className="muted-sm block">Account Title:</span>
-                        <small><b>{r.accountTitle || 'N/A'}</b></small>
-                      </div>
-                      <div>
-                        <span className="muted-sm block">Account No / IBAN:</span>
-                        <small><b>{r.accountNumber || 'N/A'}</b></small>
-                      </div>
-                      <div>
-                        <span className="muted-sm block">Bank Name:</span>
-                        <small><b>{r.bankName || 'N/A'}</b></small>
-                      </div>
+                      {r.accountTitle && (
+                        <div>
+                          <span className="muted-sm block">Account Title:</span>
+                          <small><b>{r.accountTitle}</b></small>
+                        </div>
+                      )}
+                      {r.upiId && (
+                        <div>
+                          <span className="muted-sm block">UPI ID / VPA:</span>
+                          <small><b style={{ color: '#059669' }}>{r.upiId}</b></small>
+                        </div>
+                      )}
+                      {r.phone && (
+                        <div>
+                          <span className="muted-sm block">Phone / Mobile:</span>
+                          <small><b>{r.phone}</b></small>
+                        </div>
+                      )}
+                      {r.accountNumber && (
+                        <div>
+                          <span className="muted-sm block">Account No:</span>
+                          <small><b>{r.accountNumber}</b></small>
+                        </div>
+                      )}
+                      {r.bankName && (
+                        <div>
+                          <span className="muted-sm block">Bank Name:</span>
+                          <small><b>{r.bankName}</b></small>
+                        </div>
+                      )}
+                      {r.ifscCode && (
+                        <div>
+                          <span className="muted-sm block">IFSC Code:</span>
+                          <small><b style={{ color: '#d97706' }}>{r.ifscCode}</b></small>
+                        </div>
+                      )}
+                      {r.walletAddress && (
+                        <div>
+                          <span className="muted-sm block">USDT Wallet ({r.network || 'TRC-20'}):</span>
+                          <small><b style={{ fontFamily: 'monospace', color: '#16a34a' }}>{r.walletAddress}</b></small>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

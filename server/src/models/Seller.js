@@ -34,6 +34,45 @@ const sellerSchema = new mongoose.Schema(
       bankName: { type: String, default: '' },
       iban: { type: String, default: '' },
     },
+    // Configured Saved Withdrawal Payment Methods (Indian Banks, UPI, Paytm, GPay, PhonePe, USDT)
+    withdrawalMethods: {
+      bankTransfer: {
+        enabled: { type: Boolean, default: false },
+        accountTitle: { type: String, default: '' },
+        accountNumber: { type: String, default: '' },
+        bankName: { type: String, default: 'State Bank of India (SBI)' },
+        ifscCode: { type: String, default: '' },
+        branchName: { type: String, default: '' },
+        accountType: { type: String, default: 'Savings' },
+      },
+      upi: {
+        enabled: { type: Boolean, default: false },
+        upiId: { type: String, default: '' },
+        holderName: { type: String, default: '' },
+      },
+      paytm: {
+        enabled: { type: Boolean, default: false },
+        phone: { type: String, default: '' },
+        accountName: { type: String, default: '' },
+      },
+      gpay: {
+        enabled: { type: Boolean, default: false },
+        phone: { type: String, default: '' },
+        upiId: { type: String, default: '' },
+        accountName: { type: String, default: '' },
+      },
+      phonepe: {
+        enabled: { type: Boolean, default: false },
+        phone: { type: String, default: '' },
+        upiId: { type: String, default: '' },
+        accountName: { type: String, default: '' },
+      },
+      usdt: {
+        enabled: { type: Boolean, default: false },
+        walletAddress: { type: String, default: '' },
+        network: { type: String, default: 'TRC-20' },
+      },
+    },
     commissionRate: { type: Number, default: 10 },
     status: { type: String, enum: ['active', 'suspended', 'frozen', 'pending_approval'], default: 'active' },
     freezeReason: { type: String, default: '' },

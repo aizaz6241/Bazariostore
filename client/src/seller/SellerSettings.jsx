@@ -4,6 +4,33 @@ import { sapi } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import SellerAppModal from '../components/SellerAppModal.jsx';
 
+const INDIAN_BANKS = [
+  'State Bank of India (SBI)',
+  'HDFC Bank',
+  'ICICI Bank',
+  'Punjab National Bank (PNB)',
+  'Axis Bank',
+  'Bank of Baroda (BOB)',
+  'Kotak Mahindra Bank',
+  'Canara Bank',
+  'Union Bank of India',
+  'IndusInd Bank',
+  'Bank of India (BOI)',
+  'Central Bank of India',
+  'IDBI Bank',
+  'Indian Bank',
+  'Yes Bank',
+  'IDFC FIRST Bank',
+  'Federal Bank',
+  'UCO Bank',
+  'Indian Overseas Bank',
+  'Punjab & Sind Bank',
+  'Paytm Payments Bank',
+  'Airtel Payments Bank',
+  'Jio Payments Bank',
+  'Other Indian Scheduled Bank',
+];
+
 export default function SellerSettings() {
   const { seller, setSeller } = useOutletContext();
   const [appModalOpen, setAppModalOpen] = useState(false);
@@ -14,6 +41,22 @@ export default function SellerSettings() {
     description: '',
     address: { street: '', city: '', state: '', country: '' },
     bankDetails: { accountTitle: '', accountNumber: '', bankName: '', iban: '' },
+    withdrawalMethods: {
+      bankTransfer: {
+        enabled: false,
+        accountTitle: '',
+        accountNumber: '',
+        bankName: 'State Bank of India (SBI)',
+        ifscCode: '',
+        branchName: '',
+        accountType: 'Savings',
+      },
+      upi: { enabled: false, upiId: '', holderName: '' },
+      paytm: { enabled: false, phone: '', accountName: '' },
+      gpay: { enabled: false, phone: '', upiId: '', accountName: '' },
+      phonepe: { enabled: false, phone: '', upiId: '', accountName: '' },
+      usdt: { enabled: false, walletAddress: '', network: 'TRC-20' },
+    },
     logo: '',
     banner: '',
   });
@@ -28,6 +71,10 @@ export default function SellerSettings() {
 
   useEffect(() => {
     if (seller) {
+      const wm = seller.withdrawalMethods || {};
+      const legacyBank = seller.bankDetails || {};
+      const isBankConfigured = Boolean(wm.bankTransfer?.accountNumber || legacyBank.accountNumber);
+
       setForm({
         storeName: seller.storeName || '',
         ownerName: seller.ownerName || '',
@@ -40,10 +87,48 @@ export default function SellerSettings() {
           country: seller.address?.country || '',
         },
         bankDetails: {
-          accountTitle: seller.bankDetails?.accountTitle || '',
-          accountNumber: seller.bankDetails?.accountNumber || '',
-          bankName: seller.bankDetails?.bankName || '',
-          iban: seller.bankDetails?.iban || '',
+          accountTitle: legacyBank.accountTitle || '',
+          accountNumber: legacyBank.accountNumber || '',
+          bankName: legacyBank.bankName || '',
+          iban: legacyBank.iban || '',
+        },
+        withdrawalMethods: {
+          bankTransfer: {
+            enabled: wm.bankTransfer?.enabled !== undefined ? wm.bankTransfer.enabled : isBankConfigured,
+            accountTitle: wm.bankTransfer?.accountTitle || legacyBank.accountTitle || '',
+            accountNumber: wm.bankTransfer?.accountNumber || legacyBank.accountNumber || '',
+            bankName: wm.bankTransfer?.bankName || legacyBank.bankName || 'State Bank of India (SBI)',
+            ifscCode: wm.bankTransfer?.ifscCode || legacyBank.iban || '',
+            branchName: wm.bankTransfer?.branchName || '',
+            accountType: wm.bankTransfer?.accountType || 'Savings',
+          },
+          upi: {
+            enabled: Boolean(wm.upi?.enabled),
+            upiId: wm.upi?.upiId || '',
+            holderName: wm.upi?.holderName || '',
+          },
+          paytm: {
+            enabled: Boolean(wm.paytm?.enabled),
+            phone: wm.paytm?.phone || '',
+            accountName: wm.paytm?.accountName || '',
+          },
+          gpay: {
+            enabled: Boolean(wm.gpay?.enabled),
+            phone: wm.gpay?.phone || '',
+            upiId: wm.gpay?.upiId || '',
+            accountName: wm.gpay?.accountName || '',
+          },
+          phonepe: {
+            enabled: Boolean(wm.phonepe?.enabled),
+            phone: wm.phonepe?.phone || '',
+            upiId: wm.phonepe?.upiId || '',
+            accountName: wm.phonepe?.accountName || '',
+          },
+          usdt: {
+            enabled: Boolean(wm.usdt?.enabled),
+            walletAddress: wm.usdt?.walletAddress || '',
+            network: wm.usdt?.network || 'TRC-20',
+          },
         },
         logo: seller.logo || '',
         banner: seller.banner || '',
@@ -238,70 +323,617 @@ export default function SellerSettings() {
           </div>
         </div>
 
-        {/* Section 2: Payout Banking */}
+        {/* Section 2: Withdrawal Payment Methods (Indian Banks, UPI, Paytm, GPay, PhonePe, USDT) */}
         <div className="settings-card-panel">
           <div className="scp-header">
             <div className="scp-title-wrap">
-              <span className="scp-icon-badge">🏦</span>
+              <span className="scp-icon-badge">💳</span>
               <div>
-                <h3 className="scp-title">Bank Account for Weekly Payouts</h3>
-                <p className="scp-desc">Withdrawals and order profits are transferred to these registered bank coordinates.</p>
+                <h3 className="scp-title">Withdrawal Payment Methods (ود ڈرا پیمنٹ میتھڈز)</h3>
+                <p className="scp-desc">
+                  Configure and save your Indian Bank Accounts, UPI VPAs, Paytm, GPay, and USDT wallets. When enabled, you can select these saved coordinates with 1-click on the Withdrawal page.
+                </p>
               </div>
             </div>
           </div>
 
           <div className="scp-body">
-            <div className="settings-form-grid">
-              <div className="settings-input-group">
-                <label className="sig-label">Bank Name</label>
-                <div className="sig-field-wrap">
-                  <input
-                    type="text"
-                    value={form.bankDetails?.bankName || ''}
-                    onChange={(e) => setForm({ ...form, bankDetails: { ...form.bankDetails, bankName: e.target.value } })}
-                    placeholder="e.g. JPMorgan Chase, Bank of America, HBL, Meezan"
-                    className="sig-input"
-                  />
+            <div className="withdrawal-methods-config-list">
+              {/* Method 1: Indian Bank Transfer */}
+              <div className={`wm-method-box ${form.withdrawalMethods?.bankTransfer?.enabled ? 'active' : ''}`}>
+                <div className="wm-method-head">
+                  <div className="wm-title-box">
+                    <span className="wm-icon">🏦</span>
+                    <div>
+                      <b className="wm-name">Indian Bank Transfer (NEFT / IMPS / RTGS)</b>
+                      <small className="wm-sub">Direct bank account settlement across all major Indian scheduled banks.</small>
+                    </div>
+                  </div>
+                  <label className="toggle-switch-wrap">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(form.withdrawalMethods?.bankTransfer?.enabled)}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          withdrawalMethods: {
+                            ...prev.withdrawalMethods,
+                            bankTransfer: {
+                              ...prev.withdrawalMethods?.bankTransfer,
+                              enabled: e.target.checked,
+                            },
+                          },
+                        }))
+                      }
+                    />
+                    <span className="toggle-slider"></span>
+                    <span className="toggle-label">{form.withdrawalMethods?.bankTransfer?.enabled ? 'Active' : 'Disabled'}</span>
+                  </label>
                 </div>
+
+                {form.withdrawalMethods?.bankTransfer?.enabled && (
+                  <div className="wm-method-fields">
+                    <div className="settings-form-grid">
+                      <div className="settings-input-group">
+                        <label className="sig-label">Account Holder Full Name <span className="sig-req">*</span></label>
+                        <div className="sig-field-wrap">
+                          <input
+                            type="text"
+                            value={form.withdrawalMethods?.bankTransfer?.accountTitle || ''}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                withdrawalMethods: {
+                                  ...prev.withdrawalMethods,
+                                  bankTransfer: { ...prev.withdrawalMethods?.bankTransfer, accountTitle: e.target.value },
+                                },
+                              }))
+                            }
+                            placeholder="Full name as printed in bank passbook"
+                            className="sig-input"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="settings-input-group">
+                        <label className="sig-label">Select Indian Bank <span className="sig-req">*</span></label>
+                        <div className="sig-field-wrap">
+                          <select
+                            value={form.withdrawalMethods?.bankTransfer?.bankName || 'State Bank of India (SBI)'}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                withdrawalMethods: {
+                                  ...prev.withdrawalMethods,
+                                  bankTransfer: { ...prev.withdrawalMethods?.bankTransfer, bankName: e.target.value },
+                                },
+                              }))
+                            }
+                            className="sig-select"
+                            required
+                          >
+                            {INDIAN_BANKS.map((b) => (
+                              <option key={b} value={b}>{b}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="settings-input-group">
+                        <label className="sig-label">Bank Account Number <span className="sig-req">*</span></label>
+                        <div className="sig-field-wrap">
+                          <input
+                            type="text"
+                            value={form.withdrawalMethods?.bankTransfer?.accountNumber || ''}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                withdrawalMethods: {
+                                  ...prev.withdrawalMethods,
+                                  bankTransfer: { ...prev.withdrawalMethods?.bankTransfer, accountNumber: e.target.value },
+                                },
+                              }))
+                            }
+                            placeholder="e.g. 01234567890123"
+                            className="sig-input"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="settings-input-group">
+                        <label className="sig-label">Bank IFSC Code (11 Digits) <span className="sig-req">*</span></label>
+                        <div className="sig-field-wrap">
+                          <input
+                            type="text"
+                            value={form.withdrawalMethods?.bankTransfer?.ifscCode || ''}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                withdrawalMethods: {
+                                  ...prev.withdrawalMethods,
+                                  bankTransfer: { ...prev.withdrawalMethods?.bankTransfer, ifscCode: e.target.value.toUpperCase() },
+                                },
+                              }))
+                            }
+                            placeholder="e.g. SBIN0001234 / HDFC0000001"
+                            className="sig-input"
+                            maxLength={11}
+                            style={{ textTransform: 'uppercase', letterSpacing: 1 }}
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="settings-input-group">
+                        <label className="sig-label">Branch Name / City</label>
+                        <div className="sig-field-wrap">
+                          <input
+                            type="text"
+                            value={form.withdrawalMethods?.bankTransfer?.branchName || ''}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                withdrawalMethods: {
+                                  ...prev.withdrawalMethods,
+                                  bankTransfer: { ...prev.withdrawalMethods?.bankTransfer, branchName: e.target.value },
+                                },
+                              }))
+                            }
+                            placeholder="e.g. Connaught Place / Bandra West"
+                            className="sig-input"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="settings-input-group">
+                        <label className="sig-label">Account Type</label>
+                        <div className="sig-field-wrap">
+                          <select
+                            value={form.withdrawalMethods?.bankTransfer?.accountType || 'Savings'}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                withdrawalMethods: {
+                                  ...prev.withdrawalMethods,
+                                  bankTransfer: { ...prev.withdrawalMethods?.bankTransfer, accountType: e.target.value },
+                                },
+                              }))
+                            }
+                            className="sig-select"
+                          >
+                            <option value="Savings">Savings Account</option>
+                            <option value="Current">Current / Business Account</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="settings-input-group">
-                <label className="sig-label">Account Title / Beneficiary Name</label>
-                <div className="sig-field-wrap">
-                  <input
-                    type="text"
-                    value={form.bankDetails?.accountTitle || ''}
-                    onChange={(e) => setForm({ ...form, bankDetails: { ...form.bankDetails, accountTitle: e.target.value } })}
-                    placeholder="Full account name exactly as in bank"
-                    className="sig-input"
-                  />
+              {/* Method 2: UPI (Unified Payments Interface) */}
+              <div className={`wm-method-box ${form.withdrawalMethods?.upi?.enabled ? 'active' : ''}`}>
+                <div className="wm-method-head">
+                  <div className="wm-title-box">
+                    <span className="wm-icon">⚡</span>
+                    <div>
+                      <b className="wm-name">UPI (Unified Payments Interface / VPA)</b>
+                      <small className="wm-sub">Instant 24/7 IMPS settlement to any registered VPA handle (@okhdfcbank, @oksbi, @paytm, etc.).</small>
+                    </div>
+                  </div>
+                  <label className="toggle-switch-wrap">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(form.withdrawalMethods?.upi?.enabled)}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          withdrawalMethods: {
+                            ...prev.withdrawalMethods,
+                            upi: {
+                              ...prev.withdrawalMethods?.upi,
+                              enabled: e.target.checked,
+                            },
+                          },
+                        }))
+                      }
+                    />
+                    <span className="toggle-slider"></span>
+                    <span className="toggle-label">{form.withdrawalMethods?.upi?.enabled ? 'Active' : 'Disabled'}</span>
+                  </label>
                 </div>
+
+                {form.withdrawalMethods?.upi?.enabled && (
+                  <div className="wm-method-fields">
+                    <div className="settings-form-grid">
+                      <div className="settings-input-group">
+                        <label className="sig-label">UPI ID / VPA Address <span className="sig-req">*</span></label>
+                        <div className="sig-field-wrap">
+                          <input
+                            type="text"
+                            value={form.withdrawalMethods?.upi?.upiId || ''}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                withdrawalMethods: {
+                                  ...prev.withdrawalMethods,
+                                  upi: { ...prev.withdrawalMethods?.upi, upiId: e.target.value },
+                                },
+                              }))
+                            }
+                            placeholder="e.g. merchant@okhdfcbank or 9876543210@paytm"
+                            className="sig-input"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="settings-input-group">
+                        <label className="sig-label">Registered Name on UPI <span className="sig-req">*</span></label>
+                        <div className="sig-field-wrap">
+                          <input
+                            type="text"
+                            value={form.withdrawalMethods?.upi?.holderName || ''}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                withdrawalMethods: {
+                                  ...prev.withdrawalMethods,
+                                  upi: { ...prev.withdrawalMethods?.upi, holderName: e.target.value },
+                                },
+                              }))
+                            }
+                            placeholder="Full name registered on UPI app"
+                            className="sig-input"
+                            required
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="settings-input-group">
-                <label className="sig-label">Account Number</label>
-                <div className="sig-field-wrap">
-                  <input
-                    type="text"
-                    value={form.bankDetails?.accountNumber || ''}
-                    onChange={(e) => setForm({ ...form, bankDetails: { ...form.bankDetails, accountNumber: e.target.value } })}
-                    placeholder="01234567890123"
-                    className="sig-input"
-                  />
+              {/* Method 3: Paytm */}
+              <div className={`wm-method-box ${form.withdrawalMethods?.paytm?.enabled ? 'active' : ''}`}>
+                <div className="wm-method-head">
+                  <div className="wm-title-box">
+                    <span className="wm-icon">📱</span>
+                    <div>
+                      <b className="wm-name">Paytm Wallet &amp; Payments Bank</b>
+                      <small className="wm-sub">Transfer payout to registered Paytm phone number / Payments Bank.</small>
+                    </div>
+                  </div>
+                  <label className="toggle-switch-wrap">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(form.withdrawalMethods?.paytm?.enabled)}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          withdrawalMethods: {
+                            ...prev.withdrawalMethods,
+                            paytm: {
+                              ...prev.withdrawalMethods?.paytm,
+                              enabled: e.target.checked,
+                            },
+                          },
+                        }))
+                      }
+                    />
+                    <span className="toggle-slider"></span>
+                    <span className="toggle-label">{form.withdrawalMethods?.paytm?.enabled ? 'Active' : 'Disabled'}</span>
+                  </label>
                 </div>
+
+                {form.withdrawalMethods?.paytm?.enabled && (
+                  <div className="wm-method-fields">
+                    <div className="settings-form-grid">
+                      <div className="settings-input-group">
+                        <label className="sig-label">Paytm 10-Digit Mobile Number <span className="sig-req">*</span></label>
+                        <div className="sig-field-wrap">
+                          <input
+                            type="tel"
+                            value={form.withdrawalMethods?.paytm?.phone || ''}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                withdrawalMethods: {
+                                  ...prev.withdrawalMethods,
+                                  paytm: { ...prev.withdrawalMethods?.paytm, phone: e.target.value },
+                                },
+                              }))
+                            }
+                            placeholder="e.g. 9876543210"
+                            className="sig-input"
+                            maxLength={10}
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="settings-input-group">
+                        <label className="sig-label">Paytm Account Holder Name</label>
+                        <div className="sig-field-wrap">
+                          <input
+                            type="text"
+                            value={form.withdrawalMethods?.paytm?.accountName || ''}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                withdrawalMethods: {
+                                  ...prev.withdrawalMethods,
+                                  paytm: { ...prev.withdrawalMethods?.paytm, accountName: e.target.value },
+                                },
+                              }))
+                            }
+                            placeholder="Name registered on Paytm"
+                            className="sig-input"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="settings-input-group">
-                <label className="sig-label">IBAN / Routing Code</label>
-                <div className="sig-field-wrap">
-                  <input
-                    type="text"
-                    value={form.bankDetails?.iban || ''}
-                    onChange={(e) => setForm({ ...form, bankDetails: { ...form.bankDetails, iban: e.target.value } })}
-                    placeholder="US00CHAS000123456789..."
-                    className="sig-input"
-                  />
+              {/* Method 4: Google Pay (GPay) */}
+              <div className={`wm-method-box ${form.withdrawalMethods?.gpay?.enabled ? 'active' : ''}`}>
+                <div className="wm-method-head">
+                  <div className="wm-title-box">
+                    <span className="wm-icon">🔵</span>
+                    <div>
+                      <b className="wm-name">Google Pay (GPay)</b>
+                      <small className="wm-sub">Direct credit to your GPay mobile number or custom Google Pay UPI handle.</small>
+                    </div>
+                  </div>
+                  <label className="toggle-switch-wrap">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(form.withdrawalMethods?.gpay?.enabled)}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          withdrawalMethods: {
+                            ...prev.withdrawalMethods,
+                            gpay: {
+                              ...prev.withdrawalMethods?.gpay,
+                              enabled: e.target.checked,
+                            },
+                          },
+                        }))
+                      }
+                    />
+                    <span className="toggle-slider"></span>
+                    <span className="toggle-label">{form.withdrawalMethods?.gpay?.enabled ? 'Active' : 'Disabled'}</span>
+                  </label>
                 </div>
+
+                {form.withdrawalMethods?.gpay?.enabled && (
+                  <div className="wm-method-fields">
+                    <div className="settings-form-grid">
+                      <div className="settings-input-group">
+                        <label className="sig-label">GPay Mobile Number / UPI ID <span className="sig-req">*</span></label>
+                        <div className="sig-field-wrap">
+                          <input
+                            type="text"
+                            value={form.withdrawalMethods?.gpay?.phone || form.withdrawalMethods?.gpay?.upiId || ''}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                withdrawalMethods: {
+                                  ...prev.withdrawalMethods,
+                                  gpay: {
+                                    ...prev.withdrawalMethods?.gpay,
+                                    phone: e.target.value,
+                                    upiId: e.target.value.includes('@') ? e.target.value : '',
+                                  },
+                                },
+                              }))
+                            }
+                            placeholder="e.g. 9876543210 or yourname@oksbi"
+                            className="sig-input"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="settings-input-group">
+                        <label className="sig-label">GPay Account Holder Name</label>
+                        <div className="sig-field-wrap">
+                          <input
+                            type="text"
+                            value={form.withdrawalMethods?.gpay?.accountName || ''}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                withdrawalMethods: {
+                                  ...prev.withdrawalMethods,
+                                  gpay: { ...prev.withdrawalMethods?.gpay, accountName: e.target.value },
+                                },
+                              }))
+                            }
+                            placeholder="Name registered on Google Pay"
+                            className="sig-input"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Method 5: PhonePe */}
+              <div className={`wm-method-box ${form.withdrawalMethods?.phonepe?.enabled ? 'active' : ''}`}>
+                <div className="wm-method-head">
+                  <div className="wm-title-box">
+                    <span className="wm-icon">🟣</span>
+                    <div>
+                      <b className="wm-name">PhonePe</b>
+                      <small className="wm-sub">Transfer to registered PhonePe mobile number or @ybl / @ibl UPI handle.</small>
+                    </div>
+                  </div>
+                  <label className="toggle-switch-wrap">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(form.withdrawalMethods?.phonepe?.enabled)}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          withdrawalMethods: {
+                            ...prev.withdrawalMethods,
+                            phonepe: {
+                              ...prev.withdrawalMethods?.phonepe,
+                              enabled: e.target.checked,
+                            },
+                          },
+                        }))
+                      }
+                    />
+                    <span className="toggle-slider"></span>
+                    <span className="toggle-label">{form.withdrawalMethods?.phonepe?.enabled ? 'Active' : 'Disabled'}</span>
+                  </label>
+                </div>
+
+                {form.withdrawalMethods?.phonepe?.enabled && (
+                  <div className="wm-method-fields">
+                    <div className="settings-form-grid">
+                      <div className="settings-input-group">
+                        <label className="sig-label">PhonePe Mobile Number / UPI ID <span className="sig-req">*</span></label>
+                        <div className="sig-field-wrap">
+                          <input
+                            type="text"
+                            value={form.withdrawalMethods?.phonepe?.phone || form.withdrawalMethods?.phonepe?.upiId || ''}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                withdrawalMethods: {
+                                  ...prev.withdrawalMethods,
+                                  phonepe: {
+                                    ...prev.withdrawalMethods?.phonepe,
+                                    phone: e.target.value,
+                                    upiId: e.target.value.includes('@') ? e.target.value : '',
+                                  },
+                                },
+                              }))
+                            }
+                            placeholder="e.g. 9876543210 or yourname@ybl"
+                            className="sig-input"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="settings-input-group">
+                        <label className="sig-label">PhonePe Account Holder Name</label>
+                        <div className="sig-field-wrap">
+                          <input
+                            type="text"
+                            value={form.withdrawalMethods?.phonepe?.accountName || ''}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                withdrawalMethods: {
+                                  ...prev.withdrawalMethods,
+                                  phonepe: { ...prev.withdrawalMethods?.phonepe, accountName: e.target.value },
+                                },
+                              }))
+                            }
+                            placeholder="Name registered on PhonePe"
+                            className="sig-input"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Method 6: USDT / Crypto */}
+              <div className={`wm-method-box ${form.withdrawalMethods?.usdt?.enabled ? 'active' : ''}`}>
+                <div className="wm-method-head">
+                  <div className="wm-title-box">
+                    <span className="wm-icon">💎</span>
+                    <div>
+                      <b className="wm-name">USDT (Crypto Stablecoin Payout)</b>
+                      <small className="wm-sub">Receive instant USDT payouts via TRC-20 (Tron) or BEP-20 (Binance Smart Chain).</small>
+                    </div>
+                  </div>
+                  <label className="toggle-switch-wrap">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(form.withdrawalMethods?.usdt?.enabled)}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          withdrawalMethods: {
+                            ...prev.withdrawalMethods,
+                            usdt: {
+                              ...prev.withdrawalMethods?.usdt,
+                              enabled: e.target.checked,
+                            },
+                          },
+                        }))
+                      }
+                    />
+                    <span className="toggle-slider"></span>
+                    <span className="toggle-label">{form.withdrawalMethods?.usdt?.enabled ? 'Active' : 'Disabled'}</span>
+                  </label>
+                </div>
+
+                {form.withdrawalMethods?.usdt?.enabled && (
+                  <div className="wm-method-fields">
+                    <div className="settings-form-grid">
+                      <div className="settings-input-group">
+                        <label className="sig-label">USDT Receiving Address <span className="sig-req">*</span></label>
+                        <div className="sig-field-wrap">
+                          <input
+                            type="text"
+                            value={form.withdrawalMethods?.usdt?.walletAddress || ''}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                withdrawalMethods: {
+                                  ...prev.withdrawalMethods,
+                                  usdt: { ...prev.withdrawalMethods?.usdt, walletAddress: e.target.value },
+                                },
+                              }))
+                            }
+                            placeholder="e.g. Txxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                            className="sig-input"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="settings-input-group">
+                        <label className="sig-label">Blockchain Network <span className="sig-req">*</span></label>
+                        <div className="sig-field-wrap">
+                          <select
+                            value={form.withdrawalMethods?.usdt?.network || 'TRC-20'}
+                            onChange={(e) =>
+                              setForm((prev) => ({
+                                ...prev,
+                                withdrawalMethods: {
+                                  ...prev.withdrawalMethods,
+                                  usdt: { ...prev.withdrawalMethods?.usdt, network: e.target.value },
+                                },
+                              }))
+                            }
+                            className="sig-select"
+                            required
+                          >
+                            <option value="TRC-20">TRON (TRC-20) — Recommended (Fastest &amp; Low Fee)</option>
+                            <option value="BEP-20">BNB Smart Chain (BEP-20)</option>
+                            <option value="ERC-20">Ethereum (ERC-20)</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

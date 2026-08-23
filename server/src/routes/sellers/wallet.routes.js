@@ -153,6 +153,7 @@ router.get('/wallet', authSellerOrAdmin, async (req, res) => {
         securityDepositPaid: Boolean(seller.securityDeposit?.paid),
       },
       withdrawalLimit: seller.withdrawalLimit || defaultLimit,
+      withdrawalMethods: seller.withdrawalMethods || {},
       pendingOrdersCount,
       requests,
       targets: seller.targets || [],
@@ -160,6 +161,7 @@ router.get('/wallet', authSellerOrAdmin, async (req, res) => {
         storeName: seller.storeName,
         commissionRate: seller.commissionRate,
         payoutDetails: seller.payoutDetails,
+        withdrawalMethods: seller.withdrawalMethods || {},
         securityDeposit: seller.securityDeposit || {},
       },
     });
@@ -179,7 +181,7 @@ router.post('/wallet/deposit', authSellerOrAdmin, async (req, res) => {
 
     // Check if already pending deposit
     const hasPending = await Withdrawal.findOne({ seller: seller._id, type: 'deposit', status: 'pending' });
-    if (hasPending) return res.status(400).json({ message: 'Aapki ek deposit request already pending hai. Pehle woh process ho jaye.' });
+    if (hasPending) return res.status(400).json({ message: 'Aapki ek deposit request already pending hai. Admin approval ka wait karein.' });
 
     const reqDoc = await Withdrawal.create({
       type: 'deposit',
@@ -188,6 +190,8 @@ router.post('/wallet/deposit', authSellerOrAdmin, async (req, res) => {
       amount: Number(amount),
       depositRef: depositRef || '',
       depositNote: depositNote || '',
+      method: 'bank',
+      status: 'pending',
     });
 
     // Lock pending deposit
@@ -205,11 +209,19 @@ router.post('/wallet/deposit', authSellerOrAdmin, async (req, res) => {
       recipientType: 'admin',
       type: 'deposit',
       title: '💰 Deposit Request',
-      body: `${seller.storeName} wants to deposit $${Number(amount).toLocaleString('en-US')} to wallet`,
+      body: `${seller.storeName} requested to add $${Number(amount).toLocaleString('en-US')}`,
       link: '/admin/withdrawals',
     });
 
-    res.status(201).json({ message: 'Deposit request submitted! Admin will review and approve.', request: reqDoc });
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`seller:${seller._id}`).emit('wallet:update', {
+        pendingDeposit: seller.wallet.pendingDeposit,
+      });
+      io.to('admins').emit('withdrawal:new', reqDoc);
+    }
+
+    res.status(201).json({ message: 'Deposit request submitted! Admin will verify and approve.', request: reqDoc });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -221,7 +233,7 @@ router.post('/wallet/withdraw', authSellerOrAdmin, async (req, res) => {
     const seller = await getSellerFromReq(req);
     if (!seller) return res.status(404).json({ message: 'Seller not found. Please log in again.' });
 
-    // Check if seller has any unconfirmed pending customer orders
+    // ─── UNCONFIRMED ORDERS WITHDRAWAL BLOCKER ───
     const unconfirmedOrders = await Order.find({
       $or: [
         { 'items.seller': seller._id, 'items.itemStatus': 'pending' },
@@ -236,7 +248,7 @@ router.post('/wallet/withdraw', authSellerOrAdmin, async (req, res) => {
       });
     }
 
-    const { amount, method, upiId, accountTitle, accountNumber, bankName, ifscCode } = req.body;
+    const { amount, method, upiId, accountTitle, accountNumber, bankName, ifscCode, branchName, accountType, phone, upiPhone, walletAddress, network } = req.body;
     const amt = Number(amount);
 
     const maxLimit = seller.withdrawalLimit?.maxAmount !== undefined ? seller.withdrawalLimit.maxAmount : 500;
@@ -249,10 +261,20 @@ router.post('/wallet/withdraw', authSellerOrAdmin, async (req, res) => {
       });
     }
 
-    if (!method || !['upi', 'bank'].includes(method)) return res.status(400).json({ message: 'Payment method required: upi or bank' });
-    if (method === 'upi' && !upiId) return res.status(400).json({ message: 'UPI ID is required' });
+    const validMethods = ['upi', 'bank', 'paytm', 'gpay', 'phonepe', 'usdt', 'other'];
+    if (!method || !validMethods.includes(method)) {
+      return res.status(400).json({ message: 'Valid payment method required (bank, upi, paytm, gpay, phonepe, or usdt)' });
+    }
+
+    if (method === 'upi' && !upiId) return res.status(400).json({ message: 'UPI ID / VPA address is required' });
     if (method === 'bank' && (!accountNumber || !bankName)) {
       return res.status(400).json({ message: 'Bank details incomplete: account number and bank name are required' });
+    }
+    if ((method === 'paytm' || method === 'gpay' || method === 'phonepe') && !phone && !upiPhone && !upiId) {
+      return res.status(400).json({ message: `${method.toUpperCase()} registered mobile number or UPI ID is required` });
+    }
+    if (method === 'usdt' && !walletAddress) {
+      return res.status(400).json({ message: 'USDT TRC-20 / BEP-20 wallet address is required' });
     }
 
     const balance = seller.wallet?.balance || 0;
@@ -268,11 +290,16 @@ router.post('/wallet/withdraw', authSellerOrAdmin, async (req, res) => {
       storeName: seller.storeName,
       amount: amt,
       method,
-      upiId: method === 'upi' ? upiId : '',
-      accountTitle: accountTitle || '',
-      accountNumber: method === 'bank' ? accountNumber : '',
-      bankName: method === 'bank' ? bankName : '',
-      ifscCode: method === 'bank' ? ifscCode : '',
+      upiId: (upiId || '').trim(),
+      phone: (phone || upiPhone || '').trim(),
+      walletAddress: (walletAddress || '').trim(),
+      network: (network || 'TRC-20').trim(),
+      accountTitle: (accountTitle || '').trim(),
+      accountNumber: (accountNumber || '').trim(),
+      bankName: (bankName || '').trim(),
+      ifscCode: (ifscCode || '').trim().toUpperCase(),
+      branchName: (branchName || '').trim(),
+      accountType: (accountType || '').trim(),
     });
 
     // Lock pending withdrawal (reduce available balance)

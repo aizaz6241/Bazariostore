@@ -37,14 +37,19 @@ const withdrawalSchema = new mongoose.Schema(
     approvedAmount: { type: Number, default: null },
     isManualAdjustment: { type: Boolean, default: false },
     // Payment method (for withdrawal)
-    method: { type: String, enum: ['upi', 'bank', 'other', ''], default: '' },
-    // UPI details
+    method: { type: String, enum: ['upi', 'bank', 'paytm', 'gpay', 'phonepe', 'usdt', 'other', ''], default: '' },
+    // UPI & Mobile Wallet details
     upiId: { type: String, default: '' },
+    phone: { type: String, default: '' },
+    walletAddress: { type: String, default: '' },
+    network: { type: String, default: '' },
     // Bank details
     accountTitle: { type: String, default: '' },
     accountNumber: { type: String, default: '' },
     bankName: { type: String, default: '' },
     ifscCode: { type: String, default: '' },
+    branchName: { type: String, default: '' },
+    accountType: { type: String, default: '' },
     // For deposit: seller provides reference (e.g. UTR of payment they made)
     depositRef: { type: String, default: '' },
     depositNote: { type: String, default: '' },
