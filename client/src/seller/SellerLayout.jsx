@@ -304,9 +304,22 @@ export default function SellerLayout() {
       <div className="seller-main-wrap">
         <header className="seller-top-bar">
           <div className="seller-top-left">
-            <button className="mobile-hamburger-btn" onClick={() => setMobileSidebarOpen(true)} aria-label="Toggle Menu">
-              <Ic name="menu" size={22} />
+            <button
+              type="button"
+              className="mobile-hamburger-btn"
+              onClick={() => setMobileSidebarOpen(true)}
+              aria-label="Open Navigation Menu"
+              title="Open Navigation Menu"
+            >
+              <Ic name="menu" size={20} />
             </button>
+
+            {/* Mobile Brand Title */}
+            <div className="seller-mobile-brand show-on-mobile-flex">
+              <span className="smb-logo">BAZARIO</span>
+              <span className="smb-sub">SELLER</span>
+            </div>
+
             <span className={`store-active-indicator hide-on-mobile ${seller?.status === 'frozen' || seller?.status === 'suspended' ? 'status-frozen' : ''}`}>
               <span className="pulse-dot"></span> Store: <b style={{ textTransform: 'uppercase' }}>{seller?.status || 'Active'}</b>
             </span>
@@ -327,8 +340,9 @@ export default function SellerLayout() {
                 <Ic name="shield" size={14} />
               </div>
               <div className="sthp-body">
-                <span className="sthp-lbl hide-on-laptop">Health</span>
-                <b className="sthp-score">{healthScore}/100</b>
+                <span className="sthp-lbl hide-on-tablet">Health</span>
+                <b className="sthp-score">{healthScore}</b>
+                <span className="sthp-max hide-on-mobile">/100</span>
               </div>
               <span className={`sthp-tag health-tag-${healthTier} hide-on-mobile`}>{healthLabel}</span>
             </div>
@@ -337,11 +351,11 @@ export default function SellerLayout() {
             <Link to="/seller/wallet" className="seller-topbar-wallet-pill" title="Merchant Wallet & Financial Ledger">
               <div className="stwp-icon"><Ic name="banknote" size={15} /></div>
               <div className="stwp-body">
-                <span className="stwp-lbl hide-on-laptop">Wallet</span>
+                <span className="stwp-lbl hide-on-tablet">Wallet</span>
                 <b className="stwp-val">{formatMoney(seller?.wallet?.balance || 0)}</b>
               </div>
               {(seller?.wallet?.processingFund > 0) && (
-                <span className="stwp-proc hide-on-laptop" title="Locked in Order Processing">
+                <span className="stwp-proc hide-on-mobile" title="Locked in Order Processing">
                   🔒 {formatMoney(seller.wallet.processingFund)}
                 </span>
               )}
@@ -351,7 +365,7 @@ export default function SellerLayout() {
             <button
               type="button"
               onClick={() => setAppModalOpen(true)}
-              className="seller-app-pill-btn hide-on-laptop"
+              className="seller-app-pill-btn hide-on-tablet"
               title="Install Bazario App on Android / iOS"
             >
               <Ic name="download" size={13} />
@@ -362,7 +376,7 @@ export default function SellerLayout() {
             <Link to="/seller/settings" className="seller-user-pill" title="Store & Account Settings">
               <span className="seller-user-initial">{seller?.ownerName?.[0] || 'U'}</span>
               <span className="seller-user-email-text hide-on-laptop">{seller?.ownerName || seller?.email}</span>
-              <Ic name="gear" size={14} />
+              <Ic name="gear" size={14} className="hide-on-mobile" />
             </Link>
           </div>
         </header>

@@ -249,39 +249,92 @@
 /* ─── SELLER TOPBAR ─── */
 .seller-top-bar {
   background: #ffffff !important;
-  min-height: 60px !important;
-  height: 60px !important;
+  min-height: 58px !important;
+  height: 58px !important;
   border-bottom: 1px solid #e2e8f0 !important;
   display: flex !important;
   align-items: center !important;
   justify-content: space-between !important;
-  padding: 0 18px !important;
+  padding: 0 16px !important;
   position: sticky !important;
   top: 0 !important;
-  z-index: 100 !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+  z-index: 1000 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
   margin: 0 !important;
-  gap: 8px !important;
+  gap: 10px !important;
   box-sizing: border-box !important;
+  width: 100% !important;
 }
 
 .seller-top-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
-  flex-shrink: 1;
+  flex-shrink: 0;
 }
 
+/* Standout High-Contrast Mobile Hamburger Button */
 .mobile-hamburger-btn {
   display: none;
   align-items: center;
   justify-content: center;
-  padding: 6px;
-  background: none;
-  border: none;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  background: #0f172a !important;
+  color: #ffffff !important;
+  border: 1.5px solid #1e293b !important;
+  border-radius: 8px !important;
   cursor: pointer;
-  color: #334155;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.2);
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  padding: 0;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-hamburger-btn:hover,
+.mobile-hamburger-btn:active {
+  background: #1e293b !important;
+  color: #f59e0b !important;
+  border-color: #f59e0b !important;
+  transform: scale(0.96);
+}
+
+.mobile-hamburger-btn svg {
+  stroke-width: 2.4;
+}
+
+/* Mobile Brand in Topbar */
+.seller-mobile-brand {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  text-decoration: none;
+}
+
+.seller-mobile-brand .smb-logo {
+  font-size: 15px;
+  font-weight: 900;
+  color: #0f172a;
+  letter-spacing: -0.3px;
+}
+
+.seller-mobile-brand .smb-sub {
+  font-size: 9px;
+  font-weight: 800;
+  color: #f59e0b;
+  background: #0f172a;
+  padding: 2px 5px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.show-on-mobile-flex {
+  display: none;
 }
 
 .store-active-indicator {
@@ -620,6 +673,56 @@
   .seller-portal-layout {
     flex-direction: column !important;
   }
+  .seller-top-bar {
+    min-height: 56px !important;
+    height: 56px !important;
+    padding: 0 12px !important;
+    gap: 8px !important;
+  }
+  .seller-top-left {
+    gap: 8px !important;
+    flex-shrink: 0 !important;
+  }
+  .mobile-hamburger-btn {
+    display: inline-flex !important;
+    touch-action: manipulation !important;
+    cursor: pointer !important;
+  }
+  .show-on-mobile-flex {
+    display: inline-flex !important;
+  }
+  .seller-top-right {
+    gap: 6px !important;
+    margin-left: auto !important;
+  }
+  .seller-topbar-curr-select {
+    padding: 3px 6px !important;
+    font-size: 11.5px !important;
+  }
+  .seller-topbar-health-pill {
+    padding: 4px 8px !important;
+    gap: 4px !important;
+  }
+  .seller-topbar-health-pill .sthp-score {
+    font-size: 11.5px !important;
+    font-weight: 800 !important;
+  }
+  .seller-topbar-wallet-pill {
+    padding: 4px 8px !important;
+    gap: 4px !important;
+  }
+  .seller-topbar-wallet-pill .stwp-val {
+    font-size: 11.5px !important;
+    font-weight: 800 !important;
+  }
+  .seller-user-pill {
+    padding: 2px !important;
+  }
+  .seller-user-initial {
+    width: 28px !important;
+    height: 28px !important;
+    font-size: 11px !important;
+  }
   .seller-sidebar {
     position: fixed !important;
     top: 0 !important;
@@ -675,14 +778,57 @@
     -webkit-tap-highlight-color: transparent !important;
     cursor: pointer !important;
   }
-  .mobile-hamburger-btn {
-    touch-action: manipulation !important;
-    cursor: pointer !important;
-  }
   .seller-main-wrap {
     width: 100% !important;
     min-width: 0 !important;
     overflow-x: hidden !important;
+  }
+  .seller-content-body {
+    padding: 14px 12px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .seller-top-bar {
+    padding: 0 8px !important;
+    gap: 4px !important;
+  }
+  .seller-top-left {
+    gap: 6px !important;
+  }
+  .mobile-hamburger-btn {
+    width: 35px !important;
+    height: 35px !important;
+    min-width: 35px !important;
+    min-height: 35px !important;
+  }
+  .seller-mobile-brand .smb-logo {
+    font-size: 13.5px !important;
+  }
+  .seller-mobile-brand .smb-sub {
+    font-size: 8px !important;
+    padding: 1.5px 4px !important;
+  }
+  .seller-top-right {
+    gap: 4px !important;
+  }
+  .seller-topbar-curr-select {
+    padding: 2px 4px !important;
+    font-size: 11px !important;
+  }
+  .seller-topbar-health-pill {
+    padding: 3px 5px !important;
+  }
+  .seller-topbar-health-pill .sthp-icon svg {
+    width: 12px !important;
+    height: 12px !important;
+  }
+  .seller-topbar-wallet-pill {
+    padding: 3px 6px !important;
+  }
+  .seller-topbar-wallet-pill .stwp-icon svg {
+    width: 12px !important;
+    height: 12px !important;
   }
 }
 
