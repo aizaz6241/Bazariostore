@@ -20,6 +20,17 @@ const userSchema = new mongoose.Schema(
     phone: String,
     passwordHash: { type: String, required: true },
     addresses: [addressSchema],
+    isEmailVerified: { type: Boolean, default: false },
+    emailOtp: {
+      code: String,
+      expiresAt: Date,
+      attempts: { type: Number, default: 0 },
+    },
+    resetOtp: {
+      code: String,
+      expiresAt: Date,
+      attempts: { type: Number, default: 0 },
+    },
     resetToken: String,
     resetExpires: Date,
     active: { type: Boolean, default: true },

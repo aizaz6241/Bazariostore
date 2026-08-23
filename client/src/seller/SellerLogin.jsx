@@ -1,10 +1,15 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import Ic from '../components/Icons.jsx';
+import OtpVerificationModal from '../components/OtpVerificationModal.jsx';
 
 export default function SellerLogin() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const urlResetToken = params.get('resetToken') || '';
+  const urlEmail = params.get('email') || '';
+
   const [mode, setMode] = useState('login'); // 'login' | 'register'
   
   // Login State
@@ -14,7 +19,21 @@ export default function SellerLogin() {
   const [err, setErr] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
-  const [forgotModalOpen, setForgotModalOpen] = useState(false);
+
+  // Registration OTP State
+  const [otpModalOpen, setOtpModalOpen] = useState(false);
+  const [otpBusy, setOtpBusy] = useState(false);
+
+  // Forgot Password Modal State
+  const [forgotModalOpen, setForgotModalOpen] = useState(Boolean(urlResetToken));
+  const [forgotStep, setForgotStep] = useState(urlResetToken ? 'reset' : 'request'); // 'request' | 'reset'
+  const [forgotEmail, setForgotEmail] = useState(urlEmail);
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [forgotBusy, setForgotBusy] = useState(false);
+  const [forgotErr, setForgotErr] = useState('');
+  const [forgotSuccess, setForgotSuccess] = useState('');
 
   // Register State
   const [regForm, setRegForm] = useState({
@@ -68,10 +87,35 @@ export default function SellerLogin() {
     setSuccessMsg('');
     setLoading(true);
     try {
+      // Step 1: Send OTP to verify business email
+      await api('/sellers/send-otp', {
+        method: 'POST',
+        body: { email: regForm.email, ownerName: regForm.ownerName },
+      });
+      setOtpModalOpen(true);
+    } catch (e) {
+      setErr(e.message || 'Failed to send verification code. Please check your email.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifySellerOtp = async (otpString) => {
+    setOtpBusy(true);
+    try {
+      // Step 2: Verify OTP
+      await api('/sellers/verify-otp', {
+        method: 'POST',
+        body: { email: regForm.email, otp: otpString },
+      });
+
+      // Step 3: Complete registration with verified OTP
       const res = await api('/sellers/register', {
         method: 'POST',
-        body: regForm,
+        body: { ...regForm, otp: otpString },
       });
+
+      setOtpModalOpen(false);
       setSuccessMsg(res?.message || '🎉 Application submitted successfully! Platform Admin will review your KYC documents and approve your account.');
       setMode('login');
       setRegForm({
@@ -85,10 +129,64 @@ export default function SellerLogin() {
         passportDocument: '',
         description: '',
       });
-    } catch (e) {
-      setErr(e.message || 'Registration failed. Please try again.');
     } finally {
-      setLoading(false);
+      setOtpBusy(false);
+    }
+  };
+
+  const handleResendSellerOtp = async () => {
+    await api('/sellers/send-otp', {
+      method: 'POST',
+      body: { email: regForm.email, ownerName: regForm.ownerName },
+    });
+  };
+
+  const handleSendRecoveryEmail = async (e) => {
+    e.preventDefault();
+    setForgotErr('');
+    setForgotSuccess('');
+    setForgotBusy(true);
+    try {
+      const res = await api('/sellers/forgot-password', {
+        method: 'POST',
+        body: { email: forgotEmail.trim() },
+      });
+      setForgotSuccess(res.message || 'Recovery instructions sent!');
+      setForgotStep('reset');
+    } catch (err) {
+      setForgotErr(err.message || 'Failed to send recovery email.');
+    } finally {
+      setForgotBusy(false);
+    }
+  };
+
+  const handleResetPasswordSubmit = async (e) => {
+    e.preventDefault();
+    if (forgotNewPassword !== forgotConfirmPassword) {
+      return setForgotErr('Passwords do not match');
+    }
+    setForgotErr('');
+    setForgotSuccess('');
+    setForgotBusy(true);
+    try {
+      const payload = {
+        password: forgotNewPassword,
+        ...(urlResetToken ? { token: urlResetToken } : { email: forgotEmail.trim(), otp: forgotOtp.trim() }),
+      };
+      const res = await api('/sellers/reset-password', {
+        method: 'POST',
+        body: payload,
+      });
+      setForgotSuccess(res.message || 'Password updated successfully! You can now log in.');
+      setTimeout(() => {
+        setForgotModalOpen(false);
+        setMode('login');
+        setEmail(forgotEmail);
+      }, 1500);
+    } catch (err) {
+      setForgotErr(err.message || 'Failed to reset password.');
+    } finally {
+      setForgotBusy(false);
     }
   };
 
@@ -348,47 +446,153 @@ export default function SellerLogin() {
         </div>
       </div>
 
-      {/* Forgot Password Modal */}
+      {/* Interactive Seller Password Recovery Modal */}
       {forgotModalOpen && (
-        <div className="modal-back" onClick={() => setForgotModalOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, paddingBottom: 10, borderBottom: '1.5px solid #f1f5f9' }}>
+        <div className="seller-modal-overlay" onClick={() => setForgotModalOpen(false)} style={{ zIndex: 9999 }}>
+          <div className="seller-modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460, padding: '24px 26px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, paddingBottom: 12, borderBottom: '1.5px solid #f1f5f9' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 20 }}>🔑</span>
-                <h3 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: '#0f172a' }}>Seller Password Recovery</h3>
+                <span style={{ fontSize: 22 }}>🔑</span>
+                <h3 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: '#0f172a' }}>
+                  {forgotStep === 'request' ? 'Seller Password Recovery' : 'Set New Seller Password'}
+                </h3>
               </div>
-              <button onClick={() => setForgotModalOpen(false)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}>
+              <button
+                type="button"
+                onClick={() => setForgotModalOpen(false)}
+                style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: 4 }}
+              >
                 <Ic name="x" size={18} />
               </button>
             </div>
 
-            <div style={{ fontSize: 13.5, color: '#334155', lineHeight: 1.6 }}>
-              <p style={{ marginTop: 0 }}>
-                Agar aap apna <b>Seller Login Password</b> bhool gaye hain, to <b>Super Admin</b> aapka password foran reset kar sakta hai.
-              </p>
-
-              <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 10, padding: '12px 14px', margin: '14px 0' }}>
-                <b style={{ color: '#0f172a', display: 'block', marginBottom: 6 }}>🔒 Super Admin Password Reset Steps:</b>
-                <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: '#475569' }}>
-                  <li>Super Admin panel mein <b>Seller Management</b> (`/admin/sellers`) open karein.</li>
-                  <li>Aapke store ke samne <b>"Reset Password"</b> button par click karein.</li>
-                  <li>Naya password save karein.</li>
-                </ol>
+            {forgotErr && (
+              <div className="alert-error" style={{ marginBottom: 14 }}>
+                <Ic name="shield" size={15} />
+                <span>{forgotErr}</span>
               </div>
+            )}
 
-              <p style={{ margin: '10px 0 0 0', fontSize: 12.5, color: '#64748b' }}>
-                📞 Support Email: <code>admin@bazario.com</code> | Help Desk 24/7
-              </p>
-            </div>
+            {forgotSuccess && (
+              <div className="alert-success" style={{ marginBottom: 14 }}>
+                <Ic name="checkCircle" size={15} />
+                <span>{forgotSuccess}</span>
+              </div>
+            )}
 
-            <div className="form-actions" style={{ marginTop: 18 }}>
-              <button type="button" onClick={() => setForgotModalOpen(false)} className="btn-primary btn-block">
-                Got It, Thanks!
-              </button>
-            </div>
+            {forgotStep === 'request' ? (
+              <form onSubmit={handleSendRecoveryEmail} className="auth-form-clean">
+                <p style={{ fontSize: 13, color: '#475569', marginTop: 0, lineHeight: 1.5 }}>
+                  Enter your registered business email address. We will send a secure 6-digit recovery code and reset link.
+                </p>
+                <div className="field">
+                  <label>Business Email Address *</label>
+                  <input
+                    type="email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    placeholder="seller@yourstore.com"
+                    required
+                    autoFocus
+                  />
+                </div>
+                <button type="submit" className="btn-primary btn-block btn-auth-submit" disabled={forgotBusy}>
+                  {forgotBusy ? 'Sending Recovery Email…' : 'SEND 6-DIGIT RECOVERY CODE →'}
+                </button>
+                <div style={{ textAlign: 'center', marginTop: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => setForgotStep('reset')}
+                    style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    Already have a 6-digit code? Click here to reset →
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleResetPasswordSubmit} className="auth-form-clean">
+                {!urlResetToken && (
+                  <>
+                    <div className="field">
+                      <label>Business Email Address *</label>
+                      <input
+                        type="email"
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        placeholder="seller@yourstore.com"
+                        required
+                      />
+                    </div>
+                    <div className="field">
+                      <label>6-Digit Verification Code (From Email) *</label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={6}
+                        value={forgotOtp}
+                        onChange={(e) => setForgotOtp(e.target.value)}
+                        placeholder="e.g. 849201"
+                        required
+                        autoFocus
+                      />
+                    </div>
+                  </>
+                )}
+
+                <div className="field">
+                  <label>New Password *</label>
+                  <input
+                    type="password"
+                    value={forgotNewPassword}
+                    onChange={(e) => setForgotNewPassword(e.target.value)}
+                    placeholder="Min 6 characters"
+                    minLength={6}
+                    required
+                  />
+                </div>
+
+                <div className="field">
+                  <label>Confirm New Password *</label>
+                  <input
+                    type="password"
+                    value={forgotConfirmPassword}
+                    onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                    placeholder="Re-enter new password"
+                    minLength={6}
+                    required
+                  />
+                </div>
+
+                <button type="submit" className="btn-primary btn-block btn-auth-submit" disabled={forgotBusy}>
+                  {forgotBusy ? 'Updating Password…' : 'RESET SELLER PASSWORD & SIGN IN →'}
+                </button>
+
+                <div style={{ textAlign: 'center', marginTop: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => setForgotStep('request')}
+                    style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    ← Back to request code
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
+
+      {/* Seller Registration OTP Verification Modal */}
+      <OtpVerificationModal
+        isOpen={otpModalOpen}
+        onClose={() => setOtpModalOpen(false)}
+        email={regForm.email}
+        title="Verify Business Email"
+        subtitle="To secure your merchant account, please enter the 6-digit code sent to"
+        onVerify={handleVerifySellerOtp}
+        onResend={handleResendSellerOtp}
+        busy={otpBusy}
+      />
     </div>
   );
 }
