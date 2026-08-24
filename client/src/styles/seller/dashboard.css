@@ -159,6 +159,18 @@
   color: #ffffff;
   line-height: 1.1;
 }
+.swh-security-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: #c7d2fe;
+  background: rgba(99, 102, 241, 0.25);
+  padding: 3px 9px;
+  border-radius: 6px;
+  border: 1px solid rgba(99, 102, 241, 0.45);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 .swh-proc-badge {
   font-size: 12px;
   font-weight: 700;
@@ -554,6 +566,16 @@
 .kpi-icon-wrap.blue { background: #dbeafe; color: #1e40af; }
 .kpi-icon-wrap.purple { background: #f3e8ff; color: #6b21a8; }
 .kpi-icon-wrap.orange { background: #ffedd5; color: #9a3412; }
+.kpi-icon-wrap.indigo { background: #e0e7ff; color: #4338ca; }
+
+.seller-kpi-card.security-card {
+  border-top: 3px solid #6366f1;
+}
+
+.text-indigo {
+  color: #4338ca !important;
+}
+
 .kpi-value {
   font-size: 24px;
   font-weight: 900;

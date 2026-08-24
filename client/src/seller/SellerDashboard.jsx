@@ -82,6 +82,11 @@ export default function SellerDashboard() {
             <span className="swh-title">Available Merchant Wallet Balance</span>
             <div className="swh-balance-row">
               <span className="swh-amount">{formatMoney(stats?.availableBalance || data?.seller?.wallet?.balance)}</span>
+              {(stats?.securityDeposit > 0 || data?.seller?.securityDeposit?.amount > 0 || data?.seller?.wallet?.securityDeposit > 0) && (
+                <span className="swh-security-badge" title="Verified Registration Security Deposit Collateral">
+                  🛡️ {formatMoney(stats?.securityDeposit || data?.seller?.securityDeposit?.amount || data?.seller?.wallet?.securityDeposit || 0)} Security Deposit
+                </span>
+              )}
               {(stats?.processingFund > 0 || data?.seller?.wallet?.processingFund > 0) && (
                 <span className="swh-proc-badge" title="Funds locked in active order processing">
                   🔒 {formatMoney(stats?.processingFund || data?.seller?.wallet?.processingFund)} Processing
@@ -274,6 +279,24 @@ export default function SellerDashboard() {
           </div>
         </div>
 
+        {/* Security Deposit Fund (Collateral) */}
+        {(stats?.securityDeposit > 0 || data?.seller?.securityDeposit?.amount > 0 || data?.seller?.wallet?.securityDeposit > 0 || data?.seller?.securityDeposit?.paid) && (
+          <div className="seller-kpi-card security-card">
+            <div className="kpi-header">
+              <span className="kpi-title">Security Deposit Fund</span>
+              <span className="kpi-icon-wrap indigo"><Ic name="shield" size={20} /></span>
+            </div>
+            <div className="kpi-value text-indigo">
+              {formatMoney(stats?.securityDeposit || data?.seller?.securityDeposit?.amount || data?.seller?.wallet?.securityDeposit || 0)}
+            </div>
+            <div className="kpi-footer text-indigo">
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <Ic name="badgeCheck" size={13} /> Active Merchant Collateral
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Processing Funds Locked */}
         <div className="seller-kpi-card pending-card">
           <div className="kpi-header">
@@ -321,6 +344,12 @@ export default function SellerDashboard() {
           <span className="sec-lbl">Active Products Listed</span>
           <b className="sec-val">{stats?.totalProducts || 0}</b>
         </div>
+        {(stats?.securityDeposit > 0 || data?.seller?.securityDeposit?.amount > 0) && (
+          <div className="sec-metric">
+            <span className="sec-lbl">Security Collateral</span>
+            <b className="sec-val text-indigo">🛡️ {formatMoney(stats?.securityDeposit || data?.seller?.securityDeposit?.amount)}</b>
+          </div>
+        )}
         <div className="sec-metric">
           <span className="sec-lbl">Customer Rating</span>
           <b className="sec-val text-yellow">⭐ {data?.seller?.rating || '4.9'} / 5.0</b>

@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import Seller from '../../models/Seller.js';
 import Product from '../../models/Product.js';
 import Order from '../../models/Order.js';
+import Withdrawal from '../../models/Withdrawal.js';
 import { Conversation, Message } from '../../models/Chat.js';
 import { authAdmin } from '../../middleware/auth.js';
 import { notify } from '../../utils/notify.js';
@@ -428,13 +429,27 @@ router.get('/:id', authAdmin('sellers'), async (req, res) => {
   }
 });
 
-// PUT /api/sellers/:id (Admin updates seller: commission, status, password reset)
+// PUT /api/sellers/:id (Admin updates seller: commission, status, security deposit, password reset)
 router.put('/:id', authAdmin('sellers'), async (req, res) => {
   try {
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
-    const { storeName, ownerName, email, password, phone, commissionRate, status, address } = req.body;
+    const {
+      storeName,
+      ownerName,
+      email,
+      password,
+      phone,
+      commissionRate,
+      status,
+      address,
+      securityDepositAmount,
+      securityDepositPaid,
+      referralCode,
+      note,
+    } = req.body;
+
     if (storeName) seller.storeName = storeName;
     if (ownerName) seller.ownerName = ownerName;
     if (email) seller.email = email.toLowerCase().trim();
@@ -442,6 +457,23 @@ router.put('/:id', authAdmin('sellers'), async (req, res) => {
     if (commissionRate !== undefined) seller.commissionRate = Number(commissionRate);
     if (status) seller.status = status;
     if (address) seller.address = { ...seller.address, ...address };
+
+    if (securityDepositAmount !== undefined || securityDepositPaid !== undefined || referralCode !== undefined) {
+      const isPaid = securityDepositPaid !== undefined ? Boolean(securityDepositPaid) : Boolean(seller.securityDeposit?.paid);
+      const depAmt = securityDepositAmount !== undefined ? Number(securityDepositAmount) : (seller.securityDeposit?.amount || 0);
+      const cleanAmt = isPaid ? Math.max(0, depAmt) : 0;
+
+      seller.securityDeposit = {
+        paid: isPaid,
+        amount: cleanAmt,
+        paidAt: isPaid ? (seller.securityDeposit?.paidAt || new Date()) : null,
+        referralCode: referralCode !== undefined ? (referralCode || '').trim() : (seller.securityDeposit?.referralCode || ''),
+        note: note !== undefined ? (note || '').trim() : (seller.securityDeposit?.note || ''),
+      };
+
+      seller.wallet = seller.wallet || {};
+      seller.wallet.securityDeposit = cleanAmt;
+    }
 
     if (password) {
       seller.passwordHash = await bcrypt.hash(password, 10);
@@ -452,6 +484,14 @@ router.put('/:id', authAdmin('sellers'), async (req, res) => {
 
     const safeSeller = seller.toObject();
     delete safeSeller.passwordHash;
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`seller:${seller._id}`).emit('seller:status_update', { seller: safeSeller });
+      io.to(`seller:${seller._id}`).emit('wallet:update', { wallet: seller.wallet, sellerId: seller._id });
+      io.to('sellers').emit('seller:status_update', { seller: safeSeller });
+    }
+
     res.json(safeSeller);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -487,12 +527,13 @@ router.post('/master-referral', authAdmin('sellers'), async (req, res) => {
 // POST /api/sellers/:id/approve (Admin approves a pending seller registration)
 router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
   try {
-    const { securityDepositPaid, securityDepositAmount, referralCode, commissionRate, note } = req.body || {};
+    const { securityDepositPaid, securityDepositAmount, referralCode, assignedReferralCode, commissionRate, note } = req.body || {};
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
     const isPaid = Boolean(securityDepositPaid);
     const depAmt = isPaid ? Math.max(0, Number(securityDepositAmount) || 0) : 0;
+    const finalReferral = (assignedReferralCode || referralCode || seller.securityDeposit?.referralCode || '').trim();
 
     seller.status = 'active';
     seller.verified = true;
@@ -502,7 +543,7 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
       paid: isPaid,
       amount: depAmt,
       paidAt: isPaid ? new Date() : null,
-      referralCode: (referralCode || seller.securityDeposit?.referralCode || '').trim(),
+      referralCode: finalReferral,
       note: (note || '').trim(),
     };
 
@@ -510,6 +551,34 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
     seller.wallet.securityDeposit = depAmt;
 
     await seller.save();
+
+    // Create Initial Security Deposit Ledger Record in Wallet History
+    if (isPaid && depAmt > 0) {
+      try {
+        const existingLedger = await Withdrawal.findOne({
+          seller: seller._id,
+          depositRef: 'INITIAL_SECURITY_DEPOSIT',
+        });
+        if (!existingLedger) {
+          await Withdrawal.create({
+            seller: seller._id,
+            storeName: seller.storeName,
+            type: 'adjustment',
+            amount: depAmt,
+            approvedAmount: depAmt,
+            status: 'approved',
+            depositRef: 'INITIAL_SECURITY_DEPOSIT',
+            depositNote: `🛡️ Verified Registration Security Deposit (${finalReferral ? `Referral: ${finalReferral}` : 'Merchant Guarantee Collateral'})`,
+            isManualAdjustment: true,
+            balanceAfter: seller.wallet.balance || 0,
+            processedAt: new Date(),
+            processedBy: req.admin.name || 'Platform Administrator',
+          });
+        }
+      } catch (ledgerErr) {
+        console.error('Security deposit ledger creation error:', ledgerErr.message);
+      }
+    }
 
     // Auto-send welcome chat announcement
     try {
@@ -532,7 +601,7 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
         `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `Store: ${seller.storeName}\n` +
         `Owner: ${seller.ownerName}\n` +
-        (isPaid ? `Security Deposit: $${depAmt.toLocaleString('en-US')} (Verified & Active in Wallet)\n` : `Onboarding: Referral Approved (${referralCode || 'Master Referral'})\n`) +
+        (isPaid ? `Security Deposit: $${depAmt.toLocaleString('en-US')} (Verified & Active in Wallet)\n` : `Onboarding: Referral Approved (${finalReferral || 'Master Referral'})\n`) +
         `Commission Rate: ${seller.commissionRate}%\n` +
         `Status: ACTIVE & FULLY VERIFIED\n\n` +
         `Welcome to Bazario Merchant Central! You can now add products and fulfill customer orders.\n` +
@@ -556,6 +625,8 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
       if (io) {
         io.to(`seller:${seller._id}`).emit('message:new', msg);
         io.to(`seller:${seller._id}`).emit('seller:status_update', { seller: seller.toObject() });
+        io.to(`seller:${seller._id}`).emit('wallet:update', { wallet: seller.wallet, sellerId: seller._id });
+        io.to('sellers').emit('seller:status_update', { seller: seller.toObject() });
       }
     } catch (chatErr) {
       console.error('Approval chat error:', chatErr.message);
@@ -570,7 +641,7 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
       link: '/seller',
     });
 
-    audit(req, 'approve', 'seller_registration', seller._id, `Approved seller ${seller.storeName} (Security Deposit: $${depAmt}, Referral: ${referralCode || 'None'})`);
+    audit(req, 'approve', 'seller_registration', seller._id, `Approved seller ${seller.storeName} (Security Deposit: $${depAmt}, Referral: ${finalReferral || 'None'})`);
 
     const safe = seller.toObject();
     delete safe.passwordHash;

@@ -95,16 +95,30 @@ router.get('/dashboard', authSeller, async (req, res) => {
       salesByDay.push({ date: displayDate, rawDate: dateStr, revenue: dayRevenue, orders: dayOrders });
     }
 
+    const securityDepositAmt = seller.securityDeposit?.amount || seller.wallet?.securityDeposit || 0;
+    const isSecurityPaid = Boolean(seller.securityDeposit?.paid || securityDepositAmt > 0);
+
     res.json({
       seller: {
         _id: seller._id,
         storeName: seller.storeName,
         ownerName: seller.ownerName,
         email: seller.email,
+        phone: seller.phone,
         commissionRate: seller.commissionRate,
         rating: seller.rating,
         status: seller.status,
-        wallet: seller.wallet || {},
+        wallet: {
+          ...(seller.wallet ? (seller.wallet.toObject ? seller.wallet.toObject() : seller.wallet) : {}),
+          securityDeposit: securityDepositAmt,
+        },
+        securityDeposit: {
+          paid: isSecurityPaid,
+          amount: securityDepositAmt,
+          paidAt: seller.securityDeposit?.paidAt || null,
+          referralCode: seller.securityDeposit?.referralCode || '',
+          note: seller.securityDeposit?.note || '',
+        },
         accountHealth: seller.accountHealth || { score: 100, status: 'healthy', history: [] },
       },
       stats: {
@@ -122,6 +136,10 @@ router.get('/dashboard', authSeller, async (req, res) => {
         processingFund: seller.wallet?.processingFund || 0,
         totalProfitEarned: seller.wallet?.totalProfitEarned || 0,
         totalEarned: seller.wallet?.totalEarned || 0,
+        securityDeposit: securityDepositAmt,
+        securityDepositPaid: isSecurityPaid,
+        securityDepositDate: seller.securityDeposit?.paidAt || null,
+        referralCode: seller.securityDeposit?.referralCode || '',
       },
       salesByDay,
       topProducts,

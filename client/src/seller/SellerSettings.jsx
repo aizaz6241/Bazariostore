@@ -218,6 +218,53 @@ export default function SellerSettings() {
         </div>
       )}
 
+      {/* Account Verification & Security Deposit Status Panel */}
+      {(seller?.securityDeposit?.amount > 0 || seller?.wallet?.securityDeposit > 0 || seller?.securityDeposit?.paid || seller?.verified) && (
+        <div className="settings-card-panel" style={{ borderLeft: '4px solid #6366f1', background: '#fcfdff', marginBottom: 20 }}>
+          <div className="scp-header" style={{ borderBottom: 'none', paddingBottom: 0 }}>
+            <div className="scp-title-wrap">
+              <span className="scp-icon-badge" style={{ background: '#e0e7ff', color: '#4338ca' }}>🛡️</span>
+              <div>
+                <h3 className="scp-title" style={{ color: '#1e1b4b' }}>Merchant Verification &amp; Security Deposit</h3>
+                <p className="scp-desc">Official platform authorization, collateral guarantee, and referral status.</p>
+              </div>
+            </div>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ background: '#dcfce7', color: '#15803d', fontWeight: 800, fontSize: 11.5, padding: '4px 10px', borderRadius: 9999, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <Ic name="badgeCheck" size={13} /> Active &amp; Verified
+              </span>
+            </div>
+          </div>
+          <div className="scp-body" style={{ paddingTop: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, background: '#f8fafc', padding: 14, borderRadius: 8, border: '1px solid #e2e8f0' }}>
+              <div>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Security Deposit Collateral</span>
+                <div style={{ fontSize: 18, fontWeight: 900, color: '#4338ca', marginTop: 2 }}>
+                  ${(seller?.securityDeposit?.amount || seller?.wallet?.securityDeposit || 0).toLocaleString('en-US')} USD
+                </div>
+                <small style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>✓ Verified &amp; Recorded in Wallet</small>
+              </div>
+              {seller?.securityDeposit?.referralCode && (
+                <div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Referral / Partner Code</span>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: '#0f172a', marginTop: 2 }}>
+                    {seller.securityDeposit.referralCode}
+                  </div>
+                  <small style={{ fontSize: 11, color: '#64748b' }}>Platform Onboarding Authorization</small>
+                </div>
+              )}
+              <div>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Platform Commission Rate</span>
+                <div style={{ fontSize: 16, fontWeight: 800, color: '#0f172a', marginTop: 2 }}>
+                  {seller?.commissionRate || 10}%
+                </div>
+                <small style={{ fontSize: 11, color: '#64748b' }}>Flat per-order platform fee</small>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Main Profile Form */}
       <form onSubmit={handleSave} className="settings-main-form">
         {/* Section 1: Storefront Branding */}
