@@ -673,9 +673,12 @@ router.post('/:id/reject', authAdmin('sellers'), async (req, res) => {
 // POST /api/sellers/:id/targets (Admin assigns a target & bonus to a seller)
 router.post('/:id/targets', authAdmin('sellers'), async (req, res) => {
   try {
-    const { title, targetOrders, bonusAmount, durationDays, adminNote } = req.body || {};
-    if (!title || !targetOrders || !bonusAmount) {
-      return res.status(400).json({ message: 'Target title, target orders count, and bonus amount are required' });
+    const { title, targetOrders, targetOrderCount, bonusAmount, durationDays, adminNote, description } = req.body || {};
+    const finalOrderCount = Number(targetOrders || targetOrderCount || 0);
+    const finalBonus = Number(bonusAmount || 0);
+
+    if (!title || !finalOrderCount || !finalBonus) {
+      return res.status(400).json({ message: 'Target milestone title, target orders count, and bonus amount are required' });
     }
 
     const seller = await Seller.findById(req.params.id);
@@ -688,13 +691,16 @@ router.post('/:id/targets', authAdmin('sellers'), async (req, res) => {
 
     const newTarget = {
       title: title.trim(),
-      targetOrders: Number(targetOrders),
+      targetOrders: finalOrderCount,
+      targetOrderCount: finalOrderCount,
       currentOrders: 0,
-      bonusAmount: Number(bonusAmount),
+      currentOrderCount: 0,
+      bonusAmount: finalBonus,
       status: 'active',
       createdAt: new Date(),
       expiresAt,
-      adminNote: (adminNote || '').trim(),
+      adminNote: (adminNote || description || '').trim(),
+      description: (description || adminNote || '').trim(),
     };
 
     seller.targets.unshift(newTarget);
@@ -704,36 +710,46 @@ router.post('/:id/targets', authAdmin('sellers'), async (req, res) => {
     // Auto-send chat notice
     try {
       let conv = await Conversation.findOne({ seller: seller._id });
-      if (conv) {
-        const msgText =
-          `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-          `🎯 NEW PERFORMANCE TARGET & BONUS UNLOCKED!\n` +
-          `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-          `Target: ${newTarget.title}\n` +
-          `Goal: Process & Deliver ${newTarget.targetOrders} Orders\n` +
-          `Bonus Reward: $${newTarget.bonusAmount.toLocaleString('en-US')} Cash Bonus\n` +
-          (expiresAt ? `Valid Until: ${expiresAt.toLocaleDateString('en-IN')}\n` : 'Duration: No Expiry\n') +
-          (adminNote ? `Note: ${adminNote.trim()}\n` : '') +
-          `Complete the target orders to receive an instant cash bonus credited directly to your wallet!\n` +
-          `━━━━━━━━━━━━━━━━━━━━━━━━━`;
-
-        const msg = await Message.create({
-          conversation: conv._id,
+      if (!conv) {
+        conv = await Conversation.create({
           seller: seller._id,
-          sender: 'admin',
-          senderName: req.admin.name || 'Platform Growth Desk',
-          text: msgText,
+          storeName: seller.storeName,
+          sellerName: seller.ownerName,
+          sellerEmail: seller.email,
+          subject: 'Store Milestone & Bonus Target',
+          status: 'open',
+          lastAt: new Date(),
         });
-
-        conv.lastMessage = `🎯 New Target: Process ${newTarget.targetOrders} Orders for $${newTarget.bonusAmount} Bonus`;
-        conv.lastSender = 'admin';
-        conv.lastAt = new Date();
-        conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
-        await conv.save();
-
-        req.app.get('io')?.to(`seller:${seller._id}`).emit('message:new', msg);
-        req.app.get('io')?.to(`seller:${seller._id}`).emit('seller:targets_update', { targets: seller.targets });
       }
+
+      const msgText =
+        `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `🎯 NEW PERFORMANCE TARGET & BONUS UNLOCKED!\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `Target: ${newTarget.title}\n` +
+        `Goal: Process & Deliver ${newTarget.targetOrders} Orders\n` +
+        `Bonus Reward: $${newTarget.bonusAmount.toLocaleString('en-US')} Cash Bonus\n` +
+        (expiresAt ? `Valid Until: ${expiresAt.toLocaleDateString('en-IN')}\n` : 'Duration: No Expiry\n') +
+        (newTarget.adminNote ? `Note: ${newTarget.adminNote}\n` : '') +
+        `Complete the target orders to receive an instant cash bonus credited directly to your wallet!\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+      const msg = await Message.create({
+        conversation: conv._id,
+        seller: seller._id,
+        sender: 'admin',
+        senderName: req.admin.name || 'Platform Growth Desk',
+        text: msgText,
+      });
+
+      conv.lastMessage = `🎯 New Target: Process ${newTarget.targetOrders} Orders for $${newTarget.bonusAmount} Bonus`;
+      conv.lastSender = 'admin';
+      conv.lastAt = new Date();
+      conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
+      await conv.save();
+
+      req.app.get('io')?.to(`seller:${seller._id}`).emit('message:new', msg);
+      req.app.get('io')?.to(`seller:${seller._id}`).emit('seller:targets_update', { targets: seller.targets });
     } catch (chatErr) {
       console.error('Target chat error:', chatErr.message);
     }
@@ -747,7 +763,7 @@ router.post('/:id/targets', authAdmin('sellers'), async (req, res) => {
       link: '/seller',
     });
 
-    audit(req, 'create', 'seller_target', seller._id, `Assigned target "${title}" (${targetOrders} orders -> $${bonusAmount} bonus) for ${seller.storeName}`);
+    audit(req, 'create', 'seller_target', seller._id, `Assigned target "${title}" (${finalOrderCount} orders -> $${finalBonus} bonus) for ${seller.storeName}`);
 
     res.status(201).json({ message: `Target assigned to ${seller.storeName} successfully! 🎯`, targets: seller.targets });
   } catch (err) {
@@ -766,19 +782,24 @@ router.get('/targets/all', authAdmin('sellers'), async (req, res) => {
     sellers.forEach((s) => {
       (s.targets || []).forEach((t) => {
         allTargets.push({
+          _id: t._id,
           targetId: t._id,
           sellerId: s._id,
           storeName: s.storeName,
           ownerName: s.ownerName,
           email: s.email,
           title: t.title,
-          targetOrders: t.targetOrders,
-          currentOrders: t.currentOrders || 0,
-          bonusAmount: t.bonusAmount,
-          status: t.status,
+          targetOrders: t.targetOrders || t.targetOrderCount || 0,
+          targetOrderCount: t.targetOrders || t.targetOrderCount || 0,
+          currentOrders: t.currentOrders || t.currentOrderCount || 0,
+          currentOrderCount: t.currentOrders || t.currentOrderCount || 0,
+          bonusAmount: t.bonusAmount || 0,
+          status: t.status || 'active',
           createdAt: t.createdAt,
           expiresAt: t.expiresAt,
           completedAt: t.completedAt,
+          adminNote: t.adminNote || t.description || '',
+          description: t.description || t.adminNote || '',
         });
       });
     });

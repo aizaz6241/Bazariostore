@@ -122,8 +122,20 @@ export default function Sellers() {
 
   const loadTargets = () => {
     api('/sellers/targets/all')
-      .then((res) => setAllTargets(res || []))
-      .catch(() => {});
+      .then((res) => {
+        const list = Array.isArray(res)
+          ? res
+          : Array.isArray(res?.targets)
+          ? res.targets
+          : Array.isArray(res?.allTargets)
+          ? res.allTargets
+          : [];
+        setAllTargets(list);
+      })
+      .catch((e) => {
+        console.error('Error loading targets:', e);
+        setAllTargets([]);
+      });
   };
 
   useEffect(() => {
@@ -496,8 +508,10 @@ export default function Sellers() {
         body: {
           title: targetForm.title.trim(),
           targetOrderCount: Number(targetForm.targetOrderCount),
+          targetOrders: Number(targetForm.targetOrderCount),
           bonusAmount: Number(targetForm.bonusAmount),
           description: targetForm.description.trim(),
+          adminNote: targetForm.description.trim(),
         },
       });
       alert('🎯 Milestone Target assigned to seller successfully!');
@@ -570,7 +584,7 @@ export default function Sellers() {
           className={`wallet-action-tab ${adminTab === 'targets' ? 'active' : ''}`}
           onClick={() => { setAdminTab('targets'); loadTargets(); }}
         >
-          🎯 Targets &amp; Cash Bonuses ({allTargets.length})
+          🎯 Targets &amp; Cash Bonuses ({(Array.isArray(allTargets) ? allTargets : []).length})
         </button>
         <button
           type="button"
@@ -989,28 +1003,29 @@ export default function Sellers() {
             </tr>
           </thead>
           <tbody>
-            {allTargets.length === 0 && (
+            {(Array.isArray(allTargets) ? allTargets : []).length === 0 && (
               <tr>
                 <td colSpan="7" className="text-center py-8 muted">
                   No performance targets assigned yet. Click "+ Assign New Target Milestone" above.
                 </td>
               </tr>
             )}
-            {allTargets.map((tgt) => {
-              const current = tgt.currentOrderCount || 0;
-              const target = tgt.targetOrderCount || 1;
+            {(Array.isArray(allTargets) ? allTargets : []).map((tgt, idx) => {
+              const current = tgt.currentOrders || tgt.currentOrderCount || 0;
+              const target = tgt.targetOrders || tgt.targetOrderCount || 1;
               const pct = Math.min(100, Math.round((current / target) * 100));
               const isCompleted = tgt.status === 'completed' || current >= target;
+              const targetKey = tgt._id || tgt.targetId || `target-${idx}`;
 
               return (
-                <tr key={tgt._id}>
+                <tr key={targetKey}>
                   <td>
-                    <b>{tgt.storeName}</b>
-                    <small className="muted block">Owner: {tgt.ownerName}</small>
+                    <b>{tgt.storeName || 'Merchant'}</b>
+                    <small className="muted block">Owner: {tgt.ownerName || '—'}</small>
                   </td>
                   <td>
                     <b>{tgt.title}</b>
-                    {tgt.description && <small className="muted block">{tgt.description}</small>}
+                    {(tgt.description || tgt.adminNote) && <small className="muted block">{tgt.description || tgt.adminNote}</small>}
                   </td>
                   <td><b>{target} Delivered Orders</b></td>
                   <td>
@@ -1025,7 +1040,7 @@ export default function Sellers() {
                     </div>
                   </td>
                   <td>
-                    <b style={{ color: '#16a34a', fontSize: 13 }}>+{money(tgt.bonusAmount)}</b>
+                    <b style={{ color: '#16a34a', fontSize: 13 }}>+{money(tgt.bonusAmount || 0)}</b>
                   </td>
                   <td>
                     <span
@@ -1044,7 +1059,7 @@ export default function Sellers() {
                   <td>
                     <button
                       type="button"
-                      onClick={() => handleDeleteTarget(tgt.sellerId, tgt._id)}
+                      onClick={() => handleDeleteTarget(tgt.sellerId, tgt.targetId || tgt._id)}
                       style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}
                       title="Remove Target"
                     >
