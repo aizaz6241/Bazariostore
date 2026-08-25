@@ -3,38 +3,78 @@ import { api } from '../api.js';
 import Ic from './Icons.jsx';
 
 const TONES = [
-  { id: 'professional', label: '💼 Professional', tip: 'Balanced, polite, and clear' },
-  { id: 'concise', label: '⚡ Short & Direct', tip: 'Quick, concise, without extra words' },
-  { id: 'polite', label: '🤝 Polite & Soft', tip: 'Warm, highly respectful, customer-friendly' },
-  { id: 'roman_urdu', label: '📝 Roman Urdu', tip: 'Clean & professional Roman Urdu' },
-  { id: 'urdu', label: '🇵🇰 اردو', tip: 'Formal Urdu Nastaliq text' },
-  { id: 'english', label: '🌐 English', tip: 'Polite business English' },
+  { id: 'auto', label: '⚡ Auto (Same Language)', tip: 'Auto-detects Roman Urdu, English, Urdu or Hindi & polishes it naturally' },
+  { id: 'short', label: '✂️ Short & Direct', tip: 'Keep it 1 concise sentence' },
+  { id: 'roman_urdu', label: '📝 Roman Urdu', tip: 'Clean conversational Roman Urdu' },
+  { id: 'english', label: '🌐 English', tip: 'Clean conversational English' },
+  { id: 'urdu', label: '🇵🇰 اردو', tip: 'Clean Urdu script (Nastaliq)' },
 ];
 
 const DEFAULT_KEY_B64 = 'c2stb3ItdjEtMTVkZTYwOTJjMjFiODMyNWFkNTJjMTNhMThkNTZkNDc2NGVhYjM4YTUwYjQzZWIwYWE2MWY5Y2I0NmUwMTQzZg==';
 const OPENROUTER_API_KEY = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_OPENROUTER_API_KEY) || atob(DEFAULT_KEY_B64);
 const OPENROUTER_MODEL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_OPENROUTER_MODEL) || 'nvidia/nemotron-3-ultra-550b-a55b:free';
 
+function cleanChatRewrittenOutput(raw) {
+  if (!raw) return '';
+  let text = String(raw).trim();
+  text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  text = text.replace(/^(draft|rewritten|response|chat message|polished|output):\s*/i, '').trim();
+  text = text.replace(/^(dear\s+(seller|merchant|customer|user|partner|sir|madam|team|all)[,\n\r\s\-:]*)/i, '').trim();
+  text = text.replace(/\n*(regards|best regards|warm regards|sincerely|thanks and regards|support team|bazario support|bazario team)[,\s\S]*$/i, '').trim();
+  if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith('“') && text.endsWith('”')) || (text.startsWith("'") && text.endsWith("'"))) {
+    text = text.slice(1, -1).trim();
+  }
+  return text;
+}
+
 async function fetchOpenRouterDirect(cleanDraft, targetTone) {
-  let toneInstruction = 'Make it professional, polite, concise, and clear. Match the input language style (Roman Urdu, Urdu script, or English).';
-  if (targetTone === 'concise') {
-    toneInstruction = 'Keep it extremely concise, clear, and direct without any unnecessary fluff or filler words.';
-  } else if (targetTone === 'polite') {
-    toneInstruction = 'Make it very warm, respectful, polite, and customer-friendly.';
+  let modeInstruction = 'Auto-detect the language and script of the draft (Roman Urdu -> Roman Urdu, English -> English, Urdu Script -> Urdu Script, Hindi -> Hindi). Make it clean, polite, and natural for chat. NEVER convert Roman Urdu to English or Urdu script unless specifically instructed.';
+  if (targetTone === 'concise' || targetTone === 'short') {
+    modeInstruction = 'Keep it very short, crisp, and direct (1 simple sentence). Match the exact input language and script.';
   } else if (targetTone === 'roman_urdu') {
-    toneInstruction = 'Rewrite in clean, respectful, and professional Roman Urdu (Urdu written in Latin alphabet).';
+    modeInstruction = 'Rewrite or polish in natural, clean, respectful Roman Urdu (Urdu written in English alphabet). Keep it like a quick chat message.';
   } else if (targetTone === 'urdu') {
-    toneInstruction = 'Rewrite in formal, polite, and elegant Urdu script (اردو رسم الخط).';
+    modeInstruction = 'Rewrite or polish in clean, respectful, formal Urdu script (اردو رسم الخط). Keep it like a quick chat message.';
   } else if (targetTone === 'english') {
-    toneInstruction = 'Rewrite in fluent, polite, and professional business English.';
+    modeInstruction = 'Rewrite or polish in clear, polite, and professional business English. Keep it like a quick chat message.';
   }
 
-  const systemPrompt = `You are an AI communication assistant for an e-commerce marketplace admin (Bazario) communicating with sellers, merchants, and customers.
-Your task: Rewrite the given draft message according to this instruction: ${toneInstruction}.
-Important rules:
-1. Maintain the exact factual meaning, dates, numbers, and intent of the original draft.
-2. Return ONLY the rewritten message text directly.
-3. Do NOT include markdown code fences, quotes around the entire message, introductory phrases (like "Here is the rewritten version:"), or explanations.`;
+  const messages = [
+    {
+      role: 'system',
+      content: `You are a real-time instant chat message polisher (like WhatsApp / Live Support) helping an e-commerce admin.
+Task: Polish the user's draft message into natural, professional, human-like chat wording.
+Mode: ${modeInstruction}
+
+CRITICAL RULES:
+1. THIS IS LIVE INSTANT CHAT, NOT AN EMAIL.
+2. NEVER write email greetings ("Dear Seller", "Hello there! I hope you are having a wonderful day").
+3. NEVER write email signatures ("Regards, Bazario Support Team", "Best regards", "Sincerely").
+4. NEVER invent facts, assumptions, requirements, or templates not present in original draft.
+5. NEVER include thinking process, reasoning, notes, or quotes.
+6. Output ONLY the final rewritten chat message text.`
+    },
+    {
+      role: 'user',
+      content: 'Draft: apka parcel return aya h address sahi kr k kal dobara bhejo'
+    },
+    {
+      role: 'assistant',
+      content: 'Aapka parcel return ho gaya hai. Kindly address check kar ke kal dobara bhej dein.'
+    },
+    {
+      role: 'user',
+      content: 'Draft: please send your bank details for payment'
+    },
+    {
+      role: 'assistant',
+      content: 'Please share your bank details so we can process your payment.'
+    },
+    {
+      role: 'user',
+      content: `Draft: ${cleanDraft}`
+    }
+  ];
 
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
@@ -46,12 +86,9 @@ Important rules:
     },
     body: JSON.stringify({
       model: OPENROUTER_MODEL,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: cleanDraft },
-      ],
-      temperature: 0.5,
-      max_tokens: 400,
+      messages,
+      temperature: 0.2,
+      max_tokens: 250,
     }),
   });
 
@@ -61,11 +98,8 @@ Important rules:
   }
 
   const data = await response.json();
-  let rewritten = data.choices?.[0]?.message?.content?.trim() || '';
-
-  if ((rewritten.startsWith('"') && rewritten.endsWith('"')) || (rewritten.startsWith('“') && rewritten.endsWith('”'))) {
-    rewritten = rewritten.slice(1, -1).trim();
-  }
+  let rawRewritten = data.choices?.[0]?.message?.content?.trim() || '';
+  let rewritten = cleanChatRewrittenOutput(rawRewritten);
 
   if (!rewritten) {
     throw new Error('AI returned an empty response.');
@@ -85,9 +119,10 @@ export default function AiRewriteBox({
   const [loading, setLoading] = useState(false);
   const [suggestion, setSuggestion] = useState('');
   const [originalDraft, setOriginalDraft] = useState('');
-  const [tone, setTone] = useState('professional');
+  const [tone, setTone] = useState('auto');
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
+
 
   // Close preview if parent draft was cleared outside
   useEffect(() => {
