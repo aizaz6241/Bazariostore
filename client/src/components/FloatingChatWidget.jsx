@@ -30,6 +30,194 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
   const fileInputRef = useRef(null);
   const textInputRef = useRef(null);
 
+  // ─── DRAGGABLE FLOATING FAB STATE & REFS ───
+  const buttonRef = useRef(null);
+  const [btnPos, setBtnPos] = useState({ x: null, y: null, side: 'right' });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragInfoRef = useRef({
+    startX: 0,
+    startY: 0,
+    startPosX: 0,
+    startPosY: 0,
+    isMoved: false,
+    pointerId: null,
+  });
+  const justDraggedRef = useRef(false);
+
+  // Safe boundary calculator (ensures chat button never overlaps bottom navigation on mobile)
+  const getBounds = (btnWidth = 120, btnHeight = 44) => {
+    const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+    const paddingX = isMobile ? 12 : 20;
+    const minX = paddingX;
+    const maxX = Math.max(minX, (typeof window !== 'undefined' ? window.innerWidth : 400) - btnWidth - paddingX);
+    const minY = 64; // Below top header
+    // On mobile, 58px is the fixed bottom navigation bar + safe margin
+    const bottomNavHeight = isMobile ? 74 : 24;
+    const maxY = Math.max(minY, (typeof window !== 'undefined' ? window.innerHeight : 700) - bottomNavHeight - btnHeight);
+    return { minX, maxX, minY, maxY, paddingX, isMobile };
+  };
+
+  // Initialize and handle window resize / orientation change
+  useEffect(() => {
+    const initPos = () => {
+      const btnEl = buttonRef.current;
+      const btnW = btnEl ? btnEl.offsetWidth || 120 : 120;
+      const btnH = btnEl ? btnEl.offsetHeight || 44 : 44;
+      const { minX, maxX, minY, maxY } = getBounds(btnW, btnH);
+
+      let saved = null;
+      try {
+        const raw = localStorage.getItem('bazario_chat_pos');
+        if (raw) saved = JSON.parse(raw);
+      } catch {}
+
+      const side = saved?.side === 'left' ? 'left' : 'right';
+      const targetX = side === 'left' ? minX : maxX;
+
+      let targetY;
+      if (saved && typeof saved.yRatio === 'number' && !isNaN(saved.yRatio)) {
+        targetY = Math.min(Math.max(saved.yRatio * window.innerHeight, minY), maxY);
+      } else {
+        // Default initial placement: Safely above the bottom mobile navigation bar
+        targetY = maxY;
+      }
+
+      setBtnPos({ x: targetX, y: targetY, side });
+    };
+
+    initPos();
+
+    const handleResize = () => {
+      setBtnPos((prev) => {
+        if (prev.x === null || prev.y === null) return prev;
+        const btnEl = buttonRef.current;
+        const btnW = btnEl ? btnEl.offsetWidth || 120 : 120;
+        const btnH = btnEl ? btnEl.offsetHeight || 44 : 44;
+        const { minX, maxX, minY, maxY } = getBounds(btnW, btnH);
+        const targetX = prev.side === 'left' ? minX : maxX;
+        const targetY = Math.min(Math.max(prev.y, minY), maxY);
+        return { x: targetX, y: targetY, side: prev.side };
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
+  }, []);
+
+  // Pointer Handlers for Smooth Drag & Messenger-Style Edge Snapping
+  const handlePointerDown = (e) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+
+    const btnEl = buttonRef.current;
+    if (!btnEl) return;
+
+    try {
+      btnEl.setPointerCapture(e.pointerId);
+    } catch {}
+
+    dragInfoRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startPosX: btnPos.x ?? (window.innerWidth - 130),
+      startPosY: btnPos.y ?? (window.innerHeight - 120),
+      isMoved: false,
+      pointerId: e.pointerId,
+    };
+  };
+
+  const handlePointerMove = (e) => {
+    const drag = dragInfoRef.current;
+    if (drag.pointerId === null || drag.pointerId !== e.pointerId) return;
+
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist > 6) {
+      if (!drag.isMoved) {
+        drag.isMoved = true;
+        setIsDragging(true);
+      }
+
+      const btnEl = buttonRef.current;
+      const btnW = btnEl ? btnEl.offsetWidth || 120 : 120;
+      const btnH = btnEl ? btnEl.offsetHeight || 44 : 44;
+      const { minX, maxX, minY, maxY } = getBounds(btnW, btnH);
+
+      const rawX = drag.startPosX + dx;
+      const rawY = drag.startPosY + dy;
+
+      const clampedX = Math.min(Math.max(rawX, 4), window.innerWidth - btnW - 4);
+      const clampedY = Math.min(Math.max(rawY, minY), maxY);
+
+      setBtnPos({
+        x: clampedX,
+        y: clampedY,
+        side: clampedX + btnW / 2 < window.innerWidth / 2 ? 'left' : 'right',
+      });
+    }
+  };
+
+  const handlePointerUp = (e) => {
+    const drag = dragInfoRef.current;
+    if (drag.pointerId === null || drag.pointerId !== e.pointerId) return;
+
+    try {
+      buttonRef.current?.releasePointerCapture(e.pointerId);
+    } catch {}
+
+    if (drag.isMoved) {
+      setIsDragging(false);
+      justDraggedRef.current = true;
+      setTimeout(() => {
+        justDraggedRef.current = false;
+      }, 250);
+
+      // Snap smoothly to Left or Right Edge (like Messenger chat head)
+      const btnEl = buttonRef.current;
+      const btnW = btnEl ? btnEl.offsetWidth || 120 : 120;
+      const btnH = btnEl ? btnEl.offsetHeight || 44 : 44;
+      const { minX, maxX, minY, maxY } = getBounds(btnW, btnH);
+
+      const currentX = btnPos.x ?? maxX;
+      const currentY = btnPos.y ?? maxY;
+
+      const centerX = currentX + btnW / 2;
+      const shouldSnapLeft = centerX < window.innerWidth / 2;
+      const snappedX = shouldSnapLeft ? minX : maxX;
+      const side = shouldSnapLeft ? 'left' : 'right';
+      const snappedY = Math.min(Math.max(currentY, minY), maxY);
+
+      setBtnPos({ x: snappedX, y: snappedY, side });
+
+      try {
+        localStorage.setItem(
+          'bazario_chat_pos',
+          JSON.stringify({
+            side,
+            yRatio: snappedY / window.innerHeight,
+          })
+        );
+      } catch {}
+    }
+
+    dragInfoRef.current.pointerId = null;
+    dragInfoRef.current.isMoved = false;
+  };
+
+  const handleBtnClick = (e) => {
+    if (justDraggedRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    toggleOpen();
+  };
+
   // Hide floating widget if user is already on the full dedicated chat page
   const isFullChatPage =
     location.pathname === '/seller/support' ||
@@ -354,27 +542,57 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
   const currentConvo = role === 'admin' ? adminConvos.find((c) => c._id === selectedConvoId) : conv;
 
   return (
-    <div className="floating-chat-container">
-      {/* Floating Trigger Button */}
-      {!isOpen && (
-        <button
-          type="button"
-          className={`floating-chat-pill-btn ${role === 'seller' ? 'seller-chat-pill' : 'admin-chat-pill'}`}
-          onClick={toggleOpen}
-          title={role === 'seller' ? 'Chat with Admin Support' : 'Open Seller Support Inbox'}
+    <>
+      {/* Floating Draggable Trigger Button (Messenger-style edge snapping) */}
+      {!isOpen && btnPos.x !== null && (
+        <div
+          ref={buttonRef}
+          className={`floating-chat-fab-wrap side-${btnPos.side} ${isDragging ? 'is-dragging' : ''}`}
+          style={{
+            left: `${btnPos.x}px`,
+            top: `${btnPos.y}px`,
+            zIndex: isDragging ? 999999 : 99998,
+          }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
         >
-          <div className="floating-btn-content">
-            <Ic name="chat" size={20} stroke={2} />
-            <span className="floating-btn-text">
-              {role === 'seller' ? 'Support' : 'Chat Desk'}
-            </span>
-          </div>
-          {unreadCount > 0 && (
-            <span className="floating-unread-badge animate-bounce">
-              {unreadCount}
-            </span>
-          )}
-        </button>
+          <button
+            type="button"
+            className={`floating-chat-pill-btn ${
+              role === 'seller' ? 'seller-chat-pill' : role === 'admin' ? 'admin-chat-pill' : 'guest-chat-pill'
+            }`}
+            onClick={handleBtnClick}
+            title={
+              role === 'seller'
+                ? 'Merchant Support (Drag anywhere to move)'
+                : role === 'admin'
+                ? 'Admin Support Inbox (Drag anywhere to move)'
+                : 'Help & Live Support (Drag anywhere to move)'
+            }
+          >
+            {/* Subtle Grip Drag Indicator */}
+            <div className="floating-drag-grip" title="Drag to reposition">
+              <span className="grip-dot" />
+              <span className="grip-dot" />
+              <span className="grip-dot" />
+            </div>
+
+            <div className="floating-btn-content">
+              <Ic name="chat" size={19} stroke={2.2} />
+              <span className="floating-btn-text">
+                {role === 'seller' ? 'Support' : role === 'admin' ? 'Chat Desk' : 'Help & Chat'}
+              </span>
+            </div>
+
+            {unreadCount > 0 && (
+              <span className="floating-unread-badge animate-bounce">
+                {unreadCount}
+              </span>
+            )}
+          </button>
+        </div>
       )}
 
       {/* Floating Chat Popup Dialog */}
@@ -611,6 +829,6 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
           </form>
         </div>
       )}
-    </div>
+    </>
   );
 }

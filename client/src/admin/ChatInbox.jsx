@@ -33,7 +33,11 @@ export default function ChatInbox() {
   const [selectedTeamTarget, setSelectedTeamTarget] = useState(null);
 
   // Auto-Reply Settings State
-  const [autoReply, setAutoReply] = useState({ enabled: false, message: 'Hello! Our support team is currently offline. We have received your inquiry and will respond as soon as possible.' });
+  const [autoReply, setAutoReply] = useState({
+    enabled: false,
+    message: 'Assalam o Alaikum! 👋 Thanks for reaching out. We are currently away from the desk, but we have received your inquiry and our support team will respond to you shortly.',
+    awayMode: false,
+  });
   const [autoReplyModal, setAutoReplyModal] = useState(false);
   const [savingAutoReply, setSavingAutoReply] = useState(false);
 
@@ -74,9 +78,15 @@ export default function ChatInbox() {
 
     api('/chat/settings/auto-reply')
       .then((res) => {
-        if (res) setAutoReply({ enabled: !!res.enabled, message: res.message || '' });
+        if (res) {
+          setAutoReply({
+            enabled: Boolean(res.autoReplyEnabled ?? res.enabled),
+            message: res.autoReplyMessage || res.message || 'Assalam o Alaikum! 👋 Thanks for reaching out. We are currently away from the desk, but we have received your inquiry and our support team will respond to you shortly.',
+            awayMode: Boolean(res.awayMode),
+          });
+        }
       })
-      .catch(() => {});
+      .catch((err) => console.error('Error loading auto-reply settings:', err));
   }, []);
 
   // 1. Fetch Seller Inquiries
@@ -250,14 +260,24 @@ export default function ChatInbox() {
     const onMessagesSeen = ({ conversationId, seenAt }) => {
       setMessages((prev) =>
         Array.isArray(prev)
-          ? prev.map((m) =>
-              (m.sender === 'admin' || m.sender === 'staff') &&
-              (!conversationId || !m.conversation || String(m.conversation) === String(conversationId) || String(m.conversation?._id) === String(conversationId))
-                ? { ...m, isSeen: true, seenAt: seenAt || new Date() }
-                : m
-            )
+          ? prev.map((m) => {
+              const isMatch =
+                (m.sender === 'admin' || m.sender === 'staff') &&
+                (!conversationId || !m.conversation || String(m.conversation) === String(conversationId) || String(m.conversation?._id) === String(conversationId));
+              return isMatch ? { ...m, isSeen: true, seenAt: seenAt || new Date() } : m;
+            })
           : prev
       );
+    };
+
+    const onSettingsUpdate = (s) => {
+      if (s) {
+        setAutoReply({
+          enabled: Boolean(s.autoReplyEnabled ?? s.enabled),
+          message: s.autoReplyMessage || s.message || '',
+          awayMode: Boolean(s.awayMode),
+        });
+      }
     };
 
     if (socket) {
@@ -266,6 +286,7 @@ export default function ChatInbox() {
       socket.on('message:edit', onMessageEdit);
       socket.on('message:delete', onMessageDelete);
       socket.on('messages:seen', onMessagesSeen);
+      socket.on('chat:settings_update', onSettingsUpdate);
     }
     return () => {
       if (socket) {
@@ -274,6 +295,7 @@ export default function ChatInbox() {
         socket.off('message:edit', onMessageEdit);
         socket.off('message:delete', onMessageDelete);
         socket.off('messages:seen', onMessagesSeen);
+        socket.off('chat:settings_update', onSettingsUpdate);
       }
     };
   }, [activeTab, selectedSellerId, selectedTeamId, me]);
@@ -424,9 +446,20 @@ export default function ChatInbox() {
     try {
       const res = await api('/chat/settings/auto-reply', {
         method: 'POST',
-        body: autoReply,
+        body: {
+          autoReplyEnabled: Boolean(autoReply.enabled),
+          autoReplyMessage: autoReply.message,
+          awayMode: Boolean(autoReply.awayMode),
+          enabled: Boolean(autoReply.enabled),
+          message: autoReply.message,
+        },
       });
-      setAutoReply({ enabled: !!res.enabled, message: res.message });
+      const s = res?.settings || res || {};
+      setAutoReply({
+        enabled: Boolean(s.autoReplyEnabled ?? s.enabled ?? autoReply.enabled),
+        message: s.autoReplyMessage || s.message || autoReply.message,
+        awayMode: Boolean(s.awayMode ?? autoReply.awayMode),
+      });
       setAutoReplyModal(false);
     } catch (err) {
       alert(err.message || 'Failed to save auto-reply settings');
@@ -546,9 +579,9 @@ export default function ChatInbox() {
               type="button"
               onClick={() => setAutoReplyModal(true)}
               style={{
-                background: autoReply.enabled ? '#ecfdf5' : '#f1f5f9',
-                color: autoReply.enabled ? '#065f46' : '#64748b',
-                border: `1px solid ${autoReply.enabled ? '#a7f3d0' : '#cbd5e1'}`,
+                background: autoReply.awayMode ? '#fef3c7' : autoReply.enabled ? '#ecfdf5' : '#f1f5f9',
+                color: autoReply.awayMode ? '#92400e' : autoReply.enabled ? '#065f46' : '#64748b',
+                border: `1px solid ${autoReply.awayMode ? '#fde68a' : autoReply.enabled ? '#a7f3d0' : '#cbd5e1'}`,
                 borderRadius: 14,
                 padding: '3px 10px',
                 fontSize: 11.5,
@@ -559,8 +592,8 @@ export default function ChatInbox() {
                 gap: 5,
               }}
             >
-              <span>🤖 Auto-Reply:</span>
-              <b>{autoReply.enabled ? 'ON' : 'OFF'}</b>
+              <span>{autoReply.awayMode ? '🌙 Away Mode:' : '🤖 Auto-Reply:'}</span>
+              <b>{autoReply.awayMode ? 'ACTIVE' : autoReply.enabled ? 'ON' : 'OFF'}</b>
               <span>⚙️</span>
             </button>
           </div>
@@ -1051,15 +1084,28 @@ export default function ChatInbox() {
             </div>
 
             <form onSubmit={handleSaveAutoReply} style={{ padding: '18px 22px' }}>
-              <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '12px 16px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+              <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '12px 16px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
                 <div>
-                  <b style={{ fontSize: 13.5, display: 'block' }}>Enable Automatic Response</b>
-                  <small style={{ color: '#64748b', fontSize: 12 }}>Send instant canned response on new incoming inquiries</small>
+                  <b style={{ fontSize: 13.5, display: 'block', color: '#0f172a' }}>Enable Automatic Response</b>
+                  <small style={{ color: '#64748b', fontSize: 12 }}>Send instant automated response on incoming inquiries</small>
                 </div>
                 <input
                   type="checkbox"
                   checked={autoReply.enabled}
                   onChange={(e) => setAutoReply({ ...autoReply, enabled: e.target.checked })}
+                  style={{ width: 20, height: 20, cursor: 'pointer' }}
+                />
+              </div>
+
+              <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fffbeb', padding: '12px 16px', borderRadius: 8, border: '1px solid #fef3c7' }}>
+                <div>
+                  <b style={{ fontSize: 13.5, color: '#92400e', display: 'block' }}>🌙 Away / Offline Mode</b>
+                  <small style={{ color: '#b45309', fontSize: 12 }}>Auto-reply when admin support is unavailable or off-duty</small>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={autoReply.awayMode}
+                  onChange={(e) => setAutoReply({ ...autoReply, awayMode: e.target.checked })}
                   style={{ width: 20, height: 20, cursor: 'pointer' }}
                 />
               </div>
@@ -1073,7 +1119,7 @@ export default function ChatInbox() {
                   value={autoReply.message}
                   onChange={(e) => setAutoReply({ ...autoReply, message: e.target.value })}
                   placeholder="Type auto-reply message..."
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, fontFamily: 'inherit' }}
+                  style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1.5px solid #cbd5e1', fontSize: 13, fontFamily: 'inherit' }}
                   required
                 />
               </div>

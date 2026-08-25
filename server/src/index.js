@@ -221,6 +221,15 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Customer / Guest joins their support room
+  socket.on('customer:join', ({ guestId, user }) => {
+    if (guestId) {
+      socket.join(`guest:${guestId}`);
+      socket.join(`customer:${guestId}`);
+      socket.data.guestId = guestId;
+    }
+  });
+
   // Real-time message exchange between Seller and Admin
   socket.on('seller:message', async (payload, cb) => {
     try {
@@ -286,9 +295,90 @@ io.on('connection', (socket) => {
         link: '/admin/chat',
       });
 
+      // Trigger Auto-Reply if Admin is offline / Auto-Reply is enabled
+      handleAutoReply(app, conv);
+
       cb?.(out);
     } catch (e) {
       console.error('seller:message error:', e.message);
+    }
+  });
+
+  // Customer / Storefront Live Chat Message
+  socket.on('message:send', async (payload, cb) => {
+    try {
+      const { guestId, sender, text, attachment, name, email, phone } = payload || {};
+      const clean = (text || '').trim().slice(0, 2000);
+      if (!guestId || (!clean && !attachment)) return;
+
+      let conv = await Conversation.findOne({ guestId });
+      if (!conv) {
+        conv = new Conversation({
+          type: 'guest',
+          isGuest: true,
+          guestId,
+          name: name || 'Customer',
+          email: email || '',
+          phone: phone || '',
+          subject: 'Customer / Store Inquiry',
+          status: 'open',
+        });
+      }
+
+      if (name) conv.name = name;
+      if (email) conv.email = email;
+      if (phone) conv.phone = phone;
+
+      conv.lastMessage = clean || 'Sent an attachment';
+      conv.lastSender = sender || 'customer';
+      conv.lastAt = new Date();
+      conv.unreadForAdmin = (conv.unreadForAdmin || 0) + 1;
+      conv.status = 'open';
+      await conv.save();
+
+      const msg = new Message({
+        conversation: conv._id,
+        guestId,
+        sender: sender || 'customer',
+        senderName: name || conv.name || 'Customer',
+        text: clean,
+        attachment: attachment || null,
+      });
+      await msg.save();
+
+      const out = {
+        _id: msg._id,
+        conversation: conv._id,
+        guestId,
+        sender: msg.sender,
+        senderName: msg.senderName,
+        text: msg.text,
+        attachment: msg.attachment,
+        createdAt: msg.createdAt,
+      };
+
+      io.to(`guest:${guestId}`).emit('message:new', out);
+      io.to(`customer:${guestId}`).emit('message:new', out);
+      io.to('admins').emit('message:new', out);
+      io.to('admins').emit('chat:notification', {
+        conversationId: conv._id,
+        storeName: `Customer: ${conv.name || 'Guest'}`,
+        text: clean,
+      });
+
+      notify(app, {
+        type: 'chat',
+        title: `Message from ${conv.name || 'Customer'}`,
+        body: clean.slice(0, 60),
+        link: '/admin/chat',
+      });
+
+      // Trigger Auto-Reply if Admin is offline / Auto-Reply is enabled
+      handleAutoReply(app, conv);
+
+      cb?.(out);
+    } catch (e) {
+      console.error('message:send socket error:', e.message);
     }
   });
 
