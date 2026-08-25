@@ -217,15 +217,31 @@ export default function ChatInbox() {
       loadTeamMembers();
     };
 
-    const onMessageEdit = ({ messageId, text, isEdited, editedAt }) => {
+    const onMessageEdit = (payload) => {
+      const targetId = payload?.messageId || payload?._id;
+      if (!targetId) return;
       setMessages((prev) =>
-        prev.map((m) => (m._id === messageId ? { ...m, text, isEdited: true, editedAt } : m))
+        Array.isArray(prev)
+          ? prev.map((m) =>
+              m._id === targetId
+                ? { ...m, text: payload.text, isEdited: true, editedAt: payload.editedAt || new Date() }
+                : m
+            )
+          : prev
       );
     };
 
-    const onMessageDelete = ({ messageId }) => {
+    const onMessageDelete = (payload) => {
+      const targetId = payload?.messageId || payload?._id;
+      if (!targetId) return;
       setMessages((prev) =>
-        prev.map((m) => (m._id === messageId ? { ...m, isDeleted: true, text: '' } : m))
+        Array.isArray(prev)
+          ? prev.map((m) =>
+              m._id === targetId
+                ? { ...m, isDeleted: true, text: '', attachment: null, attachmentName: '', attachmentType: null, deletedAt: payload.deletedAt || new Date() }
+                : m
+            )
+          : prev
       );
     };
 
@@ -426,12 +442,14 @@ export default function ChatInbox() {
     if (!editModal || !editModal.text.trim()) return;
     setSavingEdit(true);
     try {
-      const updated = await api(`/chat/messages/${editModal.messageId}`, {
+      const res = await api(`/chat/messages/${editModal.messageId}`, {
         method: 'PUT',
         body: { text: editModal.text.trim() },
       });
+      const updatedText = res.text || res.msg?.text || editModal.text.trim();
+      const updatedEditedAt = res.editedAt || res.msg?.editedAt || new Date();
       setMessages((prev) =>
-        prev.map((m) => (m._id === editModal.messageId ? { ...m, text: updated.text, isEdited: true, editedAt: updated.editedAt } : m))
+        prev.map((m) => (m._id === editModal.messageId ? { ...m, text: updatedText, isEdited: true, editedAt: updatedEditedAt } : m))
       );
       setEditModal(null);
     } catch (err) {
@@ -448,7 +466,7 @@ export default function ChatInbox() {
         method: 'DELETE',
       });
       setMessages((prev) =>
-        prev.map((m) => (m._id === msg._id ? { ...m, isDeleted: true, text: '' } : m))
+        prev.map((m) => (m._id === msg._id ? { ...m, isDeleted: true, text: '', attachment: null, attachmentName: '', attachmentType: null } : m))
       );
     } catch (err) {
       alert(err.message || 'Failed to delete message');

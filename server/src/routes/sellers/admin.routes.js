@@ -4,6 +4,7 @@ import Seller from '../../models/Seller.js';
 import Product from '../../models/Product.js';
 import Order from '../../models/Order.js';
 import Withdrawal from '../../models/Withdrawal.js';
+import ReferralCode from '../../models/ReferralCode.js';
 import { Conversation, Message } from '../../models/Chat.js';
 import { authAdmin } from '../../middleware/auth.js';
 import { notify } from '../../utils/notify.js';
@@ -889,5 +890,149 @@ router.delete('/:id/targets/:targetId', authAdmin('sellers'), async (req, res) =
   }
 });
 
+// DELETE /api/sellers/:id (Admin deletes a seller)
+router.delete('/:id', authAdmin('sellers'), async (req, res) => {
+  try {
+    const seller = await Seller.findById(req.params.id);
+    if (!seller) return res.status(404).json({ message: 'Seller not found' });
+
+    const storeName = seller.storeName;
+    const email = seller.email;
+
+    await Seller.findByIdAndDelete(req.params.id);
+
+    // Also remove or clean up products associated with seller
+    await Product.deleteMany({ seller: req.params.id }).catch(() => {});
+
+    audit(req, 'delete', 'seller', req.params.id, `Deleted seller: ${storeName} (${email})`);
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to('admins').emit('seller:deleted', { sellerId: req.params.id, storeName });
+    }
+
+    res.json({ ok: true, message: `Seller "${storeName}" deleted successfully.` });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// REFERRAL CODES MANAGEMENT ROUTES
+// ─────────────────────────────────────────────────────────────
+
+// GET /api/sellers/referrals (Admin lists all referral codes with live usage counts)
+router.get('/referrals', authAdmin('sellers'), async (req, res) => {
+  try {
+    const masterCode = await getSetting('master_referral_code', 'REF-BAZARIO-2026');
+    const customCodes = await ReferralCode.find().sort({ createdAt: -1 });
+
+    // Aggregate seller count for master code
+    const masterCount = await Seller.countDocuments({
+      $or: [
+        { 'securityDeposit.referralCode': masterCode },
+        { referralCode: masterCode },
+      ],
+    });
+
+    // Aggregate seller count for each custom code
+    const enrichedCodes = await Promise.all(
+      customCodes.map(async (rc) => {
+        const usageCount = await Seller.countDocuments({
+          $or: [
+            { 'securityDeposit.referralCode': rc.code },
+            { referralCode: rc.code },
+          ],
+        });
+        return {
+          ...rc.toObject(),
+          usageCount,
+        };
+      })
+    );
+
+    res.json({
+      masterReferralCode: masterCode,
+      masterUsageCount: masterCount,
+      referralCodes: enrichedCodes,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/sellers/referrals (Admin creates a new custom referral code)
+router.post('/referrals', authAdmin('sellers'), async (req, res) => {
+  try {
+    const { code, description, commissionRate, bonusAmount, status } = req.body || {};
+    if (!code || !code.trim()) {
+      return res.status(400).json({ message: 'Referral code is required' });
+    }
+
+    const cleanCode = code.trim().toUpperCase();
+    const existing = await ReferralCode.findOne({ code: cleanCode });
+    if (existing) {
+      return res.status(400).json({ message: `Referral code "${cleanCode}" already exists` });
+    }
+
+    const newCode = new ReferralCode({
+      code: cleanCode,
+      description: (description || '').trim(),
+      commissionRate: commissionRate !== undefined && commissionRate !== '' ? Number(commissionRate) : null,
+      bonusAmount: bonusAmount !== undefined && bonusAmount !== '' ? Number(bonusAmount) : 0,
+      status: status === 'inactive' ? 'inactive' : 'active',
+      createdBy: req.admin?.name || 'Admin',
+    });
+
+    await newCode.save();
+
+    audit(req, 'create', 'referral_code', newCode._id, `Created referral code: ${cleanCode}`);
+
+    res.status(201).json({
+      message: `Referral code "${cleanCode}" created successfully! 🎉`,
+      referralCode: newCode,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// DELETE /api/sellers/referrals/:id (Admin deletes a referral code)
+router.delete('/referrals/:id', authAdmin('sellers'), async (req, res) => {
+  try {
+    const rc = await ReferralCode.findById(req.params.id);
+    if (!rc) return res.status(404).json({ message: 'Referral code not found' });
+
+    await ReferralCode.findByIdAndDelete(req.params.id);
+    audit(req, 'delete', 'referral_code', req.params.id, `Deleted referral code: ${rc.code}`);
+
+    res.json({ ok: true, message: `Referral code "${rc.code}" deleted successfully.` });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PATCH /api/sellers/referrals/:id/toggle (Admin toggles referral code active / inactive status)
+router.patch('/referrals/:id/toggle', authAdmin('sellers'), async (req, res) => {
+  try {
+    const rc = await ReferralCode.findById(req.params.id);
+    if (!rc) return res.status(404).json({ message: 'Referral code not found' });
+
+    rc.status = rc.status === 'active' ? 'inactive' : 'active';
+    await rc.save();
+
+    audit(req, 'update', 'referral_code', rc._id, `Set status to ${rc.status} for ${rc.code}`);
+
+    res.json({
+      ok: true,
+      message: `Referral code "${rc.code}" is now ${rc.status.toUpperCase()}.`,
+      referralCode: rc,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 export default router;
+
 

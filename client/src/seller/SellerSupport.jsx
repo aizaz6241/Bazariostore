@@ -65,15 +65,47 @@ export default function SellerSupport() {
       if (typeof setUnreadChat === 'function') setUnreadChat(0);
     };
 
+    const onMessageEdit = (payload) => {
+      const targetId = payload?.messageId || payload?._id;
+      if (!targetId) return;
+      setMessages((prev) =>
+        Array.isArray(prev)
+          ? prev.map((m) =>
+              m._id === targetId
+                ? { ...m, text: payload.text, isEdited: true, editedAt: payload.editedAt || new Date() }
+                : m
+            )
+          : prev
+      );
+    };
+
+    const onMessageDelete = (payload) => {
+      const targetId = payload?.messageId || payload?._id;
+      if (!targetId) return;
+      setMessages((prev) =>
+        Array.isArray(prev)
+          ? prev.map((m) =>
+              m._id === targetId
+                ? { ...m, isDeleted: true, text: '', attachment: null, attachmentName: '', attachmentType: null, deletedAt: payload.deletedAt || new Date() }
+                : m
+            )
+          : prev
+      );
+    };
+
     if (socket) {
       socket.on('message:new', onNewMessage);
+      socket.on('message:edit', onMessageEdit);
+      socket.on('message:delete', onMessageDelete);
     }
     return () => {
       if (socket) {
         socket.off('message:new', onNewMessage);
+        socket.off('message:edit', onMessageEdit);
+        socket.off('message:delete', onMessageDelete);
       }
     };
-  }, []);
+  }, [seller]);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });

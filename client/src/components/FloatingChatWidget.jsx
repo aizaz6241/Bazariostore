@@ -150,14 +150,46 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
       }
     };
 
+    const onMessageEdit = (payload) => {
+      const targetId = payload?.messageId || payload?._id;
+      if (!targetId) return;
+      setMessages((prev) =>
+        Array.isArray(prev)
+          ? prev.map((m) =>
+              m._id === targetId
+                ? { ...m, text: payload.text, isEdited: true, editedAt: payload.editedAt || new Date() }
+                : m
+            )
+          : prev
+      );
+    };
+
+    const onMessageDelete = (payload) => {
+      const targetId = payload?.messageId || payload?._id;
+      if (!targetId) return;
+      setMessages((prev) =>
+        Array.isArray(prev)
+          ? prev.map((m) =>
+              m._id === targetId
+                ? { ...m, isDeleted: true, text: '', attachment: null, attachmentName: '', attachmentType: null, deletedAt: payload.deletedAt || new Date() }
+                : m
+            )
+          : prev
+      );
+    };
+
     if (socket) {
       socket.on('message:new', onNewMsg);
       socket.on('messages:seen', onMessagesSeen);
+      socket.on('message:edit', onMessageEdit);
+      socket.on('message:delete', onMessageDelete);
     }
     return () => {
       if (socket) {
         socket.off('message:new', onNewMsg);
         socket.off('messages:seen', onMessagesSeen);
+        socket.off('message:edit', onMessageEdit);
+        socket.off('message:delete', onMessageDelete);
       }
     };
   }, [role, isOpen, selectedConvoId]);

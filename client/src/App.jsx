@@ -31,6 +31,10 @@ import AdminLogin from './admin/AdminLogin.jsx';
 import AdminLayout from './admin/AdminLayout.jsx';
 import Dashboard from './admin/Dashboard.jsx';
 import Sellers from './admin/Sellers.jsx';
+import Complaints from './admin/Complaints.jsx';
+import Applications from './admin/Applications.jsx';
+import Targets from './admin/Targets.jsx';
+import Referrals from './admin/Referrals.jsx';
 import AdminWithdrawals from './admin/AdminWithdrawals.jsx';
 import ChatInbox from './admin/ChatInbox.jsx';
 import Staff from './admin/Staff.jsx';
@@ -109,12 +113,18 @@ export default function App() {
       <Route path="/admin" element={<AdminLayout />}>
         <Route index element={<Dashboard />} />
         <Route path="sellers" element={<Sellers />} />
-        <Route path="withdrawals" element={<AdminWithdrawals />} />
-        <Route path="chat" element={<ChatInbox />} />
-        <Route path="staff" element={<Staff />} />
-        {/* Legacy routes — accessible but not in sidebar */}
+        <Route path="complaints" element={<Complaints />} />
         <Route path="orders" element={<Orders />} />
         <Route path="orders/:id" element={<OrderDetail />} />
+        <Route path="applications" element={<Applications />} />
+        <Route path="targets" element={<Targets />} />
+        <Route path="referrals" element={<Referrals />} />
+        <Route path="referral-codes" element={<Navigate to="/admin/referrals" replace />} />
+        <Route path="withdrawals" element={<AdminWithdrawals />} />
+        <Route path="payouts" element={<Navigate to="/admin/withdrawals" replace />} />
+        <Route path="chat" element={<ChatInbox />} />
+        <Route path="staff" element={<Staff />} />
+        {/* Legacy routes — accessible via URL */}
         <Route path="products" element={<Products />} />
         <Route path="products/new" element={<ProductEdit />} />
         <Route path="products/:id" element={<ProductEdit />} />

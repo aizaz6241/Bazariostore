@@ -708,15 +708,30 @@ router.put('/messages/:id', authSellerOrAdmin, async (req, res) => {
     msg.editedAt = new Date();
     await msg.save();
 
+    // If conversation lastMessage was this, update it
+    if (msg.conversation) {
+      await Conversation.findByIdAndUpdate(msg.conversation, { lastMessage: msg.text.slice(0, 70) });
+    }
+
+    const editPayload = {
+      _id: msg._id,
+      messageId: msg._id,
+      conversation: msg.conversation,
+      text: msg.text,
+      isEdited: true,
+      editedAt: msg.editedAt,
+    };
+
     // Broadcast edit to relevant rooms
     const io = req.app.get('io');
     if (io) {
-      if (msg.seller) io.to(`seller:${msg.seller}`).emit('message:edit', msg);
-      if (msg.guestId) io.to(`guest:${msg.guestId}`).emit('message:edit', msg);
-      io.to('admins').emit('message:edit', msg);
+      if (msg.seller) io.to(`seller:${msg.seller}`).emit('message:edit', editPayload);
+      if (msg.guestId) io.to(`guest:${msg.guestId}`).emit('message:edit', editPayload);
+      io.to('admins').emit('message:edit', editPayload);
+      io.emit('message:edit', editPayload);
     }
 
-    res.json({ message: 'Message updated successfully', msg });
+    res.json({ message: 'Message updated successfully', msg, text: msg.text, isEdited: true, editedAt: msg.editedAt });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -737,20 +752,39 @@ router.delete('/messages/:id', authSellerOrAdmin, async (req, res) => {
 
     msg.isDeleted = true;
     msg.deletedAt = new Date();
-    msg.text = '🚫 This message was deleted by administrator.';
+    msg.text = '';
     msg.attachment = null;
     msg.attachmentName = '';
+    msg.attachmentType = null;
     await msg.save();
+
+    // If conversation lastMessage was this, update it
+    if (msg.conversation) {
+      await Conversation.findByIdAndUpdate(msg.conversation, { lastMessage: '🚫 Message deleted' });
+    }
+
+    const deletePayload = {
+      _id: msg._id,
+      messageId: msg._id,
+      conversation: msg.conversation,
+      isDeleted: true,
+      deletedAt: msg.deletedAt,
+      text: '',
+      attachment: null,
+      attachmentName: '',
+      attachmentType: null,
+    };
 
     // Broadcast deletion to relevant rooms
     const io = req.app.get('io');
     if (io) {
-      if (msg.seller) io.to(`seller:${msg.seller}`).emit('message:delete', { _id: msg._id, conversation: msg.conversation });
-      if (msg.guestId) io.to(`guest:${msg.guestId}`).emit('message:delete', { _id: msg._id, conversation: msg.conversation });
-      io.to('admins').emit('message:delete', { _id: msg._id, conversation: msg.conversation });
+      if (msg.seller) io.to(`seller:${msg.seller}`).emit('message:delete', deletePayload);
+      if (msg.guestId) io.to(`guest:${msg.guestId}`).emit('message:delete', deletePayload);
+      io.to('admins').emit('message:delete', deletePayload);
+      io.emit('message:delete', deletePayload);
     }
 
-    res.json({ message: 'Message deleted successfully', msg });
+    res.json({ message: 'Message deleted successfully', msg, isDeleted: true, deletedAt: msg.deletedAt });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

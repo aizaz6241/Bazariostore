@@ -212,14 +212,27 @@ router.post('/:id/refund-request', authUser, async (req, res) => {
 
 // ---------- admin ----------
 router.get('/', authAdmin('orders'), async (req, res) => {
-  const { status, q } = req.query;
+  const { status, q, sellerId } = req.query;
   const filter = {};
   if (status && STATUSES.includes(status)) filter.status = status;
+  if (sellerId) {
+    filter.$or = [{ seller: sellerId }, { 'items.seller': sellerId }];
+  }
   if (q?.trim()) {
     const rx = { $regex: q.trim(), $options: 'i' };
-    filter.$or = [{ orderNumber: rx }, { 'contact.phone': rx }, { 'contact.email': rx }, { 'shippingAddress.fullName': rx }];
+    const qFilters = [{ orderNumber: rx }, { 'contact.phone': rx }, { 'contact.email': rx }, { 'shippingAddress.fullName': rx }];
+    if (filter.$or) {
+      filter.$and = [{ $or: filter.$or }, { $or: qFilters }];
+      delete filter.$or;
+    } else {
+      filter.$or = qFilters;
+    }
   }
-  const orders = await Order.find(filter).sort({ createdAt: -1 }).limit(300);
+  const orders = await Order.find(filter)
+    .populate('seller', 'storeName ownerName email phone')
+    .populate('items.product', 'name price image')
+    .sort({ createdAt: -1 })
+    .limit(300);
   res.json(orders);
 });
 
