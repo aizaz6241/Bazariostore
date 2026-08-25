@@ -1,9 +1,16 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config();
+
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'bazario_super_secure_jwt_secret_2026_xyz';
 import http from 'http';
 import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
 import mongoose from 'mongoose';
