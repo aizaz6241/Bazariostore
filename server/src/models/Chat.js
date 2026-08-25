@@ -64,6 +64,10 @@ const messageSchema = new mongoose.Schema(
     editedAt: { type: Date, default: null },
     isDeleted: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null },
+    // Read receipts / Seen indicator
+    isSeen: { type: Boolean, default: false },
+    seenAt: { type: Date, default: null },
+    seenBy: { type: String, default: '' },
     replyTo: {
       messageId: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', default: null },
       sender: { type: String, default: '' },

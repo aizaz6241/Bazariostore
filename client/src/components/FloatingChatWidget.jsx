@@ -136,12 +136,28 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
       }
     };
 
+    const onMessagesSeen = ({ conversationId, seenAt }) => {
+      if (role === 'admin') {
+        setMessages((prev) =>
+          Array.isArray(prev)
+            ? prev.map((m) =>
+                m.sender === 'admin' || m.sender === 'staff'
+                  ? { ...m, isSeen: true, seenAt: seenAt || new Date() }
+                  : m
+              )
+            : prev
+        );
+      }
+    };
+
     if (socket) {
       socket.on('message:new', onNewMsg);
+      socket.on('messages:seen', onMessagesSeen);
     }
     return () => {
       if (socket) {
         socket.off('message:new', onNewMsg);
+        socket.off('messages:seen', onMessagesSeen);
       }
     };
   }, [role, isOpen, selectedConvoId]);

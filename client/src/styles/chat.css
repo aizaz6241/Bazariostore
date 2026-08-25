@@ -411,6 +411,41 @@
   opacity: 0.65;
 }
 
+/* ─── WhatsApp-style Double Check Tick Mark (Seen Indicator) ─── */
+.chat-seen-ticks {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 2px;
+  line-height: 1;
+  transition: all 0.2s ease;
+}
+
+.chat-seen-ticks svg {
+  display: block;
+}
+
+/* Blue ticks when message is seen / read by seller */
+.chat-seen-ticks.seen-blue {
+  color: #38bdf8 !important; /* Bright WhatsApp Sky Blue / Cyan */
+  filter: drop-shadow(0 0 2px rgba(56, 189, 248, 0.7));
+  animation: seenPop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Grey ticks when message is sent / delivered but not yet seen */
+.chat-seen-ticks.sent-grey {
+  color: rgba(255, 255, 255, 0.5) !important;
+}
+
+.chat-bubble-wrap.msg-them .chat-seen-ticks.sent-grey {
+  color: #94a3b8 !important;
+}
+
+@keyframes seenPop {
+  0% { transform: scale(0.8); }
+  60% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+
 /* Hover Reply Button (Perfect adjacent positioning) */
 .chat-hover-reply-btn {
   background: #ffffff;

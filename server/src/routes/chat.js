@@ -96,6 +96,30 @@ router.get('/seller/thread', authSeller, async (req, res) => {
       { $set: { conversation: conv._id } }
     );
 
+    // Mark admin messages as seen by seller
+    const now = new Date();
+    const seenRes = await Message.updateMany(
+      {
+        $or: [{ conversation: conv._id }, { seller: seller._id }],
+        sender: { $in: ['admin', 'staff'] },
+        isSeen: { $ne: true },
+      },
+      { $set: { isSeen: true, seenAt: now, seenBy: 'seller' } }
+    );
+
+    if (conv.unreadForSeller > 0 || seenRes.modifiedCount > 0) {
+      conv.unreadForSeller = 0;
+      await conv.save();
+      const io = req.app.get('io');
+      if (io) {
+        io.to('admins').emit('messages:seen', {
+          conversationId: conv._id,
+          sellerId: seller._id,
+          seenAt: now,
+        });
+      }
+    }
+
     const messages = await Message.find({
       $or: [{ conversation: conv._id }, { seller: seller._id }]
     }).sort({ createdAt: 1 }).limit(500);
@@ -190,7 +214,33 @@ router.post('/seller/send', authSeller, async (req, res) => {
 // POST /api/chat/seller/read (Seller marks messages as read)
 router.post('/seller/read', authSeller, async (req, res) => {
   try {
-    await Conversation.updateOne({ seller: req.seller.id, type: { $ne: 'internal' } }, { $set: { unreadForSeller: 0 } });
+    const sellerId = req.seller.id;
+    const now = new Date();
+
+    const conv = await Conversation.findOne({ seller: sellerId, type: { $ne: 'internal' } });
+    if (conv) {
+      conv.unreadForSeller = 0;
+      await conv.save();
+
+      await Message.updateMany(
+        {
+          $or: [{ conversation: conv._id }, { seller: sellerId }],
+          sender: { $in: ['admin', 'staff'] },
+          isSeen: { $ne: true },
+        },
+        { $set: { isSeen: true, seenAt: now, seenBy: 'seller' } }
+      );
+
+      const io = req.app.get('io');
+      if (io) {
+        io.to('admins').emit('messages:seen', {
+          conversationId: conv._id,
+          sellerId,
+          seenAt: now,
+        });
+      }
+    }
+
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ message: err.message });

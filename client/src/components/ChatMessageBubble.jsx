@@ -188,12 +188,25 @@ export default function ChatMessageBubble({ msg, isMe, myRole = 'seller', onRepl
             </>
           )}
 
-          {/* Timestamp & Edited Indicator */}
+          {/* Timestamp & Edited Indicator & Seen Checkmarks */}
           <div className="chat-bubble-footer">
             <span className="chat-bubble-time">{fmtDate(msg.createdAt)}</span>
             {msg.isEdited && !msg.isDeleted && (
               <span className="chat-bubble-edited-tag" style={{ fontSize: 10, color: '#94a3b8', fontStyle: 'italic', marginLeft: 4 }}>
                 (edited)
+              </span>
+            )}
+            {/* WhatsApp-style Double Check Tick Mark for Admin */}
+            {myRole === 'admin' && isMe && !msg.isDeleted && (
+              <span
+                className={`chat-seen-ticks ${msg.isSeen ? 'seen-blue' : 'sent-grey'}`}
+                title={msg.isSeen ? `Seen by seller ${msg.seenAt ? `(${fmtDate(msg.seenAt)})` : ''}` : 'Sent / Delivered'}
+                aria-label={msg.isSeen ? 'Seen' : 'Delivered'}
+              >
+                <svg viewBox="0 0 16 11" width="14" height="10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 5.5L4.5 9L11 1.5" />
+                  <path d="M5 5.5L8.5 9L15 1.5" />
+                </svg>
               </span>
             )}
           </div>

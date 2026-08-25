@@ -285,6 +285,38 @@ io.on('connection', (socket) => {
       console.error('seller:message error:', e.message);
     }
   });
+
+  // Real-time Seen / Read status update from seller
+  socket.on('seller:read', async ({ sellerId, conversationId }) => {
+    try {
+      const now = new Date();
+      const targetSellerId = sellerId || socket.data?.sellerId;
+      if (!targetSellerId) return;
+
+      const conv = await Conversation.findOne({ seller: targetSellerId, type: { $ne: 'internal' } });
+      if (conv) {
+        conv.unreadForSeller = 0;
+        await conv.save();
+
+        await Message.updateMany(
+          {
+            $or: [{ conversation: conv._id }, { seller: targetSellerId }],
+            sender: { $in: ['admin', 'staff'] },
+            isSeen: { $ne: true },
+          },
+          { $set: { isSeen: true, seenAt: now, seenBy: 'seller' } }
+        );
+
+        io.to('admins').emit('messages:seen', {
+          conversationId: conv._id,
+          sellerId: targetSellerId,
+          seenAt: now,
+        });
+      }
+    } catch (e) {
+      console.error('seller:read socket error:', e.message);
+    }
+  });
 });
 
 process.on('unhandledRejection', (err) => console.error('unhandledRejection:', err?.message || err));

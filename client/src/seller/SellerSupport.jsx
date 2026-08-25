@@ -31,6 +31,10 @@ export default function SellerSupport() {
         setMessages(Array.isArray(res.messages) ? res.messages : []);
         // Mark read
         sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
+        try {
+          const s = getSocket();
+          if (s) s.emit('seller:read', { sellerId: seller?._id || res.conversation?.seller });
+        } catch {}
         if (typeof setUnreadChat === 'function') setUnreadChat(0);
       })
       .catch((e) => console.error(e))
@@ -55,6 +59,9 @@ export default function SellerSupport() {
         return [...prev, msg];
       });
       sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
+      try {
+        if (socket) socket.emit('seller:read', { sellerId: seller?._id, conversationId: msg.conversation });
+      } catch {}
       if (typeof setUnreadChat === 'function') setUnreadChat(0);
     };
 

@@ -229,11 +229,25 @@ export default function ChatInbox() {
       );
     };
 
+    const onMessagesSeen = ({ conversationId, seenAt }) => {
+      setMessages((prev) =>
+        Array.isArray(prev)
+          ? prev.map((m) =>
+              (m.sender === 'admin' || m.sender === 'staff') &&
+              (!conversationId || !m.conversation || String(m.conversation) === String(conversationId) || String(m.conversation?._id) === String(conversationId))
+                ? { ...m, isSeen: true, seenAt: seenAt || new Date() }
+                : m
+            )
+          : prev
+      );
+    };
+
     if (socket) {
       socket.on('message:new', onNewSellerMsg);
       socket.on('admin:message:new', onNewTeamMsg);
       socket.on('message:edit', onMessageEdit);
       socket.on('message:delete', onMessageDelete);
+      socket.on('messages:seen', onMessagesSeen);
     }
     return () => {
       if (socket) {
@@ -241,6 +255,7 @@ export default function ChatInbox() {
         socket.off('admin:message:new', onNewTeamMsg);
         socket.off('message:edit', onMessageEdit);
         socket.off('message:delete', onMessageDelete);
+        socket.off('messages:seen', onMessagesSeen);
       }
     };
   }, [activeTab, selectedSellerId, selectedTeamId, me]);
