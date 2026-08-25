@@ -153,14 +153,34 @@ export default function Sellers() {
     setWarnMessage(seller.warning?.message || '');
     setHealthScore(seller.accountHealth?.score !== undefined ? seller.accountHealth.score : 100);
     setHealthReason('');
-    setLimitMaxAmount(seller.withdrawalLimit?.maxAmount !== undefined ? seller.withdrawalLimit.maxAmount : 500);
-    setLimitMinAmount(seller.withdrawalLimit?.minAmount !== undefined ? seller.withdrawalLimit.minAmount : 10);
-    setLimitRequiredCount(seller.withdrawalLimit?.requiredWithdrawalsForIncrease || 10);
-    setLimitSuccessCount(seller.withdrawalLimit?.successfulWithdrawalCount || 0);
-    setLimitUpgradeFee(seller.withdrawalLimit?.upgradeFee !== undefined ? seller.withdrawalLimit.upgradeFee : 50);
-    setLimitTierName(seller.withdrawalLimit?.currentTierName || 'Tier 1 - Standard ($500 Max)');
+
+    const wl = seller.withdrawalLimit || {};
+    setLimitMaxAmount(wl.maxAmount !== undefined ? String(wl.maxAmount) : '500');
+    setLimitMinAmount(wl.minAmount !== undefined ? String(wl.minAmount) : '10');
+    setLimitRequiredCount(wl.requiredWithdrawalsForIncrease !== undefined ? String(wl.requiredWithdrawalsForIncrease) : '10');
+    setLimitSuccessCount(wl.successfulWithdrawalCount !== undefined ? String(wl.successfulWithdrawalCount) : '0');
+    setLimitUpgradeFee(wl.upgradeFee !== undefined ? String(wl.upgradeFee) : '50');
+    setLimitTierName(wl.currentTierName || 'Tier 1 - Standard ($500 Max)');
     setCompTab(tab || (seller.status !== 'active' ? 'freeze' : seller.warning?.active ? 'warn' : 'freeze'));
     setCompModalOpen(true);
+
+    // Fetch live fresh seller data from backend to ensure 100% sync
+    api(`/sellers/${seller._id}`)
+      .then((data) => {
+        const liveSeller = data.seller || data;
+        if (liveSeller) {
+          setCompSeller(liveSeller);
+          const liveWl = liveSeller.withdrawalLimit || {};
+          setLimitMaxAmount(liveWl.maxAmount !== undefined ? String(liveWl.maxAmount) : '500');
+          setLimitMinAmount(liveWl.minAmount !== undefined ? String(liveWl.minAmount) : '10');
+          setLimitRequiredCount(liveWl.requiredWithdrawalsForIncrease !== undefined ? String(liveWl.requiredWithdrawalsForIncrease) : '10');
+          setLimitSuccessCount(liveWl.successfulWithdrawalCount !== undefined ? String(liveWl.successfulWithdrawalCount) : '0');
+          setLimitUpgradeFee(liveWl.upgradeFee !== undefined ? String(liveWl.upgradeFee) : '50');
+          setLimitTierName(liveWl.currentTierName || 'Tier 1 - Standard ($500 Max)');
+          if (liveSeller.accountHealth?.score !== undefined) setHealthScore(liveSeller.accountHealth.score);
+        }
+      })
+      .catch(() => {});
   };
 
   const handleHealthSubmit = async (e) => {
@@ -190,7 +210,7 @@ export default function Sellers() {
     if (!compSeller) return;
     setSubmittingLimitEdit(true);
     try {
-      await api(`/sellers/${compSeller._id}/withdrawal-limit`, {
+      const res = await api(`/sellers/${compSeller._id}/withdrawal-limit`, {
         method: 'POST',
         body: {
           maxAmount: Number(limitMaxAmount),
@@ -203,6 +223,17 @@ export default function Sellers() {
       });
       alert(`Withdrawal limit settings updated for ${compSeller.storeName}! ✅`);
       setCompModalOpen(false);
+      const updatedLimit = res.withdrawalLimit || res.seller?.withdrawalLimit || {
+        maxAmount: Number(limitMaxAmount),
+        minAmount: Number(limitMinAmount),
+        requiredWithdrawalsForIncrease: Number(limitRequiredCount),
+        successfulWithdrawalCount: Number(limitSuccessCount),
+        upgradeFee: Number(limitUpgradeFee),
+        currentTierName: limitTierName.trim(),
+      };
+      setSellers((prev) =>
+        prev.map((s) => (s._id === compSeller._id ? { ...s, withdrawalLimit: updatedLimit } : s))
+      );
       loadSellers();
     } catch (err) {
       alert('Error updating limits: ' + err.message);

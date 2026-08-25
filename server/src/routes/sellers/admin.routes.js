@@ -475,6 +475,18 @@ router.put('/:id', authAdmin('sellers'), async (req, res) => {
       seller.wallet.securityDeposit = cleanAmt;
     }
 
+    if (req.body.withdrawalLimit) {
+      const wl = req.body.withdrawalLimit;
+      seller.withdrawalLimit = seller.withdrawalLimit || {};
+      if (wl.maxAmount !== undefined) seller.withdrawalLimit.maxAmount = Math.max(1, Number(wl.maxAmount));
+      if (wl.minAmount !== undefined) seller.withdrawalLimit.minAmount = Math.max(1, Number(wl.minAmount));
+      if (wl.requiredWithdrawalsForIncrease !== undefined) seller.withdrawalLimit.requiredWithdrawalsForIncrease = Math.max(1, Number(wl.requiredWithdrawalsForIncrease));
+      if (wl.successfulWithdrawalCount !== undefined) seller.withdrawalLimit.successfulWithdrawalCount = Math.max(0, Number(wl.successfulWithdrawalCount));
+      if (wl.upgradeFee !== undefined) seller.withdrawalLimit.upgradeFee = Math.max(0, Number(wl.upgradeFee));
+      if (wl.currentTierName) seller.withdrawalLimit.currentTierName = wl.currentTierName.trim();
+      seller.markModified('withdrawalLimit');
+    }
+
     if (password) {
       seller.passwordHash = await bcrypt.hash(password, 10);
     }
@@ -488,11 +500,61 @@ router.put('/:id', authAdmin('sellers'), async (req, res) => {
     const io = req.app.get('io');
     if (io) {
       io.to(`seller:${seller._id}`).emit('seller:status_update', { seller: safeSeller });
-      io.to(`seller:${seller._id}`).emit('wallet:update', { wallet: seller.wallet, sellerId: seller._id });
+      io.to(`seller:${seller._id}`).emit('wallet:update', { wallet: seller.wallet, sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.to(`seller:${seller._id}`).emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
       io.to('sellers').emit('seller:status_update', { seller: safeSeller });
     }
 
     res.json(safeSeller);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/sellers/:id/withdrawal-limit (Admin updates withdrawal limits and banking tier)
+router.post('/:id/withdrawal-limit', authAdmin(), async (req, res) => {
+  try {
+    const { maxAmount, minAmount, requiredWithdrawalsForIncrease, successfulWithdrawalCount, upgradeFee, currentTierName } = req.body || {};
+    const seller = await Seller.findById(req.params.id);
+    if (!seller) return res.status(404).json({ message: 'Seller not found' });
+
+    seller.withdrawalLimit = seller.withdrawalLimit || {};
+
+    if (maxAmount !== undefined) seller.withdrawalLimit.maxAmount = Math.max(1, Number(maxAmount));
+    if (minAmount !== undefined) seller.withdrawalLimit.minAmount = Math.max(1, Number(minAmount));
+    if (requiredWithdrawalsForIncrease !== undefined) seller.withdrawalLimit.requiredWithdrawalsForIncrease = Math.max(1, Number(requiredWithdrawalsForIncrease));
+    if (successfulWithdrawalCount !== undefined) seller.withdrawalLimit.successfulWithdrawalCount = Math.max(0, Number(successfulWithdrawalCount));
+    if (upgradeFee !== undefined) seller.withdrawalLimit.upgradeFee = Math.max(0, Number(upgradeFee));
+    if (currentTierName) seller.withdrawalLimit.currentTierName = currentTierName.trim();
+
+    seller.markModified('withdrawalLimit');
+    await seller.save();
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`seller:${seller._id}`).emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.to(`seller:${seller._id}`).emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.emit('limit:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+    }
+
+    notify(req.app, {
+      recipientType: 'seller',
+      sellerId: seller._id,
+      type: 'approval',
+      title: '💼 Withdrawal Limit Updated',
+      body: `Your store withdrawal limit has been updated to $${(seller.withdrawalLimit.maxAmount || 500).toLocaleString('en-US')} (${seller.withdrawalLimit.currentTierName || 'Standard Tier'}) by Platform Administration.`,
+      link: '/seller/wallet?tab=withdraw',
+    });
+
+    audit(req, 'update', 'seller_limit', seller._id, `Updated withdrawal limits for ${seller.storeName}: Max $${seller.withdrawalLimit.maxAmount}, Req ${seller.withdrawalLimit.requiredWithdrawalsForIncrease}, Completed ${seller.withdrawalLimit.successfulWithdrawalCount}, Tier: ${seller.withdrawalLimit.currentTierName}`);
+
+    res.json({
+      message: 'Withdrawal limit settings updated successfully',
+      withdrawalLimit: seller.withdrawalLimit,
+      seller: seller.toObject(),
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

@@ -1317,7 +1317,7 @@ router.post('/:id/limit-increase-decision', authAdmin('finance'), async (req, re
 });
 
 // POST /api/sellers/:id/withdrawal-limit (Admin directly updates withdrawal limit settings)
-router.post('/:id/withdrawal-limit', authAdmin('finance'), async (req, res) => {
+router.post('/:id/withdrawal-limit', authAdmin(), async (req, res) => {
   try {
     const { maxAmount, minAmount, requiredWithdrawalsForIncrease, successfulWithdrawalCount, upgradeFee, currentTierName } = req.body;
     const seller = await Seller.findById(req.params.id);
@@ -1342,8 +1342,8 @@ router.post('/:id/withdrawal-limit', authAdmin('finance'), async (req, res) => {
       io.to(`seller:${seller._id}`).emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
       io.to(`seller:${seller._id}`).emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
       io.emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.emit('wallet:update', { sellerId: seller._id });
-      io.emit('limit:update', { sellerId: seller._id });
+      io.emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.emit('limit:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
     }
 
     notify(req.app, {
