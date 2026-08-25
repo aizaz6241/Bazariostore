@@ -20,17 +20,25 @@ export function Logo() {
 
 function Header() {
   const { count } = useCart();
-  const { user, seller, admin, logout, logoutSeller, logoutAdmin, logoutAll } = useAuth();
+  const { user, seller, admin, logout, logoutSeller, logoutAdmin, logoutAll, refreshAuth } = useAuth();
   const { categories } = useContent();
   const navigate = useNavigate();
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('All');
   const loc = useLocation();
 
-  const isAdmin = Boolean(admin && localStorage.getItem('ng_admin_token'));
-  const isSeller = Boolean(seller && localStorage.getItem('ng_seller_token'));
-  const isCustomer = Boolean(user && localStorage.getItem('ng_user_token'));
+  const adminToken = localStorage.getItem('ng_admin_token');
+  const sellerToken = localStorage.getItem('ng_seller_token');
+  const userToken = localStorage.getItem('ng_user_token');
+
+  const isAdmin = Boolean(admin || (adminToken && adminToken !== 'null' && adminToken !== 'undefined'));
+  const isSeller = Boolean(seller || (sellerToken && sellerToken !== 'null' && sellerToken !== 'undefined'));
+  const isCustomer = Boolean(user || (userToken && userToken !== 'null' && userToken !== 'undefined'));
   const isLoggedIn = isAdmin || isSeller || isCustomer;
+
+  useEffect(() => {
+    if (refreshAuth) refreshAuth();
+  }, [loc.pathname, refreshAuth]);
 
   useEffect(() => {
     const p = new URLSearchParams(loc.search);
@@ -293,8 +301,10 @@ function Header() {
 function NavBar() {
   const { categories } = useContent();
   const { seller, admin } = useAuth();
-  const isAdmin = Boolean(admin && localStorage.getItem('ng_admin_token'));
-  const isSeller = Boolean(seller && localStorage.getItem('ng_seller_token'));
+  const adminToken = localStorage.getItem('ng_admin_token');
+  const sellerToken = localStorage.getItem('ng_seller_token');
+  const isAdmin = Boolean(admin || (adminToken && adminToken !== 'null' && adminToken !== 'undefined'));
+  const isSeller = Boolean(seller || (sellerToken && sellerToken !== 'null' && sellerToken !== 'undefined'));
 
   return (
     <nav className="navbar">
@@ -405,10 +415,13 @@ function Footer() {
 function MobileNav() {
   const { count } = useCart();
   const { user, seller, admin } = useAuth();
+  const adminToken = localStorage.getItem('ng_admin_token');
+  const sellerToken = localStorage.getItem('ng_seller_token');
+  const userToken = localStorage.getItem('ng_user_token');
 
-  const isAdmin = Boolean(admin && localStorage.getItem('ng_admin_token'));
-  const isSeller = Boolean(seller && localStorage.getItem('ng_seller_token'));
-  const isCustomer = Boolean(user && localStorage.getItem('ng_user_token'));
+  const isAdmin = Boolean(admin || (adminToken && adminToken !== 'null' && adminToken !== 'undefined'));
+  const isSeller = Boolean(seller || (sellerToken && sellerToken !== 'null' && sellerToken !== 'undefined'));
+  const isCustomer = Boolean(user || (userToken && userToken !== 'null' && userToken !== 'undefined'));
 
   let navTo = '/login';
   let navLabel = 'Sign In';

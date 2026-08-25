@@ -6,34 +6,37 @@ export function AuthProvider({ children }) {
   const getStoredUser = () => {
     try {
       const token = localStorage.getItem('ng_user_token');
-      if (!token) return null;
-      return JSON.parse(localStorage.getItem('ng_user') || 'null');
+      if (!token || token === 'null' || token === 'undefined') return null;
+      const parsed = JSON.parse(localStorage.getItem('ng_user') || 'null');
+      return parsed || { name: 'Customer' };
     } catch {
-      return null;
+      return { name: 'Customer' };
     }
   };
 
   const getStoredSeller = () => {
     try {
       const token = localStorage.getItem('ng_seller_token');
-      if (!token) return null;
-      return JSON.parse(localStorage.getItem('ng_seller') || 'null');
+      if (!token || token === 'null' || token === 'undefined') return null;
+      const parsed = JSON.parse(localStorage.getItem('ng_seller') || 'null');
+      return parsed || { storeName: 'Merchant Store', ownerName: 'Seller' };
     } catch {
-      return null;
+      return { storeName: 'Merchant Store', ownerName: 'Seller' };
     }
   };
 
   const getStoredAdmin = () => {
     try {
       const token = localStorage.getItem('ng_admin_token');
-      if (!token) return null;
+      if (!token || token === 'null' || token === 'undefined') return null;
+      const parsed = JSON.parse(localStorage.getItem('ng_admin') || 'null');
       return (
-        JSON.parse(localStorage.getItem('ng_admin') || 'null') || {
-          name: localStorage.getItem('ng_admin_name') || 'Admin',
+        parsed || {
+          name: localStorage.getItem('ng_admin_name') || 'Super Admin',
         }
       );
     } catch {
-      return null;
+      return { name: 'Super Admin' };
     }
   };
 
