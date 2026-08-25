@@ -897,49 +897,7 @@ const audioUpload = multer({
   limits: { fileSize: 25 * 1024 * 1024 },
 });
 
-const COMMON_HINDI_TO_URDU = {
-  'अच्छा': 'اچھا', 'आप': 'آپ', 'इसे': 'اسے', 'करो': 'کرو', 'करें': 'کریں', 'कर': 'کر', 'सकें': 'سکیں',
-  'एक': 'ایک', 'लाख': 'لاکھ', 'लाइक': 'لاکھ', 'रुपये': 'روپے', 'रुपए': 'روپے', 'रूपीज': 'روپے',
-  'डिपोसिट': 'ڈپازٹ', 'डिपॉजिट': 'ڈپازٹ', 'ताकि': 'تاکہ', 'हम': 'ہم', 'आपके': 'آپ کے', 'आपका': 'آپ کا',
-  'अकाउंट': 'اکاؤنٹ', 'काउंट': 'اکاؤنٹ', 'को': 'کو', 'रन': 'رن', 'और': 'اور', 'जो': 'جو', 'है': 'ہے',
-  'वो': 'وہ', 'वह': 'وہ', 'प्रोसेस': 'پروسیس', 'पाएं': 'پائیں', 'पाए': 'پائیں', 'दें': 'دیں', 'दे': 'دے', 'दो': 'دو',
-  'दीजिए': 'دیجیے', 'दीजिये': 'دیجیے', 'कीजिए': 'کیجیے', 'कीजिये': 'کیجیے', 'शुक्रिया': 'شکریہ',
-  'धन्यवाद': 'شکریہ', 'नमस्ते': 'سلام', 'हेलो': 'ہیلو', 'हां': 'ہاں', 'नहीं': 'نہیں',
-  'मैं': 'میں', 'चाहता': 'چاہتا', 'हूँ': 'ہوں', 'हूं': 'ہوں', 'कि': 'کہ', 'मुझे': 'مجھے', 'देना': 'دینا', 'ठीक': 'ٹھیک'
-};
-
-const DEVANAGARI_CHAR_MAP = {
-  'क़': 'ق', 'ख़': 'خ', 'ग़': 'غ', 'ज़': 'ز', 'ड़': 'ڑ', 'ढ़': 'ڑھ', 'फ़': 'ف',
-  'अ': 'ا', 'आ': 'آ', 'इ': 'ا', 'ई': 'ای', 'उ': 'او', 'ऊ': 'او', 'ए': 'اے', 'ऐ': 'ای', 'ओ': 'او', 'औ': 'او',
-  'क': 'ک', 'ख': 'کھ', 'ग': 'گ', 'घ': 'گھ', 'ङ': 'ن',
-  'च': 'چ', 'छ': 'چھ', 'ज': 'ج', 'झ': 'جھ', 'ञ': 'ن',
-  'ट': 'ٹ', 'ठ': 'ٹھ', 'ड': 'ڈ', 'ढ': 'ڈھ', 'ण': 'ن',
-  'त': 'ت', 'थ': 'تھ', 'द': 'د', 'ध': 'دھ', 'न': 'ن',
-  'प': 'پ', 'फ': 'ف', 'ब': 'ب', 'भ': 'بھ', 'म': 'م',
-  'य': 'ی', 'र': 'ر', 'ल': 'ل', 'व': 'و', 'श': 'ش', 'ष': 'ش', 'स': 'س', 'ह': 'ہ',
-  'ा': 'ا', 'ि': '', 'ी': 'ی', 'ु': '', 'ू': 'و', 'े': 'ے', 'ै': 'ے', 'ो': 'و', 'ौ': 'و',
-  '्': '', 'ं': 'ں', 'ँ': 'ں', 'ः': 'ہ', '़': '',
-  '।': '۔', '॥': '۔'
-};
-
-function convertDevanagariToUrdu(text) {
-  if (!text || !/[\u0900-\u097F]/.test(text)) return text;
-  let result = text;
-  for (const [hi, ur] of Object.entries(COMMON_HINDI_TO_URDU)) {
-    result = result.replace(new RegExp(hi, 'g'), ur);
-  }
-  let output = '';
-  for (const char of result) {
-    if (DEVANAGARI_CHAR_MAP[char] !== undefined) {
-      output += DEVANAGARI_CHAR_MAP[char];
-    } else {
-      output += char;
-    }
-  }
-  return output.replace(/\s+/g, ' ').trim();
-}
-
-// POST /api/chat/admin/transcribe (Transcribe audio into Urdu Script or English)
+// POST /api/chat/admin/transcribe (Transcribe audio strictly into English)
 router.post('/admin/transcribe', authAdmin('chat'), audioUpload.single('audio'), async (req, res) => {
   try {
     if (!req.file || !req.file.buffer) {
@@ -956,7 +914,8 @@ router.post('/admin/transcribe', authAdmin('chat'), audioUpload.single('audio'),
     const formData = new FormData();
     formData.append('file', audioBlob, fileName);
     formData.append('model', 'whisper-large-v3-turbo');
-    formData.append('prompt', 'السلام علیکم، یہ میسج اردو یا انگلش میں ہے۔');
+    formData.append('language', 'en');
+    formData.append('prompt', 'Transcribe clear English speech accurately.');
     formData.append('response_format', 'json');
 
     const controller = new AbortController();
@@ -986,12 +945,9 @@ router.post('/admin/transcribe', authAdmin('chat'), audioUpload.single('audio'),
     const data = await response.json();
     const rawTranscribedText = (data?.text || '').trim();
 
-    // Convert any Devanagari Hindi into Urdu Script (English stays 100% untouched)
-    const transcribedText = convertDevanagariToUrdu(rawTranscribedText);
-
     return res.json({
       ok: true,
-      text: transcribedText,
+      text: rawTranscribedText,
     });
   } catch (err) {
     console.error('Transcription route error:', err);
