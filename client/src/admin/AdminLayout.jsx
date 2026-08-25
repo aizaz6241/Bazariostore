@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { api, fmtDate } from '../api.js';
+import { useAuth } from '../auth.jsx';
 import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
 import FloatingChatWidget from '../components/FloatingChatWidget.jsx';
@@ -17,6 +18,7 @@ const NAV = [
 
 export default function AdminLayout() {
   const navigate = useNavigate();
+  const { logoutAdmin } = useAuth();
   const token = localStorage.getItem('ng_admin_token');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const admin = (() => {
@@ -111,9 +113,7 @@ export default function AdminLayout() {
   if (!token) return null;
 
   const logout = () => {
-    localStorage.removeItem('ng_admin_token');
-    localStorage.removeItem('ng_admin');
-    localStorage.removeItem('ng_admin_name');
+    logoutAdmin();
     navigate('/admin/login');
   };
 

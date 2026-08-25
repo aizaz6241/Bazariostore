@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../api.js';
+import { useAuth } from '../auth.jsx';
 import Ic from '../components/Icons.jsx';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
+  const { loginAdmin } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -20,9 +22,7 @@ export default function AdminLogin() {
         method: 'POST',
         body: { email: email.trim(), password },
       });
-      localStorage.setItem('ng_admin_token', token);
-      localStorage.setItem('ng_admin', JSON.stringify(admin));
-      localStorage.setItem('ng_admin_name', admin.name);
+      loginAdmin(token, admin);
       navigate('/admin');
     } catch (err) {
       setError(err.message || 'Login failed. Please check your admin credentials.');

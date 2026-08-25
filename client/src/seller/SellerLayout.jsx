@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate, Link, Navigate } from 'react-router-dom';
 import { sapi } from '../api.js';
+import { useAuth } from '../auth.jsx';
 import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
 import FloatingChatWidget from '../components/FloatingChatWidget.jsx';
@@ -26,6 +27,7 @@ const SELLER_NAV = [
 
 export default function SellerLayout() {
   const navigate = useNavigate();
+  const { logoutSeller } = useAuth();
   const token = localStorage.getItem('ng_seller_token');
   const { formatMoney } = useCurrency();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -190,8 +192,7 @@ export default function SellerLayout() {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem('ng_seller_token');
-    localStorage.removeItem('ng_seller');
+    logoutSeller();
     navigate('/seller/login');
   };
 

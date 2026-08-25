@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
+import { useAuth } from '../auth.jsx';
 import Ic from '../components/Icons.jsx';
 import OtpVerificationModal from '../components/OtpVerificationModal.jsx';
 
 export default function SellerLogin() {
   const navigate = useNavigate();
+  const { loginSeller } = useAuth();
   const [params] = useSearchParams();
   const urlResetToken = params.get('resetToken') || '';
   const urlEmail = params.get('email') || '';
@@ -59,8 +61,7 @@ export default function SellerLogin() {
         method: 'POST',
         body: { email: email.trim(), password },
       });
-      localStorage.setItem('ng_seller_token', data.token);
-      localStorage.setItem('ng_seller', JSON.stringify(data.seller));
+      loginSeller(data.token, data.seller);
       navigate('/seller');
     } catch (e) {
       setErr(e.message || 'Login failed. Please check your business email and password.');
