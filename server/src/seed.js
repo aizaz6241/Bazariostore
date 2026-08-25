@@ -80,7 +80,7 @@ export async function runSeed() {
       totalOrders: 96,
       wallet: { balance: 14250, processingFund: 3200, totalProfitEarned: 29700, totalEarned: 135000, totalDeposited: 15000, totalWithdrawn: 120750 },
       accountHealth: { score: 98, status: 'healthy' },
-      withdrawalLimit: { maxAmount: 2500, minAmount: 10, currentTierName: 'Tier 3 - Gold Partner ($2,500 Max)', successfulWithdrawalCount: 8 },
+      withdrawalLimit: { maxAmount: 500, minAmount: 10, currentTierName: 'Tier 1 - Standard ($500 Max)', successfulWithdrawalCount: 0, requiredWithdrawalsForIncrease: 10, upgradeFee: 50 },
     },
     {
       ownerName: 'Sophia Laurent',
@@ -104,7 +104,7 @@ export async function runSeed() {
       totalOrders: 64,
       wallet: { balance: 8900, processingFund: 1800, totalProfitEarned: 15900, totalEarned: 71550, totalDeposited: 8000, totalWithdrawn: 62650 },
       accountHealth: { score: 95, status: 'healthy' },
-      withdrawalLimit: { maxAmount: 1500, minAmount: 10, currentTierName: 'Tier 2 - Silver Merchant ($1,500 Max)', successfulWithdrawalCount: 5 },
+      withdrawalLimit: { maxAmount: 500, minAmount: 10, currentTierName: 'Tier 1 - Standard ($500 Max)', successfulWithdrawalCount: 0, requiredWithdrawalsForIncrease: 10, upgradeFee: 50 },
     },
     {
       ownerName: 'Marcus Vance',
@@ -128,7 +128,7 @@ export async function runSeed() {
       totalOrders: 48,
       wallet: { balance: 6200, processingFund: 1200, totalProfitEarned: 10840, totalEarned: 47696, totalDeposited: 5000, totalWithdrawn: 41496 },
       accountHealth: { score: 96, status: 'healthy' },
-      withdrawalLimit: { maxAmount: 1000, minAmount: 10, currentTierName: 'Tier 2 - Silver Merchant ($1,000 Max)', successfulWithdrawalCount: 4 },
+      withdrawalLimit: { maxAmount: 500, minAmount: 10, currentTierName: 'Tier 1 - Standard ($500 Max)', successfulWithdrawalCount: 0, requiredWithdrawalsForIncrease: 10, upgradeFee: 50 },
     },
     {
       ownerName: 'Dr. Elena Rostova',
@@ -152,7 +152,7 @@ export async function runSeed() {
       totalOrders: 112,
       wallet: { balance: 11400, processingFund: 2400, totalProfitEarned: 18400, totalEarned: 82800, totalDeposited: 10000, totalWithdrawn: 71400 },
       accountHealth: { score: 99, status: 'healthy' },
-      withdrawalLimit: { maxAmount: 2000, minAmount: 10, currentTierName: 'Tier 3 - Gold Partner ($2,000 Max)', successfulWithdrawalCount: 7 },
+      withdrawalLimit: { maxAmount: 500, minAmount: 10, currentTierName: 'Tier 1 - Standard ($500 Max)', successfulWithdrawalCount: 0, requiredWithdrawalsForIncrease: 10, upgradeFee: 50 },
     },
     {
       ownerName: 'David Miller',
@@ -176,7 +176,7 @@ export async function runSeed() {
       totalOrders: 58,
       wallet: { balance: 7800, processingFund: 1500, totalProfitEarned: 13680, totalEarned: 62244, totalDeposited: 6000, totalWithdrawn: 54444 },
       accountHealth: { score: 97, status: 'healthy' },
-      withdrawalLimit: { maxAmount: 1500, minAmount: 10, currentTierName: 'Tier 2 - Silver Merchant ($1,500 Max)', successfulWithdrawalCount: 6 },
+      withdrawalLimit: { maxAmount: 500, minAmount: 10, currentTierName: 'Tier 1 - Standard ($500 Max)', successfulWithdrawalCount: 0, requiredWithdrawalsForIncrease: 10, upgradeFee: 50 },
     },
     {
       ownerName: 'Henri Dubois',
@@ -200,7 +200,7 @@ export async function runSeed() {
       totalOrders: 72,
       wallet: { balance: 24500, processingFund: 5800, totalProfitEarned: 42000, totalEarned: 195300, totalDeposited: 25000, totalWithdrawn: 170800 },
       accountHealth: { score: 100, status: 'healthy' },
-      withdrawalLimit: { maxAmount: 5000, minAmount: 10, currentTierName: 'Tier 4 - Diamond VIP ($5,000 Max)', successfulWithdrawalCount: 12 },
+      withdrawalLimit: { maxAmount: 500, minAmount: 10, currentTierName: 'Tier 1 - Standard ($500 Max)', successfulWithdrawalCount: 0, requiredWithdrawalsForIncrease: 10, upgradeFee: 50 },
     },
   ];
 

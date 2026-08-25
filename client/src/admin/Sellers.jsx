@@ -1783,6 +1783,84 @@ export default function Sellers() {
               {/* TAB 4: WITHDRAWAL LIMITS & TIER CONTROLS */}
               {compTab === 'limits' && (
                 <form onSubmit={handleLimitEditSubmit}>
+                  {/* Current Active Status Notice */}
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                    <div>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#166534', textTransform: 'uppercase' }}>Current Active Tier for {compSeller.storeName}:</span>
+                      <div style={{ fontSize: 14, fontWeight: 900, color: '#14532d', marginTop: 1 }}>
+                        {limitTierName || 'Tier 1 - Standard ($500 Max)'}
+                      </div>
+                    </div>
+                    <span style={{ background: '#22c55e', color: '#ffffff', fontWeight: 800, fontSize: 11, padding: '3px 8px', borderRadius: 6 }}>
+                      Max: ${Number(limitMaxAmount || 500).toLocaleString('en-US')} USD
+                    </span>
+                  </div>
+
+                  {/* 1-Click Tier Presets */}
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: 11.5, fontWeight: 700, display: 'block', marginBottom: 6, color: '#64748b', textTransform: 'uppercase' }}>
+                      ⚡ 1-Click Banking Tier Presets:
+                    </label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLimitMaxAmount('500');
+                          setLimitMinAmount('10');
+                          setLimitRequiredCount('10');
+                          setLimitSuccessCount('0');
+                          setLimitUpgradeFee('50');
+                          setLimitTierName('Tier 1 - Standard ($500 Max)');
+                        }}
+                        style={{ padding: '6px 8px', fontSize: 11.5, fontWeight: 700, borderRadius: 6, border: limitMaxAmount == '500' ? '2px solid #2563eb' : '1px solid #cbd5e1', background: limitMaxAmount == '500' ? '#eff6ff' : '#ffffff', color: limitMaxAmount == '500' ? '#1d4ed8' : '#334155', cursor: 'pointer', textAlign: 'center' }}
+                      >
+                        🥉 Tier 1 ($500 Max)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLimitMaxAmount('1000');
+                          setLimitMinAmount('10');
+                          setLimitRequiredCount('10');
+                          setLimitSuccessCount('0');
+                          setLimitUpgradeFee('75');
+                          setLimitTierName('Tier 2 - Silver Merchant ($1,000 Max)');
+                        }}
+                        style={{ padding: '6px 8px', fontSize: 11.5, fontWeight: 700, borderRadius: 6, border: limitMaxAmount == '1000' ? '2px solid #2563eb' : '1px solid #cbd5e1', background: limitMaxAmount == '1000' ? '#eff6ff' : '#ffffff', color: limitMaxAmount == '1000' ? '#1d4ed8' : '#334155', cursor: 'pointer', textAlign: 'center' }}
+                      >
+                        🥈 Tier 2 ($1,000 Max)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLimitMaxAmount('2500');
+                          setLimitMinAmount('10');
+                          setLimitRequiredCount('15');
+                          setLimitSuccessCount('0');
+                          setLimitUpgradeFee('100');
+                          setLimitTierName('Tier 3 - Gold Partner ($2,500 Max)');
+                        }}
+                        style={{ padding: '6px 8px', fontSize: 11.5, fontWeight: 700, borderRadius: 6, border: limitMaxAmount == '2500' ? '2px solid #2563eb' : '1px solid #cbd5e1', background: limitMaxAmount == '2500' ? '#eff6ff' : '#ffffff', color: limitMaxAmount == '2500' ? '#1d4ed8' : '#334155', cursor: 'pointer', textAlign: 'center' }}
+                      >
+                        🥇 Tier 3 ($2,500 Max)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLimitMaxAmount('5000');
+                          setLimitMinAmount('10');
+                          setLimitRequiredCount('20');
+                          setLimitSuccessCount('0');
+                          setLimitUpgradeFee('150');
+                          setLimitTierName('Tier 4 - Diamond VIP ($5,000 Max)');
+                        }}
+                        style={{ padding: '6px 8px', fontSize: 11.5, fontWeight: 700, borderRadius: 6, border: limitMaxAmount == '5000' ? '2px solid #2563eb' : '1px solid #cbd5e1', background: limitMaxAmount == '5000' ? '#eff6ff' : '#ffffff', color: limitMaxAmount == '5000' ? '#1d4ed8' : '#334155', cursor: 'pointer', textAlign: 'center' }}
+                      >
+                        💎 Tier 4 ($5,000 Max)
+                      </button>
+                    </div>
+                  </div>
+
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
                     <div>
                       <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
@@ -1792,7 +1870,14 @@ export default function Sellers() {
                         type="number"
                         min="1"
                         value={limitMaxAmount}
-                        onChange={(e) => setLimitMaxAmount(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setLimitMaxAmount(val);
+                          if (val === '500') setLimitTierName('Tier 1 - Standard ($500 Max)');
+                          else if (val === '1000') setLimitTierName('Tier 2 - Silver Merchant ($1,000 Max)');
+                          else if (val === '2500') setLimitTierName('Tier 3 - Gold Partner ($2,500 Max)');
+                          else if (val === '5000') setLimitTierName('Tier 4 - Diamond VIP ($5,000 Max)');
+                        }}
                         style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 14, fontWeight: 800, color: '#2563eb' }}
                         required
                       />
