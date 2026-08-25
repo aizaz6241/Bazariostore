@@ -58,7 +58,18 @@ const UPI_APPS = [
 export default function SellerWallet() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { formatMoney, currentCurrency } = useCurrency();
-  const [wallet, setWallet] = useState(null);
+
+  // Initialize wallet from localStorage seller data as immediate fallback
+  // This prevents $0.00 flicker while API call is in progress
+  // The API load() will overwrite with fresh data shortly after
+  const [wallet, setWallet] = useState(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem('ng_seller') || 'null');
+      return cached?.wallet || null;
+    } catch {
+      return null;
+    }
+  });
   const [withdrawalLimit, setWithdrawalLimit] = useState(null);
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
   const [requests, setRequests] = useState([]);
@@ -207,7 +218,14 @@ export default function SellerWallet() {
           }
         }
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.error('[SellerWallet] load error:', err?.message);
+        // Fallback: use cached seller wallet from localStorage if API fails
+        try {
+          const cached = JSON.parse(localStorage.getItem('ng_seller') || 'null');
+          if (cached?.wallet) setWallet(cached.wallet);
+        } catch {}
+      })
       .finally(() => setLoading(false));
   };
 

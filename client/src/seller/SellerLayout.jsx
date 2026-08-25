@@ -106,6 +106,9 @@ export default function SellerLayout() {
         localStorage.setItem('ng_seller', JSON.stringify(updated));
         return updated;
       });
+      // Also refresh from API to ensure localStorage has full fresh data
+      // This is important for SellerWallet page's localStorage fallback
+      refreshSeller();
     };
 
     const onHealthUpdate = ({ accountHealth, status }) => {
