@@ -717,11 +717,21 @@ export default function SellerWallet() {
                   </tr>
                 )}
                 {filteredLedger.map((r) => {
-                  const badge = TYPE_BADGE[r.type] || { label: r.type, color: '#64748b', bg: '#f1f5f9', icon: '📄' };
+                  let badge = TYPE_BADGE[r.type] || { label: r.type, color: '#64748b', bg: '#f1f5f9', icon: '📄' };
+                  if (r.type === 'adjustment') {
+                    if (Number(r.amount) < 0) {
+                      badge = { label: 'Admin Charge / Upgrade Fee', color: '#dc2626', bg: '#fee2e2', icon: '⚙️' };
+                    } else {
+                      badge = { label: 'Admin Credit Adjustment', color: '#16a34a', bg: '#dcfce7', icon: '⚙️' };
+                    }
+                  }
+
                   const isLock = r.type === 'order_processing_lock';
                   const isDelivered = r.type === 'order_delivered_release';
                   const isDeposit = r.type === 'deposit';
                   const isWithdrawal = r.type === 'withdrawal';
+                  const isNegative = Number(r.amount) < 0;
+                  const absAmt = Math.abs(Number(r.amount || 0));
                   const dObj = new Date(r.createdAt || r.processedAt || Date.now());
 
                   return (
@@ -772,15 +782,16 @@ export default function SellerWallet() {
                           if (isWithdrawal) {
                             if (r.status === 'approved') {
                               const finalAmt = r.approvedAmount !== undefined && r.approvedAmount !== null ? r.approvedAmount : r.amount;
-                              const isPartial = finalAmt < r.amount;
+                              const absFinal = Math.abs(Number(finalAmt || 0));
+                              const isPartial = absFinal < absAmt;
                               return (
                                 <div>
                                   <b style={{ fontSize: 14, color: '#dc2626' }}>
-                                    -{formatMoney(finalAmt)}
+                                    -{formatMoney(absFinal)}
                                   </b>
                                   {isPartial && (
                                     <small style={{ display: 'block', color: '#16a34a', fontSize: 11, fontWeight: 700 }}>
-                                      +{formatMoney(r.amount - finalAmt)} Refunded
+                                      +{formatMoney(absAmt - absFinal)} Refunded
                                     </small>
                                   )}
                                 </div>
@@ -790,17 +801,17 @@ export default function SellerWallet() {
                               return (
                                 <div>
                                   <b style={{ fontSize: 13, color: '#64748b', textDecoration: 'line-through' }}>
-                                    -{formatMoney(r.amount)}
+                                    -{formatMoney(absAmt)}
                                   </b>
                                   <small style={{ display: 'block', color: '#16a34a', fontSize: 11, fontWeight: 700 }}>
-                                    Full {formatMoney(r.amount)} Refunded
+                                    Full {formatMoney(absAmt)} Refunded
                                   </small>
                                 </div>
                               );
                             }
                             return (
                               <b style={{ fontSize: 14, color: '#dc2626' }}>
-                                -{formatMoney(r.amount)}
+                                -{formatMoney(absAmt)}
                               </b>
                             );
                           }
@@ -810,32 +821,35 @@ export default function SellerWallet() {
                               const finalAmt = r.approvedAmount !== undefined && r.approvedAmount !== null ? r.approvedAmount : r.amount;
                               return (
                                 <b style={{ fontSize: 14, color: '#16a34a' }}>
-                                  +{formatMoney(finalAmt)}
+                                  +{formatMoney(Math.abs(Number(finalAmt || 0)))}
                                 </b>
                               );
                             }
                             if (r.status === 'rejected') {
                               return (
                                 <b style={{ fontSize: 13, color: '#64748b', textDecoration: 'line-through' }}>
-                                  +{formatMoney(r.amount)}
+                                  +{formatMoney(absAmt)}
                                 </b>
                               );
                             }
                             return (
                               <b style={{ fontSize: 14, color: '#16a34a' }}>
-                                +{formatMoney(r.amount)}
+                                +{formatMoney(absAmt)}
+                              </b>
+                            );
+                          }
+
+                          if (isLock || isNegative) {
+                            return (
+                              <b style={{ fontSize: 14, color: '#dc2626' }}>
+                                -{formatMoney(absAmt)}
                               </b>
                             );
                           }
 
                           return (
-                            <b
-                              style={{
-                                fontSize: 14,
-                                color: isLock ? '#dc2626' : '#16a34a',
-                              }}
-                            >
-                              {isLock ? '-' : '+'}{formatMoney(r.amount)}
+                            <b style={{ fontSize: 14, color: '#16a34a' }}>
+                              +{formatMoney(absAmt)}
                             </b>
                           );
                         })()}

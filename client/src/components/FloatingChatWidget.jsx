@@ -36,7 +36,7 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
   // Load seller or guest thread
   const loadSellerThread = () => {
     setLoading(true);
-    const isSellerLoggedIn = Boolean(localStorage.getItem('seller_token'));
+    const isSellerLoggedIn = Boolean(localStorage.getItem('ng_seller_token'));
     if (!isSellerLoggedIn) {
       const guestId = getGuestId();
       api(`/chat/guest/${guestId}`)
@@ -244,8 +244,8 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
       removeFile();
       setReplyingTo(null);
 
-      if (role === 'seller') {
-        const isSellerLoggedIn = Boolean(localStorage.getItem('seller_token'));
+      if (role !== 'admin') {
+        const isSellerLoggedIn = Boolean(localStorage.getItem('ng_seller_token'));
         if (!isSellerLoggedIn) {
           const guestId = getGuestId();
           await api('/chat/guest/send', {

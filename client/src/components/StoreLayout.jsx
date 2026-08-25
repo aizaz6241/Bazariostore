@@ -5,6 +5,7 @@ import { useAuth } from '../auth.jsx';
 import { useContent } from '../content.jsx';
 import Ic from './Icons.jsx';
 import CurrencySelector from './CurrencySelector.jsx';
+import FloatingChatWidget from './FloatingChatWidget.jsx';
 
 export function Logo() {
   return (
@@ -252,6 +253,7 @@ export default function StoreLayout() {
       </main>
       <Footer />
       <MobileNav />
+      <FloatingChatWidget role="guest" />
       {toast && <div className="toast"><Ic name="checkCircle" size={17} /> {toast}</div>}
     </>
   );

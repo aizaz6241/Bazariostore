@@ -100,7 +100,24 @@ router.post('/verify-otp', async (req, res) => {
 // POST /api/sellers/register (Seller self-registers with KYC document)
 router.post('/register', async (req, res) => {
   try {
-    const { storeName, ownerName, email, password, phone, city, referralCode, idDocumentUrl, idDocumentType, idDocument, passportDocument, otp } = req.body || {};
+    const {
+      storeName,
+      ownerName,
+      email,
+      password,
+      phone,
+      city,
+      referralCode,
+      idDocumentUrl,
+      idDocumentType,
+      idDocument,
+      passportDocument,
+      passportDocumentUrl,
+      bankStatementDocument,
+      bankStatementUrl,
+      otp,
+    } = req.body || {};
+
     if (!storeName || !ownerName || !email || !password) {
       return res.status(400).json({ message: 'Store name, owner name, email, and password are required' });
     }
@@ -132,6 +149,11 @@ router.post('/register', async (req, res) => {
       storeSlug = `${baseSlug}-${counter++}`;
     }
 
+    const finalIdDoc = idDocument || idDocumentUrl || '';
+    const finalPassportDoc = passportDocument || passportDocumentUrl || '';
+    const finalBankDoc = bankStatementDocument || bankStatementUrl || '';
+    const hasAnyKyc = Boolean(finalIdDoc || finalPassportDoc || finalBankDoc);
+
     const passwordHash = await bcrypt.hash(password, 10);
     const seller = new Seller({
       storeName: storeName.trim(),
@@ -145,9 +167,14 @@ router.post('/register', async (req, res) => {
       address: { city: city || 'New York', country: 'United States' },
       status: 'pending_approval',
       kycDocuments: {
-        idDocumentUrl: idDocumentUrl || idDocument || passportDocument || '',
-        idDocumentType: idDocumentType || 'Passport / National ID',
-        uploadedAt: (idDocumentUrl || idDocument || passportDocument) ? new Date() : null,
+        idDocumentUrl: finalIdDoc || finalPassportDoc || '',
+        idCard: finalIdDoc,
+        passport: finalPassportDoc,
+        passportDocumentUrl: finalPassportDoc,
+        bankStatement: finalBankDoc,
+        bankStatementUrl: finalBankDoc,
+        idDocumentType: idDocumentType || 'Passport / National ID / Bank Statement',
+        uploadedAt: hasAnyKyc ? new Date() : null,
       },
       securityDeposit: {
         paid: false,

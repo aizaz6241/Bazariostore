@@ -948,10 +948,10 @@ export default function Sellers() {
                 </td>
                 <td>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {s.kycDocuments?.idCard ? (
+                    {s.kycDocuments?.idCard || s.kycDocuments?.idDocumentUrl ? (
                       <button
                         type="button"
-                        onClick={() => setKycDocModal({ seller: s, docType: 'idCard', docUrl: s.kycDocuments.idCard })}
+                        onClick={() => setKycDocModal({ seller: s, docType: 'idCard', docUrl: s.kycDocuments.idCard || s.kycDocuments.idDocumentUrl })}
                         style={{ padding: '3px 8px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
                       >
                         🪪 View ID
@@ -959,16 +959,27 @@ export default function Sellers() {
                     ) : (
                       <small className="muted-sm">No ID</small>
                     )}
-                    {s.kycDocuments?.passport ? (
+                    {s.kycDocuments?.passport || s.kycDocuments?.passportDocumentUrl ? (
                       <button
                         type="button"
-                        onClick={() => setKycDocModal({ seller: s, docType: 'passport', docUrl: s.kycDocuments.passport })}
+                        onClick={() => setKycDocModal({ seller: s, docType: 'passport', docUrl: s.kycDocuments.passport || s.kycDocuments.passportDocumentUrl })}
                         style={{ padding: '3px 8px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
                       >
                         🛂 View Passport
                       </button>
                     ) : (
                       <small className="muted-sm">No Passport</small>
+                    )}
+                    {s.kycDocuments?.bankStatement || s.kycDocuments?.bankStatementUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => setKycDocModal({ seller: s, docType: 'bankStatement', docUrl: s.kycDocuments.bankStatement || s.kycDocuments.bankStatementUrl })}
+                        style={{ padding: '3px 8px', background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: 4, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', color: '#1d4ed8' }}
+                      >
+                        🏦 Bank Statement
+                      </button>
+                    ) : (
+                      <small className="muted-sm">No Statement</small>
                     )}
                   </div>
                 </td>
@@ -2221,7 +2232,15 @@ export default function Sellers() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontSize: 22 }}>📄</span>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: 16 }}>KYC Document: <b>{kycDocModal.docType === 'idCard' ? 'National ID Card' : 'Passport'}</b></h3>
+                  <h3 style={{ margin: 0, fontSize: 16 }}>
+                    KYC Document: <b>
+                      {kycDocModal.docType === 'idCard'
+                        ? 'National ID / Aadhaar / DL'
+                        : kycDocModal.docType === 'bankStatement'
+                        ? 'Bank Account Statement / Passbook'
+                        : 'Passport / Proof of Address'}
+                    </b>
+                  </h3>
                   <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>Merchant: {kycDocModal.seller.storeName} ({kycDocModal.seller.ownerName})</p>
                 </div>
               </div>

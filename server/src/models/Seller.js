@@ -117,10 +117,15 @@ const sellerSchema = new mongoose.Schema(
       totalWithdrawn: { type: Number, default: 0 },    // total paid out
       securityDeposit: { type: Number, default: 0 },   // security deposit amount recorded
     },
-    // KYC Verification / Identity Documents uploaded during self-registration
+    // KYC Verification / Identity & Financial Documents uploaded during self-registration
     kycDocuments: {
       idDocumentUrl: { type: String, default: '' },
-      idDocumentType: { type: String, default: 'Passport / ID' },
+      idDocumentType: { type: String, default: 'Passport / ID / Bank Statement' },
+      passportDocumentUrl: { type: String, default: '' },
+      bankStatementUrl: { type: String, default: '' },
+      idCard: { type: String, default: '' },
+      passport: { type: String, default: '' },
+      bankStatement: { type: String, default: '' },
       uploadedAt: { type: Date, default: null },
     },
     // Security Deposit & Referral information (set on Admin approval)

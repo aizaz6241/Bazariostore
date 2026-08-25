@@ -45,6 +45,7 @@ export default function SellerLogin() {
     referralCode: '',
     idDocument: '',
     passportDocument: '',
+    bankStatementDocument: '',
     description: '',
   });
 
@@ -127,6 +128,7 @@ export default function SellerLogin() {
         referralCode: '',
         idDocument: '',
         passportDocument: '',
+        bankStatementDocument: '',
         description: '',
       });
     } finally {
@@ -392,30 +394,40 @@ export default function SellerLogin() {
             </div>
 
             {/* KYC Documents Upload Section */}
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px', marginBottom: 12 }}>
-              <b style={{ fontSize: 12.5, color: '#0f172a', display: 'block', marginBottom: 6 }}>
-                📑 KYC &amp; Verification Documents (ID / Passport)
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px', marginBottom: 14 }}>
+              <b style={{ fontSize: 12.5, color: '#0f172a', display: 'block', marginBottom: 8 }}>
+                📑 KYC &amp; Verification Documents (ID / Passport / Bank Statement)
               </b>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                 <div>
-                  <label style={{ fontSize: 11.5, color: '#64748b', display: 'block', marginBottom: 4 }}>National ID / Aadhaar / DL</label>
+                  <label style={{ fontSize: 11, color: '#64748b', display: 'block', marginBottom: 4, fontWeight: 700 }}>1. National ID / Aadhaar / DL</label>
                   <input
                     type="file"
                     accept="image/*,.pdf"
                     onChange={handleFileUpload('idDocument')}
-                    style={{ fontSize: 11.5 }}
+                    style={{ fontSize: 11, width: '100%' }}
                   />
-                  {regForm.idDocument && <small style={{ color: '#16a34a', display: 'block', fontWeight: 700 }}>✓ ID Attached</small>}
+                  {regForm.idDocument && <small style={{ color: '#16a34a', display: 'block', fontWeight: 700, marginTop: 2 }}>✓ ID Attached</small>}
                 </div>
                 <div>
-                  <label style={{ fontSize: 11.5, color: '#64748b', display: 'block', marginBottom: 4 }}>Passport / Proof of Address</label>
+                  <label style={{ fontSize: 11, color: '#64748b', display: 'block', marginBottom: 4, fontWeight: 700 }}>2. Passport / Address Proof</label>
                   <input
                     type="file"
                     accept="image/*,.pdf"
                     onChange={handleFileUpload('passportDocument')}
-                    style={{ fontSize: 11.5 }}
+                    style={{ fontSize: 11, width: '100%' }}
                   />
-                  {regForm.passportDocument && <small style={{ color: '#16a34a', display: 'block', fontWeight: 700 }}>✓ Passport Attached</small>}
+                  {regForm.passportDocument && <small style={{ color: '#16a34a', display: 'block', fontWeight: 700, marginTop: 2 }}>✓ Passport Attached</small>}
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: '#64748b', display: 'block', marginBottom: 4, fontWeight: 700 }}>3. Bank Statement / Proof</label>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={handleFileUpload('bankStatementDocument')}
+                    style={{ fontSize: 11, width: '100%' }}
+                  />
+                  {regForm.bankStatementDocument && <small style={{ color: '#16a34a', display: 'block', fontWeight: 700, marginTop: 2 }}>✓ Statement Attached</small>}
                 </div>
               </div>
             </div>
