@@ -20,21 +20,25 @@ export function Logo() {
 
 function Header() {
   const { count } = useCart();
-  const { user, seller, admin, logout, logoutSeller, logoutAdmin, logoutAll, refreshAuth } = useAuth();
+  const { user, seller, admin, activePortal, logout, logoutSeller, logoutAdmin, logoutAll, refreshAuth } = useAuth();
   const { categories } = useContent();
   const navigate = useNavigate();
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('All');
   const loc = useLocation();
 
-  const adminToken = localStorage.getItem('ng_admin_token');
-  const sellerToken = localStorage.getItem('ng_seller_token');
-  const userToken = localStorage.getItem('ng_user_token');
+  const isSeller = Boolean(seller && localStorage.getItem('ng_seller_token'));
+  const isAdmin = Boolean(admin && localStorage.getItem('ng_admin_token'));
+  const isCustomer = Boolean(user && localStorage.getItem('ng_user_token'));
+  const isLoggedIn = isSeller || isAdmin || isCustomer;
 
-  const isAdmin = Boolean(admin || (adminToken && adminToken !== 'null' && adminToken !== 'undefined'));
-  const isSeller = Boolean(seller || (sellerToken && sellerToken !== 'null' && sellerToken !== 'undefined'));
-  const isCustomer = Boolean(user || (userToken && userToken !== 'null' && userToken !== 'undefined'));
-  const isLoggedIn = isAdmin || isSeller || isCustomer;
+  // Determine active primary mode
+  let primaryRole = activePortal;
+  if (!primaryRole) {
+    if (isSeller) primaryRole = 'seller';
+    else if (isAdmin) primaryRole = 'admin';
+    else if (isCustomer) primaryRole = 'customer';
+  }
 
   useEffect(() => {
     if (refreshAuth) refreshAuth();
@@ -59,15 +63,28 @@ function Header() {
   let accountBold = 'Account & Lists';
   let accountMainLink = '/login';
 
-  if (isAdmin) {
+  if (primaryRole === 'seller' && isSeller) {
+    const sellerDisplayName = (seller?.storeName || seller?.ownerName || 'Seller').split(' ')[0];
+    accountSmall = `🏬 ${sellerDisplayName}`;
+    accountBold = 'Seller Dashboard';
+    accountMainLink = '/seller';
+  } else if (primaryRole === 'admin' && isAdmin) {
     accountSmall = '👑 Admin Portal';
     accountBold = `${admin?.name?.split(' ')[0] || 'Admin'} Dashboard`;
     accountMainLink = '/admin';
+  } else if (primaryRole === 'customer' && isCustomer) {
+    accountSmall = `Hello, ${user?.name?.split(' ')[0] || 'Customer'}`;
+    accountBold = 'My Account';
+    accountMainLink = '/account';
   } else if (isSeller) {
     const sellerDisplayName = (seller?.storeName || seller?.ownerName || 'Seller').split(' ')[0];
     accountSmall = `🏬 ${sellerDisplayName}`;
     accountBold = 'Seller Dashboard';
     accountMainLink = '/seller';
+  } else if (isAdmin) {
+    accountSmall = '👑 Admin Portal';
+    accountBold = `${admin?.name?.split(' ')[0] || 'Admin'} Dashboard`;
+    accountMainLink = '/admin';
   } else if (isCustomer) {
     accountSmall = `Hello, ${user?.name?.split(' ')[0] || 'Customer'}`;
     accountBold = 'My Account';
@@ -120,34 +137,25 @@ function Header() {
                 <>
                   {/* Active User Card */}
                   <div className="menu-user-card">
-                    <div className={`menu-user-avatar ${isAdmin ? 'avatar-admin' : isSeller ? 'avatar-seller' : 'avatar-customer'}`}>
-                      {isAdmin ? '👑' : isSeller ? '🏬' : (user?.name?.[0]?.toUpperCase() || '👤')}
+                    <div className={`menu-user-avatar ${(primaryRole === 'seller' || (isSeller && !isAdmin)) ? 'avatar-seller' : (primaryRole === 'admin' || isAdmin) ? 'avatar-admin' : 'avatar-customer'}`}>
+                      {(primaryRole === 'seller' || (isSeller && !isAdmin)) ? '🏬' : (primaryRole === 'admin' || isAdmin) ? '👑' : (user?.name?.[0]?.toUpperCase() || '👤')}
                     </div>
                     <div className="menu-user-meta">
                       <b className="menu-user-name">
-                        {isAdmin ? (admin?.name || 'Super Admin') : isSeller ? (seller?.storeName || seller?.ownerName) : user?.name}
+                        {(primaryRole === 'seller' || (isSeller && !isAdmin))
+                          ? (seller?.storeName || seller?.ownerName || 'Seller Hub')
+                          : (primaryRole === 'admin' || isAdmin)
+                          ? (admin?.name || 'Super Admin')
+                          : user?.name}
                       </b>
-                      <span className={`menu-role-tag ${isAdmin ? 'tag-admin' : isSeller ? 'tag-seller' : 'tag-customer'}`}>
-                        {isAdmin ? 'Super Admin' : isSeller ? 'Verified Seller' : 'Customer'}
+                      <span className={`menu-role-tag ${(primaryRole === 'seller' || (isSeller && !isAdmin)) ? 'tag-seller' : (primaryRole === 'admin' || isAdmin) ? 'tag-admin' : 'tag-customer'}`}>
+                        {(primaryRole === 'seller' || (isSeller && !isAdmin)) ? 'Verified Seller' : (primaryRole === 'admin' || isAdmin) ? 'Super Admin' : 'Customer'}
                       </span>
                     </div>
                   </div>
 
-                  {/* Admin Specific Links */}
-                  {isAdmin && (
-                    <div className="menu-section">
-                      <Link to="/admin" className="menu-primary-portal-btn admin-theme-btn">
-                        <Ic name="grid" size={15} /> <b>Open Admin Dashboard →</b>
-                      </Link>
-                      <Link to="/admin/sellers"><Ic name="package" size={14} /> Sellers &amp; Vendors</Link>
-                      <Link to="/admin/withdrawals"><Ic name="banknote" size={14} /> Withdrawal Requests</Link>
-                      <Link to="/admin/chat"><Ic name="chat" size={14} /> Seller Support Desk</Link>
-                      <Link to="/admin/staff"><Ic name="user" size={14} /> Staff &amp; Team</Link>
-                    </div>
-                  )}
-
                   {/* Seller Specific Links */}
-                  {isSeller && !isAdmin && (
+                  {(primaryRole === 'seller' || (isSeller && !isAdmin)) && (
                     <div className="menu-section">
                       <Link to="/seller" className="menu-primary-portal-btn seller-theme-btn">
                         <Ic name="grid" size={15} /> <b>Open Seller Dashboard →</b>
@@ -157,6 +165,19 @@ function Header() {
                       <Link to="/seller/wallet"><Ic name="banknote" size={14} /> Merchant Wallet</Link>
                       <Link to="/seller/settings"><Ic name="shield" size={14} /> Store Settings</Link>
                       <Link to="/seller/support"><Ic name="chat" size={14} /> Support &amp; Helpline</Link>
+                    </div>
+                  )}
+
+                  {/* Admin Specific Links */}
+                  {(primaryRole === 'admin' || (isAdmin && !isSeller)) && (
+                    <div className="menu-section">
+                      <Link to="/admin" className="menu-primary-portal-btn admin-theme-btn">
+                        <Ic name="grid" size={15} /> <b>Open Admin Dashboard →</b>
+                      </Link>
+                      <Link to="/admin/sellers"><Ic name="package" size={14} /> Sellers &amp; Vendors</Link>
+                      <Link to="/admin/withdrawals"><Ic name="banknote" size={14} /> Withdrawal Requests</Link>
+                      <Link to="/admin/chat"><Ic name="chat" size={14} /> Seller Support Desk</Link>
+                      <Link to="/admin/staff"><Ic name="user" size={14} /> Staff &amp; Team</Link>
                     </div>
                   )}
 
@@ -204,21 +225,7 @@ function Header() {
                   <hr className="menu-divider" />
 
                   {/* Sign Out Actions */}
-                  {isAdmin && (
-                    <a
-                      href="#logout-admin"
-                      className="menu-logout-item"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        logoutAdmin();
-                        navigate('/');
-                      }}
-                    >
-                      <Ic name="logout" size={14} /> Sign Out (Super Admin)
-                    </a>
-                  )}
-
-                  {isSeller && (
+                  {(primaryRole === 'seller' || isSeller) && (
                     <a
                       href="#logout-seller"
                       className="menu-logout-item"
@@ -232,7 +239,21 @@ function Header() {
                     </a>
                   )}
 
-                  {isCustomer && (
+                  {(primaryRole === 'admin' || (isAdmin && !isSeller)) && (
+                    <a
+                      href="#logout-admin"
+                      className="menu-logout-item"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        logoutAdmin();
+                        navigate('/');
+                      }}
+                    >
+                      <Ic name="logout" size={14} /> Sign Out (Super Admin)
+                    </a>
+                  )}
+
+                  {isCustomer && !isSeller && !isAdmin && (
                     <a
                       href="#logout-customer"
                       className="menu-logout-item"
@@ -277,11 +298,11 @@ function Header() {
 
           {/* Returns & Orders */}
           <Link
-            to={isAdmin ? '/admin' : isSeller ? '/seller/orders' : isCustomer ? '/account?tab=orders' : '/track-order'}
+            to={(primaryRole === 'seller' || (isSeller && !isAdmin)) ? '/seller/orders' : (primaryRole === 'admin' || isAdmin) ? '/admin' : isCustomer ? '/account?tab=orders' : '/track-order'}
             className="header-orders-link"
           >
-            <small>{isAdmin ? 'Admin' : isSeller ? 'Merchant' : 'Returns'}</small>
-            <b>{isAdmin ? 'Panel' : isSeller ? 'Orders' : '& Orders'}</b>
+            <small>{(primaryRole === 'seller' || (isSeller && !isAdmin)) ? 'Merchant' : (primaryRole === 'admin' || isAdmin) ? 'Admin' : 'Returns'}</small>
+            <b>{(primaryRole === 'seller' || (isSeller && !isAdmin)) ? 'Orders' : (primaryRole === 'admin' || isAdmin) ? 'Panel' : '& Orders'}</b>
           </Link>
 
           {/* Cart */}

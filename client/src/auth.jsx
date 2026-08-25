@@ -2,52 +2,80 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 
 const Ctx = createContext(null);
 
+export const isValidToken = (t) => {
+  return Boolean(t && typeof t === 'string' && t.trim() !== '' && t !== 'null' && t !== 'undefined' && t !== 'demo-token');
+};
+
 export function AuthProvider({ children }) {
   const getStoredUser = () => {
     try {
       const token = localStorage.getItem('ng_user_token');
-      if (!token || token === 'null' || token === 'undefined') return null;
-      const parsed = JSON.parse(localStorage.getItem('ng_user') || 'null');
-      return parsed || { name: 'Customer' };
+      if (!isValidToken(token)) return null;
+      const raw = localStorage.getItem('ng_user');
+      return raw ? JSON.parse(raw) : { name: 'Customer' };
     } catch {
-      return { name: 'Customer' };
+      return null;
     }
   };
 
   const getStoredSeller = () => {
     try {
       const token = localStorage.getItem('ng_seller_token');
-      if (!token || token === 'null' || token === 'undefined') return null;
-      const parsed = JSON.parse(localStorage.getItem('ng_seller') || 'null');
-      return parsed || { storeName: 'Merchant Store', ownerName: 'Seller' };
+      if (!isValidToken(token)) return null;
+      const raw = localStorage.getItem('ng_seller');
+      return raw ? JSON.parse(raw) : { storeName: 'Merchant Store', ownerName: 'Seller' };
     } catch {
-      return { storeName: 'Merchant Store', ownerName: 'Seller' };
+      return null;
     }
   };
 
   const getStoredAdmin = () => {
     try {
       const token = localStorage.getItem('ng_admin_token');
-      if (!token || token === 'null' || token === 'undefined') return null;
-      const parsed = JSON.parse(localStorage.getItem('ng_admin') || 'null');
-      return (
-        parsed || {
-          name: localStorage.getItem('ng_admin_name') || 'Super Admin',
-        }
-      );
+      if (!isValidToken(token)) return null;
+      const raw = localStorage.getItem('ng_admin');
+      const name = localStorage.getItem('ng_admin_name');
+      return raw ? JSON.parse(raw) : { name: name || 'Super Admin' };
     } catch {
-      return { name: 'Super Admin' };
+      return null;
     }
   };
 
   const [user, setUser] = useState(getStoredUser);
   const [seller, setSeller] = useState(getStoredSeller);
   const [admin, setAdmin] = useState(getStoredAdmin);
+  const [activePortal, setActivePortal] = useState(() => localStorage.getItem('ng_active_portal') || null);
 
   const refreshAuth = useCallback(() => {
-    setUser(getStoredUser());
-    setSeller(getStoredSeller());
-    setAdmin(getStoredAdmin());
+    const u = getStoredUser();
+    const s = getStoredSeller();
+    const a = getStoredAdmin();
+    const portal = localStorage.getItem('ng_active_portal');
+
+    setUser(u);
+    setSeller(s);
+    setAdmin(a);
+
+    // Auto-resolve active portal if stale or unset
+    if (portal === 'seller' && s) {
+      setActivePortal('seller');
+    } else if (portal === 'admin' && a) {
+      setActivePortal('admin');
+    } else if (portal === 'customer' && u) {
+      setActivePortal('customer');
+    } else if (s) {
+      setActivePortal('seller');
+      localStorage.setItem('ng_active_portal', 'seller');
+    } else if (a) {
+      setActivePortal('admin');
+      localStorage.setItem('ng_active_portal', 'admin');
+    } else if (u) {
+      setActivePortal('customer');
+      localStorage.setItem('ng_active_portal', 'customer');
+    } else {
+      setActivePortal(null);
+      localStorage.removeItem('ng_active_portal');
+    }
   }, []);
 
   useEffect(() => {
@@ -72,6 +100,10 @@ export function AuthProvider({ children }) {
   const login = (token, u) => {
     localStorage.setItem('ng_user_token', token);
     localStorage.setItem('ng_user', JSON.stringify(u));
+    if (!localStorage.getItem('ng_active_portal') || localStorage.getItem('ng_active_portal') === 'customer') {
+      localStorage.setItem('ng_active_portal', 'customer');
+      setActivePortal('customer');
+    }
     setUser(u);
     triggerAuthChange();
   };
@@ -85,15 +117,27 @@ export function AuthProvider({ children }) {
   const logout = () => {
     localStorage.removeItem('ng_user_token');
     localStorage.removeItem('ng_user');
+    if (localStorage.getItem('ng_active_portal') === 'customer') {
+      localStorage.removeItem('ng_active_portal');
+      setActivePortal(null);
+    }
     setUser(null);
     triggerAuthChange();
   };
 
   // Seller Auth
   const loginSeller = (token, s) => {
+    // Clear any stale admin token to prevent cross-contamination
+    localStorage.removeItem('ng_admin_token');
+    localStorage.removeItem('ng_admin');
+    localStorage.removeItem('ng_admin_name');
+    setAdmin(null);
+
     localStorage.setItem('ng_seller_token', token);
     localStorage.setItem('ng_seller', JSON.stringify(s));
+    localStorage.setItem('ng_active_portal', 'seller');
     setSeller(s);
+    setActivePortal('seller');
     triggerAuthChange();
   };
 
@@ -106,16 +150,27 @@ export function AuthProvider({ children }) {
   const logoutSeller = () => {
     localStorage.removeItem('ng_seller_token');
     localStorage.removeItem('ng_seller');
+    if (localStorage.getItem('ng_active_portal') === 'seller') {
+      localStorage.removeItem('ng_active_portal');
+      setActivePortal(null);
+    }
     setSeller(null);
     triggerAuthChange();
   };
 
   // Admin Auth
   const loginAdmin = (token, a) => {
+    // Clear any stale seller token to prevent cross-contamination
+    localStorage.removeItem('ng_seller_token');
+    localStorage.removeItem('ng_seller');
+    setSeller(null);
+
     localStorage.setItem('ng_admin_token', token);
     localStorage.setItem('ng_admin', JSON.stringify(a));
     if (a?.name) localStorage.setItem('ng_admin_name', a.name);
+    localStorage.setItem('ng_active_portal', 'admin');
     setAdmin(a);
+    setActivePortal('admin');
     triggerAuthChange();
   };
 
@@ -123,6 +178,10 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('ng_admin_token');
     localStorage.removeItem('ng_admin');
     localStorage.removeItem('ng_admin_name');
+    if (localStorage.getItem('ng_active_portal') === 'admin') {
+      localStorage.removeItem('ng_active_portal');
+      setActivePortal(null);
+    }
     setAdmin(null);
     triggerAuthChange();
   };
@@ -135,9 +194,11 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('ng_admin_token');
     localStorage.removeItem('ng_admin');
     localStorage.removeItem('ng_admin_name');
+    localStorage.removeItem('ng_active_portal');
     setUser(null);
     setSeller(null);
     setAdmin(null);
+    setActivePortal(null);
     triggerAuthChange();
   };
 
@@ -147,6 +208,7 @@ export function AuthProvider({ children }) {
         user,
         seller,
         admin,
+        activePortal,
         login,
         update,
         logout,
@@ -165,4 +227,5 @@ export function AuthProvider({ children }) {
 }
 
 export const useAuth = () => useContext(Ctx);
+
 

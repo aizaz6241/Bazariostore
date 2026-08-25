@@ -30,6 +30,25 @@ async function request(path, opts = {}, token) {
   }
 
   if (!res.ok) {
+    if (res.status === 401) {
+      if (token && token === localStorage.getItem('ng_admin_token')) {
+        localStorage.removeItem('ng_admin_token');
+        localStorage.removeItem('ng_admin');
+        localStorage.removeItem('ng_admin_name');
+        if (localStorage.getItem('ng_active_portal') === 'admin') localStorage.removeItem('ng_active_portal');
+        window.dispatchEvent(new Event('auth-change'));
+      } else if (token && token === localStorage.getItem('ng_seller_token')) {
+        localStorage.removeItem('ng_seller_token');
+        localStorage.removeItem('ng_seller');
+        if (localStorage.getItem('ng_active_portal') === 'seller') localStorage.removeItem('ng_active_portal');
+        window.dispatchEvent(new Event('auth-change'));
+      } else if (token && token === localStorage.getItem('ng_user_token')) {
+        localStorage.removeItem('ng_user_token');
+        localStorage.removeItem('ng_user');
+        if (localStorage.getItem('ng_active_portal') === 'customer') localStorage.removeItem('ng_active_portal');
+        window.dispatchEvent(new Event('auth-change'));
+      }
+    }
     const msg = data?.message || data?.error || (res.status === 404 ? 'API route not found (404)' : `Server request failed (status ${res.status})`);
     const err = new Error(msg);
     err.status = res.status;
