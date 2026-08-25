@@ -73,11 +73,6 @@ export default function SellerLayout() {
 
     // Socket.io for live chat & wallet updates
     const socket = getSocket();
-    const join = () => {
-      if (seller?._id) socket.emit('seller:join', { token, sellerId: seller._id });
-    };
-    join();
-    socket.on('connect', join);
 
     const onMessage = (msg) => {
       if (msg.sender === 'admin') {
@@ -170,6 +165,22 @@ export default function SellerLayout() {
       socket.off('seller:targets_update', onTargetsUpdate);
     };
   }, [token]);
+
+  // ─── Dedicated seller:join effect ─────────────────────────────────────────
+  // الگ effect اس لیے ضروری ہے: اوپر والے effect میں seller?._id stale closure تھا۔
+  // token effect mount ہوتے وقت seller ابھی null ہو سکتا ہے (refreshSeller async ہے)۔
+  // seller._id dependency سے یہ effect seller load ہونے پر خود re-run ہوگا
+  // اور seller اپنے صحیح socket room میں join ہو جائے گا۔
+  useEffect(() => {
+    if (!token || !seller?._id) return;
+    const socket = getSocket();
+    const join = () => socket.emit('seller:join', { token, sellerId: seller._id });
+    // اگر socket پہلے سے connected ہو تو فوراً join کریں
+    if (socket.connected) join();
+    // disconnect/reconnect کی صورت میں دوبارہ join کریں
+    socket.on('connect', join);
+    return () => socket.off('connect', join);
+  }, [token, seller?._id]);
 
   if (!token) {
     return <Navigate to="/seller/login" replace />;

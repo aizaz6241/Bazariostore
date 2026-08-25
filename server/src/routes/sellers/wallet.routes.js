@@ -821,6 +821,8 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
       io.to(`seller:${seller._id}`).emit('wallet:update', {
         balance: seller.wallet.balance,
         totalWithdrawn: seller.wallet.totalWithdrawn,
+        totalDeposited: seller.wallet.totalDeposited,
+        totalEarned: seller.wallet.totalEarned,
         pendingWithdrawal: seller.wallet.pendingWithdrawal,
         pendingDeposit: seller.wallet.pendingDeposit,
       });

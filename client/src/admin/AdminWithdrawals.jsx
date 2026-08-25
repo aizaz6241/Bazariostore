@@ -90,6 +90,16 @@ export default function AdminWithdrawals() {
     const socket = getSocket();
     if (!socket) return;
 
+    // Safety net: ensure admin is in 'admins' room so withdrawal:new events are received
+    // AdminLayout does this too, but if admin navigates directly here or socket reconnects
+    // after component mount, we need to re-emit admin:join
+    const adminToken = localStorage.getItem('ng_admin_token');
+    const rejoin = () => {
+      if (adminToken) socket.emit('admin:join', { token: adminToken });
+    };
+    if (socket.connected) rejoin();
+    socket.on('connect', rejoin);
+
     const handleSync = () => {
       load();
     };
@@ -100,6 +110,7 @@ export default function AdminWithdrawals() {
     socket.on('limit:update', handleSync);
 
     return () => {
+      socket.off('connect', rejoin);
       socket.off('withdrawal:new', handleSync);
       socket.off('withdrawal:update', handleSync);
       socket.off('limit:new', handleSync);
