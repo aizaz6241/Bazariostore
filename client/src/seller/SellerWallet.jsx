@@ -215,12 +215,49 @@ export default function SellerWallet() {
     load();
 
     const socket = getSocket();
-    const onWalletUpdate = (payload) => {
-      if (payload?.withdrawalLimit) {
-        setWithdrawalLimit(payload.withdrawalLimit);
+    const token = localStorage.getItem('ng_seller_token');
+
+    // Ensure seller is joined to their socket room so wallet:update events arrive
+    // This is a safety net in case SellerLayout's join hasn't fired yet
+    const sellerData = (() => { try { return JSON.parse(localStorage.getItem('ng_seller') || 'null'); } catch { return null; } })();
+    const joinRoom = () => {
+      if (token && sellerData?._id) {
+        socket.emit('seller:join', { token, sellerId: sellerData._id });
       }
+    };
+    if (socket.connected) joinRoom();
+    socket.on('connect', joinRoom);
+
+    const onWalletUpdate = (payload) => {
+      // Directly update wallet state from socket payload — instant, no API round-trip needed
+      // This ensures balance shows immediately without waiting for API call
+      if (payload && typeof payload === 'object') {
+        if (payload?.withdrawalLimit) {
+          setWithdrawalLimit(payload.withdrawalLimit);
+        }
+        // If payload has balance data, update wallet state directly
+        const hasWalletData = payload.balance !== undefined ||
+          payload.totalDeposited !== undefined ||
+          payload.pendingDeposit !== undefined ||
+          payload.pendingWithdrawal !== undefined;
+        if (hasWalletData) {
+          setWallet((prev) => ({
+            ...(prev || {}),
+            ...(payload.balance !== undefined && { balance: payload.balance }),
+            ...(payload.totalDeposited !== undefined && { totalDeposited: payload.totalDeposited }),
+            ...(payload.totalEarned !== undefined && { totalEarned: payload.totalEarned }),
+            ...(payload.totalWithdrawn !== undefined && { totalWithdrawn: payload.totalWithdrawn }),
+            ...(payload.pendingDeposit !== undefined && { pendingDeposit: payload.pendingDeposit }),
+            ...(payload.pendingWithdrawal !== undefined && { pendingWithdrawal: payload.pendingWithdrawal }),
+          }));
+        }
+      }
+      // Also reload from API for full consistency (requests list, etc.)
       load();
     };
+
+    // notify event: server sends this on approval — also triggers a refresh
+    const onNotify = () => load();
 
     socket.on('wallet:update', onWalletUpdate);
     socket.on('withdrawal:update', onWalletUpdate);
@@ -229,8 +266,10 @@ export default function SellerWallet() {
     socket.on('limit:update', onWalletUpdate);
     socket.on('seller:status_update', onWalletUpdate);
     socket.on('order:new', onWalletUpdate);
+    socket.on('notify', onNotify);
 
     return () => {
+      socket.off('connect', joinRoom);
       socket.off('wallet:update', onWalletUpdate);
       socket.off('withdrawal:update', onWalletUpdate);
       socket.off('withdrawal:new', onWalletUpdate);
@@ -238,6 +277,7 @@ export default function SellerWallet() {
       socket.off('limit:update', onWalletUpdate);
       socket.off('seller:status_update', onWalletUpdate);
       socket.off('order:new', onWalletUpdate);
+      socket.off('notify', onNotify);
     };
   }, []);
 

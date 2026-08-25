@@ -1,6 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import Seller from '../../models/Seller.js';
+import Order from '../../models/Order.js';
 import Withdrawal from '../../models/Withdrawal.js';
 import { Conversation, Message } from '../../models/Chat.js';
 import { authSeller, authAdmin, authSellerOrAdmin } from '../../middleware/auth.js';
