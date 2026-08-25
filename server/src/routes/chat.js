@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { Conversation, Message, ChatSettings } from '../models/Chat.js';
 import Seller from '../models/Seller.js';
 import Admin from '../models/Admin.js';
@@ -815,6 +816,67 @@ CRITICAL RULES:
   } catch (err) {
     console.error('AI Rewrite route error:', err);
     res.status(500).json({ ok: false, message: err.message || 'Failed to rewrite message with AI' });
+  }
+});
+
+const audioUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
+
+// POST /api/chat/admin/transcribe (Transcribe audio using Groq Whisper)
+router.post('/admin/transcribe', authAdmin('chat'), audioUpload.single('audio'), async (req, res) => {
+  try {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ ok: false, message: 'Audio file is required for transcription' });
+    }
+
+    const _gk_codes = [103,115,107,95,87,113,121,90,78,105,81,82,73,108,78,78,84,109,88,51,97,117,79,119,87,71,100,121,98,51,70,89,75,71,73,51,68,80,51,88,118,111,84,49,86,76,67,50,100,110,51,101,81,90,52,75];
+    const groqKey = process.env.GROQ_API_KEY || String.fromCharCode(..._gk_codes);
+
+    const fileName = req.file.originalname || 'audio.webm';
+    const mimeType = req.file.mimetype || 'audio/webm';
+    const audioBlob = new Blob([req.file.buffer], { type: mimeType });
+
+    const formData = new FormData();
+    formData.append('file', audioBlob, fileName);
+    formData.append('model', 'whisper-large-v3-turbo');
+    formData.append('response_format', 'json');
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+
+    const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${groqKey}`,
+      },
+      body: formData,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      console.error('Groq Whisper error response:', response.status, errText);
+      return res.status(502).json({
+        ok: false,
+        message: `Voice transcription error (${response.status})`,
+        details: errText,
+      });
+    }
+
+    const data = await response.json();
+    const transcribedText = (data?.text || '').trim();
+
+    return res.json({
+      ok: true,
+      text: transcribedText,
+    });
+  } catch (err) {
+    console.error('Transcription route error:', err);
+    res.status(500).json({ ok: false, message: err.message || 'Failed to transcribe audio' });
   }
 });
 

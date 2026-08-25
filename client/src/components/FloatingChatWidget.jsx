@@ -6,6 +6,7 @@ import Ic from './Icons.jsx';
 import ChatAttachment from './ChatAttachment.jsx';
 import ChatMessageBubble from './ChatMessageBubble.jsx';
 import AiRewriteBox from './AiRewriteBox.jsx';
+import VoiceRecordButton from './VoiceRecordButton.jsx';
 
 export default function FloatingChatWidget({ role = 'seller', currentSeller = null }) {
   const location = useLocation();
@@ -537,6 +538,17 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
             >
               <Ic name="paperclip" size={18} stroke={2} />
             </button>
+
+            <div style={{ marginBottom: 4 }}>
+              <VoiceRecordButton
+                compact={true}
+                onTranscribed={(spokenText) => {
+                  setText((prev) => (prev ? `${prev.trim()} ${spokenText}` : spokenText));
+                  textInputRef.current?.focus();
+                }}
+                disabled={sending || uploading}
+              />
+            </div>
 
             <textarea
               ref={textInputRef}

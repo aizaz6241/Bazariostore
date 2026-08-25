@@ -4,6 +4,7 @@ import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
 import ChatMessageBubble from '../components/ChatMessageBubble.jsx';
 import AiRewriteBox from '../components/AiRewriteBox.jsx';
+import VoiceRecordButton from '../components/VoiceRecordButton.jsx';
 
 const ROLE_LABELS = {
   super_admin: '👑 Super Admin',
@@ -963,6 +964,15 @@ export default function ChatInbox() {
               >
                 <Ic name="paperclip" size={20} stroke={2} />
               </button>
+              <div style={{ marginBottom: 8 }}>
+                <VoiceRecordButton
+                  onTranscribed={(spokenText) => {
+                    setText((prev) => (prev ? `${prev.trim()} ${spokenText}` : spokenText));
+                    textInputRef.current?.focus();
+                  }}
+                  disabled={sending || uploading}
+                />
+              </div>
               <textarea
                 ref={textInputRef}
                 rows={3}
