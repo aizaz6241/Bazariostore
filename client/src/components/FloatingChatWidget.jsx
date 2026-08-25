@@ -5,6 +5,7 @@ import { getSocket, getGuestId } from '../socket.js';
 import Ic from './Icons.jsx';
 import ChatAttachment from './ChatAttachment.jsx';
 import ChatMessageBubble from './ChatMessageBubble.jsx';
+import AiRewriteBox from './AiRewriteBox.jsx';
 
 export default function FloatingChatWidget({ role = 'seller', currentSeller = null }) {
   const location = useLocation();
@@ -247,9 +248,9 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
     textInputRef.current?.focus();
   };
 
-  const handleSend = async (e) => {
-    e.preventDefault();
-    const clean = text.trim();
+  const handleSend = async (e, overrideText = null) => {
+    if (e?.preventDefault) e.preventDefault();
+    const clean = (overrideText !== null ? overrideText : text).trim();
     if (!clean && !file) return;
 
     setSending(true);
@@ -563,6 +564,21 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
                 lineHeight: 1.4,
               }}
             />
+
+            {role === 'admin' && (
+              <AiRewriteBox
+                text={text}
+                compact={true}
+                onApply={(rewritten) => {
+                  setText(rewritten);
+                  textInputRef.current?.focus();
+                }}
+                onApplyAndSend={(rewritten) => {
+                  handleSend(null, rewritten);
+                }}
+                disabled={sending || uploading}
+              />
+            )}
 
             <button
               type="submit"

@@ -683,6 +683,108 @@ router.post('/settings/auto-reply', authAdmin('chat'), async (req, res) => {
   }
 });
 
+// POST /api/chat/admin/ai-rewrite (AI-assisted message rewrite for Admin support)
+router.post('/admin/ai-rewrite', authAdmin('chat'), async (req, res) => {
+  try {
+    const { text, tone = 'professional' } = req.body || {};
+    if (!text || !text.trim()) {
+      return res.status(400).json({ ok: false, message: 'Message text is required for AI rewrite' });
+    }
+
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ ok: false, message: 'OPENROUTER_API_KEY is not configured in server environment' });
+    }
+    const model = process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b:free';
+
+    let toneInstruction = 'Make it professional, polite, concise, and clear. Match the input language style (Roman Urdu, Urdu script, or English).';
+    if (tone === 'concise') {
+      toneInstruction = 'Keep it extremely concise, clear, and direct without any unnecessary fluff or filler words.';
+    } else if (tone === 'polite') {
+      toneInstruction = 'Make it very warm, respectful, polite, and customer-friendly.';
+    } else if (tone === 'roman_urdu') {
+      toneInstruction = 'Rewrite in clean, respectful, and professional Roman Urdu (Urdu written in Latin alphabet).';
+    } else if (tone === 'urdu') {
+      toneInstruction = 'Rewrite in formal, polite, and elegant Urdu script (اردو رسم الخط).';
+    } else if (tone === 'english') {
+      toneInstruction = 'Rewrite in fluent, polite, and professional business English.';
+    }
+
+    const systemPrompt = `You are an AI communication assistant for an e-commerce marketplace admin (Bazario) communicating with sellers, merchants, and customers.
+Your task: Rewrite the given draft message according to this instruction: ${toneInstruction}.
+Important rules:
+1. Maintain the exact factual meaning, dates, numbers, and intent of the original draft.
+2. Return ONLY the rewritten message text directly.
+3. Do NOT include markdown code fences, quotes around the entire message, introductory phrases (like "Here is the rewritten version:"), or explanations.`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000);
+
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://bazario.pk',
+          'X-Title': 'Bazario Marketplace Admin Chat',
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: text.trim() },
+          ],
+          temperature: 0.5,
+          max_tokens: 400,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        console.error('OpenRouter API error response:', response.status, errText);
+        return res.status(502).json({
+          ok: false,
+          message: `AI service error (${response.status}). Please try again shortly.`,
+          details: errText,
+        });
+      }
+
+      const data = await response.json();
+      let rewritten = data.choices?.[0]?.message?.content?.trim() || '';
+
+      // Strip surrounding quotes if model added them
+      if ((rewritten.startsWith('"') && rewritten.endsWith('"')) || (rewritten.startsWith('“') && rewritten.endsWith('”'))) {
+        rewritten = rewritten.slice(1, -1).trim();
+      }
+
+      if (!rewritten) {
+        return res.status(500).json({ ok: false, message: 'AI returned an empty response. Please try again.' });
+      }
+
+      return res.json({
+        ok: true,
+        original: text.trim(),
+        rewritten,
+        tone,
+        model,
+      });
+    } catch (fetchErr) {
+      clearTimeout(timeout);
+      if (fetchErr.name === 'AbortError') {
+        return res.status(504).json({ ok: false, message: 'AI rewrite request timed out. Please try again.' });
+      }
+      throw fetchErr;
+    }
+  } catch (err) {
+    console.error('AI Rewrite route error:', err);
+    res.status(500).json({ ok: false, message: err.message || 'Failed to rewrite message with AI' });
+  }
+});
+
 // ----------------------------------------------------
 // 5. MESSAGE EDIT & DELETE (ADMIN & PARTICIPANTS)
 // ----------------------------------------------------

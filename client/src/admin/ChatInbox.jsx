@@ -3,6 +3,7 @@ import { api, fmtDay, compressImage } from '../api.js';
 import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
 import ChatMessageBubble from '../components/ChatMessageBubble.jsx';
+import AiRewriteBox from '../components/AiRewriteBox.jsx';
 
 const ROLE_LABELS = {
   super_admin: '👑 Super Admin',
@@ -313,9 +314,9 @@ export default function ChatInbox() {
   };
 
   // Send Message (Dual Route: Seller vs Team)
-  const handleSend = async (e) => {
-    e.preventDefault();
-    const clean = text.trim();
+  const handleSend = async (e, overrideText = null) => {
+    if (e?.preventDefault) e.preventDefault();
+    const clean = (overrideText !== null ? overrideText : text).trim();
     if (!clean && !file) return;
 
     if (activeTab === 'sellers' && !selectedSellerId) return;
@@ -996,14 +997,27 @@ export default function ChatInbox() {
                   lineHeight: 1.45,
                 }}
               />
-              <button
-                type="submit"
-                className="btn-primary"
-                disabled={sending || (!text.trim() && !file)}
-                style={{ height: 42, marginBottom: 4, display: 'inline-flex', alignItems: 'center', gap: 6 }}
-              >
-                {sending ? (uploading ? 'Uploading...' : 'Sending...') : <><Ic name="send" size={16} /> Send</>}
-              </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 4 }}>
+                <AiRewriteBox
+                  text={text}
+                  onApply={(rewritten) => {
+                    setText(rewritten);
+                    textInputRef.current?.focus();
+                  }}
+                  onApplyAndSend={(rewritten) => {
+                    handleSend(null, rewritten);
+                  }}
+                  disabled={sending || uploading}
+                />
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={sending || (!text.trim() && !file)}
+                  style={{ height: 42, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                >
+                  {sending ? (uploading ? 'Uploading...' : 'Sending...') : <><Ic name="send" size={16} /> Send</>}
+                </button>
+              </div>
             </form>
           </>
         )}
