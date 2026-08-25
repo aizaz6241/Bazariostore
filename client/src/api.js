@@ -1,11 +1,7 @@
 export function getApiBase() {
-  let customUrl = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
-  // Ignore legacy/suspended render URLs across all hostnames
-  if (customUrl.includes('onrender.com') || customUrl.includes('render.com')) {
-    customUrl = '';
-  }
+  const customUrl = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
   if (customUrl) return customUrl;
-  // Default to relative '/api' on the same domain (works seamlessly on Vercel, localhost, mobile, etc.)
+  // Default to relative '/api' on the same domain (works on localhost with Vite proxy)
   return '';
 }
 
