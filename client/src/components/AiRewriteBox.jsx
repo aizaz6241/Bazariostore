@@ -3,11 +3,10 @@ import { api } from '../api.js';
 import Ic from './Icons.jsx';
 
 const TONES = [
-  { id: 'auto', label: '⚡ Auto (Same Language)', tip: 'Auto-detects Roman Urdu, English, Urdu or Hindi & polishes it naturally' },
-  { id: 'short', label: '✂️ Short & Direct', tip: 'Keep it 1 concise sentence' },
-  { id: 'roman_urdu', label: '📝 Roman Urdu', tip: 'Clean conversational Roman Urdu' },
-  { id: 'english', label: '🌐 English', tip: 'Clean conversational English' },
-  { id: 'urdu', label: '🇵🇰 اردو', tip: 'Clean Urdu script (Nastaliq)' },
+  { id: 'auto', label: '⚡ Auto (Urdu / English)', tip: 'Auto-detects Urdu script or English & polishes it' },
+  { id: 'urdu', label: '🇵🇰 اردو (Urdu)', tip: 'Clean, polite, and elegant Urdu script (اردو رسم الخط)' },
+  { id: 'english', label: '🌐 English', tip: 'Clean, polite, and professional English' },
+  { id: 'short', label: '✂️ Short & Direct', tip: 'Keep it 1 short direct sentence' },
 ];
 
 const DEFAULT_KEY_B64 = 'c2stb3ItdjEtMTVkZTYwOTJjMjFiODMyNWFkNTJjMTNhMThkNTZkNDc2NGVhYjM4YTUwYjQzZWIwYWE2MWY5Y2I0NmUwMTQzZg==';
@@ -64,11 +63,9 @@ function cleanChatRewrittenOutput(raw) {
 }
 
 async function fetchOpenRouterDirect(cleanDraft, targetTone) {
-  let modeInstruction = 'Convert rough speech/draft into clean, polite, professional Roman Urdu (Urdu in English letters) or English. If input is in Hindi/Devanagari script or broken voice words, ALWAYS convert into clean Roman Urdu. NEVER output Hindi/Devanagari script.';
+  let modeInstruction = 'If draft is in Urdu (or Roman Urdu/Hindi), rewrite in elegant, polite, and clean Urdu script (اردو رسم الخط). If draft is in English, rewrite in clean, polite, professional English.';
   if (targetTone === 'concise' || targetTone === 'short') {
-    modeInstruction = 'Keep it very short, crisp, and direct (1 simple sentence) in Roman Urdu or English.';
-  } else if (targetTone === 'roman_urdu') {
-    modeInstruction = 'Rewrite or polish in natural, clean, respectful Roman Urdu (Urdu written in English alphabet).';
+    modeInstruction = 'Keep it very short, crisp, and direct (1 simple sentence) in Urdu script or English.';
   } else if (targetTone === 'urdu') {
     modeInstruction = 'Rewrite or polish in clean, respectful, formal Urdu script (اردو رسم الخط).';
   } else if (targetTone === 'english') {
@@ -79,12 +76,12 @@ async function fetchOpenRouterDirect(cleanDraft, targetTone) {
     {
       role: 'system',
       content: `You are a real-time instant chat message polisher (like WhatsApp / Live Support) helping an e-commerce admin.
-Task: Polish the user's draft message into natural, professional, human-like chat wording.
+Task: Polish the user's draft message into natural, professional, human-like chat wording in Urdu Script (اردو رسم الخط) or English.
 Mode: ${modeInstruction}
 
 CRITICAL RULES:
 1. THIS IS LIVE INSTANT CHAT, NOT AN EMAIL.
-2. NEVER write in Hindi/Devanagari script.
+2. ONLY output Urdu Script (اردو رسم الخط) or English. NEVER write in Hindi/Devanagari script or Roman Urdu.
 3. NEVER write email greetings ("Dear Seller", "Hello there! I hope you are having a wonderful day").
 4. NEVER write email signatures ("Regards, Bazario Support Team", "Best regards", "Sincerely").
 5. NEVER output analysis, reasoning, checklists, notes, or explanations.
@@ -92,11 +89,11 @@ CRITICAL RULES:
     },
     {
       role: 'user',
-      content: 'Draft: apka parcel return aya h address sahi kr k kal dobara bhejo'
+      content: 'Draft: آپ کا پارسل واپس آگیا ہے ایڈریس چیک کر کے کل دوبارہ بھیجیں'
     },
     {
       role: 'assistant',
-      content: 'Aapka parcel return ho gaya hai. Kindly address check kar ke kal dobara bhej dein.'
+      content: 'آپ کا پارسل واپس آ گیا ہے۔ برائے مہربانی ایڈریس چیک کر کے کل دوبارہ بھیج دیجیے گا۔'
     },
     {
       role: 'user',
@@ -111,6 +108,7 @@ CRITICAL RULES:
       content: `Draft: ${cleanDraft}`
     }
   ];
+
 
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',

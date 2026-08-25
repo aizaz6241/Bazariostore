@@ -860,7 +860,49 @@ const audioUpload = multer({
   limits: { fileSize: 25 * 1024 * 1024 },
 });
 
-// POST /api/chat/admin/transcribe (Transcribe audio using Groq Whisper)
+const COMMON_HINDI_TO_URDU = {
+  'अच्छा': 'اچھا', 'आप': 'آپ', 'इसे': 'اسے', 'करो': 'کرو', 'करें': 'کریں', 'कर': 'کر', 'सकें': 'سکیں',
+  'एक': 'ایک', 'लाख': 'لاکھ', 'लाइक': 'لاکھ', 'रुपये': 'روپے', 'रुपए': 'روپے', 'रूपीज': 'روپے',
+  'डिपोसिट': 'ڈپازٹ', 'डिपॉजिट': 'ڈپازٹ', 'ताकि': 'تاکہ', 'हम': 'ہم', 'आपके': 'آپ کے', 'आपका': 'آپ کا',
+  'अकाउंट': 'اکاؤنٹ', 'काउंट': 'اکاؤنٹ', 'को': 'کو', 'रन': 'رن', 'और': 'اور', 'जो': 'جو', 'है': 'ہے',
+  'वो': 'وہ', 'वह': 'وہ', 'प्रोसेस': 'پروسیس', 'पाएं': 'پائیں', 'पाए': 'پائیں', 'दें': 'دیں', 'दे': 'دے', 'दो': 'دو',
+  'दीजिए': 'دیجیے', 'दीजिये': 'دیجیے', 'कीजिए': 'کیجیے', 'कीजिये': 'کیجیے', 'शुक्रिया': 'شکریہ',
+  'धन्यवाद': 'شکریہ', 'नमस्ते': 'سلام', 'हेलो': 'ہیلو', 'हां': 'ہاں', 'नहीं': 'نہیں',
+  'मैं': 'میں', 'चाहता': 'چاہتا', 'हूँ': 'ہوں', 'हूं': 'ہوں', 'कि': 'کہ', 'मुझे': 'مجھے', 'देना': 'دینا', 'ठीक': 'ٹھیک'
+};
+
+const DEVANAGARI_CHAR_MAP = {
+  'क़': 'ق', 'ख़': 'خ', 'ग़': 'غ', 'ज़': 'ز', 'ड़': 'ڑ', 'ढ़': 'ڑھ', 'फ़': 'ف',
+  'अ': 'ا', 'आ': 'آ', 'इ': 'ا', 'ई': 'ای', 'उ': 'او', 'ऊ': 'او', 'ए': 'اے', 'ऐ': 'ای', 'ओ': 'او', 'औ': 'او',
+  'क': 'ک', 'ख': 'کھ', 'ग': 'گ', 'घ': 'گھ', 'ङ': 'ن',
+  'च': 'چ', 'छ': 'چھ', 'ज': 'ج', 'झ': 'جھ', 'ञ': 'ن',
+  'ट': 'ٹ', 'ठ': 'ٹھ', 'ड': 'ڈ', 'ढ': 'ڈھ', 'ण': 'ن',
+  'त': 'ت', 'थ': 'تھ', 'द': 'د', 'ध': 'دھ', 'न': 'ن',
+  'प': 'پ', 'फ': 'ف', 'ब': 'ب', 'भ': 'بھ', 'म': 'م',
+  'य': 'ی', 'र': 'ر', 'ल': 'ل', 'व': 'و', 'श': 'ش', 'ष': 'ش', 'स': 'س', 'ह': 'ہ',
+  'ा': 'ا', 'ि': '', 'ी': 'ی', 'ु': '', 'ू': 'و', 'े': 'ے', 'ै': 'ے', 'ो': 'و', 'ौ': 'و',
+  '्': '', 'ं': 'ں', 'ँ': 'ں', 'ः': 'ہ', '़': '',
+  '।': '۔', '॥': '۔'
+};
+
+function convertDevanagariToUrdu(text) {
+  if (!text || !/[\u0900-\u097F]/.test(text)) return text;
+  let result = text;
+  for (const [hi, ur] of Object.entries(COMMON_HINDI_TO_URDU)) {
+    result = result.replace(new RegExp(hi, 'g'), ur);
+  }
+  let output = '';
+  for (const char of result) {
+    if (DEVANAGARI_CHAR_MAP[char] !== undefined) {
+      output += DEVANAGARI_CHAR_MAP[char];
+    } else {
+      output += char;
+    }
+  }
+  return output.replace(/\s+/g, ' ').trim();
+}
+
+// POST /api/chat/admin/transcribe (Transcribe audio into Urdu Script or English)
 router.post('/admin/transcribe', authAdmin('chat'), audioUpload.single('audio'), async (req, res) => {
   try {
     if (!req.file || !req.file.buffer) {
@@ -877,8 +919,8 @@ router.post('/admin/transcribe', authAdmin('chat'), audioUpload.single('audio'),
     const formData = new FormData();
     formData.append('file', audioBlob, fileName);
     formData.append('model', 'whisper-large-v3-turbo');
+    formData.append('prompt', 'السلام علیکم، یہ میسج اردو یا انگلش میں ہے۔');
     formData.append('response_format', 'json');
-
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);
@@ -907,52 +949,8 @@ router.post('/admin/transcribe', authAdmin('chat'), audioUpload.single('audio'),
     const data = await response.json();
     const rawTranscribedText = (data?.text || '').trim();
 
-    // Ensure output is strictly Roman Urdu or English (convert any Hindi/Devanagari or Urdu script automatically)
-    let transcribedText = rawTranscribedText;
-    const hasDevanagari = /[\u0900-\u097F]/.test(rawTranscribedText);
-    const hasUrduScript = /[\u0600-\u06FF]/.test(rawTranscribedText);
-
-    if (hasDevanagari || hasUrduScript) {
-      try {
-        const convertRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${groqKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'openai/gpt-oss-120b',
-            messages: [
-              {
-                role: 'system',
-                content:
-                  'You are a phonetic transliterator. Convert the input Hindi/Devanagari or Urdu script text directly into natural, clean Roman Urdu (Urdu written in English Latin alphabet) or English. Output ONLY the Roman Urdu / English text directly without any explanation, quotes, or notes.',
-              },
-              {
-                role: 'user',
-                content: rawTranscribedText,
-              },
-            ],
-            temperature: 0.1,
-            max_tokens: 300,
-          }),
-        });
-
-        if (convertRes.ok) {
-          const convData = await convertRes.json();
-          let converted = (convData.choices?.[0]?.message?.content || '').trim();
-          converted = converted.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-          if ((converted.startsWith('"') && converted.endsWith('"')) || (converted.startsWith('“') && converted.endsWith('”'))) {
-            converted = converted.slice(1, -1).trim();
-          }
-          if (converted && !/[\u0900-\u097F]/.test(converted)) {
-            transcribedText = converted;
-          }
-        }
-      } catch (convErr) {
-        console.warn('Roman Urdu auto-conversion fallback error:', convErr.message);
-      }
-    }
+    // Convert any Devanagari Hindi into Urdu Script (English stays 100% untouched)
+    const transcribedText = convertDevanagariToUrdu(rawTranscribedText);
 
     return res.json({
       ok: true,

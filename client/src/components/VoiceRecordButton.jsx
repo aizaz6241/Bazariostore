@@ -5,10 +5,53 @@ import Ic from './Icons.jsx';
 const _gk_codes = [103,115,107,95,87,113,121,90,78,105,81,82,73,108,78,78,84,109,88,51,97,117,79,119,87,71,100,121,98,51,70,89,75,71,73,51,68,80,51,88,118,111,84,49,86,76,67,50,100,110,51,101,81,90,52,75];
 const GROQ_API_KEY = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GROQ_API_KEY) || String.fromCharCode(..._gk_codes);
 
+const COMMON_HINDI_TO_URDU = {
+  'अच्छा': 'اچھا', 'आप': 'آپ', 'इसे': 'اسے', 'करो': 'کرو', 'करें': 'کریں', 'कर': 'کر', 'सकें': 'سکیں',
+  'एक': 'ایک', 'लाख': 'لاکھ', 'लाइक': 'لاکھ', 'रुपये': 'روپے', 'रुपए': 'روپے', 'रूपीज': 'روپے',
+  'डिपोसिट': 'ڈپازٹ', 'डिपॉजिट': 'ڈپازٹ', 'ताकि': 'تاکہ', 'हम': 'ہم', 'आपके': 'آپ کے', 'आपका': 'آپ کا',
+  'अकाउंट': 'اکاؤنٹ', 'काउंट': 'اکاؤنٹ', 'को': 'کو', 'रन': 'رن', 'और': 'اور', 'जो': 'جو', 'है': 'ہے',
+  'वो': 'وہ', 'वह': 'وہ', 'प्रोसेस': 'پروسیس', 'पाएं': 'پائیں', 'पाए': 'پائیں', 'दें': 'دیں', 'दे': 'دے', 'दो': 'دو',
+  'दीजिए': 'دیجیے', 'दीजिये': 'دیجیے', 'कीजिए': 'کیجیے', 'कीजिये': 'کیجیے', 'शुक्रिया': 'شکریہ',
+  'धन्यवाद': 'شکریہ', 'नमस्ते': 'سلام', 'हेलो': 'ہیلو', 'हां': 'ہاں', 'नहीं': 'نہیں',
+  'मैं': 'میں', 'चाहता': 'چاہتا', 'हूँ': 'ہوں', 'हूं': 'ہوں', 'कि': 'کہ', 'मुझे': 'مجھے', 'देना': 'دینا', 'ठीक': 'ٹھیک'
+};
+
+const DEVANAGARI_CHAR_MAP = {
+  'क़': 'ق', 'ख़': 'خ', 'ग़': 'غ', 'ज़': 'ز', 'ड़': 'ڑ', 'ढ़': 'ڑھ', 'फ़': 'ف',
+  'अ': 'ا', 'आ': 'آ', 'इ': 'ا', 'ई': 'ای', 'उ': 'او', 'ऊ': 'او', 'ए': 'اے', 'ऐ': 'ای', 'ओ': 'او', 'औ': 'او',
+  'क': 'ک', 'ख': 'کھ', 'ग': 'گ', 'घ': 'گھ', 'ङ': 'ن',
+  'च': 'چ', 'छ': 'چھ', 'ज': 'ج', 'झ': 'جھ', 'ञ': 'ن',
+  'ट': 'ٹ', 'ठ': 'ٹھ', 'ड': 'ڈ', 'ढ': 'ڈھ', 'ण': 'ن',
+  'त': 'ت', 'थ': 'تھ', 'द': 'د', 'ध': 'دھ', 'न': 'ن',
+  'प': 'پ', 'फ': 'ف', 'ब': 'ب', 'भ': 'بھ', 'म': 'م',
+  'य': 'ی', 'र': 'ر', 'ल': 'ل', 'व': 'و', 'श': 'ش', 'ष': 'ش', 'स': 'س', 'ह': 'ہ',
+  'ा': 'ا', 'ि': '', 'ी': 'ی', 'ु': '', 'ू': 'و', 'े': 'ے', 'ै': 'ے', 'ो': 'و', 'ौ': 'و',
+  '्': '', 'ं': 'ں', 'ँ': 'ں', 'ः': 'ہ', '़': '',
+  '।': '۔', '॥': '۔'
+};
+
+function convertDevanagariToUrdu(text) {
+  if (!text || !/[\u0900-\u097F]/.test(text)) return text;
+  let result = text;
+  for (const [hi, ur] of Object.entries(COMMON_HINDI_TO_URDU)) {
+    result = result.replace(new RegExp(hi, 'g'), ur);
+  }
+  let output = '';
+  for (const char of result) {
+    if (DEVANAGARI_CHAR_MAP[char] !== undefined) {
+      output += DEVANAGARI_CHAR_MAP[char];
+    } else {
+      output += char;
+    }
+  }
+  return output.replace(/\s+/g, ' ').trim();
+}
+
 async function transcribeDirectlyWithGroq(audioBlob) {
   const formData = new FormData();
   formData.append('file', audioBlob, 'voice.webm');
   formData.append('model', 'whisper-large-v3-turbo');
+  formData.append('prompt', 'السلام علیکم، یہ میسج اردو یا انگلش میں ہے۔');
   formData.append('response_format', 'json');
 
   const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
@@ -27,54 +70,10 @@ async function transcribeDirectlyWithGroq(audioBlob) {
   const data = await res.json();
   const rawText = (data?.text || '').trim();
 
-  // If text has Devanagari or Urdu script, convert to Roman Urdu
-  const hasDevanagari = /[\u0900-\u097F]/.test(rawText);
-  const hasUrduScript = /[\u0600-\u06FF]/.test(rawText);
-
-  if (hasDevanagari || hasUrduScript) {
-    try {
-      const convRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${GROQ_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'openai/gpt-oss-120b',
-          messages: [
-            {
-              role: 'system',
-              content:
-                'You are a phonetic transliterator. Convert the input Hindi/Devanagari or Urdu script text directly into natural, clean Roman Urdu (Urdu written in English Latin alphabet) or English. Output ONLY the Roman Urdu / English text directly without any explanation, quotes, or notes.',
-            },
-            {
-              role: 'user',
-              content: rawText,
-            },
-          ],
-          temperature: 0.1,
-          max_tokens: 300,
-        }),
-      });
-
-      if (convRes.ok) {
-        const convData = await convRes.json();
-        let converted = (convData.choices?.[0]?.message?.content || '').trim();
-        converted = converted.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-        if ((converted.startsWith('"') && converted.endsWith('"')) || (converted.startsWith('“') && converted.endsWith('”'))) {
-          converted = converted.slice(1, -1).trim();
-        }
-        if (converted && !/[\u0900-\u097F]/.test(converted)) {
-          return converted;
-        }
-      }
-    } catch (convErr) {
-      console.warn('Direct transliteration fallback error:', convErr.message);
-    }
-  }
-
-  return rawText;
+  // Convert any Hindi Devanagari into Urdu script directly
+  return convertDevanagariToUrdu(rawText);
 }
+
 
 
 export default function VoiceRecordButton({
