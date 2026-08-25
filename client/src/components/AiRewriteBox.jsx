@@ -18,6 +18,42 @@ function cleanChatRewrittenOutput(raw) {
   if (!raw) return '';
   let text = String(raw).trim();
   text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+  // If output leaked reasoning, analysis, or checklists
+  if (
+    text.includes("thinking process") ||
+    text.includes("**Analyze") ||
+    text.includes("The user wants me to") ||
+    text.includes("Issues in draft:") ||
+    text.includes("Constraint Checklist")
+  ) {
+    const finalMatch = text.match(/(?:\*\*Final(?:\s+Response|\s+Output|\s+Message)?:\*\*|\*\*Output:\*\*|Final Message:|Output:)\s*([\s\S]+)$/i);
+    if (finalMatch && finalMatch[1]) {
+      text = finalMatch[1].trim();
+    } else {
+      const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+      for (let i = lines.length - 1; i >= 0; i--) {
+        const line = lines[i];
+        if (
+          !line.startsWith('**') &&
+          !line.startsWith('-') &&
+          !line.startsWith('1.') &&
+          !line.startsWith('2.') &&
+          !line.startsWith('3.') &&
+          !line.startsWith('4.') &&
+          !line.startsWith('5.') &&
+          !line.includes('thinking process') &&
+          !line.includes('Constraint Checklist') &&
+          !line.includes('The user wants') &&
+          line.length > 5
+        ) {
+          text = line;
+          break;
+        }
+      }
+    }
+  }
+
   text = text.replace(/^(draft|rewritten|response|chat message|polished|output):\s*/i, '').trim();
   text = text.replace(/^(dear\s+(seller|merchant|customer|user|partner|sir|madam|team|all)[,\n\r\s\-:]*)/i, '').trim();
   text = text.replace(/\n*(regards|best regards|warm regards|sincerely|thanks and regards|support team|bazario support|bazario team)[,\s\S]*$/i, '').trim();
@@ -28,15 +64,15 @@ function cleanChatRewrittenOutput(raw) {
 }
 
 async function fetchOpenRouterDirect(cleanDraft, targetTone) {
-  let modeInstruction = 'Auto-detect the language and script of the draft (Roman Urdu -> Roman Urdu, English -> English, Urdu Script -> Urdu Script, Hindi -> Hindi). Make it clean, polite, and natural for chat. NEVER convert Roman Urdu to English or Urdu script unless specifically instructed.';
+  let modeInstruction = 'Convert rough speech/draft into clean, polite, professional Roman Urdu (Urdu in English letters) or English. If input is in Hindi/Devanagari script or broken voice words, ALWAYS convert into clean Roman Urdu. NEVER output Hindi/Devanagari script.';
   if (targetTone === 'concise' || targetTone === 'short') {
-    modeInstruction = 'Keep it very short, crisp, and direct (1 simple sentence). Match the exact input language and script.';
+    modeInstruction = 'Keep it very short, crisp, and direct (1 simple sentence) in Roman Urdu or English.';
   } else if (targetTone === 'roman_urdu') {
-    modeInstruction = 'Rewrite or polish in natural, clean, respectful Roman Urdu (Urdu written in English alphabet). Keep it like a quick chat message.';
+    modeInstruction = 'Rewrite or polish in natural, clean, respectful Roman Urdu (Urdu written in English alphabet).';
   } else if (targetTone === 'urdu') {
-    modeInstruction = 'Rewrite or polish in clean, respectful, formal Urdu script (اردو رسم الخط). Keep it like a quick chat message.';
+    modeInstruction = 'Rewrite or polish in clean, respectful, formal Urdu script (اردو رسم الخط).';
   } else if (targetTone === 'english') {
-    modeInstruction = 'Rewrite or polish in clear, polite, and professional business English. Keep it like a quick chat message.';
+    modeInstruction = 'Rewrite or polish in clear, polite, and professional business English.';
   }
 
   const messages = [
@@ -48,10 +84,10 @@ Mode: ${modeInstruction}
 
 CRITICAL RULES:
 1. THIS IS LIVE INSTANT CHAT, NOT AN EMAIL.
-2. NEVER write email greetings ("Dear Seller", "Hello there! I hope you are having a wonderful day").
-3. NEVER write email signatures ("Regards, Bazario Support Team", "Best regards", "Sincerely").
-4. NEVER invent facts, assumptions, requirements, or templates not present in original draft.
-5. NEVER include thinking process, reasoning, notes, or quotes.
+2. NEVER write in Hindi/Devanagari script.
+3. NEVER write email greetings ("Dear Seller", "Hello there! I hope you are having a wonderful day").
+4. NEVER write email signatures ("Regards, Bazario Support Team", "Best regards", "Sincerely").
+5. NEVER output analysis, reasoning, checklists, notes, or explanations.
 6. Output ONLY the final rewritten chat message text.`
     },
     {
@@ -88,9 +124,10 @@ CRITICAL RULES:
       model: OPENROUTER_MODEL,
       messages,
       temperature: 0.2,
-      max_tokens: 250,
+      max_tokens: 350,
     }),
   });
+
 
   if (!response.ok) {
     const errText = await response.text().catch(() => '');
