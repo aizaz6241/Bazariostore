@@ -1,5 +1,5 @@
 /* ==========================================================================
-   ADMIN CONTROL CENTER — ORDERS STYLES
+   BAZARIO DESIGN SYSTEM — ADMIN CONTROL CENTER ORDERS STYLES (orders.css)
    (client/src/styles/admin/orders.css)
    ========================================================================== */
 
@@ -8,8 +8,144 @@
   flex-direction: column;
   gap: 20px;
   width: 100%;
+  box-sizing: border-box;
 }
 
+/* ─── 1. ORDERS SEARCH & FILTER TOOLBAR CARD ─── */
+.orders-toolbar-card {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.orders-search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 260px;
+  width: 100%;
+}
+
+.orders-search-input-wrap i,
+.orders-search-input-wrap svg {
+  position: absolute;
+  left: 14px;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.orders-search-input-wrap input {
+  width: 100%;
+  padding: 10px 14px 10px 40px;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 9px;
+  font-size: 13.5px;
+  color: #0f172a;
+  outline: none;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+}
+
+.orders-search-input-wrap input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3.5px rgba(37, 99, 235, 0.14);
+}
+
+.orders-seller-select-wrap {
+  flex: 0 1 240px;
+  min-width: 200px;
+  width: 100%;
+}
+
+.orders-seller-select-wrap select {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 9px;
+  background: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  outline: none;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+
+.orders-seller-select-wrap select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3.5px rgba(37, 99, 235, 0.14);
+}
+
+.orders-filter-btn {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 10px 18px;
+  border-radius: 9px;
+  border: 1px solid #1d4ed8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+  transition: all 0.18s ease;
+  white-space: nowrap;
+}
+
+.orders-filter-btn:hover {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35);
+}
+
+/* ─── 2. STATUS FILTER PILLS ─── */
+.filter-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+
+.filter-tabs button {
+  padding: 7px 14px;
+  border-radius: 20px;
+  border: 1.5px solid #cbd5e1;
+  background: #ffffff;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.filter-tabs button:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.filter-tabs button.on {
+  background: #0f172a;
+  color: #ffffff;
+  border-color: #0f172a;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.2);
+}
+
+/* ─── 3. BADGES & STATUS CHIPS ─── */
 .pay-chip {
   display: inline-block;
   padding: 3px 8px;
@@ -19,15 +155,20 @@
   background: #f1f5f9;
   color: #334155;
   border: 1px solid #cbd5e1;
+  white-space: nowrap;
 }
 
 .status-pill {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 3px 9px;
   border-radius: 12px;
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 800;
-  text-transform: capitalize;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
 }
 
 .status-pill.st-pending {
@@ -66,33 +207,80 @@
   border: 1px solid #fca5a5;
 }
 
-.filter-tabs {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.filter-tabs button {
-  padding: 6px 14px;
-  border-radius: 20px;
-  border: 1px solid #cbd5e1;
-  background: #fff;
-  color: #475569;
+/* ─── 4. TABLE ACTION BUTTONS ─── */
+.order-action-btn {
+  padding: 5px 9px;
   font-size: 12px;
   font-weight: 700;
+  border-radius: 6px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
   transition: all 0.15s ease;
 }
 
-.filter-tabs button:hover {
+.order-action-btn:hover {
+  background: #dbeafe;
+  transform: translateY(-1px);
+}
+
+.order-link-btn {
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
   background: #f8fafc;
-  border-color: #94a3b8;
+  color: #334155;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  transition: all 0.15s ease;
 }
 
-.filter-tabs button.on {
+.order-link-btn:hover {
   background: #0f172a;
-  color: #fff;
+  color: #ffffff;
   border-color: #0f172a;
+  transform: translateY(-1px);
 }
 
+/* ─── 5. RESPONSIVENESS BREAKPOINTS ─── */
+@media (max-width: 900px) {
+  .orders-toolbar-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .orders-search-input-wrap,
+  .orders-seller-select-wrap,
+  .orders-filter-btn {
+    width: 100%;
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .admin-orders-page .admin-sellers-stats-bar {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .admin-orders-page .admin-sellers-stats-bar .stat-box {
+    padding: 12px 14px;
+  }
+  .admin-orders-page .admin-sellers-stats-bar .stat-box .val {
+    font-size: 18px;
+  }
+}
+
+@media (max-width: 420px) {
+  .admin-orders-page .admin-sellers-stats-bar {
+    grid-template-columns: 1fr;
+  }
+}

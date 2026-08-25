@@ -1,5 +1,5 @@
 /* ==========================================================================
-   BAZARIO DESIGN SYSTEM — ADMIN WITHDRAWALS & LIMITS CONTROL DESK (withdrawals.css)
+   BAZARIO DESIGN SYSTEM — ADMIN PAYOUTS, WITHDRAWALS & LIMITS CONTROL DESK
    (client/src/styles/admin/withdrawals.css)
    ========================================================================== */
 
@@ -37,7 +37,7 @@
 /* ─── 2. SUMMARY STATS METRICS ROW ─── */
 .withdraw-summary-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 14px;
   width: 100%;
 }
@@ -51,7 +51,7 @@
   flex-direction: column;
   gap: 4px;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
 }
 
@@ -149,6 +149,7 @@
   font-weight: 800;
   letter-spacing: 0.4px;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .status-chip.chip-orange {
@@ -214,32 +215,36 @@
 }
 
 .withdrawal-btns button {
-  padding: 8px 14px;
+  padding: 9px 16px;
   font-size: 12.5px;
   font-weight: 800;
   border-radius: 8px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .withdrawal-btns .btn-primary {
-  background: #16a34a;
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
   color: #ffffff;
   border: 1px solid #15803d;
+  box-shadow: 0 2px 6px rgba(22, 163, 74, 0.25);
 }
 
 .withdrawal-btns .btn-primary:hover:not(:disabled) {
-  background: #15803d;
+  background: linear-gradient(135deg, #15803d 0%, #166534 100%);
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.35);
 }
 
 .withdrawal-btns .btn-danger {
   background: #fee2e2;
   color: #dc2626;
-  border: 1px solid #fecaca;
+  border: 1px solid #fca5a5;
 }
 
 .withdrawal-btns .btn-danger:hover:not(:disabled) {
@@ -276,8 +281,7 @@
   font-weight: 600;
 }
 
-/* ─── 6. RESPONSIVENESS BREAKPOINTS ─── */
-/* ─── 7. DIRECT WALLET ADJUSTMENT MODAL CUSTOM CONTROLS ─── */
+/* ─── 6. DIRECT WALLET ADJUSTMENT MODAL CONTROLS ─── */
 .adjust-seller-section {
   display: flex;
   flex-direction: column;
@@ -298,192 +302,9 @@
   font-size: 13.5px !important;
   font-weight: 700 !important;
   color: #0f172a !important;
-  outline: none !important;
-  cursor: pointer !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
-  transition: all 0.18s ease !important;
-  box-sizing: border-box !important;
 }
 
-.custom-seller-select:focus {
-  border-color: #2563eb !important;
-  box-shadow: 0 0 0 3.5px rgba(37, 99, 235, 0.14) !important;
-}
-
-.selected-seller-preview-box {
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  border: 1.5px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 10px 14px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  box-sizing: border-box;
-}
-
-.sspb-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.sspb-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 9px;
-  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
-  color: #ffffff;
-  font-size: 15px;
-  font-weight: 900;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  box-shadow: 0 2px 5px rgba(37, 99, 235, 0.25);
-}
-
-.sspb-info {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.sspb-name {
-  font-size: 13.5px;
-  font-weight: 800;
-  color: #0f172a;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.sspb-owner {
-  font-size: 11px;
-  color: #64748b;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.sspb-right {
-  text-align: right;
-  flex-shrink: 0;
-}
-
-.sspb-lbl {
-  font-size: 10px;
-  font-weight: 700;
-  color: #64748b;
-  text-transform: uppercase;
-  display: block;
-}
-
-.sspb-balance {
-  font-size: 14.5px;
-  font-weight: 900;
-  color: #16a34a;
-}
-
-/* Segmented Action Toggles */
-.adjust-action-toggle-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  width: 100%;
-}
-
-.adjust-action-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border-radius: 10px;
-  border: 1.5px solid #cbd5e1;
-  background: #ffffff;
-  cursor: pointer;
-  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
-  text-align: left;
-  position: relative;
-  user-select: none;
-  box-sizing: border-box;
-}
-
-.adjust-action-card:hover {
-  border-color: #94a3b8;
-  transform: translateY(-1px);
-}
-
-.adjust-action-card.credit.active {
-  background: #f0fdf4;
-  border-color: #22c55e;
-  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.2);
-}
-
-.adjust-action-card.debit.active {
-  background: #fef2f2;
-  border-color: #ef4444;
-  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.2);
-}
-
-.aac-icon {
-  font-size: 20px;
-  flex-shrink: 0;
-}
-
-.aac-text {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-}
-
-.aac-text b {
-  font-size: 13px;
-  font-weight: 800;
-  color: #0f172a;
-}
-
-.credit.active .aac-text b {
-  color: #15803d;
-}
-
-.debit.active .aac-text b {
-  color: #b91c1c;
-}
-
-.aac-text small {
-  font-size: 10.5px;
-  color: #64748b;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.aac-check {
-  font-size: 12px;
-  font-weight: 900;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.credit.active .aac-check {
-  background: #22c55e;
-  color: #ffffff;
-}
-
-.debit.active .aac-check {
-  background: #ef4444;
-  color: #ffffff;
-}
-
-/* ─── 8. RESPONSIVENESS BREAKPOINTS ─── */
+/* ─── 7. RESPONSIVENESS BREAKPOINTS ─── */
 @media (max-width: 1024px) {
   .withdraw-summary-row {
     grid-template-columns: repeat(2, 1fr);
@@ -497,6 +318,7 @@
   .admin-page-head {
     flex-direction: column;
     align-items: stretch;
+    gap: 12px;
   }
   .admin-page-head button {
     width: 100%;
@@ -512,45 +334,29 @@
   .withdraw-stat b {
     font-size: 18px;
   }
-  .withdrawal-card {
-    padding: 14px;
-  }
   .withdrawal-top {
     flex-direction: column;
     align-items: flex-start;
-    gap: 8px;
+    gap: 10px;
   }
   .withdrawal-amt-box {
     text-align: left;
   }
-  .withdrawal-details-grid {
-    grid-template-columns: 1fr;
-  }
   .withdrawal-btns {
     flex-direction: column;
-    align-items: stretch;
+    width: 100%;
   }
   .withdrawal-btns button {
     width: 100%;
     justify-content: center;
   }
-  .adjust-action-toggle-grid {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-  .selected-seller-preview-box {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-  }
-  .sspb-right {
-    text-align: left;
-  }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 540px) {
   .withdraw-summary-row {
     grid-template-columns: 1fr;
   }
+  .withdrawal-details-grid {
+    grid-template-columns: 1fr;
+  }
 }
-

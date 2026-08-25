@@ -237,27 +237,27 @@ export default function Orders() {
 
       {/* Search & Seller Filter Toolbar */}
       <form
-        className="admin-toolbar"
-        style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}
+        className="orders-toolbar-card"
+        style={{ marginBottom: 16 }}
         onSubmit={(e) => {
           e.preventDefault();
           loadOrders();
         }}
       >
-        <div className="admin-search" style={{ flex: '1 1 240px' }}>
+        <div className="orders-search-input-wrap">
           <Ic name="search" size={16} />
           <input
+            type="text"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search: customer name, phone, order #, email…"
+            placeholder="Search by customer name, phone, order #, email…"
           />
         </div>
 
-        <div style={{ minWidth: 200 }}>
+        <div className="orders-seller-select-wrap">
           <select
             value={sellerFilter}
             onChange={(e) => setSellerFilter(e.target.value)}
-            style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #cbd5e1', fontSize: 13, fontWeight: 600, background: '#fff' }}
           >
             <option value="">🏢 All Merchant Stores ({sellers.length})</option>
             {sellers.map((s) => (
@@ -268,8 +268,8 @@ export default function Orders() {
           </select>
         </div>
 
-        <button type="submit" className="btn-primary" style={{ padding: '9px 18px' }}>
-          🔍 Filter Orders
+        <button type="submit" className="orders-filter-btn">
+          <Ic name="search" size={15} /> Filter Orders
         </button>
       </form>
 
@@ -333,13 +333,13 @@ export default function Orders() {
                 return (
                   <tr key={o._id}>
                     <td>
-                      <b>{o.orderNumber}</b>
+                      <b style={{ color: '#0f172a' }}>{o.orderNumber}</b>
                       <small className="muted block">{fmtDate(o.createdAt)}</small>
                     </td>
                     <td>
                       {seller ? (
                         <div className="seller-name-cell">
-                          <div className="avatar-chip" style={{ width: 26, height: 26, fontSize: 11 }}>
+                          <div className="avatar-chip" style={{ width: 28, height: 28, fontSize: 12, borderRadius: 8 }}>
                             {seller.storeName?.[0] || 'M'}
                           </div>
                           <div>
@@ -389,19 +389,19 @@ export default function Orders() {
                       </span>
                     </td>
                     <td>
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                         <button
                           type="button"
                           onClick={() => setInspectOrder(o)}
-                          className="btn-action-view"
-                          style={{ padding: '4px 8px', fontSize: 11.5, fontWeight: 700 }}
+                          className="order-action-btn"
+                          title="Quick View Order Details"
                         >
-                          👁️ Details
+                          <Ic name="eye" size={13} /> Details
                         </button>
                         <Link
                           to={`/admin/orders/${o._id}`}
-                          className="row-link"
-                          style={{ fontSize: 11.5 }}
+                          className="order-link-btn"
+                          title="Open Full Management Page"
                         >
                           Full Page ↗
                         </Link>
