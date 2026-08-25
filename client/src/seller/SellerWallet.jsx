@@ -6,6 +6,7 @@ import CurrencySelector from '../components/CurrencySelector.jsx';
 import CurrencyConverterWidget from '../components/CurrencyConverterWidget.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 import { getSocket } from '../socket.js';
+import { playNotificationSound } from '../utils/audio.js';
 
 const STATUS_COLOR = {
   pending: 'chip-orange',
@@ -85,6 +86,9 @@ export default function SellerWallet() {
   const [reqLimitAmount, setReqLimitAmount] = useState('');
   const [reqLimitReason, setReqLimitReason] = useState('');
   const [submittingLimitReq, setSubmittingLimitReq] = useState(false);
+
+  // Request Success Confirmation Modal (for Deposit & Withdrawal)
+  const [requestSuccessModal, setRequestSuccessModal] = useState(null);
 
   useEffect(() => {
     const urlTab = searchParams.get('tab');
@@ -306,18 +310,55 @@ export default function SellerWallet() {
     e.preventDefault();
     setErr('');
     setMsg('');
-    if (!depForm.amount || Number(depForm.amount) < 1) return setErr('Please enter an amount (minimum $1)');
+
+    const amt = Number(depForm.amount);
+    if (!amt || isNaN(amt) || amt < 1) {
+      setErr('Please enter a valid deposit amount (minimum $1.00 USD)');
+      return;
+    }
+    if (!depForm.depositRef || !depForm.depositRef.trim()) {
+      setErr('Please enter the Payment UTR / Transaction Reference ID');
+      return;
+    }
+
     setSubmitting(true);
     try {
-      await sapi('/sellers/wallet/deposit', {
+      const res = await sapi('/sellers/wallet/deposit', {
         method: 'POST',
-        body: depForm,
+        body: {
+          amount: amt,
+          method: depForm.method || 'bank',
+          depositRef: (depForm.depositRef || '').trim(),
+          depositNote: (depForm.depositNote || '').trim(),
+          depositedFrom: (depForm.depositedFrom || '').trim(),
+        },
       });
-      setMsg('Deposit request submitted! Admin will review and credit your wallet.');
+
+      const submittedAmt = amt;
+      const submittedRef = (depForm.depositRef || '').trim();
+      const submittedMethod = depForm.method || 'bank';
+      const submittedFrom = (depForm.depositedFrom || '').trim();
+
+      setMsg(`Deposit request for $${submittedAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })} submitted successfully! Admin will verify and credit your balance.`);
       setDepForm({ amount: '', method: 'upi', depositRef: '', depositNote: '', depositedFrom: '' });
+
+      // Audio notification chime
+      playNotificationSound('deposit');
+
+      // Open High-Visibility Confirmation Modal Dialog
+      setRequestSuccessModal({
+        type: 'deposit',
+        title: '💰 Deposit Request Submitted!',
+        amount: submittedAmt,
+        ref: submittedRef,
+        method: submittedMethod,
+        from: submittedFrom,
+        message: 'Your deposit request has been securely dispatched to Super Admin. Once verified, the funds will be added directly to your Available Balance.',
+      });
+
       load();
     } catch (e) {
-      setErr(e.message);
+      setErr(e.message || 'Failed to submit deposit request. Please check your connection.');
     } finally {
       setSubmitting(false);
     }
@@ -336,11 +377,15 @@ export default function SellerWallet() {
     const maxLimit = withdrawalLimit?.maxAmount !== undefined ? withdrawalLimit.maxAmount : 500;
     const minLimit = withdrawalLimit?.minAmount !== undefined ? withdrawalLimit.minAmount : 10;
 
-    if (!amt || amt < minLimit) return setErr(`Minimum withdrawal amount is ${formatMoney(minLimit)}`);
+    if (!amt || isNaN(amt) || amt < minLimit) {
+      return setErr(`Minimum withdrawal amount is ${formatMoney(minLimit)}`);
+    }
     if (amt > maxLimit) {
       return setErr(`Withdrawal amount (${formatMoney(amt)}) exceeds your current tier limit of ${formatMoney(maxLimit)}. Apply for a limit increase below.`);
     }
-    if (amt > (wallet?.balance || 0)) return setErr(`Insufficient balance. Available: ${formatMoney(wallet?.balance)}`);
+    if (amt > (wallet?.balance || 0)) {
+      return setErr(`Insufficient balance. Available: ${formatMoney(wallet?.balance)}`);
+    }
 
     if (method === 'bank') {
       if (!wdForm.accountTitle || !wdForm.accountNumber || !wdForm.bankName) {
@@ -397,11 +442,26 @@ export default function SellerWallet() {
           upiPhone: (upiPhone || wdForm.phone || '').trim(),
         },
       });
-      setMsg('✅ Withdrawal request submitted! Admin will process your payout within 2-3 business days.');
+
+      setMsg(`Withdrawal payout request for $${amt.toLocaleString('en-US', { minimumFractionDigits: 2 })} submitted successfully!`);
       setWdForm((prev) => ({ ...prev, amount: '' }));
+
+      // Audio notification chime
+      playNotificationSound('withdrawal');
+
+      // Open High-Visibility Confirmation Modal Dialog
+      setRequestSuccessModal({
+        type: 'withdrawal',
+        title: '💸 Payout Request Submitted!',
+        amount: amt,
+        method: method,
+        account: method === 'bank' ? `${wdForm.bankName} (A/C: •••• ${String(wdForm.accountNumber || '').slice(-4)})` : (wdForm.upiId || wdForm.phone || wdForm.walletAddress),
+        message: 'Your payout transfer request has been registered and deducted from your Available Balance. Super Admin will verify and process the transfer.',
+      });
+
       load();
     } catch (e) {
-      setErr(e.message);
+      setErr(e.message || 'Failed to submit withdrawal request');
     } finally {
       setSubmitting(false);
     }
@@ -895,14 +955,48 @@ export default function SellerWallet() {
               />
             </div>
 
+            {/* Inline Alert Feedback inside Deposit Card */}
+            {err && (
+              <div className="field field-full">
+                <div style={{ background: '#fef2f2', border: '1.5px solid #f87171', borderRadius: 8, padding: '12px 16px', color: '#991b1b', fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 18 }}>⚠️</span>
+                  <div>
+                    <b>Deposit Request Error:</b>
+                    <div style={{ marginTop: 2 }}>{err}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+            {msg && (
+              <div className="field field-full">
+                <div style={{ background: '#ecfdf5', border: '1.5px solid #34d399', borderRadius: 8, padding: '12px 16px', color: '#065f46', fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 18 }}>✅</span>
+                  <div>
+                    <b>Success:</b>
+                    <div style={{ marginTop: 2 }}>{msg}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="field field-full">
               <button
                 type="submit"
                 className="seller-btn-pri"
-                disabled={submitting || !depForm.amount || Number(depForm.amount) < 1}
+                disabled={submitting}
+                style={{ padding: '13px 20px', fontSize: 15, fontWeight: 800, cursor: submitting ? 'not-allowed' : 'pointer' }}
               >
-                {submitting ? 'Submitting Deposit Request...' : `💰 Submit Deposit Request ($${Number(depForm.amount || 0).toFixed(2)} USD)`}
+                {submitting ? (
+                  <span>⏳ Submitting Deposit Request to Admin...</span>
+                ) : (
+                  <span>💰 Submit Deposit Request ({Number(depForm.amount) > 0 ? `$${Number(depForm.amount).toFixed(2)} USD` : 'Enter Amount Above'})</span>
+                )}
               </button>
+              {(!depForm.amount || Number(depForm.amount) < 1) && (
+                <small className="muted-sm" style={{ display: 'block', marginTop: 6, color: '#64748b' }}>
+                  ℹ️ Please enter the amount in USD ($) or use the converter widget above before submitting.
+                </small>
+              )}
             </div>
           </form>
         </div>
@@ -1747,6 +1841,30 @@ export default function SellerWallet() {
                 </>
               )}
 
+              {/* Inline Alert Feedback inside Withdrawal Card */}
+              {err && (
+                <div className="field field-full">
+                  <div style={{ background: '#fef2f2', border: '1.5px solid #f87171', borderRadius: 8, padding: '12px 16px', color: '#991b1b', fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 18 }}>⚠️</span>
+                    <div>
+                      <b>Withdrawal Request Error:</b>
+                      <div style={{ marginTop: 2 }}>{err}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {msg && (
+                <div className="field field-full">
+                  <div style={{ background: '#ecfdf5', border: '1.5px solid #34d399', borderRadius: 8, padding: '12px 16px', color: '#065f46', fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 18 }}>✅</span>
+                    <div>
+                      <b>Success:</b>
+                      <div style={{ marginTop: 2 }}>{msg}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Submit Button & Validations */}
               <div className="field field-full">
                 <button
@@ -1891,6 +2009,91 @@ export default function SellerWallet() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── REQUEST SUCCESS CONFIRMATION MODAL ─── */}
+      {requestSuccessModal && (
+        <div className="admin-modal-overlay" onClick={() => setRequestSuccessModal(null)}>
+          <div className="admin-modal-box" style={{ maxWidth: 520, textAlign: 'center', padding: '30px 24px', borderRadius: 16 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ width: 72, height: 72, borderRadius: '50%', background: requestSuccessModal.type === 'deposit' ? '#ecfdf5' : '#eff6ff', color: requestSuccessModal.type === 'deposit' ? '#16a34a' : '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 34, boxShadow: '0 10px 25px -5px rgba(0,0,0,0.08)' }}>
+              {requestSuccessModal.type === 'deposit' ? '💰' : '💸'}
+            </div>
+
+            <h3 style={{ margin: '0 0 6px', fontSize: 20, color: '#0f172a', fontWeight: 800 }}>
+              {requestSuccessModal.title}
+            </h3>
+            <p style={{ color: '#64748b', fontSize: 13.5, margin: '0 0 18px', lineHeight: 1.5 }}>
+              {requestSuccessModal.message}
+            </p>
+
+            {/* Summary Slip */}
+            <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 12, padding: '16px 18px', textAlign: 'left', marginBottom: 22 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderBottom: '1px dashed #cbd5e1', paddingBottom: 10 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Amount Requested</span>
+                <span style={{ fontSize: 18, fontWeight: 900, color: requestSuccessModal.type === 'deposit' ? '#16a34a' : '#2563eb' }}>
+                  ${Number(requestSuccessModal.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                </span>
+              </div>
+
+              {requestSuccessModal.ref && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: 13 }}>
+                  <span style={{ color: '#64748b', fontWeight: 600 }}>Payment Ref / UTR:</span>
+                  <b style={{ color: '#0f172a', fontFamily: 'monospace', background: '#e2e8f0', padding: '2px 6px', borderRadius: 4 }}>{requestSuccessModal.ref}</b>
+                </div>
+              )}
+
+              {requestSuccessModal.method && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: 13 }}>
+                  <span style={{ color: '#64748b', fontWeight: 600 }}>Payment Method:</span>
+                  <b style={{ color: '#0f172a', textTransform: 'uppercase' }}>{requestSuccessModal.method}</b>
+                </div>
+              )}
+
+              {requestSuccessModal.from && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: 13 }}>
+                  <span style={{ color: '#64748b', fontWeight: 600 }}>Sender Info:</span>
+                  <b style={{ color: '#0f172a' }}>{requestSuccessModal.from}</b>
+                </div>
+              )}
+
+              {requestSuccessModal.account && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: 13 }}>
+                  <span style={{ color: '#64748b', fontWeight: 600 }}>Account / Destination:</span>
+                  <b style={{ color: '#0f172a' }}>{requestSuccessModal.account}</b>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, borderTop: '1px solid #e2e8f0', paddingTop: 10 }}>
+                <span style={{ color: '#64748b', fontWeight: 600, fontSize: 13 }}>Status:</span>
+                <span className="chip-orange" style={{ fontWeight: 800, padding: '4px 10px', borderRadius: 20, fontSize: 11.5 }}>
+                  ⏳ PENDING ADMIN APPROVAL
+                </span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setRequestSuccessModal(null);
+                  handleTabChange('ledger');
+                }}
+                className="btn-primary"
+                style={{ padding: '11px 22px', fontWeight: 800, fontSize: 13.5 }}
+              >
+                📋 View in Financial Ledger
+              </button>
+              <button
+                type="button"
+                onClick={() => setRequestSuccessModal(null)}
+                className="btn-cancel"
+                style={{ padding: '11px 18px', fontWeight: 700 }}
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}

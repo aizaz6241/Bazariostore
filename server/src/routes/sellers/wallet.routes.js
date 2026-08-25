@@ -177,12 +177,14 @@ router.post('/wallet/deposit', authSellerOrAdmin, async (req, res) => {
     const seller = await getSellerFromReq(req);
     if (!seller) return res.status(404).json({ message: 'Seller not found. Please log in again.' });
 
-    const { amount, depositRef, depositNote } = req.body;
+    const { amount, depositRef, depositNote, method, depositedFrom } = req.body;
     if (!amount || Number(amount) < 1) return res.status(400).json({ message: 'Minimum deposit amount is $1' });
 
     // Check if already pending deposit
     const hasPending = await Withdrawal.findOne({ seller: seller._id, type: 'deposit', status: 'pending' });
     if (hasPending) return res.status(400).json({ message: 'Aapki ek deposit request already pending hai. Admin approval ka wait karein.' });
+
+    const fullNote = [depositNote, depositedFrom ? `Sender: ${depositedFrom}` : ''].filter(Boolean).join(' | ');
 
     const reqDoc = await Withdrawal.create({
       type: 'deposit',
@@ -190,8 +192,8 @@ router.post('/wallet/deposit', authSellerOrAdmin, async (req, res) => {
       storeName: seller.storeName,
       amount: Number(amount),
       depositRef: depositRef || '',
-      depositNote: depositNote || '',
-      method: 'bank',
+      depositNote: fullNote || '',
+      method: method || 'bank',
       status: 'pending',
     });
 
@@ -212,6 +214,15 @@ router.post('/wallet/deposit', authSellerOrAdmin, async (req, res) => {
       title: '💰 Deposit Request',
       body: `${seller.storeName} requested to add $${Number(amount).toLocaleString('en-US')}`,
       link: '/admin/withdrawals',
+    });
+
+    notify(req.app, {
+      recipientType: 'seller',
+      sellerId: seller._id,
+      type: 'deposit',
+      title: '💰 Deposit Request Submitted',
+      body: `Your deposit request for $${Number(amount).toLocaleString('en-US')} has been submitted for admin verification.`,
+      link: '/seller/wallet',
     });
 
     const io = req.app.get('io');
@@ -321,6 +332,15 @@ router.post('/wallet/withdraw', authSellerOrAdmin, async (req, res) => {
       title: '💸 Withdrawal Request',
       body: `${seller.storeName} requested $${amt.toLocaleString('en-US')} via ${method.toUpperCase()}`,
       link: '/admin/withdrawals',
+    });
+
+    notify(req.app, {
+      recipientType: 'seller',
+      sellerId: seller._id,
+      type: 'withdrawal',
+      title: '💸 Payout Request Submitted',
+      body: `Your payout transfer request for $${amt.toLocaleString('en-US')} has been submitted.`,
+      link: '/seller/wallet',
     });
 
     const io = req.app.get('io');
