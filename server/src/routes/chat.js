@@ -906,7 +906,54 @@ router.post('/admin/transcribe', authAdmin('chat'), audioUpload.single('audio'),
     }
 
     const data = await response.json();
-    const transcribedText = (data?.text || '').trim();
+    const rawTranscribedText = (data?.text || '').trim();
+
+    // Ensure output is strictly Roman Urdu or English (convert any Hindi/Devanagari or Urdu script automatically)
+    let transcribedText = rawTranscribedText;
+    const hasDevanagari = /[\u0900-\u097F]/.test(rawTranscribedText);
+    const hasUrduScript = /[\u0600-\u06FF]/.test(rawTranscribedText);
+
+    if (hasDevanagari || hasUrduScript) {
+      try {
+        const convertRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${groqKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'openai/gpt-oss-120b',
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'You are a phonetic transliterator. Convert the input Hindi/Devanagari or Urdu script text directly into natural, clean Roman Urdu (Urdu written in English Latin alphabet) or English. Output ONLY the Roman Urdu / English text directly without any explanation, quotes, or notes.',
+              },
+              {
+                role: 'user',
+                content: rawTranscribedText,
+              },
+            ],
+            temperature: 0.1,
+            max_tokens: 300,
+          }),
+        });
+
+        if (convertRes.ok) {
+          const convData = await convertRes.json();
+          let converted = (convData.choices?.[0]?.message?.content || '').trim();
+          converted = converted.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+          if ((converted.startsWith('"') && converted.endsWith('"')) || (converted.startsWith('“') && converted.endsWith('”'))) {
+            converted = converted.slice(1, -1).trim();
+          }
+          if (converted && !/[\u0900-\u097F]/.test(converted)) {
+            transcribedText = converted;
+          }
+        }
+      } catch (convErr) {
+        console.warn('Roman Urdu auto-conversion fallback error:', convErr.message);
+      }
+    }
 
     return res.json({
       ok: true,

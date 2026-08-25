@@ -26,8 +26,57 @@ async function transcribeDirectlyWithGroq(audioBlob) {
   }
 
   const data = await res.json();
-  return (data?.text || '').trim();
+  const rawText = (data?.text || '').trim();
+
+  // If text has Devanagari or Urdu script, convert to Roman Urdu
+  const hasDevanagari = /[\u0900-\u097F]/.test(rawText);
+  const hasUrduScript = /[\u0600-\u06FF]/.test(rawText);
+
+  if (hasDevanagari || hasUrduScript) {
+    try {
+      const convRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'openai/gpt-oss-120b',
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You are a phonetic transliterator. Convert the input Hindi/Devanagari or Urdu script text directly into natural, clean Roman Urdu (Urdu written in English Latin alphabet) or English. Output ONLY the Roman Urdu / English text directly without any explanation, quotes, or notes.',
+            },
+            {
+              role: 'user',
+              content: rawText,
+            },
+          ],
+          temperature: 0.1,
+          max_tokens: 300,
+        }),
+      });
+
+      if (convRes.ok) {
+        const convData = await convRes.json();
+        let converted = (convData.choices?.[0]?.message?.content || '').trim();
+        converted = converted.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+        if ((converted.startsWith('"') && converted.endsWith('"')) || (converted.startsWith('“') && converted.endsWith('”'))) {
+          converted = converted.slice(1, -1).trim();
+        }
+        if (converted && !/[\u0900-\u097F]/.test(converted)) {
+          return converted;
+        }
+      }
+    } catch (convErr) {
+      console.warn('Direct transliteration fallback error:', convErr.message);
+    }
+  }
+
+  return rawText;
 }
+
 
 export default function VoiceRecordButton({
   onTranscribed,
