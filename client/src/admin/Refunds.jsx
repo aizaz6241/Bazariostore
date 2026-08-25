@@ -62,25 +62,27 @@ export default function Refunds() {
         {data.refunds.length === 0 ? (
           <p className="muted">No refunds{status ? ` (${RSTATUS[status]})` : ''}.</p>
         ) : (
-          <table className="admin-table">
-            <thead>
-              <tr><th>Order #</th><th>Customer</th><th>Amount</th><th>Reason</th><th>Requested By</th><th>Date</th><th>Status</th><th /></tr>
-            </thead>
-            <tbody>
-              {data.refunds.map((r) => (
-                <tr key={r._id}>
-                  <td><b>{r.orderNumber}</b></td>
-                  <td>{r.customer?.name}<br /><small className="muted">{r.customer?.phone}</small></td>
-                  <td>{money(r.amount)}</td>
-                  <td className="cell-clip">{r.reason || '—'}</td>
-                  <td>{r.requestedBy}</td>
-                  <td>{fmtDate(r.createdAt)}</td>
-                  <td><span className={`status-pill ${PILL[r.status]}`}>{RSTATUS[r.status]}</span></td>
-                  <td><button className="row-link" onClick={() => setOpen(r)}>Manage</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr><th>Order #</th><th>Customer</th><th>Amount</th><th>Reason</th><th>Requested By</th><th>Date</th><th>Status</th><th /></tr>
+              </thead>
+              <tbody>
+                {data.refunds.map((r) => (
+                  <tr key={r._id}>
+                    <td><b>{r.orderNumber}</b></td>
+                    <td>{r.customer?.name}<br /><small className="muted">{r.customer?.phone}</small></td>
+                    <td>{money(r.amount)}</td>
+                    <td className="cell-clip">{r.reason || '—'}</td>
+                    <td>{r.requestedBy}</td>
+                    <td>{fmtDate(r.createdAt)}</td>
+                    <td><span className={`status-pill ${PILL[r.status]}`}>{RSTATUS[r.status]}</span></td>
+                    <td><button className="row-link" onClick={() => setOpen(r)}>Manage</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

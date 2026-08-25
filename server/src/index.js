@@ -35,7 +35,7 @@ import settingsRoutes from './routes/settings.js';
 import uploadRoutes from './routes/uploads.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/user.js';
-import chatRoutes from './routes/chat.js';
+import chatRoutes, { handleAutoReply } from './routes/chat.js';
 import sellerRoutes from './routes/sellers.js';
 
 import { Conversation, Message } from './models/Chat.js';

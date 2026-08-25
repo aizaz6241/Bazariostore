@@ -64,6 +64,7 @@ const messageSchema = new mongoose.Schema(
     editedAt: { type: Date, default: null },
     isDeleted: { type: Boolean, default: false },
     deletedAt: { type: Date, default: null },
+    isAutoReply: { type: Boolean, default: false },
     // Read receipts / Seen indicator
     isSeen: { type: Boolean, default: false },
     seenAt: { type: Date, default: null },

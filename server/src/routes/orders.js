@@ -310,6 +310,32 @@ const orderStatusHandler = async (req, res) => {
   order.statusHistory.push({ status, note: note || '', by: req.admin?.name || 'Admin' });
   await order.save();
   await audit(req, 'order_updated', 'order', order._id, { orderNumber: order.orderNumber, from: prev, to: status, note: note || '' });
+
+  // Broadcast real-time socket updates to Admin and relevant Sellers
+  const sellerIds = [...new Set(order.items.map((i) => i.seller?.toString()).filter(Boolean))];
+  const io = req.app.get('io');
+  if (io) {
+    io.to('admins').emit('order:update', order);
+    for (const sId of sellerIds) {
+      io.to(`seller:${sId}`).emit('order:update', order);
+      io.to(`seller:${sId}`).emit('seller:status_update', { order });
+    }
+  }
+
+  // Notify sellers about the status transition
+  if (req.admin && prev !== status) {
+    for (const sId of sellerIds) {
+      notify(req.app, {
+        recipientType: 'seller',
+        sellerId: sId,
+        type: 'order',
+        title: `📦 Order #${order.orderNumber} Status: ${status.replace(/_/g, ' ').toUpperCase()}`,
+        body: `Order #${order.orderNumber} status changed from "${prev}" to "${status.replace(/_/g, ' ').toUpperCase()}".`,
+        link: '/seller/orders',
+      });
+    }
+  }
+
   res.json(order);
 };
 

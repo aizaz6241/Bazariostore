@@ -515,9 +515,11 @@
 @media (max-width: 768px) {
   .admin-chat-layout {
     grid-template-columns: 1fr;
-    height: calc(100vh - 80px);
-    height: calc(100dvh - 80px);
+    height: calc(100vh - 75px);
+    height: calc(100dvh - 75px);
     border-radius: 10px;
+    width: 100%;
+    max-width: 100%;
   }
 
   .admin-chat-layout.mobile-list-view .admin-chat-sidebar {
@@ -538,5 +540,25 @@
 
   .mobile-back-btn {
     display: flex;
+  }
+
+  .admin-reply-bar {
+    padding: 8px 10px;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .admin-reply-bar textarea {
+    min-height: 44px !important;
+    font-size: 13px !important;
+    padding: 8px 10px !important;
+  }
+
+  .admin-thread-head {
+    padding: 10px 12px;
+  }
+
+  .admin-thread-messages {
+    padding: 12px 10px;
   }
 }

@@ -34,22 +34,24 @@ export default function Audit() {
       <ErrorBox error={error} />
 
       <div className="card">
-        <table className="admin-table">
-          <thead>
-            <tr><th>Time</th><th>Admin</th><th>Action</th><th>Entity</th><th>Details</th></tr>
-          </thead>
-          <tbody>
-            {data.logs.map((l) => (
-              <tr key={l._id}>
-                <td>{fmtDate(l.createdAt)}</td>
-                <td><b>{l.admin?.name}</b><br /><small className="muted">{l.admin?.email}</small></td>
-                <td><span className="pay-chip">{l.action}</span></td>
-                <td>{l.entity}{l.entityId ? ` · ${String(l.entityId).slice(-6)}` : ''}</td>
-                <td className="cell-clip"><small>{l.details ? JSON.stringify(l.details) : '—'}</small></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr><th>Time</th><th>Admin</th><th>Action</th><th>Entity</th><th>Details</th></tr>
+            </thead>
+            <tbody>
+              {data.logs.map((l) => (
+                <tr key={l._id}>
+                  <td>{fmtDate(l.createdAt)}</td>
+                  <td><b>{l.admin?.name}</b><br /><small className="muted">{l.admin?.email}</small></td>
+                  <td><span className="pay-chip">{l.action}</span></td>
+                  <td>{l.entity}{l.entityId ? ` · ${String(l.entityId).slice(-6)}` : ''}</td>
+                  <td className="cell-clip"><small>{l.details ? JSON.stringify(l.details) : '—'}</small></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         {data.logs.length === 0 && <p className="muted">No audit entries.</p>}
       </div>
     </>

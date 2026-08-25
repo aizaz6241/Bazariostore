@@ -70,7 +70,7 @@ export default function Reports() {
       {preview && (
         <div className="card">
           <h3>{preview.title} — {preview.rows.length} rows</h3>
-          <div className="table-scroll">
+          <div className="admin-table-wrap">
             <table className="admin-table">
               <thead>
                 <tr>{preview.columns.map((c) => <th key={c.key}>{c.label}</th>)}</tr>

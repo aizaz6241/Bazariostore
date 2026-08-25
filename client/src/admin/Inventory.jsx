@@ -72,72 +72,78 @@ export default function Inventory() {
       {data.incoming.length > 0 && (
         <div className="card">
           <h3>Incoming Inventory</h3>
-          <table className="admin-table">
-            <thead><tr><th>Product</th><th>Qty</th><th>Expected</th><th>Note</th><th /></tr></thead>
-            <tbody>
-              {data.incoming.map((inc) => (
-                <tr key={inc._id}>
-                  <td><b>{inc.productName}</b></td>
-                  <td>+{inc.qty}</td>
-                  <td>{inc.expectedAt ? fmtDate(inc.expectedAt) : '—'}</td>
-                  <td>{inc.note}</td>
-                  <td><button className="row-link" onClick={() => receive(inc)}>Mark Received</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead><tr><th>Product</th><th>Qty</th><th>Expected</th><th>Note</th><th /></tr></thead>
+              <tbody>
+                {data.incoming.map((inc) => (
+                  <tr key={inc._id}>
+                    <td><b>{inc.productName}</b></td>
+                    <td>+{inc.qty}</td>
+                    <td>{inc.expectedAt ? fmtDate(inc.expectedAt) : '—'}</td>
+                    <td>{inc.note}</td>
+                    <td><button className="row-link" onClick={() => receive(inc)}>Mark Received</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
       <div className="card">
         <h3>Stock Overview</h3>
-        <table className="admin-table">
-          <thead>
-            <tr><th /><th>Product</th><th>SKU</th><th>Current</th><th>Reserved</th><th>Alert At</th><th>Status</th><th /></tr>
-          </thead>
-          <tbody>
-            {data.products.map((p) => (
-              <tr key={p._id}>
-                <td><span className="cart-thumb thumb-sm"><img src={p.image} alt="" /></span></td>
-                <td><b>{p.name}</b></td>
-                <td>{p.sku}</td>
-                <td><b>{p.stock}</b></td>
-                <td>{p.reservedStock}</td>
-                <td>{p.lowStockThreshold}</td>
-                <td>
-                  {p.stock <= 0 ? (
-                    <span className="status-pill st-cancelled">OUT OF STOCK</span>
-                  ) : p.stock <= p.lowStockThreshold ? (
-                    <span className="status-pill st-pending">LOW STOCK</span>
-                  ) : (
-                    <span className="status-pill st-delivered">OK</span>
-                  )}
-                </td>
-                <td><button className="row-link" onClick={() => setAdjust({ product: p, change: '', note: '' })}>Adjust</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr><th /><th>Product</th><th>SKU</th><th>Current</th><th>Reserved</th><th>Alert At</th><th>Status</th><th /></tr>
+            </thead>
+            <tbody>
+              {data.products.map((p) => (
+                <tr key={p._id}>
+                  <td><span className="cart-thumb thumb-sm"><img src={p.image} alt="" /></span></td>
+                  <td><b>{p.name}</b></td>
+                  <td>{p.sku}</td>
+                  <td><b>{p.stock}</b></td>
+                  <td>{p.reservedStock}</td>
+                  <td>{p.lowStockThreshold}</td>
+                  <td>
+                    {p.stock <= 0 ? (
+                      <span className="status-pill st-cancelled">OUT OF STOCK</span>
+                    ) : p.stock <= p.lowStockThreshold ? (
+                      <span className="status-pill st-pending">LOW STOCK</span>
+                    ) : (
+                      <span className="status-pill st-delivered">OK</span>
+                    )}
+                  </td>
+                  <td><button className="row-link" onClick={() => setAdjust({ product: p, change: '', note: '' })}>Adjust</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="card">
         <h3>Stock History (recent)</h3>
-        <table className="admin-table">
-          <thead><tr><th>Date</th><th>Product</th><th>Change</th><th>After</th><th>Reason</th><th>Note</th><th>By</th></tr></thead>
-          <tbody>
-            {history.map((h) => (
-              <tr key={h._id}>
-                <td>{fmtDate(h.createdAt)}</td>
-                <td>{h.productName}</td>
-                <td className={h.change > 0 ? 'stock-ok' : 'stock-out'}>{h.change > 0 ? '+' : ''}{h.change}</td>
-                <td>{h.stockAfter}</td>
-                <td>{h.reason}</td>
-                <td>{h.note}</td>
-                <td>{h.by || '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead><tr><th>Date</th><th>Product</th><th>Change</th><th>After</th><th>Reason</th><th>Note</th><th>By</th></tr></thead>
+            <tbody>
+              {history.map((h) => (
+                <tr key={h._id}>
+                  <td>{fmtDate(h.createdAt)}</td>
+                  <td>{h.productName}</td>
+                  <td className={h.change > 0 ? 'stock-ok' : 'stock-out'}>{h.change > 0 ? '+' : ''}{h.change}</td>
+                  <td>{h.stockAfter}</td>
+                  <td>{h.reason}</td>
+                  <td>{h.note}</td>
+                  <td>{h.by || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {adjust && (

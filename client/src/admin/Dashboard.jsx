@@ -158,25 +158,27 @@ export default function Dashboard() {
         {d.recent.length === 0 ? (
           <p className="muted">Abhi tak koi order nahi.</p>
         ) : (
-          <table className="admin-table">
-            <thead>
-              <tr><th>Order #</th><th>Date</th><th>Customer</th><th>City</th><th>Total</th><th>Payment</th><th>Status</th><th /></tr>
-            </thead>
-            <tbody>
-              {d.recent.map((o) => (
-                <tr key={o._id}>
-                  <td><b>{o.orderNumber}</b></td>
-                  <td>{fmtDate(o.createdAt)}</td>
-                  <td>{o.shippingAddress?.fullName}</td>
-                  <td>{o.shippingAddress?.city}</td>
-                  <td>{money(o.total)}</td>
-                  <td><span className="pay-chip">{(PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod || '').toUpperCase()}</span></td>
-                  <td><span className={`status-pill st-${o.status}`}>{STATUS_LABELS[o.status]}</span></td>
-                  <td><Link className="row-link" to={`/admin/orders/${o._id}`}>View</Link></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr><th>Order #</th><th>Date</th><th>Customer</th><th>City</th><th>Total</th><th>Payment</th><th>Status</th><th /></tr>
+              </thead>
+              <tbody>
+                {d.recent.map((o) => (
+                  <tr key={o._id}>
+                    <td><b>{o.orderNumber}</b></td>
+                    <td>{fmtDate(o.createdAt)}</td>
+                    <td>{o.shippingAddress?.fullName}</td>
+                    <td>{o.shippingAddress?.city}</td>
+                    <td>{money(o.total)}</td>
+                    <td><span className="pay-chip">{(PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod || '').toUpperCase()}</span></td>
+                    <td><span className={`status-pill st-${o.status}`}>{STATUS_LABELS[o.status]}</span></td>
+                    <td><Link className="row-link" to={`/admin/orders/${o._id}`}>View</Link></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </>

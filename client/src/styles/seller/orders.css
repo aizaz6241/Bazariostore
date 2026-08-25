@@ -653,6 +653,12 @@
   font-size: 12.5px;
   font-weight: 700;
   cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-cancel:hover {
+  background: #e2e8f0;
+  color: #0f172a;
 }
 
 .seller-btn-pri {
@@ -676,12 +682,139 @@
   cursor: not-allowed;
 }
 
-/* ─── 10. RESPONSIVE BREAKPOINTS ─── */
+.alert-close-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #166534;
+  font-weight: 800;
+  font-size: 14px;
+}
+
+/* ─── 10. ORDER STEPPER & LIFECYCLE TRACKER ─── */
+.order-stepper-box {
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.stepper-title {
+  font-size: 11.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #64748b;
+  display: block;
+  margin-bottom: 14px;
+  letter-spacing: 0.5px;
+}
+
+.order-stepper-track {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  position: relative;
+}
+
+.stepper-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  position: relative;
+}
+
+.stepper-node:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 14px;
+  left: 55%;
+  width: 90%;
+  height: 2px;
+  background: #e2e8f0;
+  z-index: 1;
+}
+
+.stepper-node.completed:not(:last-child)::after {
+  background: #10b981;
+}
+
+.stepper-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  border: 2px solid #cbd5e1;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 2;
+  transition: all 0.2s ease;
+}
+
+.stepper-node.completed .stepper-dot {
+  background: #10b981;
+  border-color: #10b981;
+  color: #ffffff;
+}
+
+.stepper-node.current .stepper-dot {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.2);
+}
+
+.stepper-label {
+  font-size: 11px;
+  font-weight: 800;
+  color: #475569;
+  margin-top: 6px;
+  line-height: 1.2;
+}
+
+.stepper-node.completed .stepper-label,
+.stepper-node.current .stepper-label {
+  color: #0f172a;
+}
+
+.stepper-desc {
+  font-size: 9.5px;
+  color: #94a3b8;
+  margin-top: 2px;
+  line-height: 1.2;
+  display: block;
+}
+
+.status-explanation-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+/* ─── 11. RESPONSIVE BREAKPOINTS ─── */
 @media (max-width: 900px) {
   .seller-orders-page {
     gap: 16px;
   }
   .osp-grid {
     grid-template-columns: 1fr;
+  }
+  .order-stepper-track {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .stepper-node {
+    flex-direction: row;
+    gap: 10px;
+    text-align: left;
+  }
+  .stepper-node:not(:last-child)::after {
+    display: none;
   }
 }

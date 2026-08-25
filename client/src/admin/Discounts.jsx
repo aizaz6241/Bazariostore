@@ -86,29 +86,31 @@ export default function Discounts() {
       <ErrorBox error={error} />
 
       <div className="card">
-        <table className="admin-table">
-          <thead>
-            <tr><th>Name</th><th>Code</th><th>Type</th><th>Scope</th><th>Min Purchase</th><th>Window</th><th>Used</th><th>Active</th><th /></tr>
-          </thead>
-          <tbody>
-            {discounts.map((d) => (
-              <tr key={d._id} className={d.active ? '' : 'row-inactive'}>
-                <td><b>{d.name}</b><br /><small className="muted">{describe(d)}</small></td>
-                <td>{d.code ? <span className="pay-chip">{d.code}</span> : <small className="muted">automatic</small>}</td>
-                <td>{TYPES.find((t) => t.key === d.type)?.label.split(' (')[0]}</td>
-                <td>{d.scope === 'all' ? 'All products' : d.scope === 'category' ? `${d.categories.length} categories` : `${d.products.length} products`}</td>
-                <td>{d.minPurchase ? money(d.minPurchase) : '—'}</td>
-                <td>{d.startsAt || d.endsAt ? `${d.startsAt ? fmtDay(d.startsAt) : '…'} → ${d.endsAt ? fmtDay(d.endsAt) : '…'}` : 'Always'}</td>
-                <td>{d.usedCount}{d.usageLimit ? `/${d.usageLimit}` : ''}</td>
-                <td><Toggle small on={d.active} onChange={() => toggle(d)} /></td>
-                <td className="row-actions">
-                  <button className="row-link" onClick={() => setEdit({ ...EMPTY, ...d, startsAt: d.startsAt?.slice(0, 10) || '', endsAt: d.endsAt?.slice(0, 10) || '' })}>Edit</button>
-                  <button className="row-link danger" onClick={() => del(d)}>Delete</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr><th>Name</th><th>Code</th><th>Type</th><th>Scope</th><th>Min Purchase</th><th>Window</th><th>Used</th><th>Active</th><th /></tr>
+            </thead>
+            <tbody>
+              {discounts.map((d) => (
+                <tr key={d._id} className={d.active ? '' : 'row-inactive'}>
+                  <td><b>{d.name}</b><br /><small className="muted">{describe(d)}</small></td>
+                  <td>{d.code ? <span className="pay-chip">{d.code}</span> : <small className="muted">automatic</small>}</td>
+                  <td>{TYPES.find((t) => t.key === d.type)?.label.split(' (')[0]}</td>
+                  <td>{d.scope === 'all' ? 'All products' : d.scope === 'category' ? `${d.categories.length} categories` : `${d.products.length} products`}</td>
+                  <td>{d.minPurchase ? money(d.minPurchase) : '—'}</td>
+                  <td>{d.startsAt || d.endsAt ? `${d.startsAt ? fmtDay(d.startsAt) : '…'} → ${d.endsAt ? fmtDay(d.endsAt) : '…'}` : 'Always'}</td>
+                  <td>{d.usedCount}{d.usageLimit ? `/${d.usageLimit}` : ''}</td>
+                  <td><Toggle small on={d.active} onChange={() => toggle(d)} /></td>
+                  <td className="row-actions">
+                    <button className="row-link" onClick={() => setEdit({ ...EMPTY, ...d, startsAt: d.startsAt?.slice(0, 10) || '', endsAt: d.endsAt?.slice(0, 10) || '' })}>Edit</button>
+                    <button className="row-link danger" onClick={() => del(d)}>Delete</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {edit && (

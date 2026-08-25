@@ -138,27 +138,29 @@ export default function Finance() {
         {expenses.length === 0 ? (
           <p className="muted">Is period mein koi expense entry nahi.</p>
         ) : (
-          <table className="admin-table">
-            <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Note</th><th>By</th><th /></tr></thead>
-            <tbody>
-              {expenses.map((e) => (
-                <tr key={e._id}>
-                  <td>{fmtDay(e.date)}</td>
-                  <td><span className="pay-chip">{e.type.toUpperCase()}</span></td>
-                  <td>{money(e.amount)}</td>
-                  <td>{e.note}</td>
-                  <td>{e.createdBy}</td>
-                  <td><button className="row-link danger" onClick={() => delExpense(e._id)}>Delete</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Note</th><th>By</th><th /></tr></thead>
+              <tbody>
+                {expenses.map((e) => (
+                  <tr key={e._id}>
+                    <td>{fmtDay(e.date)}</td>
+                    <td><span className="pay-chip">{e.type.toUpperCase()}</span></td>
+                    <td>{money(e.amount)}</td>
+                    <td>{e.note}</td>
+                    <td>{e.createdBy}</td>
+                    <td><button className="row-link danger" onClick={() => delExpense(e._id)}>Delete</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
       <div className="card">
         <h3>Product Cost & Profit</h3>
-        <div className="table-scroll">
+        <div className="admin-table-wrap">
           <table className="admin-table">
             <thead>
               <tr><th>Product</th><th>Price</th><th>Unit Cost</th><th>Net/Unit</th><th>Margin</th><th>Units Sold</th><th>Revenue</th><th>Gross Profit</th><th>Net Profit</th><th>Stock Left</th></tr>

@@ -9,17 +9,22 @@ import { notify } from '../utils/notify.js';
 const router = Router();
 
 // Helper: Auto-reply handler when admin away/auto-reply is enabled
-async function handleAutoReply(app, conv) {
+export async function handleAutoReply(app, conv) {
   try {
+    if (!conv) return;
     const settings = await ChatSettings.findOne();
-    if (!settings || !settings.autoReplyEnabled) return;
+    if (!settings) return;
 
-    // Check if auto-reply already sent recently (within last 10 minutes)
+    // Check if auto-reply is enabled or away mode is on
+    const isAutoReplyOn = Boolean(settings.autoReplyEnabled || settings.awayMode);
+    if (!isAutoReplyOn) return;
+
+    // Prevent spam: Check if auto-reply already sent recently to this conversation (within last 3 minutes)
     const recentAutoReply = await Message.findOne({
       conversation: conv._id,
       sender: 'admin',
       isAutoReply: true,
-      createdAt: { $gt: new Date(Date.now() - 10 * 60 * 1000) },
+      createdAt: { $gt: new Date(Date.now() - 3 * 60 * 1000) },
     });
     if (recentAutoReply) return;
 
@@ -27,12 +32,16 @@ async function handleAutoReply(app, conv) {
       settings.autoReplyMessage ||
       'Assalam o Alaikum! 👋 Thanks for reaching out. We are currently away from the desk, but we have received your inquiry and our support team will respond to you shortly.';
 
+    // Fast, realistic response (400ms)
     setTimeout(async () => {
       try {
+        const sId = conv.seller?._id ? conv.seller._id.toString() : (conv.seller ? conv.seller.toString() : null);
+        const gId = conv.guestId || '';
+
         const replyMsg = new Message({
           conversation: conv._id,
-          seller: conv.seller,
-          guestId: conv.guestId || '',
+          seller: sId,
+          guestId: gId,
           sender: 'admin',
           senderName: '🤖 Bazario Support Assistant (Auto-Reply)',
           text: autoReplyText,
@@ -45,19 +54,31 @@ async function handleAutoReply(app, conv) {
         conv.lastAt = new Date();
         if (conv.type === 'seller') {
           conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
+        } else {
+          conv.unreadForCustomer = (conv.unreadForCustomer || 0) + 1;
         }
         await conv.save();
 
         const io = app.get('io');
         if (io) {
-          if (conv.seller) io.to(`seller:${conv.seller}`).emit('message:new', replyMsg);
-          if (conv.guestId) io.to(`guest:${conv.guestId}`).emit('message:new', replyMsg);
+          if (sId) {
+            io.to(`seller:${sId}`).emit('message:new', replyMsg);
+          }
+          if (gId) {
+            io.to(`guest:${gId}`).emit('message:new', replyMsg);
+            io.to(`customer:${gId}`).emit('message:new', replyMsg);
+          }
           io.to('admins').emit('message:new', replyMsg);
+          io.to('admins').emit('chat:notification', {
+            conversationId: conv._id,
+            storeName: conv.storeName || conv.name || 'Merchant/Guest',
+            text: `🤖 Auto-Reply: ${autoReplyText.slice(0, 50)}`,
+          });
         }
       } catch (e) {
-        console.error('Auto-reply send error:', e.message);
+        console.error('Auto-reply inner send error:', e.message);
       }
-    }, 1000);
+    }, 400);
   } catch (err) {
     console.error('handleAutoReply error:', err.message);
   }
@@ -656,7 +677,13 @@ router.get('/settings/auto-reply', authAdmin('chat'), async (req, res) => {
         awayMode: false,
       });
     }
-    res.json(settings);
+    const data = settings.toObject();
+    // Return backward-compatible field names
+    res.json({
+      ...data,
+      enabled: Boolean(data.autoReplyEnabled),
+      message: data.autoReplyMessage,
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -665,20 +692,30 @@ router.get('/settings/auto-reply', authAdmin('chat'), async (req, res) => {
 // POST /api/chat/settings/auto-reply (Admin updates auto-reply settings)
 router.post('/settings/auto-reply', authAdmin('chat'), async (req, res) => {
   try {
-    const { autoReplyEnabled, autoReplyMessage, awayMode } = req.body || {};
+    const { autoReplyEnabled, autoReplyMessage, awayMode, enabled, message } = req.body || {};
     let settings = await ChatSettings.findOne();
     if (!settings) {
       settings = new ChatSettings();
     }
 
-    if (autoReplyEnabled !== undefined) settings.autoReplyEnabled = Boolean(autoReplyEnabled);
-    if (autoReplyMessage !== undefined) settings.autoReplyMessage = autoReplyMessage.trim();
+    const targetEnabled = autoReplyEnabled !== undefined ? autoReplyEnabled : enabled;
+    const targetMessage = autoReplyMessage !== undefined ? autoReplyMessage : message;
+
+    if (targetEnabled !== undefined) settings.autoReplyEnabled = Boolean(targetEnabled);
+    if (targetMessage !== undefined) settings.autoReplyMessage = String(targetMessage).trim();
     if (awayMode !== undefined) settings.awayMode = Boolean(awayMode);
 
     await settings.save();
 
-    req.app.get('io')?.to('admins').emit('chat:settings_update', settings);
-    res.json({ message: 'Auto-reply settings updated successfully', settings });
+    const data = settings.toObject();
+    const payload = {
+      ...data,
+      enabled: Boolean(data.autoReplyEnabled),
+      message: data.autoReplyMessage,
+    };
+
+    req.app.get('io')?.to('admins').emit('chat:settings_update', payload);
+    res.json({ message: 'Auto-reply settings updated successfully', settings: payload });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -1172,6 +1209,57 @@ router.post('/guest/send', async (req, res) => {
     handleAutoReply(req.app, conv);
 
     res.status(201).json(message);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/chat/guest/:guestId (Get conversation & messages for guest or customer)
+router.get('/guest/:guestId', async (req, res) => {
+  try {
+    const { guestId } = req.params;
+    if (!guestId) return res.status(400).json({ message: 'Guest ID is required' });
+
+    let conv = await Conversation.findOne({ guestId });
+    if (!conv) {
+      return res.json({ conversation: null, messages: [] });
+    }
+
+    const messages = await Message.find({
+      $or: [{ conversation: conv._id }, { guestId }],
+    }).sort({ createdAt: 1 }).limit(300);
+
+    res.json({ conversation: conv, messages });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/chat/messages/:guestId (Storefront widget messages fetch)
+router.get('/messages/:guestId', async (req, res) => {
+  try {
+    const { guestId } = req.params;
+    if (!guestId) return res.json([]);
+
+    const messages = await Message.find({ guestId }).sort({ createdAt: 1 }).limit(300);
+    res.json(messages);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/chat/read/:guestId (Mark messages as read for guest)
+router.post('/read/:guestId', async (req, res) => {
+  try {
+    const { guestId } = req.params;
+    if (guestId) {
+      await Conversation.updateOne({ guestId }, { $set: { unreadForCustomer: 0 } });
+      await Message.updateMany(
+        { guestId, sender: { $in: ['admin', 'staff'] }, isSeen: { $ne: true } },
+        { $set: { isSeen: true, seenAt: new Date(), seenBy: 'guest' } }
+      );
+    }
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

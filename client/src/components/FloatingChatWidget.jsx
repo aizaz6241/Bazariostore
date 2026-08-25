@@ -518,8 +518,8 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
             </div>
           )}
 
-          {/* Floating Input / Reply Bar */}
-          <form onSubmit={handleSend} className="floating-chat-input-bar" style={{ alignItems: 'flex-end' }}>
+            {/* Floating Input / Reply Bar */}
+          <form onSubmit={handleSend} className="floating-chat-input-bar" style={{ alignItems: 'flex-end', position: 'relative' }}>
             <input
               type="file"
               ref={fileInputRef}
@@ -534,12 +534,12 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
               onClick={() => fileInputRef.current?.click()}
               title="Attach Image or PDF document"
               disabled={sending}
-              style={{ marginBottom: 4 }}
+              style={{ marginBottom: 4, flexShrink: 0 }}
             >
               <Ic name="paperclip" size={18} stroke={2} />
             </button>
 
-            <div style={{ marginBottom: 4 }}>
+            <div style={{ marginBottom: 4, flexShrink: 0 }}>
               <VoiceRecordButton
                 compact={true}
                 onTranscribed={(spokenText) => {
@@ -561,42 +561,46 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
                   handleSend(e);
                 }
               }}
-              placeholder={file ? 'Add a caption...' : replyingTo ? `Reply... (Enter to send, Shift+Enter for newline)` : 'Type message... (Enter to send, Shift+Enter for newline)'}
+              placeholder={file ? 'Add a caption...' : replyingTo ? `Reply... (Enter to send)` : 'Type message...'}
               disabled={sending}
               style={{
                 flex: 1,
+                minWidth: 0,
                 padding: '8px 12px',
                 borderRadius: 8,
                 border: '1px solid #cbd5e1',
                 resize: 'vertical',
-                minHeight: 44,
+                minHeight: 42,
                 maxHeight: 120,
                 fontFamily: 'inherit',
                 fontSize: 13,
                 lineHeight: 1.4,
+                boxSizing: 'border-box',
               }}
             />
 
             {role === 'admin' && (
-              <AiRewriteBox
-                text={text}
-                compact={true}
-                onApply={(rewritten) => {
-                  setText(rewritten);
-                  textInputRef.current?.focus();
-                }}
-                onApplyAndSend={(rewritten) => {
-                  handleSend(null, rewritten);
-                }}
-                disabled={sending || uploading}
-              />
+              <div style={{ marginBottom: 4, flexShrink: 0 }}>
+                <AiRewriteBox
+                  text={text}
+                  compact={true}
+                  onApply={(rewritten) => {
+                    setText(rewritten);
+                    textInputRef.current?.focus();
+                  }}
+                  onApplyAndSend={(rewritten) => {
+                    handleSend(null, rewritten);
+                  }}
+                  disabled={sending || uploading}
+                />
+              </div>
             )}
 
             <button
               type="submit"
               className="floating-send-btn"
               disabled={sending || (!text.trim() && !file)}
-              style={{ height: 38, marginBottom: 3 }}
+              style={{ height: 38, marginBottom: 3, flexShrink: 0 }}
             >
               {sending ? (
                 uploading ? '...' : '...'

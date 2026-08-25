@@ -521,7 +521,7 @@ router.post('/orders/:id/confirm', authSellerOrAdmin, async (req, res) => {
       updatedAny = true;
     }
 
-    // Lock processing funds
+    // Lock processing funds into seller.wallet.processingFund
     const fundResult = await lockSellerOrderFund(req.app, seller._id, order);
 
     const allStatuses = order.items.map((it) => it.itemStatus || order.status);
@@ -537,6 +537,24 @@ router.post('/orders/:id/confirm', authSellerOrAdmin, async (req, res) => {
     });
 
     await order.save();
+
+    // Real-time synchronization to Admin and Seller sockets
+    const io = req.app.get('io');
+    if (io) {
+      io.to('admins').emit('order:update', order);
+      io.to(`seller:${sellerId}`).emit('order:update', order);
+      io.to(`seller:${sellerId}`).emit('seller:status_update', { order });
+    }
+
+    // Notify Admins about seller confirmation
+    notify(req.app, {
+      recipientType: 'admin',
+      type: 'order',
+      title: `⚡ Order #${order.orderNumber} Confirmed by Merchant`,
+      body: `${seller.storeName} confirmed order #${order.orderNumber}. Ready for admin fulfillment dispatch.`,
+      link: `/admin/orders/${order._id}`,
+    });
+
     res.json({ ok: true, order, lockedAmount: fundResult?.totalToLock || 0 });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -547,8 +565,19 @@ router.post('/orders/:id/confirm', authSellerOrAdmin, async (req, res) => {
 export const handleStatusUpdate = async (req, res) => {
   try {
     const { status, trackingNumber, note } = req.body || {};
+    const isSeller = Boolean(req.seller && !req.admin);
+
+    // SECURITY RESTRICTION: Sellers can ONLY confirm pending orders; all other status changes belong to Admin
+    if (isSeller) {
+      if (status !== 'confirmed') {
+        return res.status(403).json({
+          message: 'Sellers are only permitted to confirm orders. Fulfillment and delivery statuses (Shipped, Delivered, Cancelled) are managed exclusively by Platform Operations.',
+        });
+      }
+    }
+
     const seller = await getSellerFromReq(req);
-    const storeName = seller?.storeName || req.seller?.storeName || 'Store Admin';
+    const storeName = req.admin ? (req.admin.name || 'Platform Admin') : (seller?.storeName || 'Merchant');
     const sellerId = seller ? seller._id.toString() : (req.seller?.id || req.seller?._id || '');
 
     const order = await Order.findById(req.params.id).populate('items.product');
@@ -578,7 +607,7 @@ export const handleStatusUpdate = async (req, res) => {
       if (isOwnedBySeller || isAdmin) {
         if (seller && isOwnedBySeller) {
           it.seller = seller._id;
-          it.sellerName = storeName;
+          it.sellerName = seller.storeName;
         }
         if (status) it.itemStatus = status;
         if (trackingNumber) it.trackingNumber = trackingNumber;
@@ -591,13 +620,18 @@ export const handleStatusUpdate = async (req, res) => {
     }
 
     // Financial settlement triggers
-    if (seller) {
+    const affectedSellerIds = [...new Set(order.items.map((i) => i.seller?.toString()).filter(Boolean))];
+    if (seller && !affectedSellerIds.includes(seller._id.toString())) {
+      affectedSellerIds.push(seller._id.toString());
+    }
+
+    for (const sId of affectedSellerIds) {
       if (status === 'confirmed' || status === 'processing') {
-        await lockSellerOrderFund(req.app, seller._id, order);
+        await lockSellerOrderFund(req.app, sId, order);
       } else if (status === 'delivered') {
-        await releaseSellerOrderDelivered(req.app, seller._id, order);
+        await releaseSellerOrderDelivered(req.app, sId, order);
       } else if (status === 'cancelled') {
-        await releaseSellerOrderCancelled(req.app, seller._id, order);
+        await releaseSellerOrderCancelled(req.app, sId, order);
       }
     }
 
@@ -609,12 +643,37 @@ export const handleStatusUpdate = async (req, res) => {
 
     order.statusHistory.push({
       status: status || order.status,
-      note: note || `Status updated to ${status} by seller (${storeName})`,
+      note: note || `Status updated to ${status} by ${storeName}`,
       at: new Date(),
       by: storeName,
     });
 
     await order.save();
+
+    // Broadcast real-time socket events to Admin and all affected Sellers
+    const io = req.app.get('io');
+    if (io) {
+      io.to('admins').emit('order:update', order);
+      for (const sId of affectedSellerIds) {
+        io.to(`seller:${sId}`).emit('order:update', order);
+        io.to(`seller:${sId}`).emit('seller:status_update', { order });
+      }
+    }
+
+    // Send notifications to sellers when admin changes status
+    if (req.admin) {
+      for (const sId of affectedSellerIds) {
+        notify(req.app, {
+          recipientType: 'seller',
+          sellerId: sId,
+          type: 'order',
+          title: `📦 Order #${order.orderNumber} Status: ${status.replace(/_/g, ' ').toUpperCase()}`,
+          body: `Order #${order.orderNumber} has been updated to "${status.replace(/_/g, ' ').toUpperCase()}" by Platform Operations.`,
+          link: '/seller/orders',
+        });
+      }
+    }
+
     res.json({ ok: true, order });
   } catch (err) {
     res.status(500).json({ message: err.message });

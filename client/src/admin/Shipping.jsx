@@ -53,27 +53,29 @@ export default function Shipping() {
       <ErrorBox error={error} />
 
       <div className="card">
-        <table className="admin-table">
-          <thead>
-            <tr><th>Method</th><th>Charges</th><th>Delivery Time</th><th>Zones</th><th>Free Above</th><th>Enabled</th><th /></tr>
-          </thead>
-          <tbody>
-            {methods.map((m) => (
-              <tr key={m._id} className={m.active ? '' : 'row-inactive'}>
-                <td><b>{m.name}</b><br /><small className="muted">{m.description}</small></td>
-                <td>{m.cost ? money(m.cost) : <span className="free">FREE</span>}</td>
-                <td>{m.etaText}</td>
-                <td>{m.zones?.length ? m.zones.join(', ') : 'Nationwide'}</td>
-                <td>{m.freeAbove != null ? money(m.freeAbove) + '+' : '—'}</td>
-                <td><Toggle small on={m.active} onChange={() => toggle(m)} /></td>
-                <td className="row-actions">
-                  <button className="row-link" onClick={() => setEdit({ ...m, zones: (m.zones || []).join(', '), freeAbove: m.freeAbove ?? '' })}>Edit</button>
-                  <button className="row-link danger" onClick={() => del(m)}>Delete</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr><th>Method</th><th>Charges</th><th>Delivery Time</th><th>Zones</th><th>Free Above</th><th>Enabled</th><th /></tr>
+            </thead>
+            <tbody>
+              {methods.map((m) => (
+                <tr key={m._id} className={m.active ? '' : 'row-inactive'}>
+                  <td><b>{m.name}</b><br /><small className="muted">{m.description}</small></td>
+                  <td>{m.cost ? money(m.cost) : <span className="free">FREE</span>}</td>
+                  <td>{m.etaText}</td>
+                  <td>{m.zones?.length ? m.zones.join(', ') : 'Nationwide'}</td>
+                  <td>{m.freeAbove != null ? money(m.freeAbove) + '+' : '—'}</td>
+                  <td><Toggle small on={m.active} onChange={() => toggle(m)} /></td>
+                  <td className="row-actions">
+                    <button className="row-link" onClick={() => setEdit({ ...m, zones: (m.zones || []).join(', '), freeAbove: m.freeAbove ?? '' })}>Edit</button>
+                    <button className="row-link danger" onClick={() => del(m)}>Delete</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {edit && (

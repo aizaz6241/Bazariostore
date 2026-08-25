@@ -70,27 +70,29 @@ export default function Categories() {
       <ErrorBox error={error} />
 
       <div className="card">
-        <table className="admin-table">
-          <thead>
-            <tr><th /><th>Name</th><th>Slug</th><th>Products</th><th>Sort</th><th>Active</th><th /></tr>
-          </thead>
-          <tbody>
-            {cats.map((c) => (
-              <tr key={c._id} className={c.active ? '' : 'row-inactive'}>
-                <td><span className="cart-thumb thumb-sm"><img src={c.image?.url} alt="" /></span></td>
-                <td><b>{c.name}</b></td>
-                <td>{c.slug}</td>
-                <td>{c.productCount}</td>
-                <td>{c.sortOrder}</td>
-                <td><Toggle small on={c.active} onChange={() => toggle(c)} /></td>
-                <td className="row-actions">
-                  <button className="row-link" onClick={() => setEdit(c)}>Edit</button>
-                  <button className="row-link danger" onClick={() => del(c)}>Delete</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr><th /><th>Name</th><th>Slug</th><th>Products</th><th>Sort</th><th>Active</th><th /></tr>
+            </thead>
+            <tbody>
+              {cats.map((c) => (
+                <tr key={c._id} className={c.active ? '' : 'row-inactive'}>
+                  <td><span className="cart-thumb thumb-sm"><img src={c.image?.url} alt="" /></span></td>
+                  <td><b>{c.name}</b></td>
+                  <td>{c.slug}</td>
+                  <td>{c.productCount}</td>
+                  <td>{c.sortOrder}</td>
+                  <td><Toggle small on={c.active} onChange={() => toggle(c)} /></td>
+                  <td className="row-actions">
+                    <button className="row-link" onClick={() => setEdit(c)}>Edit</button>
+                    <button className="row-link danger" onClick={() => del(c)}>Delete</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {edit && (
