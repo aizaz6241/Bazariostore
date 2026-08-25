@@ -80,15 +80,14 @@ app.use(['/api/chat', '/chat'], chatRoutes);
 app.use(['/api/sellers', '/sellers'], sellerRoutes);
 
 // Static uploads serving (both server/uploads and root/uploads)
-const serverUploadsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../uploads');
-const rootUploadsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../uploads');
+const serverUploadsDir = path.resolve(__dirname, '../uploads');
+const rootUploadsDir = path.resolve(__dirname, '../../uploads');
 try { if (!fs.existsSync(serverUploadsDir)) fs.mkdirSync(serverUploadsDir, { recursive: true }); } catch {}
 try { if (!fs.existsSync(rootUploadsDir)) fs.mkdirSync(rootUploadsDir, { recursive: true }); } catch {}
 app.use('/uploads', express.static(serverUploadsDir));
 app.use('/uploads', express.static(rootUploadsDir));
 
 // Production: serve built React frontend from same single port (only in persistent node server)
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
 if (!process.env.VERCEL && fs.existsSync(clientDist)) {
   app.use(
