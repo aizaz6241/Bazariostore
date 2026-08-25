@@ -877,7 +877,6 @@ router.post('/admin/transcribe', authAdmin('chat'), audioUpload.single('audio'),
     const formData = new FormData();
     formData.append('file', audioBlob, fileName);
     formData.append('model', 'whisper-large-v3-turbo');
-    formData.append('prompt', 'Assalam-o-Alaikum, ye e-commerce admin chat message hai Roman Urdu aur English mein. Transcribe phonetically in Roman Urdu using English Latin alphabet or clean English. Do NOT use Hindi Devanagari script.');
     formData.append('response_format', 'json');
 
 
