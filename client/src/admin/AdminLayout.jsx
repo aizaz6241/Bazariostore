@@ -11,6 +11,7 @@ import { playNotificationSound } from '../utils/audio.js';
 const NAV = [
   { to: '/admin', icon: 'grid', label: 'Dashboard', end: true },
   { to: '/admin/sellers', icon: 'package', label: 'Sellers & Vendors', perm: 'sellers' },
+  { to: '/admin/reports', icon: 'sparkle', label: 'Analytics & Reports', perm: 'orders' },
   { to: '/admin/complaints', icon: 'alert', label: 'Complaints', perm: 'sellers' },
   { to: '/admin/orders', icon: 'box', label: 'Orders', perm: 'orders' },
   { to: '/admin/applications', icon: 'badgeCheck', label: 'New Applications', perm: 'sellers' },
