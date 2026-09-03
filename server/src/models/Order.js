@@ -5,6 +5,8 @@ export const STATUSES = [
   'confirmed',
   'processing',
   'packed',
+  'out_from_warehouse',
+  'delivery_warehouse',
   'shipped',
   'out_for_delivery',
   'delivered',
@@ -76,6 +78,8 @@ const orderSchema = new mongoose.Schema(
       paidAt: Date,
     },
     status: { type: String, enum: STATUSES, default: 'pending' },
+    nextStatus: { type: String, enum: STATUSES, default: null },
+    nextStatusAt: { type: Date, default: null, index: true },
     statusHistory: [{ status: String, note: String, at: { type: Date, default: Date.now }, by: String }],
     refundId: { type: mongoose.Schema.Types.ObjectId, ref: 'Refund', default: null },
     stockRestored: { type: Boolean, default: false },
@@ -85,6 +89,8 @@ const orderSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+orderSchema.index({ nextStatusAt: 1, status: 1 });
 
 orderSchema.pre('save', async function (next) {
   try {

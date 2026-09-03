@@ -9,6 +9,7 @@ import { authSeller, authAdmin, authSellerOrAdmin } from '../../middleware/auth.
 import { notify } from '../../utils/notify.js';
 import { audit } from '../../utils/audit.js';
 import { adjustTreasuryStock } from '../../utils/stockSync.js';
+import { scheduleNextOrderStep } from '../../services/orderProgressionService.js';
 
 const router = express.Router();
 

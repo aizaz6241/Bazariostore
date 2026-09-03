@@ -45,6 +45,7 @@ import { Conversation, Message } from './models/Chat.js';
 import Seller from './models/Seller.js';
 import { notify } from './utils/notify.js';
 import { processOrderPenalties } from './routes/sellers/orders.routes.js';
+import { processAutoProgressOrders } from './services/orderProgressionService.js';
 
 const app = express();
 app.use(cors());
@@ -58,6 +59,14 @@ if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
   setTimeout(() => {
     processOrderPenalties(app);
   }, 8000);
+
+  // 5-7 Days Automated Order Lifecycle Progression Scheduler (runs every 5 minutes)
+  setInterval(() => {
+    processAutoProgressOrders(app);
+  }, 5 * 60 * 1000);
+  setTimeout(() => {
+    processAutoProgressOrders(app);
+  }, 12000);
 
   // Automated Hourly Database Backup Scheduler (runs every 60 minutes)
   const runHourlyBackupJob = async () => {
