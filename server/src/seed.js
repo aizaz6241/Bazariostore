@@ -10,6 +10,7 @@ import Discount from './models/Discount.js';
 import ShippingMethod from './models/ShippingMethod.js';
 import { Conversation, Message } from './models/Chat.js';
 import { Counter, setSetting } from './models/System.js';
+import { seedTreasury } from './seed-treasury.js';
 
 const CATS = [
   { name: 'Mobiles & Tablets', slug: 'mobiles', icon: 'phone', img: 'https://images.unsplash.com/photo-1598327105666-5b89351aff97?w=600&auto=format&fit=crop&q=80' },
@@ -236,6 +237,9 @@ export async function runSeed() {
   for (const d of discounts) {
     await Discount.updateOne({ code: d.code }, { $set: d }, { upsert: true });
   }
+
+  // 5. Product Treasury Master Catalog
+  await seedTreasury();
 
   console.log('\n🎉 Bazario Multi-Vendor Marketplace database safe-synced successfully!');
 }

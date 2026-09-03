@@ -13,7 +13,8 @@ import { playNotificationSound } from '../utils/audio.js';
 
 const SELLER_NAV = [
   { to: '/seller', icon: 'grid', label: 'Dashboard', end: true },
-  { to: '/seller/products', icon: 'tag', label: 'Product Catalog' },
+  { to: '/seller/treasury', icon: 'sparkle', label: 'Product Treasury', badge: 'Import' },
+  { to: '/seller/products', icon: 'tag', label: 'My Store Products' },
   { to: '/seller/orders', icon: 'package', label: 'Orders & Dispatch' },
   { to: '/seller/refunds', icon: 'refresh', label: 'Refunds & Returns' },
   { to: '/seller/inventory', icon: 'box', label: 'Inventory Center' },
@@ -262,6 +263,23 @@ export default function SellerLayout() {
             let badge = null;
             if (n.badgeKey === 'unreadChat' && unreadChat > 0) {
               badge = <span className="seller-nav-badge">{unreadChat}</span>;
+            } else if (n.badge) {
+              badge = (
+                <span
+                  style={{
+                    marginLeft: 'auto',
+                    background: '#10b981',
+                    color: '#fff',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    padding: '2px 6px',
+                    borderRadius: '10px',
+                    letterSpacing: '0.4px',
+                  }}
+                >
+                  {n.badge}
+                </span>
+              );
             }
             return (
               <NavLink

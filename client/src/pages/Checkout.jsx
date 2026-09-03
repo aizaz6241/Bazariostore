@@ -346,7 +346,13 @@ export default function Checkout() {
                   {items.map((i) => (
                     <div className="review-item" key={i.key}>
                       <span className="cart-thumb"><img src={i.image} alt="" /></span>
-                      <span className="ri-name">{i.name}{i.size ? ` (${i.size})` : ''}{i.variant ? ` — ${i.variant}` : ''} <small className="muted">× {i.qty}</small></span>
+                      <span className="ri-name">
+                        {i.name}{i.size ? ` (${i.size})` : ''}{i.variant ? ` — ${i.variant}` : ''}
+                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '1px' }}>
+                          Sold by: <span style={{ fontWeight: 600, color: '#1e293b' }}>{i.sellerName || 'Verified Store'}</span>
+                        </div>
+                        <small className="muted">× {i.qty}</small>
+                      </span>
                       <b>{formatMoney(i.price * i.qty)}</b>
                     </div>
                   ))}
@@ -368,7 +374,13 @@ export default function Checkout() {
               {items.map((i) => (
                 <div className="os-item" key={i.key}>
                   <span className="cart-thumb"><img src={i.image} alt="" /></span>
-                  <span className="os-name">{i.name}{i.size ? ` ${i.size}` : ''}<small className="muted">Qty: {i.qty}</small></span>
+                  <span className="os-name">
+                    {i.name}{i.size ? ` ${i.size}` : ''}
+                    <div style={{ fontSize: '10.5px', color: '#64748b', marginTop: '1px' }}>
+                      Sold by: <span style={{ fontWeight: 600, color: '#1e293b' }}>{i.sellerName || 'Verified Store'}</span>
+                    </div>
+                    <small className="muted">Qty: {i.qty}</small>
+                  </span>
                   <b>{formatMoney(i.price * i.qty)}</b>
                 </div>
               ))}

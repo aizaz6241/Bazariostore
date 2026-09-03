@@ -68,7 +68,8 @@ export const uapi = (path, opts = {}) => request(path, opts, localStorage.getIte
 
 // authenticated file download (reports export)
 export async function downloadFile(path, filename) {
-  const url = (API_BASE ? `${API_BASE}/api` : '/api') + path;
+  const base = getApiBase();
+  const url = (base ? `${base}/api` : '/api') + path;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${localStorage.getItem('ng_admin_token')}` },
   });

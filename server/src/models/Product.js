@@ -8,6 +8,7 @@ const productSchema = new mongoose.Schema(
     slug: { type: String, required: true, unique: true },
     brand: String,
     category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', index: true },
+    treasuryProduct: { type: mongoose.Schema.Types.ObjectId, ref: 'TreasuryProduct', index: true, default: null },
     seller: { type: mongoose.Schema.Types.ObjectId, ref: 'Seller', index: true },
     sellerName: { type: String, default: 'Amazon Global Official' },
     sellerSlug: { type: String, default: 'official' },

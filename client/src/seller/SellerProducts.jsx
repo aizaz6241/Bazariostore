@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, Link } from 'react-router-dom';
 import { sapi } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
@@ -227,12 +227,28 @@ export default function SellerProducts() {
     <div className="seller-products-page">
       <div className="seller-page-header">
         <div>
-          <h2>📦 Product Catalog & Listings</h2>
-          <p>Add new products, adjust selling prices, upload high-res images, and monitor real-time stock levels.</p>
+          <h2>📦 My Store Products</h2>
+          <p>Products currently active in your store. To add more products from the master warehouse catalog, browse the Product Treasury.</p>
         </div>
-        <button onClick={openAdd} className="seller-btn-pri">
-          <Ic name="plus" size={17} /> Add New Product
-        </button>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <Link
+            to="/seller/treasury"
+            className="seller-btn-pri"
+            style={{
+              background: '#2563eb',
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '10px 18px',
+            }}
+          >
+            <Ic name="sparkle" size={17} /> Browse Product Treasury
+          </Link>
+          <button onClick={openAdd} className="btn-sec" style={{ padding: '9px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+            <Ic name="plus" size={15} /> Custom Product
+          </button>
+        </div>
       </div>
 
       {/* Filter and Search Bar */}
@@ -317,7 +333,24 @@ export default function SellerProducts() {
                           className="prod-thumb"
                         />
                         <div className="prod-meta-box">
-                          <b className="prod-name-title" title={p.name}>{p.name}</b>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            <b className="prod-name-title" title={p.name}>{p.name}</b>
+                            {p.treasuryProduct && (
+                              <span
+                                style={{
+                                  background: '#eff6ff',
+                                  color: '#1d4ed8',
+                                  border: '1px solid #bfdbfe',
+                                  fontSize: '10px',
+                                  fontWeight: 700,
+                                  padding: '1px 6px',
+                                  borderRadius: '10px',
+                                }}
+                              >
+                                ⚡ Treasury Synced
+                              </span>
+                            )}
+                          </div>
                           <small className="muted block">SKU: {p.sku || 'N/A'} • {p.brand || 'Generic'}</small>
                         </div>
                       </div>
@@ -335,6 +368,11 @@ export default function SellerProducts() {
                       <span className={`stock-badge ${isOut ? 'out' : isLow ? 'low' : 'ok'}`}>
                         {p.stock || 0} units
                       </span>
+                      {p.treasuryProduct && (
+                        <div style={{ fontSize: '10px', color: '#059669', fontWeight: 600, marginTop: '2px' }}>
+                          Central Pool
+                        </div>
+                      )}
                     </td>
                     <td>{p.sold || 0}</td>
                     <td>

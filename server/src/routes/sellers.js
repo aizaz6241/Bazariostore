@@ -13,6 +13,7 @@ import couponRoutes from './sellers/coupons.routes.js';
 import shippingRoutes from './sellers/shipping.routes.js';
 import walletRoutes from './sellers/wallet.routes.js';
 import adminRoutes from './sellers/admin.routes.js';
+import treasuryRoutes from './sellers/treasury.routes.js';
 import { slugify, calculateHealthStatus } from './sellers/helpers.js';
 
 const router = express.Router();
@@ -21,6 +22,7 @@ const router = express.Router();
 router.use(authRoutes);
 router.use(dashboardRoutes);
 router.use(productRoutes);
+router.use(treasuryRoutes);
 router.use(orderRoutes);
 router.use(refundRoutes);
 router.use(couponRoutes);

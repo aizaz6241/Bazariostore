@@ -7,10 +7,11 @@
 .seller-portal-layout, .seller-dashboard-shell, .seller-portal {
   display: flex !important;
   flex-direction: row !important;
-  align-items: stretch !important;
-  min-height: 100vh !important;
-  min-height: 100dvh !important;
+  height: 100vh !important;
+  height: 100dvh !important;
   width: 100% !important;
+  max-width: 100vw !important;
+  overflow: hidden !important;
   background: #f8fafc !important;
   position: relative !important;
   box-sizing: border-box !important;
@@ -28,11 +29,10 @@
   display: flex !important;
   flex-direction: column !important;
   flex-shrink: 0 !important;
-  position: sticky !important;
-  top: 0 !important;
   height: 100vh !important;
   height: 100dvh !important;
   overflow-y: auto !important;
+  overflow-x: hidden !important;
   -webkit-overflow-scrolling: touch !important;
   z-index: 120 !important;
   border-right: 1px solid #1e293b !important;
@@ -135,11 +135,14 @@
 
 /* Seller Navigation Links */
 .seller-nav {
-  padding: 16px 12px;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  padding: 16px 12px !important;
+  flex: 1 1 auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  min-height: 0 !important;
 }
 
 .seller-nav a {
@@ -173,11 +176,14 @@
 }
 
 .seller-sidebar-footer {
-  padding: 16px;
-  border-top: 1px solid #1e293b;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  padding: 16px !important;
+  border-top: 1px solid #1e293b !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  flex-shrink: 0 !important;
+  margin-top: auto !important;
+  background: #0b1120 !important;
 }
 
 .seller-install-app-sidebar-btn {
@@ -238,7 +244,13 @@
   display: flex !important;
   flex-direction: column !important;
   min-width: 0 !important;
-  width: auto !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
   background: #f8fafc !important;
   position: relative !important;
   margin: 0 !important;
@@ -668,10 +680,17 @@
 }
 .btn-sm-action:hover { background: #1e293b; }
 
-/* ─── MOBILE DRAWER & RESPONSIVENESS ─── */
 @media (max-width: 768px) {
   .seller-portal-layout {
+    height: auto !important;
+    min-height: 100vh !important;
+    overflow-y: auto !important;
     flex-direction: column !important;
+  }
+  .seller-main-wrap {
+    height: auto !important;
+    min-height: 100vh !important;
+    overflow: visible !important;
   }
   .seller-top-bar {
     min-height: 56px !important;

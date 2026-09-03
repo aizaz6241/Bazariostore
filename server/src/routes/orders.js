@@ -12,6 +12,7 @@ import { audit } from '../utils/audit.js';
 import { notify } from '../utils/notify.js';
 import { lockSellerOrderFund, releaseSellerOrderDelivered, releaseSellerOrderCancelled } from './sellers.js';
 import { handleStatusUpdate } from './sellers/orders.routes.js';
+import { adjustTreasuryStock } from '../utils/stockSync.js';
 
 const router = Router();
 
@@ -116,11 +117,23 @@ router.post('/', softUser, async (req, res) => {
     // stock: reserve + decrement
     for (const l of q.lines) {
       const p = await Product.findById(l.product._id);
-      p.stock -= l.qty;
-      p.reservedStock += l.qty;
-      await p.save();
-      await StockHistory.create({ product: p._id, productName: p.name, change: -l.qty, stockAfter: p.stock, reason: 'order', note: order.orderNumber });
-      await stockAlerts(req.app, p);
+      if (p) {
+        p.stock = Math.max(0, p.stock - l.qty);
+        p.reservedStock = (p.reservedStock || 0) + l.qty;
+        await p.save();
+        await StockHistory.create({ product: p._id, productName: p.name, change: -l.qty, stockAfter: p.stock, reason: 'order', note: order.orderNumber });
+
+        // If product is linked to Central Treasury, synchronize master and all sellers
+        if (p.treasuryProduct) {
+          await adjustTreasuryStock(p.treasuryProduct, -l.qty, {
+            reason: 'order_placement',
+            note: `Order #${order.orderNumber} via seller "${p.sellerName}"`,
+            by: p.sellerName || 'Customer Checkout',
+          });
+        }
+
+        await stockAlerts(req.app, p);
+      }
     }
 
     // coupon usage
@@ -251,6 +264,16 @@ async function restockOrder(order, reason, by) {
     p.reservedStock = Math.max(0, p.reservedStock - it.qty);
     await p.save();
     await StockHistory.create({ product: p._id, productName: p.name, change: it.qty, stockAfter: p.stock, reason, note: order.orderNumber, by });
+
+    // If product is linked to Central Treasury, synchronize master and all sellers
+    if (p.treasuryProduct) {
+      await adjustTreasuryStock(p.treasuryProduct, it.qty, {
+        releaseReserved: true,
+        reason: reason || 'order_restocked',
+        note: `Order #${order.orderNumber} restocked`,
+        by: by || 'Admin',
+      });
+    }
   }
   order.stockRestored = true;
 }

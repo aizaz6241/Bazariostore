@@ -38,6 +38,8 @@ export function CartProvider({ children }) {
           name: product.name,
           image: product.image,
           price,
+          seller: product.seller?._id || product.seller || null,
+          sellerName: product.seller?.storeName || product.sellerName || 'Verified Store',
           size: size || '',
           variant: variant || '',
           qty,

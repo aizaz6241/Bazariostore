@@ -62,7 +62,23 @@ router.get('/slug/:slug', async (req, res) => {
     .populate('category', 'name slug')
     .populate('seller', 'storeName storeSlug rating numReviews verified logo description address');
   if (!product) return res.status(404).json({ message: 'Product not found' });
-  res.json(product);
+
+  // If this product was added from Central Treasury, find other sellers offering the same master product
+  let otherOffers = [];
+  if (product.treasuryProduct) {
+    otherOffers = await Product.find({
+      treasuryProduct: product.treasuryProduct,
+      _id: { $ne: product._id },
+      active: true,
+    })
+      .populate('seller', 'storeName storeSlug rating numReviews verified logo')
+      .select('seller sellerName sellerSlug price stock slug rating numReviews')
+      .limit(6);
+  }
+
+  const result = product.toObject();
+  result.otherOffers = otherOffers;
+  res.json(result);
 });
 
 router.get('/related/:slug', async (req, res) => {

@@ -108,8 +108,8 @@ router.get('/reports', authAdmin(), async (req, res) => {
       until = new Date(new Date(req.query.to).setHours(23, 59, 59, 999));
       numDays = Math.max(1, Math.round((until - since) / (1000 * 60 * 60 * 24)));
     } else if (daysParam === 'all') {
-      since = new Date(0);
-      numDays = 3650;
+      since = new Date('2024-01-01T00:00:00.000Z');
+      numDays = Math.max(1, Math.round((until - since) / (1000 * 60 * 60 * 24)));
     } else {
       numDays = parseInt(daysParam, 10) || 30;
       since = new Date(Date.now() - numDays * 24 * 60 * 60 * 1000);
@@ -143,7 +143,7 @@ router.get('/reports', authAdmin(), async (req, res) => {
         buckets[key] = { date: key, label, sales: 0, profit: 0, orders: 0, items: 0 };
         cur.setDate(cur.getDate() + 1);
       }
-    } else if (numDays <= 730) {
+    } else if (numDays <= 1825) {
       while (cur <= end) {
         const key = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}`;
         const label = cur.toLocaleDateString('en-PK', { month: 'short', year: '2-digit' });
@@ -228,7 +228,7 @@ router.get('/reports', authAdmin(), async (req, res) => {
         const oDate = order.createdAt ? new Date(order.createdAt) : new Date();
         let bucketKey = '';
         if (numDays <= 90) bucketKey = oDate.toISOString().split('T')[0];
-        else if (numDays <= 730) bucketKey = `${oDate.getFullYear()}-${String(oDate.getMonth() + 1).padStart(2, '0')}`;
+        else if (numDays <= 1825) bucketKey = `${oDate.getFullYear()}-${String(oDate.getMonth() + 1).padStart(2, '0')}`;
         else bucketKey = `${oDate.getFullYear()}-Q${Math.floor(oDate.getMonth() / 3) + 1}`;
 
         if (buckets[bucketKey]) {

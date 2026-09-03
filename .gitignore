@@ -20,5 +20,6 @@ yarn-error.log*
 .DS_Store
 .system_generated/
 
-# Uploads
+# Uploads and Backups
 uploads/
+server/backups/

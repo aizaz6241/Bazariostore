@@ -14,6 +14,7 @@ export const PERMISSIONS = [
   'settings',
   'staff',
   'audit',
+  'backup',
 ];
 
 export const ROLE_DEFAULTS = {

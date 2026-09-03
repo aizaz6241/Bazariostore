@@ -12,6 +12,7 @@ const S = {
   headset: <><path d="M4.5 13v-1.5a7.5 7.5 0 0 1 15 0V13" /><rect x="3.5" y="12.5" width="4" height="6" rx="2" /><rect x="16.5" y="12.5" width="4" height="6" rx="2" /><path d="M19 18.5c0 1.7-1.6 2.5-3.5 2.5" /></>,
   box: <><path d="M3.5 7.5 12 3.5l8.5 4v9l-8.5 4-8.5-4v-9Z" /><path d="m3.5 7.5 8.5 4 8.5-4M12 11.5v9" /></>,
   refresh: <><path d="M20 12a8 8 0 1 1-2.5-5.8" /><path d="M20 3v4h-4" /></>,
+  database: <><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></>,
   lock: <><rect x="5" y="10.5" width="14" height="9.5" rx="2.5" /><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" /></>,
   phone: <path d="M5 4h4l1.5 4.5L8 10a12 12 0 0 0 6 6l1.5-2.5L20 15v4a1.8 1.8 0 0 1-2 1.8C10 20 4 14 3.2 6A1.8 1.8 0 0 1 5 4Z" />,
   mail: <><rect x="3" y="5.5" width="18" height="13" rx="2" /><path d="m3.5 7 8.5 6 8.5-6" /></>,

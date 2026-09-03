@@ -4,6 +4,7 @@ import { StockHistory, IncomingStock } from '../models/StockHistory.js';
 import { authAdmin } from '../middleware/auth.js';
 import { audit } from '../utils/audit.js';
 import { notify } from '../utils/notify.js';
+import { adjustTreasuryStock } from '../utils/stockSync.js';
 
 const router = Router();
 
@@ -35,6 +36,15 @@ router.post('/adjust', authAdmin('inventory'), async (req, res) => {
   p.stock += delta;
   await p.save();
   await StockHistory.create({ product: p._id, productName: p.name, change: delta, stockAfter: p.stock, reason: 'adjustment', note: note || '', by: req.admin.name });
+
+  if (p.treasuryProduct) {
+    await adjustTreasuryStock(p.treasuryProduct, delta, {
+      reason: 'admin_inventory_adjust',
+      note: note || '',
+      by: req.admin?.name || 'Admin',
+    });
+  }
+
   if (p.stock <= 0) notify(req.app, { type: 'stock', title: 'Out of stock', body: `${p.name} is now OUT OF STOCK`, link: '/admin/inventory' });
   await audit(req, 'stock_adjusted', 'product', p._id, { name: p.name, change: delta, stockAfter: p.stock, note: note || '' });
   res.json(p);

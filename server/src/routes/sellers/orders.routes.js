@@ -8,6 +8,7 @@ import { nextSeq } from '../../models/System.js';
 import { authSeller, authAdmin, authSellerOrAdmin } from '../../middleware/auth.js';
 import { notify } from '../../utils/notify.js';
 import { audit } from '../../utils/audit.js';
+import { adjustTreasuryStock } from '../../utils/stockSync.js';
 
 const router = express.Router();
 
@@ -337,10 +338,19 @@ export async function releaseSellerOrderCancelled(app, sellerId, order) {
 
         // Restore product stock and release reservedStock
         if (it.product) {
-          await Product.updateOne(
-            { _id: it.product._id || it.product },
-            { $inc: { stock: (it.qty || 1), reservedStock: -(it.qty || 1) } }
-          ).catch(() => {});
+          const prodToRestore = await Product.findById(it.product._id || it.product);
+          if (prodToRestore) {
+            prodToRestore.stock = (prodToRestore.stock || 0) + (it.qty || 1);
+            prodToRestore.reservedStock = Math.max(0, (prodToRestore.reservedStock || 0) - (it.qty || 1));
+            await prodToRestore.save();
+            if (prodToRestore.treasuryProduct) {
+              await adjustTreasuryStock(prodToRestore.treasuryProduct, (it.qty || 1), {
+                releaseReserved: true,
+                reason: 'seller_order_cancelled',
+                note: `Order #${order.orderNumber} cancelled by seller`,
+              });
+            }
+          }
         }
       }
     }

@@ -129,7 +129,9 @@ export default function ProductPage() {
               ) : low ? (
                 <span className="stock-low">Only {p.stock} units left in stock!</span>
               ) : (
-                <span className="stock-ok">In Stock ({p.stock} available)</span>
+                <span className="stock-ok">
+                  In Stock ({p.stock} available{p.treasuryProduct ? ' • Central Warehouse' : ''})
+                </span>
               )}
             </div>
 
@@ -207,6 +209,76 @@ export default function ProductPage() {
                 <div key={f.t}><i><Ic name={f.icon} size={19} /></i><span>{f.t}<br />{f.s}</span></div>
               ))}
             </div>
+
+            {/* Other Sellers Offering This Master Product */}
+            {p.otherOffers?.length > 0 && (
+              <div
+                style={{
+                  marginTop: '20px',
+                  padding: '16px',
+                  background: '#f8fafc',
+                  borderRadius: '10px',
+                  border: '1px solid #e2e8f0',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '13.5px',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    marginBottom: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <span>🏪 Other Sellers Offering This Product ({p.otherOffers.length})</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {p.otherOffers.map((offer) => (
+                    <div
+                      key={offer._id}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        background: '#fff',
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        border: '1px solid #cbd5e1',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '13px', color: '#1e293b' }}>
+                          {offer.sellerName || offer.seller?.storeName}
+                          <span style={{ color: '#059669', marginLeft: '6px', fontSize: '11px', fontWeight: 700 }}>
+                            ✓ Verified
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: '#64748b' }}>
+                          ⭐ {offer.seller?.rating || '4.9'} • In Stock ({offer.stock})
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <b style={{ fontSize: '14px', color: '#0f172a' }}>{formatMoney(offer.price)}</b>
+                        <Link
+                          to={`/product/${offer.slug}`}
+                          className="btn-sec"
+                          style={{
+                            padding: '4px 10px',
+                            fontSize: '12px',
+                            borderRadius: '6px',
+                            textDecoration: 'none',
+                          }}
+                        >
+                          View Offer →
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

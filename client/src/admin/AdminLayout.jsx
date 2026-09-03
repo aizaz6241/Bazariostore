@@ -10,6 +10,7 @@ import { playNotificationSound } from '../utils/audio.js';
 
 const NAV = [
   { to: '/admin', icon: 'grid', label: 'Dashboard', end: true },
+  { to: '/admin/treasury', icon: 'box', label: 'Product Treasury', perm: 'products' },
   { to: '/admin/sellers', icon: 'package', label: 'Sellers & Vendors', perm: 'sellers' },
   { to: '/admin/reports', icon: 'sparkle', label: 'Analytics & Reports', perm: 'orders' },
   { to: '/admin/complaints', icon: 'alert', label: 'Complaints', perm: 'sellers' },
@@ -19,6 +20,7 @@ const NAV = [
   { to: '/admin/referrals', icon: 'tag', label: 'Referral Codes', perm: 'sellers' },
   { to: '/admin/withdrawals', icon: 'banknote', label: 'Payouts', perm: 'finance' },
   { to: '/admin/chat', icon: 'chat', label: 'Seller Support Desk', perm: 'chat' },
+  { to: '/admin/backup', icon: 'database', label: 'Database Backup', perm: 'settings' },
   { to: '/admin/staff', icon: 'user', label: 'Staff & Team', perm: 'staff' },
 ];
 

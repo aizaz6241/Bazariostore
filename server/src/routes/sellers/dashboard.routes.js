@@ -168,11 +168,13 @@ router.get('/analytics', authSeller, async (req, res) => {
       until = new Date(new Date(req.query.to).setHours(23, 59, 59, 999));
       numDays = Math.max(1, Math.round((until - since) / (1000 * 60 * 60 * 24)));
     } else if (daysParam === 'all') {
-      since = new Date(0);
-      numDays = 3650;
+      since = seller.createdAt ? new Date(seller.createdAt) : new Date('2024-01-01');
+      since.setUTCHours(0, 0, 0, 0);
+      numDays = Math.max(1, Math.round((until - since) / (1000 * 60 * 60 * 24)));
     } else {
       numDays = parseInt(daysParam, 10) || 30;
       since = new Date(Date.now() - numDays * 24 * 60 * 60 * 1000);
+      since.setUTCHours(0, 0, 0, 0);
     }
 
     // Orders in selected timeframe
@@ -187,7 +189,7 @@ router.get('/analytics', authSeller, async (req, res) => {
 
     // Fetch withdrawals info for seller
     const [approvedWds, pendingWds] = await Promise.all([
-      Withdrawal.find({ seller: seller._id, type: 'withdrawal', status: 'approved' }),
+      Withdrawal.find({ seller: seller._id, type: 'withdrawal', status: { $in: ['approved', 'completed'] } }),
       Withdrawal.find({ seller: seller._id, type: 'withdrawal', status: 'pending' }),
     ]);
 
@@ -203,20 +205,20 @@ router.get('/analytics', authSeller, async (req, res) => {
     // Time-series buckets pre-population
     const buckets = {};
     const cur = new Date(since);
-    cur.setHours(0, 0, 0, 0);
+    cur.setUTCHours(0, 0, 0, 0);
     const end = new Date(until);
-    end.setHours(23, 59, 59, 999);
+    end.setUTCHours(23, 59, 59, 999);
 
     if (numDays <= 90) {
       // Daily buckets
       while (cur <= end) {
         const key = cur.toISOString().split('T')[0];
-        const label = cur.toLocaleDateString('en-PK', { day: 'numeric', month: 'short' });
+        const label = cur.toLocaleDateString('en-US', { timeZone: 'UTC', day: 'numeric', month: 'short' });
         buckets[key] = { date: key, label, sales: 0, profit: 0, orders: 0, items: 0 };
-        cur.setDate(cur.getDate() + 1);
+        cur.setUTCDate(cur.getUTCDate() + 1);
       }
-    } else if (numDays <= 730) {
-      // Monthly buckets (for 1 year - 2 years)
+    } else if (numDays <= 1825) {
+      // Monthly buckets (for up to 5 years, e.g. 2024 to 2026 All-Time)
       while (cur <= end) {
         const key = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}`;
         const label = cur.toLocaleDateString('en-PK', { month: 'short', year: '2-digit' });
@@ -226,7 +228,7 @@ router.get('/analytics', authSeller, async (req, res) => {
         cur.setMonth(cur.getMonth() + 1);
       }
     } else {
-      // Multi-year buckets (for 5y, 10y, all-time)
+      // Multi-year buckets (for 10y)
       while (cur <= end) {
         const q = Math.floor(cur.getMonth() / 3) + 1;
         const key = `${cur.getFullYear()}-Q${q}`;
@@ -340,7 +342,7 @@ router.get('/analytics', authSeller, async (req, res) => {
         let bucketKey = '';
         if (numDays <= 90) {
           bucketKey = oDate.toISOString().split('T')[0];
-        } else if (numDays <= 730) {
+        } else if (numDays <= 1825) {
           bucketKey = `${oDate.getFullYear()}-${String(oDate.getMonth() + 1).padStart(2, '0')}`;
         } else {
           const q = Math.floor(oDate.getMonth() / 3) + 1;
@@ -355,9 +357,9 @@ router.get('/analytics', authSeller, async (req, res) => {
         } else {
           // Fallback if slightly out of precomputed keys
           const label = numDays <= 90
-            ? oDate.toLocaleDateString('en-PK', { day: 'numeric', month: 'short' })
-            : numDays <= 730
-              ? oDate.toLocaleDateString('en-PK', { month: 'short', year: '2-digit' })
+            ? oDate.toLocaleDateString('en-US', { timeZone: 'UTC', day: 'numeric', month: 'short' })
+            : numDays <= 1825
+              ? oDate.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', year: '2-digit' })
               : `Q${Math.floor(oDate.getMonth() / 3) + 1} '${String(oDate.getFullYear()).slice(-2)}`;
           buckets[bucketKey] = {
             date: bucketKey,

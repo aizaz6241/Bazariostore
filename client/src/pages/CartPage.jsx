@@ -35,7 +35,10 @@ export default function CartPage() {
                     <Link to={`/product/${i.slug}`} className="cart-thumb"><img src={i.image} alt="" /></Link>
                     <div>
                       <Link to={`/product/${i.slug}`} className="cart-name">{i.name}</Link>
-                      {i.size && <small className="muted">Size: {i.size}</small>}
+                      <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+                        Sold by: <span style={{ fontWeight: 600, color: '#0f172a' }}>{i.sellerName || 'Verified Store'}</span>
+                      </div>
+                      {i.size && <small className="muted" style={{ display: 'block' }}>Size: {i.size}</small>}
                     </div>
                   </div>
                   <span data-th="Price">{formatMoney(i.price)}</span>

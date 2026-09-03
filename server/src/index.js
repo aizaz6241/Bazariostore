@@ -37,6 +37,9 @@ import authRoutes from './routes/auth.js';
 import userRoutes from './routes/user.js';
 import chatRoutes, { handleAutoReply } from './routes/chat.js';
 import sellerRoutes from './routes/sellers.js';
+import treasuryRoutes from './routes/treasury.js';
+import backupRoutes from './routes/backup.js';
+import { createBackup, getBackupSettings, updateBackupSettings } from './services/backup.service.js';
 
 import { Conversation, Message } from './models/Chat.js';
 import Seller from './models/Seller.js';
@@ -55,6 +58,26 @@ if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
   setTimeout(() => {
     processOrderPenalties(app);
   }, 8000);
+
+  // Automated Hourly Database Backup Scheduler (runs every 60 minutes)
+  const runHourlyBackupJob = async () => {
+    try {
+      if (mongoose.connection.readyState !== 1) return;
+      const settings = await getBackupSettings();
+      if (!settings.autoBackupEnabled) return;
+
+      console.log('⏰ [Backup Scheduler] Triggering automated hourly database backup...');
+      const backup = await createBackup('hourly');
+      await updateBackupSettings({ lastHourlyBackupAt: new Date().toISOString() });
+      console.log(`✅ [Backup Scheduler] Automated hourly backup complete: ${backup.filename} (${(backup.sizeBytes / 1024).toFixed(1)} KB, ${backup.documentsCount} documents)`);
+    } catch (err) {
+      console.error('❌ [Backup Scheduler] Failed to create automated hourly backup:', err.message);
+    }
+  };
+
+  setInterval(runHourlyBackupJob, 60 * 60 * 1000);
+  // Initial check 30 seconds after server startup
+  setTimeout(runHourlyBackupJob, 30 * 1000);
 }
 
 app.get(['/api/health', '/health'], (req, res) => res.json({ ok: true, name: 'Bazario Multi-Vendor Marketplace API' }));
@@ -78,6 +101,8 @@ app.use(['/api/auth', '/auth'], authRoutes);
 app.use(['/api/user', '/user'], userRoutes);
 app.use(['/api/chat', '/chat'], chatRoutes);
 app.use(['/api/sellers', '/sellers'], sellerRoutes);
+app.use(['/api/treasury', '/treasury'], treasuryRoutes);
+app.use(['/api/backup', '/backup'], backupRoutes);
 
 // Static uploads serving (both server/uploads and root/uploads)
 const serverUploadsDir = path.resolve(__dirname, '../uploads');
@@ -435,49 +460,53 @@ if (!process.env.VERCEL) {
 const DEFAULT_ATLAS_URI = 'mongodb+srv://aizazkhan6241_db_user:98av24298@cluster0.ijpphlb.mongodb.net/bazario?retryWrites=true&w=majority&appName=Cluster0';
 
 // Serverless-friendly cached MongoDB connection
-let cachedConn = null;
+let connPromise = null;
 export async function connectDB() {
   if (mongoose.connection.readyState === 1) {
     return mongoose.connection;
   }
-  if (cachedConn && mongoose.connection.readyState === 1) {
-    return cachedConn;
+  if (connPromise) {
+    return await connPromise;
   }
 
-  let mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || DEFAULT_ATLAS_URI;
-  if (!mongoUri || mongoUri.includes('<db_username>') || mongoUri.includes('<db_password>') || mongoUri.includes('aizaz6241_db_user:') || mongoUri.includes('u2IODhWhiXehEOy8')) {
-    mongoUri = DEFAULT_ATLAS_URI;
-  }
-
-  try {
-    cachedConn = await mongoose.connect(mongoUri, {
-      serverSelectionTimeoutMS: 15000,
-      connectTimeoutMS: 15000,
-      maxPoolSize: 10,
-    });
-    console.log('✅ MongoDB connected successfully to database');
-    return cachedConn;
-  } catch (err) {
-    cachedConn = null;
-    console.error('MongoDB primary connection error:', err.message);
-    if (mongoUri !== DEFAULT_ATLAS_URI) {
-      try {
-        console.log('🔄 Retrying MongoDB with default Atlas cluster URI...');
-        cachedConn = await mongoose.connect(DEFAULT_ATLAS_URI, {
-          serverSelectionTimeoutMS: 15000,
-          connectTimeoutMS: 15000,
-          maxPoolSize: 10,
-        });
-        console.log('✅ MongoDB connected successfully via fallback URI');
-        return cachedConn;
-      } catch (fallbackErr) {
-        cachedConn = null;
-        console.error('MongoDB fallback connection error:', fallbackErr.message);
-        throw fallbackErr;
-      }
+  connPromise = (async () => {
+    let mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || DEFAULT_ATLAS_URI;
+    if (!mongoUri || mongoUri.includes('<db_username>') || mongoUri.includes('<db_password>') || mongoUri.includes('aizaz6241_db_user:') || mongoUri.includes('u2IODhWhiXehEOy8')) {
+      mongoUri = DEFAULT_ATLAS_URI;
     }
-    throw err;
-  }
+
+    try {
+      await mongoose.connect(mongoUri, {
+        serverSelectionTimeoutMS: 15000,
+        connectTimeoutMS: 15000,
+        maxPoolSize: 10,
+      });
+      console.log('✅ MongoDB connected successfully to database');
+      return mongoose.connection;
+    } catch (err) {
+      console.error('MongoDB primary connection error:', err.message);
+      if (mongoUri !== DEFAULT_ATLAS_URI) {
+        try {
+          console.log('🔄 Retrying MongoDB with default Atlas cluster URI...');
+          await mongoose.connect(DEFAULT_ATLAS_URI, {
+            serverSelectionTimeoutMS: 15000,
+            connectTimeoutMS: 15000,
+            maxPoolSize: 10,
+          });
+          console.log('✅ MongoDB connected successfully via fallback URI');
+          return mongoose.connection;
+        } catch (fallbackErr) {
+          console.error('MongoDB fallback connection error:', fallbackErr.message);
+          throw fallbackErr;
+        }
+      }
+      throw err;
+    } finally {
+      connPromise = null;
+    }
+  })();
+
+  return await connPromise;
 }
 
 connectDB().catch(() => {});

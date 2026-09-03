@@ -25,11 +25,14 @@ import SellerWallet from './seller/SellerWallet.jsx';
 import SellerShipping from './seller/SellerShipping.jsx';
 import SellerSupport from './seller/SellerSupport.jsx';
 import SellerSettings from './seller/SellerSettings.jsx';
+import SellerTreasury from './seller/SellerTreasury.jsx';
 
 // ─── Super Admin ──────────────────────────────────────────────
 import AdminLogin from './admin/AdminLogin.jsx';
 import AdminLayout from './admin/AdminLayout.jsx';
 import Dashboard from './admin/Dashboard.jsx';
+import AdminTreasury from './admin/AdminTreasury.jsx';
+import AdminTreasuryEdit from './admin/AdminTreasuryEdit.jsx';
 import Sellers from './admin/Sellers.jsx';
 import Complaints from './admin/Complaints.jsx';
 import Applications from './admin/Applications.jsx';
@@ -38,6 +41,7 @@ import Referrals from './admin/Referrals.jsx';
 import AdminWithdrawals from './admin/AdminWithdrawals.jsx';
 import ChatInbox from './admin/ChatInbox.jsx';
 import Staff from './admin/Staff.jsx';
+import Backup from './admin/Backup.jsx';
 // Legacy admin pages (accessible via URL, not shown in nav)
 import Orders from './admin/Orders.jsx';
 import OrderDetail from './admin/OrderDetail.jsx';
@@ -82,6 +86,7 @@ export default function App() {
       {/* ─── Seller Central Portal ───────────────────────────── */}
       <Route path="/seller" element={<SellerLayout />}>
         <Route index element={<SellerDashboard />} />
+        <Route path="treasury" element={<SellerTreasury />} />
         <Route path="products" element={<SellerProducts />} />
         <Route path="orders" element={<SellerOrders />} />
         <Route path="refunds" element={<SellerRefunds />} />
@@ -97,6 +102,7 @@ export default function App() {
       {/* ─── Aliases for /sellers -> /seller ─────────────────────── */}
       <Route path="/sellers" element={<Navigate to="/seller" replace />} />
       <Route path="/sellers/login" element={<Navigate to="/seller/login" replace />} />
+      <Route path="/sellers/treasury" element={<Navigate to="/seller/treasury" replace />} />
       <Route path="/sellers/orders" element={<Navigate to="/seller/orders" replace />} />
       <Route path="/sellers/wallet" element={<Navigate to="/seller/wallet" replace />} />
       <Route path="/sellers/products" element={<Navigate to="/seller/products" replace />} />
@@ -112,6 +118,9 @@ export default function App() {
       {/* ─── Super Admin Control Center ──────────────────────── */}
       <Route path="/admin" element={<AdminLayout />}>
         <Route index element={<Dashboard />} />
+        <Route path="treasury" element={<AdminTreasury />} />
+        <Route path="treasury/new" element={<AdminTreasuryEdit />} />
+        <Route path="treasury/:id" element={<AdminTreasuryEdit />} />
         <Route path="sellers" element={<Sellers />} />
         <Route path="complaints" element={<Complaints />} />
         <Route path="orders" element={<Orders />} />
@@ -124,6 +133,7 @@ export default function App() {
         <Route path="payouts" element={<Navigate to="/admin/withdrawals" replace />} />
         <Route path="chat" element={<ChatInbox />} />
         <Route path="staff" element={<Staff />} />
+        <Route path="backup" element={<Backup />} />
         {/* Legacy routes — accessible via URL */}
         <Route path="products" element={<Products />} />
         <Route path="products/new" element={<ProductEdit />} />
