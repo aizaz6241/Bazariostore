@@ -4,6 +4,7 @@ import { api, money, fmtDate } from '../api.js';
 import { STATUS_LABELS, ALL_STATUSES, PAYMENT_LABELS } from '../data.js';
 import { Modal, ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
+import { getSocket } from '../socket.js';
 
 export default function OrderDetail() {
   const { id } = useParams();
@@ -24,6 +25,36 @@ export default function OrderDetail() {
         setRefund({ amount: o.total, reason: '' });
       })
       .catch((e) => setError(e.message));
+  }, [id]);
+
+  // Real-time synchronization on WebSocket events
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const adminToken = localStorage.getItem('ng_admin_token');
+    const rejoin = () => {
+      if (adminToken) socket.emit('admin:join', { token: adminToken });
+    };
+    if (socket.connected) rejoin();
+    socket.on('connect', rejoin);
+
+    const handleOrderUpdate = (payload) => {
+      const updated = payload?.order || payload;
+      if (updated && updated._id === id) {
+        setOrder(updated);
+        setStatus(updated.status);
+      }
+    };
+
+    socket.on('order:update', handleOrderUpdate);
+    socket.on('order:status_update', handleOrderUpdate);
+
+    return () => {
+      socket.off('connect', rejoin);
+      socket.off('order:update', handleOrderUpdate);
+      socket.off('order:status_update', handleOrderUpdate);
+    };
   }, [id]);
 
   const update = async () => {

@@ -8,13 +8,46 @@ import { api, money, fmtDate } from '../api.js';
 import { STATUS_LABELS, PAYMENT_LABELS } from '../data.js';
 import { CHART_COLORS, ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
+import { getSocket } from '../socket.js';
 
 export default function Dashboard() {
   const [d, setD] = useState(null);
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  const loadData = () => {
     api('/analytics/dashboard').then(setD).catch((e) => setError(e.message));
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  // Real-time synchronization on WebSocket events
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const adminToken = localStorage.getItem('ng_admin_token');
+    const rejoin = () => {
+      if (adminToken) socket.emit('admin:join', { token: adminToken });
+    };
+    if (socket.connected) rejoin();
+    socket.on('connect', rejoin);
+
+    const handleSync = () => {
+      loadData();
+    };
+
+    socket.on('order:update', handleSync);
+    socket.on('order:status_update', handleSync);
+    socket.on('order:new', handleSync);
+
+    return () => {
+      socket.off('connect', rejoin);
+      socket.off('order:update', handleSync);
+      socket.off('order:status_update', handleSync);
+      socket.off('order:new', handleSync);
+    };
   }, []);
 
   if (error) return <ErrorBox error={error} />;

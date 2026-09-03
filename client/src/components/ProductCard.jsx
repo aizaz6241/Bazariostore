@@ -56,14 +56,15 @@ export default function ProductCard({ p }) {
 
         <div className="pcard-actions">
           <button className="btn-add" onClick={() => add(p)} disabled={out}>
-            {out ? 'OUT OF STOCK' : 'ADD TO CART'}
+            <span className="btn-add-full">{out ? 'OUT OF STOCK' : 'ADD TO CART'}</span>
+            <span className="btn-add-compact">{out ? 'Out' : '+ Add'}</span>
           </button>
           <button
             className={'btn-wish' + (liked ? ' liked' : '')}
             aria-label="Add to wishlist"
             onClick={() => setLiked(!liked)}
           >
-            <Ic name="heart" size={16} />
+            <Ic name="heart" size={14} />
           </button>
         </div>
       </div>

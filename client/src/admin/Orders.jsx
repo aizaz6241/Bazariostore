@@ -4,6 +4,7 @@ import { api, money, fmtDate } from '../api.js';
 import { STATUS_LABELS, ALL_STATUSES, PAYMENT_LABELS } from '../data.js';
 import { ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
+import { getSocket } from '../socket.js';
 
 export default function Orders() {
   const [params, setParams] = useSearchParams();
@@ -48,20 +49,22 @@ export default function Orders() {
       .catch(() => {});
   };
 
-  const loadOrders = () => {
-    setLoading(true);
+  const loadOrders = (silent = false) => {
+    if (!silent) setLoading(true);
     setError('');
     const query = new URLSearchParams();
     if (status) query.set('status', status);
     if (sellerFilter) query.set('sellerId', sellerFilter);
     if (q.trim()) query.set('q', q.trim());
 
-    api('/orders?' + query.toString())
+    return api('/orders?' + query.toString())
       .then((res) => {
         setOrders(Array.isArray(res) ? res : res.orders || []);
       })
       .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!silent) setLoading(false);
+      });
   };
 
   useEffect(() => {
@@ -70,6 +73,85 @@ export default function Orders() {
 
   useEffect(() => {
     loadOrders();
+  }, [status, sellerFilter]);
+
+  // Real-time synchronization on WebSocket events
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    // Safety net: ensure admin is in 'admins' room so order events are received
+    const adminToken = localStorage.getItem('ng_admin_token');
+    const rejoin = () => {
+      if (adminToken) socket.emit('admin:join', { token: adminToken });
+    };
+    if (socket.connected) rejoin();
+    socket.on('connect', rejoin);
+
+    const handleOrderUpdate = (payload) => {
+      const updatedOrder = payload?.order || payload;
+      if (!updatedOrder?._id) {
+        loadOrders(true);
+        return;
+      }
+
+      // 1. Immediately update matching order in table without page reload
+      setOrders((prev) => {
+        const idx = prev.findIndex((o) => o._id === updatedOrder._id);
+        if (idx !== -1) {
+          // If a status filter is active and the order no longer matches, remove it
+          if (status && updatedOrder.status !== status) {
+            return prev.filter((o) => o._id !== updatedOrder._id);
+          }
+          const next = [...prev];
+          next[idx] = { ...next[idx], ...updatedOrder };
+          return next;
+        } else {
+          // If order wasn't in the list, but matches current filters, add it
+          if (
+            (!status || updatedOrder.status === status) &&
+            (!sellerFilter || String(updatedOrder.seller?._id || updatedOrder.seller) === String(sellerFilter))
+          ) {
+            return [updatedOrder, ...prev];
+          }
+        }
+        return prev;
+      });
+
+      // 2. If quick view modal is open for this order, update it live
+      setInspectOrder((prev) => {
+        if (prev && prev._id === updatedOrder._id) {
+          return { ...prev, ...updatedOrder };
+        }
+        return prev;
+      });
+
+      // 3. Silently re-sync with server for verified consistency
+      loadOrders(true);
+    };
+
+    const handleOrderNew = () => {
+      loadOrders(true);
+    };
+
+    const handleNotify = (n) => {
+      if (n?.type === 'order') {
+        loadOrders(true);
+      }
+    };
+
+    socket.on('order:update', handleOrderUpdate);
+    socket.on('order:status_update', handleOrderUpdate);
+    socket.on('order:new', handleOrderNew);
+    socket.on('notify', handleNotify);
+
+    return () => {
+      socket.off('connect', rejoin);
+      socket.off('order:update', handleOrderUpdate);
+      socket.off('order:status_update', handleOrderUpdate);
+      socket.off('order:new', handleOrderNew);
+      socket.off('notify', handleNotify);
+    };
   }, [status, sellerFilter]);
 
   // When admin selects a seller in Place Order modal, load their catalog

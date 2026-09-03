@@ -191,14 +191,16 @@
   }
 
   .product-grid {
-    grid-template-columns: 1fr 1fr !important;
-    gap: 10px !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 6px !important;
   }
 
   .product-card {
-    padding: 10px !important;
+    padding: 6px !important;
+    border-radius: 8px !important;
   }
   .product-img-wrap {
-    height: 140px !important;
+    height: 96px !important;
   }
+
 }

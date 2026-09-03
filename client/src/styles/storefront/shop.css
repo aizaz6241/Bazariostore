@@ -410,6 +410,15 @@
   cursor: not-allowed;
 }
 
+.btn-add-full {
+  display: inline;
+}
+
+.btn-add-compact {
+  display: none;
+}
+
+
 .btn-wish {
   width: 36px;
   height: 36px;
@@ -484,52 +493,142 @@
     font-size: 12px;
   }
   .pgrid, .pgrid-4 {
-    grid-template-columns: repeat(2, 1fr) !important;
-    gap: 10px !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+  .pcard {
+    border-radius: 10px !important;
   }
   .pcard-img {
-    height: 150px !important;
+    height: 110px !important;
+    padding: 6px !important;
+  }
+  .discount-tag-badge, .pbadge {
+    font-size: 8.5px !important;
+    padding: 1px 4px !important;
+    top: 4px !important;
+    left: 4px !important;
+    border-radius: 3px !important;
+  }
+  .pcard-body {
+    padding: 6px 7px !important;
+  }
+  .pcard-seller-tag {
+    font-size: 9.5px !important;
+    margin-bottom: 2px !important;
+  }
+  .seller-sold-label {
+    display: none !important;
+  }
+  .seller-store-link {
+    max-width: 100% !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
   }
   .pcard-name {
-    font-size: 13px !important;
-    min-height: 34px !important;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+    min-height: 28px !important;
+    height: 28px !important;
+    margin-bottom: 3px !important;
+    -webkit-line-clamp: 2 !important;
+    font-weight: 600 !important;
+  }
+  .pcard-rating {
+    margin-bottom: 3px !important;
+    gap: 2px !important;
+  }
+  .pcard-rating .stars svg {
+    width: 9.5px !important;
+    height: 9.5px !important;
+  }
+  .review-count {
+    font-size: 9px !important;
+  }
+  .pcard-price {
+    margin-bottom: 4px !important;
+    gap: 4px !important;
+    flex-wrap: wrap !important;
   }
   .pcard-price b {
-    font-size: 16px !important;
+    font-size: 12.5px !important;
+  }
+  .pcard-price s {
+    font-size: 9.5px !important;
+  }
+  .prime-express-pill {
+    margin-bottom: 5px !important;
+    gap: 3px !important;
+  }
+  .prime-express-pill .express-text {
+    display: none !important;
+  }
+  .prime-express-pill .prime-text {
+    font-size: 10px !important;
+  }
+  .pcard-actions {
+    gap: 4px !important;
+  }
+  .btn-add {
+    padding: 5px 3px !important;
+    font-size: 10px !important;
+    border-radius: 4px !important;
+  }
+  .btn-add-full {
+    display: none !important;
+  }
+  .btn-add-compact {
+    display: inline !important;
+  }
+  .btn-wish {
+    width: 26px !important;
+    height: 26px !important;
+    min-width: 26px !important;
+    border-radius: 4px !important;
+  }
+  .btn-wish svg {
+    width: 12px !important;
+    height: 12px !important;
   }
 }
 
 @media (max-width: 480px) {
   .page-head {
-    padding: 16px 0 14px 0;
+    padding: 14px 0 12px 0;
   }
   .page-title {
-    font-size: 20px;
+    font-size: 18px;
   }
   .seller-filter-alert {
-    padding: 10px 14px;
-    font-size: 12.5px;
+    padding: 8px 12px;
+    font-size: 12px;
   }
   .pgrid, .pgrid-4 {
-    grid-template-columns: repeat(2, 1fr) !important;
-    gap: 8px !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 6px !important;
   }
   .pcard {
     padding: 0 !important;
   }
   .pcard-body {
-    padding: 10px !important;
+    padding: 5px !important;
   }
   .pcard-img {
-    height: 130px !important;
-    padding: 8px !important;
+    height: 96px !important;
+    padding: 4px !important;
+  }
+  .pcard-name {
+    font-size: 10.5px !important;
+    height: 26px !important;
+    min-height: 26px !important;
+  }
+  .pcard-price b {
+    font-size: 12px !important;
   }
   .btn-add {
-    padding: 7px 8px !important;
-    font-size: 11px !important;
-  }
-  .btn-wish {
-    width: 32px !important;
-    height: 32px !important;
+    padding: 5px 2px !important;
+    font-size: 9.5px !important;
   }
 }
+

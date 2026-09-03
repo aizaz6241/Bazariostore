@@ -548,10 +548,17 @@ router.post('/orders/:id/confirm', authSellerOrAdmin, async (req, res) => {
 
     await order.save();
 
+    // Re-populate order before broadcasting so it has complete details for frontend
+    await order.populate([
+      { path: 'seller', select: 'storeName ownerName email phone' },
+      { path: 'items.product', select: 'name price image' },
+    ]);
+
     // Real-time synchronization to Admin and Seller sockets
     const io = req.app.get('io');
     if (io) {
       io.to('admins').emit('order:update', order);
+      io.to('admins').emit('order:status_update', { orderId: order._id, orderNumber: order.orderNumber, status: order.status, order });
       io.to(`seller:${sellerId}`).emit('order:update', order);
       io.to(`seller:${sellerId}`).emit('seller:status_update', { order });
     }
@@ -660,10 +667,17 @@ export const handleStatusUpdate = async (req, res) => {
 
     await order.save();
 
+    // Re-populate order before broadcasting
+    await order.populate([
+      { path: 'seller', select: 'storeName ownerName email phone' },
+      { path: 'items.product', select: 'name price image' },
+    ]);
+
     // Broadcast real-time socket events to Admin and all affected Sellers
     const io = req.app.get('io');
     if (io) {
       io.to('admins').emit('order:update', order);
+      io.to('admins').emit('order:status_update', { orderId: order._id, orderNumber: order.orderNumber, status: order.status, order });
       for (const sId of affectedSellerIds) {
         io.to(`seller:${sId}`).emit('order:update', order);
         io.to(`seller:${sId}`).emit('seller:status_update', { order });
@@ -682,6 +696,15 @@ export const handleStatusUpdate = async (req, res) => {
           link: '/seller/orders',
         });
       }
+    } else if (isSeller) {
+      // Notify admin when merchant updates status
+      notify(req.app, {
+        recipientType: 'admin',
+        type: 'order',
+        title: `⚡ Order #${order.orderNumber} Confirmed by Merchant`,
+        body: `${storeName} updated order #${order.orderNumber} to "${(status || '').replace(/_/g, ' ').toUpperCase()}".`,
+        link: `/admin/orders/${order._id}`,
+      });
     }
 
     res.json({ ok: true, order });
@@ -811,7 +834,13 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
       name: customerName,
     });
 
-    // Admin notification
+    // Re-populate order before broadcasting
+    await order.populate([
+      { path: 'seller', select: 'storeName ownerName email phone' },
+      { path: 'items.product', select: 'name price image' },
+    ]);
+
+    // Admin notification & live broadcast
     notify(req.app, {
       recipientType: 'admin',
       type: 'order',
@@ -819,6 +848,9 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
       body: `Order for ${seller.storeName} created for ${customerName} ($${total.toLocaleString('en-US')})`,
       link: `/admin/orders/${order._id}`,
     });
+
+    req.app.get('io')?.to('admins').emit('order:new', order);
+    req.app.get('io')?.to('admins').emit('order:update', order);
 
     res.status(201).json(order);
   } catch (err) {

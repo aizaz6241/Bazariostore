@@ -657,4 +657,9 @@
   .spec-row b {
     width: auto;
   }
+  .related-scroll {
+    grid-auto-columns: minmax(115px, 1fr) !important;
+    gap: 8px !important;
+  }
 }
+

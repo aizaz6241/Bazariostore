@@ -334,11 +334,18 @@ const orderStatusHandler = async (req, res) => {
   await order.save();
   await audit(req, 'order_updated', 'order', order._id, { orderNumber: order.orderNumber, from: prev, to: status, note: note || '' });
 
+  // Re-populate order before broadcasting
+  await order.populate([
+    { path: 'seller', select: 'storeName ownerName email phone' },
+    { path: 'items.product', select: 'name price image' },
+  ]);
+
   // Broadcast real-time socket updates to Admin and relevant Sellers
   const sellerIds = [...new Set(order.items.map((i) => i.seller?.toString()).filter(Boolean))];
   const io = req.app.get('io');
   if (io) {
     io.to('admins').emit('order:update', order);
+    io.to('admins').emit('order:status_update', { orderId: order._id, orderNumber: order.orderNumber, status: order.status, order });
     for (const sId of sellerIds) {
       io.to(`seller:${sId}`).emit('order:update', order);
       io.to(`seller:${sId}`).emit('seller:status_update', { order });
