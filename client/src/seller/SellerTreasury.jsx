@@ -106,19 +106,28 @@ export default function SellerTreasury() {
     }
   };
 
-  // Filter products by search and store status
-  const filteredProducts = products.filter((p) => {
-    if (q.trim()) {
-      const matchQ =
-        p.name?.toLowerCase().includes(q.toLowerCase()) ||
-        p.brand?.toLowerCase().includes(q.toLowerCase()) ||
-        p.sku?.toLowerCase().includes(q.toLowerCase());
-      if (!matchQ) return false;
-    }
-    if (storeFilter === 'added') return p.isAddedToStore;
-    if (storeFilter === 'not_added') return !p.isAddedToStore;
-    return true;
-  });
+  // Filter products by search and store status, and ALWAYS sort unadded on top & added to bottom
+  const filteredProducts = products
+    .filter((p) => {
+      if (q.trim()) {
+        const matchQ =
+          p.name?.toLowerCase().includes(q.toLowerCase()) ||
+          p.brand?.toLowerCase().includes(q.toLowerCase()) ||
+          p.sku?.toLowerCase().includes(q.toLowerCase());
+        if (!matchQ) return false;
+      }
+      if (storeFilter === 'added') return p.isAddedToStore;
+      if (storeFilter === 'not_added') return !p.isAddedToStore;
+      return true;
+    })
+    .sort((a, b) => {
+      // Unadded products are ALWAYS on top, already added products are pushed to the bottom
+      if (a.isAddedToStore !== b.isAddedToStore) {
+        return a.isAddedToStore ? 1 : -1;
+      }
+      return 0;
+    });
+
 
   const totalInTreasury = products.length;
   const inMyStoreCount = products.filter((p) => p.isAddedToStore).length;
@@ -227,23 +236,6 @@ export default function SellerTreasury() {
           {/* Store Filter Tabs */}
           <div style={{ display: 'flex', gap: '6px', background: '#f1f5f9', padding: '4px', borderRadius: '8px', flexWrap: 'wrap' }}>
             <button
-              onClick={() => setStoreFilter('all')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: 'none',
-                background: storeFilter === 'all' ? '#fff' : 'transparent',
-                color: storeFilter === 'all' ? '#0f172a' : '#64748b',
-                fontWeight: storeFilter === 'all' ? 700 : 500,
-                fontSize: '12.5px',
-                cursor: 'pointer',
-                boxShadow: storeFilter === 'all' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-              }}
-            >
-              All ({products.length})
-            </button>
-
-            <button
               onClick={() => setStoreFilter('not_added')}
               style={{
                 padding: '6px 12px',
@@ -257,7 +249,24 @@ export default function SellerTreasury() {
                 boxShadow: storeFilter === 'not_added' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
               }}
             >
-              Available ({products.filter((p) => !p.isAddedToStore).length})
+              Available to Add ({products.filter((p) => !p.isAddedToStore).length})
+            </button>
+
+            <button
+              onClick={() => setStoreFilter('all')}
+              style={{
+                padding: '6px 12px',
+                borderRadius: '6px',
+                border: 'none',
+                background: storeFilter === 'all' ? '#fff' : 'transparent',
+                color: storeFilter === 'all' ? '#0f172a' : '#64748b',
+                fontWeight: storeFilter === 'all' ? 700 : 500,
+                fontSize: '12.5px',
+                cursor: 'pointer',
+                boxShadow: storeFilter === 'all' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              }}
+            >
+              All Products ({products.length})
             </button>
 
             <button
@@ -274,9 +283,10 @@ export default function SellerTreasury() {
                 boxShadow: storeFilter === 'added' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
               }}
             >
-              In Store ({inMyStoreCount})
+              In My Store ({inMyStoreCount})
             </button>
           </div>
+
         </div>
 
         {/* Category Pills Bar */}
@@ -356,7 +366,7 @@ export default function SellerTreasury() {
                   {/* In Store Tag */}
                   {isAdded && (
                     <div className="treasury-in-store-tag">
-                      ✓ In Store
+                      ✓ Added to Store
                     </div>
                   )}
 
@@ -396,6 +406,28 @@ export default function SellerTreasury() {
 
                 {/* Card Body Details */}
                 <div className="treasury-card-body">
+                  {isAdded && (
+                    <div
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        background: '#ecfdf5',
+                        color: '#047857',
+                        border: '1px solid #a7f3d0',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        marginBottom: '6px',
+                        alignSelf: 'flex-start',
+                        boxShadow: '0 1px 2px rgba(16, 185, 129, 0.1)',
+                      }}
+                    >
+                      ✓ Already in Store
+                    </div>
+                  )}
+
                   <div className="treasury-card-meta">
                     <span className="treasury-card-brand">{p.brand || p.category?.name || 'General'}</span>
                     <span style={{ fontFamily: 'monospace' }}>SKU: {p.sku || 'N/A'}</span>
@@ -443,20 +475,23 @@ export default function SellerTreasury() {
                       {isLoading ? 'Adding…' : 'Add to Store'}
                     </button>
                   ) : (
-                    <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                    <div style={{ display: 'flex', gap: '4px', width: '100%' }}>
                       <Link
                         to="/seller/products"
                         style={{
                           flex: 1,
-                          padding: '8px',
+                          padding: '5px 3px',
                           background: '#ecfdf5',
                           color: '#065f46',
                           border: '1px solid #a7f3d0',
-                          borderRadius: '6px',
-                          fontSize: '12px',
-                          fontWeight: 700,
+                          borderRadius: '4px',
+                          fontSize: '10px',
+                          fontWeight: 800,
                           textAlign: 'center',
                           textDecoration: 'none',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
                         }}
                       >
                         ✓ In Store
@@ -465,20 +500,23 @@ export default function SellerTreasury() {
                         type="button"
                         onClick={(e) => handleRemoveFromStore(p, e)}
                         disabled={isLoading}
+                        title="Remove product from your store"
                         style={{
-                          padding: '8px 12px',
+                          padding: '5px 5px',
                           background: '#fef2f2',
                           color: '#b91c1c',
                           border: '1px solid #fca5a5',
-                          borderRadius: '6px',
-                          fontSize: '12px',
-                          fontWeight: 600,
+                          borderRadius: '4px',
+                          fontSize: '9.5px',
+                          fontWeight: 700,
                           cursor: 'pointer',
+                          whiteSpace: 'nowrap',
                         }}
                       >
-                        Remove
+                        {isLoading ? '…' : 'Remove'}
                       </button>
                     </div>
+
                   )}
                 </div>
               </div>

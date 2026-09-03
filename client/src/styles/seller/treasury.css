@@ -169,8 +169,14 @@
 }
 
 .seller-treasury-card.is-added {
-  border-color: #10b981;
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.15);
+  border: 2px solid #10b981;
+  background: #fcfdfc;
+  box-shadow: 0 3px 10px rgba(16, 185, 129, 0.12);
+}
+
+.seller-treasury-card.is-added:hover {
+  border-color: #059669;
+  box-shadow: 0 10px 22px rgba(16, 185, 129, 0.18);
 }
 
 /* ─── CARD IMAGE & HOVER OVERLAY ─── */
@@ -215,18 +221,20 @@
   position: absolute;
   top: 10px;
   right: 10px;
-  background: #10b981;
+  background: #059669;
   color: #ffffff;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 800;
-  padding: 3px 8px;
+  padding: 4px 9px;
   border-radius: 6px;
   display: flex;
   align-items: center;
   gap: 4px;
-  z-index: 2;
-  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+  z-index: 3;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.35);
+  letter-spacing: 0.3px;
 }
+
 
 /* Desktop Hover Overlay */
 .treasury-hover-action-overlay {
@@ -447,11 +455,14 @@
   }
   .treasury-in-store-tag {
     font-size: 8px !important;
-    padding: 1px 4px !important;
+    padding: 2px 5px !important;
     top: 4px !important;
-    left: 4px !important;
+    right: 4px !important;
+    left: auto !important;
     border-radius: 4px !important;
+    background: #059669 !important;
   }
+
   .treasury-card-body {
     padding: 6px !important;
   }

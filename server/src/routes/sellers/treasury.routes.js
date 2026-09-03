@@ -86,6 +86,14 @@ router.get('/treasury', authSeller, async (req, res) => {
       };
     });
 
+    // Ensure unadded products are ALWAYS on top, and already added products are pushed to the bottom
+    enriched.sort((a, b) => {
+      if (a.isAddedToStore !== b.isAddedToStore) {
+        return a.isAddedToStore ? 1 : -1;
+      }
+      return 0;
+    });
+
     res.json(enriched);
   } catch (err) {
     res.status(500).json({ message: err.message });
