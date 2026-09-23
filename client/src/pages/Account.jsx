@@ -155,7 +155,7 @@ export default function Account() {
                   <OrderDetailCard order={o} />
                   <div className="account-order-actions">
                     <Link className="btn-outline" to={`/track-order?order=${o.orderNumber}&phone=${encodeURIComponent(o.contact?.phone || '')}`}>TRACK ORDER</Link>
-                    {!o.refundId && ['shipped', 'out_for_delivery', 'delivered'].includes(o.status) && (
+                    {!o.refundId && ['out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery', 'delivered'].includes(o.status) && (
                       <button className="btn-outline" onClick={() => setRefundFor(o)}>REQUEST REFUND</button>
                     )}
                     {o.refundId && <span className="muted-sm"><Ic name="refresh" size={13} /> Refund request submitted</span>}

@@ -12,6 +12,8 @@ export default function SellerSupport() {
   const setUnreadChat = context.setUnreadChat || (() => {});
   const [conv, setConv] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [text, setText] = useState('');
   const [file, setFile] = useState(null);
   const [filePreview, setFilePreview] = useState(null);
@@ -19,16 +21,51 @@ export default function SellerSupport() {
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+
   const scrollRef = useRef(null);
+  const threadMessagesRef = useRef(null);
   const fileInputRef = useRef(null);
   const textInputRef = useRef(null);
+  const isNearBottomRef = useRef(true);
 
-  const loadThread = () => {
-    sapi('/chat/seller/thread')
+  const scrollToBottom = (behavior = 'smooth') => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollIntoView({ behavior });
+    }
+  };
+
+  const handleThreadScroll = (e) => {
+    const el = e.currentTarget;
+    const threshold = 150;
+    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    isNearBottomRef.current = distanceToBottom <= threshold;
+  };
+
+  const loadThread = (isPolling = false) => {
+    sapi('/chat/seller/thread?limit=100')
       .then((res) => {
         if (!res) return;
         setConv(res.conversation || null);
-        setMessages(Array.isArray(res.messages) ? res.messages : []);
+        const msgList = Array.isArray(res.messages) ? res.messages : [];
+        const more = Boolean(res.hasMore);
+
+        if (!isPolling) {
+          setMessages(msgList);
+          setHasMore(more);
+          setTimeout(() => scrollToBottom('auto'), 50);
+        } else {
+          setMessages((prev) => {
+            if (!Array.isArray(prev) || prev.length === 0) return msgList;
+            const existingIds = new Set(prev.map((m) => m._id));
+            const newOnes = msgList.filter((m) => !existingIds.has(m._id));
+            if (newOnes.length === 0) return prev;
+            if (isNearBottomRef.current) {
+              setTimeout(() => scrollToBottom('smooth'), 50);
+            }
+            return [...prev, ...newOnes];
+          });
+        }
+
         // Mark read
         sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
         try {
@@ -41,8 +78,47 @@ export default function SellerSupport() {
       .finally(() => setLoading(false));
   };
 
+  // Load earlier messages with scroll anchoring
+  const handleLoadEarlier = async () => {
+    if (loadingEarlier || !hasMore || messages.length === 0) return;
+    const earliest = messages[0]?.createdAt;
+    if (!earliest) return;
+
+    setLoadingEarlier(true);
+    const container = threadMessagesRef.current;
+    const prevScrollHeight = container ? container.scrollHeight : 0;
+    const prevScrollTop = container ? container.scrollTop : 0;
+
+    try {
+      const res = await sapi(`/chat/seller/thread?before=${encodeURIComponent(earliest)}&limit=100`);
+      const olderMsgs = Array.isArray(res?.messages) ? res.messages : [];
+      const more = Boolean(res?.hasMore);
+      setHasMore(more);
+
+      if (olderMsgs.length > 0) {
+        setMessages((prev) => {
+          const existingIds = new Set(prev.map((m) => m._id));
+          const freshOlder = olderMsgs.filter((m) => !existingIds.has(m._id));
+          return [...freshOlder, ...prev];
+        });
+
+        // Anchor scroll position
+        requestAnimationFrame(() => {
+          if (container) {
+            const newScrollHeight = container.scrollHeight;
+            container.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load earlier messages:', err);
+    } finally {
+      setLoadingEarlier(false);
+    }
+  };
+
   useEffect(() => {
-    loadThread();
+    loadThread(false);
 
     let socket;
     try {
@@ -58,6 +134,9 @@ export default function SellerSupport() {
         if (prev.some((m) => m?._id === msg?._id)) return prev;
         return [...prev, msg];
       });
+      if (isNearBottomRef.current) {
+        setTimeout(() => scrollToBottom('smooth'), 50);
+      }
       sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
       try {
         if (socket) socket.emit('seller:read', { sellerId: seller?._id, conversationId: msg.conversation });
@@ -106,10 +185,6 @@ export default function SellerSupport() {
       }
     };
   }, [seller]);
-
-  useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
 
   const handleFileChange = (e) => {
     const selected = e.target.files?.[0];
@@ -188,7 +263,7 @@ export default function SellerSupport() {
       removeFile();
       setReplyingTo(null);
 
-      await sapi('/chat/seller/send', {
+      const newMsg = await sapi('/chat/seller/send', {
         method: 'POST',
         body: {
           text: clean,
@@ -199,6 +274,10 @@ export default function SellerSupport() {
           replyTo: targetReply,
         },
       });
+      if (newMsg?._id) {
+        setMessages((prev) => (prev.some((m) => m._id === newMsg._id) ? prev : [...prev, newMsg]));
+      }
+      setTimeout(() => scrollToBottom('smooth'), 50);
     } catch (err) {
       setText(clean);
       alert('Failed to send message: ' + err.message);
@@ -267,11 +346,53 @@ export default function SellerSupport() {
         </div>
 
         {/* Messages Feed Area */}
-        <div className="seller-chat-messages">
+        <div
+          ref={threadMessagesRef}
+          onScroll={handleThreadScroll}
+          className="seller-chat-messages"
+        >
           {loading && (
             <div className="chat-loading-box">
               <div className="chat-spinner"></div>
               <p>Connecting to secure support thread...</p>
+            </div>
+          )}
+
+          {hasMore && (
+            <div style={{ textAlign: 'center', padding: '10px 0 16px' }}>
+              <button
+                type="button"
+                onClick={handleLoadEarlier}
+                disabled={loadingEarlier}
+                style={{
+                  padding: '7px 18px',
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  borderRadius: 20,
+                  border: '1px solid #cbd5e1',
+                  background: '#f8fafc',
+                  color: '#1e293b',
+                  cursor: loadingEarlier ? 'not-allowed' : 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                }}
+              >
+                {loadingEarlier ? (
+                  <span>⏳ Loading earlier messages...</span>
+                ) : (
+                  <>
+                    <span>⬆️</span>
+                    <span>Load earlier messages (Purani chat dekhein)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+          {!hasMore && messages.length >= 50 && (
+            <div style={{ textAlign: 'center', padding: '8px 0 14px', fontSize: 11.5, color: '#94a3b8' }}>
+              📜 Beginning of conversation history
             </div>
           )}
 

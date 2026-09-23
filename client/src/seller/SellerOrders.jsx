@@ -17,8 +17,8 @@ const STATUS_TABS = [
 const ORDER_STEPS = [
   { key: 'pending', label: 'Order Placed', desc: 'Customer checkout completed' },
   { key: 'confirmed', label: 'Confirmed', desc: 'Funds locked in processing' },
-  { key: 'processing', label: 'Processing', desc: 'Platform warehouse packing' },
-  { key: 'shipped', label: 'Shipped', desc: 'Courier transit to customer' },
+  { key: 'processing', label: 'Processing & Packed', desc: 'Warehouse packing & inspection' },
+  { key: 'shipped', label: 'Dispatched & Transit', desc: 'Hub transit & delivery courier' },
   { key: 'delivered', label: 'Delivered', desc: 'Settled + 20% profit paid' },
 ];
 
@@ -28,6 +28,8 @@ function getStepIndex(status) {
     case 'confirmed': return 1;
     case 'processing':
     case 'packed': return 2;
+    case 'out_from_warehouse':
+    case 'delivery_warehouse':
     case 'shipped':
     case 'out_for_delivery': return 3;
     case 'delivered': return 4;
@@ -103,7 +105,7 @@ export default function SellerOrders() {
       return ['processing', 'packed'].includes(status);
     }
     if (tab === 'shipped') {
-      return ['shipped', 'out_for_delivery'].includes(status);
+      return ['out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery'].includes(status);
     }
     return status === tab;
   });
@@ -133,7 +135,7 @@ export default function SellerOrders() {
               : orders.filter((o) => {
                   const s = o.sellerItems?.[0]?.itemStatus || o.status;
                   if (t.key === 'processing') return ['processing', 'packed'].includes(s);
-                  if (t.key === 'shipped') return ['shipped', 'out_for_delivery'].includes(s);
+                  if (t.key === 'shipped') return ['out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery'].includes(s);
                   return s === t.key;
                 }).length;
             const isActive = tab === t.key;
@@ -195,7 +197,7 @@ export default function SellerOrders() {
                 const totalReturn = ord.sellerReturn || Number((total * 1.20).toFixed(2));
                 const isPending = currentStatus === 'pending';
                 const isDelivered = currentStatus === 'delivered';
-                const isProcessing = ['confirmed', 'processing', 'packed', 'shipped', 'out_for_delivery'].includes(currentStatus);
+                const isProcessing = ['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery'].includes(currentStatus);
 
                 return (
                   <tr key={ord._id}>
@@ -345,7 +347,7 @@ export default function SellerOrders() {
                   <span className={`status-tag status-${selectedOrd.status}`} style={{ margin: 0 }}>
                     {selectedOrd.status.toUpperCase().replace(/_/g, ' ')}
                   </span>
-                  {['confirmed', 'processing', 'packed', 'shipped', 'out_for_delivery'].includes(selectedOrd.status) && (
+                  {['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery'].includes(selectedOrd.status) && (
                     <span className="processing-fund-tag">🔒 Processing Fund Locked</span>
                   )}
                   {selectedOrd.status === 'delivered' && (
@@ -356,7 +358,9 @@ export default function SellerOrders() {
                   {selectedOrd.status === 'pending' && '⏳ Awaiting Merchant Confirmation. Please confirm this order to move funds to Processing and begin operations.'}
                   {selectedOrd.status === 'confirmed' && '🔒 Order confirmed by your store! Operations has received the order and is preparing warehouse packing.'}
                   {['processing', 'packed'].includes(selectedOrd.status) && '📦 Platform Operations is packaging your items and preparing the courier shipping label.'}
-                  {['shipped', 'out_for_delivery'].includes(selectedOrd.status) && '🚚 Your order is currently in transit with the courier service out for customer delivery.'}
+                  {selectedOrd.status === 'out_from_warehouse' && '🚚 Package has been dispatched from the main warehouse and handed over to logistics transit.'}
+                  {selectedOrd.status === 'delivery_warehouse' && '🏢 Package has reached the local delivery hub and is undergoing last-mile route sorting.'}
+                  {['shipped', 'out_for_delivery'].includes(selectedOrd.status) && '🚴 Your order is currently out with the courier rider for customer doorstep delivery.'}
                   {selectedOrd.status === 'delivered' && '🎉 Order successfully delivered! Total payout (Principal + 20% profit) has been credited to your wallet.'}
                   {selectedOrd.status === 'cancelled' && '❌ Order cancelled. Locked funds returned to available balance.'}
                 </p>

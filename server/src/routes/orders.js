@@ -13,6 +13,7 @@ import { notify } from '../utils/notify.js';
 import { lockSellerOrderFund, releaseSellerOrderDelivered, releaseSellerOrderCancelled } from './sellers.js';
 import { handleStatusUpdate } from './sellers/orders.routes.js';
 import { adjustTreasuryStock } from '../utils/stockSync.js';
+import { scheduleNextOrderStep } from '../services/orderProgressionService.js';
 
 const router = Router();
 
@@ -330,6 +331,12 @@ const orderStatusHandler = async (req, res) => {
   });
 
   order.status = status;
+  if (['cancelled', 'refunded', 'delivered'].includes(status)) {
+    order.nextStatus = null;
+    order.nextStatusAt = null;
+  } else if (['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery'].includes(status)) {
+    scheduleNextOrderStep(order);
+  }
   order.statusHistory.push({ status, note: note || '', by: req.admin?.name || 'Admin' });
   await order.save();
   await audit(req, 'order_updated', 'order', order._id, { orderNumber: order.orderNumber, from: prev, to: status, note: note || '' });

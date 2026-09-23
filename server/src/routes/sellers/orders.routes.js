@@ -538,6 +538,7 @@ router.post('/orders/:id/confirm', authSellerOrAdmin, async (req, res) => {
     const allStatuses = order.items.map((it) => it.itemStatus || order.status);
     if (allStatuses.every((s) => s === 'confirmed')) {
       order.status = 'confirmed';
+      scheduleNextOrderStep(order);
     }
 
     order.statusHistory.push({

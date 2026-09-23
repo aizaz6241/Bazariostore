@@ -84,6 +84,32 @@ export async function handleAutoReply(app, conv) {
   }
 }
 
+// Helper: Fetch messages with cursor-based pagination (latest-first query, returned chronologically)
+export async function fetchConversationMessages(query, { limit = 100, before = null } = {}) {
+  const filter = { ...query };
+  if (before) {
+    const beforeDate = new Date(before);
+    if (!isNaN(beforeDate.getTime())) {
+      filter.createdAt = { $lt: beforeDate };
+    }
+  }
+
+  const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500);
+
+  // Sort descending to get the latest messages up to this point
+  const docs = await Message.find(filter)
+    .sort({ createdAt: -1 })
+    .limit(parsedLimit + 1);
+
+  const hasMore = docs.length > parsedLimit;
+  const resultDocs = hasMore ? docs.slice(0, parsedLimit) : docs;
+
+  // Return in chronological order (oldest -> newest)
+  const messages = resultDocs.reverse();
+
+  return { messages, hasMore };
+}
+
 // ----------------------------------------------------
 // 1. SELLER SUPPORT CHAT ENDPOINTS
 // ----------------------------------------------------
@@ -142,11 +168,13 @@ router.get('/seller/thread', authSeller, async (req, res) => {
       }
     }
 
-    const messages = await Message.find({
-      $or: [{ conversation: conv._id }, { seller: seller._id }]
-    }).sort({ createdAt: 1 }).limit(500);
+    const { limit, before } = req.query;
+    const { messages, hasMore } = await fetchConversationMessages(
+      { $or: [{ conversation: conv._id }, { seller: seller._id }] },
+      { limit, before }
+    );
 
-    res.json({ conversation: conv, messages });
+    res.json({ conversation: conv, messages, hasMore });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -315,10 +343,11 @@ router.get('/admin/conversations', authAdmin('chat'), async (req, res) => {
 // GET /api/chat/admin/conversations/:id/messages (Admin gets conversation messages)
 router.get('/admin/conversations/:id/messages', authAdmin('chat'), async (req, res) => {
   try {
+    const { limit, before } = req.query;
     const conv = await Conversation.findById(req.params.id);
     if (!conv) {
-      const fallbackMsgs = await Message.find({ conversation: req.params.id }).sort({ createdAt: 1 }).limit(500);
-      return res.json(fallbackMsgs);
+      const fallback = await fetchConversationMessages({ conversation: req.params.id }, { limit, before });
+      return res.json(fallback);
     }
 
     const sellerId = conv.seller?._id || conv.seller;
@@ -334,11 +363,11 @@ router.get('/admin/conversations/:id/messages', authAdmin('chat'), async (req, r
       );
     }
 
-    const messages = await Message.find(query).sort({ createdAt: 1 }).limit(500);
+    const { messages, hasMore } = await fetchConversationMessages(query, { limit, before });
 
     // Mark as read for admin
     await Conversation.findByIdAndUpdate(req.params.id, { unreadForAdmin: 0 });
-    res.json(messages);
+    res.json({ messages, hasMore });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -543,9 +572,8 @@ router.get('/admin/team/:targetAdminId/messages', authAdmin('chat'), async (req,
       await conv.save();
     }
 
-    const messages = await Message.find({ conversation: conv._id })
-      .sort({ createdAt: 1 })
-      .limit(500);
+    const { limit, before } = req.query;
+    const { messages, hasMore } = await fetchConversationMessages({ conversation: conv._id }, { limit, before });
 
     res.json({
       conversation: conv,
@@ -558,6 +586,7 @@ router.get('/admin/team/:targetAdminId/messages', authAdmin('chat'), async (req,
         phone: targetAdmin.phone,
       },
       messages,
+      hasMore,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -1090,8 +1119,9 @@ router.post('/guest/thread', async (req, res) => {
       await conv.save();
     }
 
-    const messages = await Message.find({ conversation: conv._id }).sort({ createdAt: 1 }).limit(200);
-    res.json({ conversation: conv, messages });
+    const { limit, before } = req.query;
+    const { messages, hasMore } = await fetchConversationMessages({ conversation: conv._id }, { limit, before });
+    res.json({ conversation: conv, messages, hasMore });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -1181,11 +1211,12 @@ router.get('/guest/:guestId', async (req, res) => {
       return res.json({ conversation: null, messages: [] });
     }
 
-    const messages = await Message.find({
+    const { limit, before } = req.query;
+    const { messages, hasMore } = await fetchConversationMessages({
       $or: [{ conversation: conv._id }, { guestId }],
-    }).sort({ createdAt: 1 }).limit(300);
+    }, { limit, before });
 
-    res.json({ conversation: conv, messages });
+    res.json({ conversation: conv, messages, hasMore });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -1197,7 +1228,8 @@ router.get('/messages/:guestId', async (req, res) => {
     const { guestId } = req.params;
     if (!guestId) return res.json([]);
 
-    const messages = await Message.find({ guestId }).sort({ createdAt: 1 }).limit(300);
+    const { limit, before } = req.query;
+    const { messages } = await fetchConversationMessages({ guestId }, { limit, before });
     res.json(messages);
   } catch (err) {
     res.status(500).json({ message: err.message });

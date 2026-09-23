@@ -586,7 +586,7 @@
   color: #15803d;
 }
 
-.status-badge.processing, .status-badge.confirmed, .status-badge.shipped {
+.status-badge.processing, .status-badge.confirmed, .status-badge.packed, .status-badge.out_from_warehouse, .status-badge.delivery_warehouse, .status-badge.shipped, .status-badge.out_for_delivery {
   background: #dbeafe;
   color: #1d4ed8;
 }

@@ -715,7 +715,7 @@ export default function Orders() {
                 </div>
 
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {['confirmed', 'processing', 'shipped', 'delivered', 'cancelled'].map((st) => (
+                  {['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'out_for_delivery', 'delivered', 'cancelled'].map((st) => (
                     <button
                       key={st}
                       type="button"
@@ -732,7 +732,7 @@ export default function Orders() {
                         color: inspectOrder.status === st ? '#fff' : '#334155',
                       }}
                     >
-                      {st.charAt(0).toUpperCase() + st.slice(1)}
+                      {STATUS_LABELS[st] || st.charAt(0).toUpperCase() + st.slice(1)}
                     </button>
                   ))}
                 </div>

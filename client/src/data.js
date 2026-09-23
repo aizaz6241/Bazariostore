@@ -5,13 +5,24 @@ export const PROVINCES = [
   'England', 'Scotland', 'Wales', 'Other',
 ];
 
-export const STATUS_STEPS = ['pending', 'confirmed', 'processing', 'packed', 'shipped', 'out_for_delivery', 'delivered'];
+export const STATUS_STEPS = [
+  'pending',
+  'confirmed',
+  'processing',
+  'packed',
+  'out_from_warehouse',
+  'delivery_warehouse',
+  'out_for_delivery',
+  'delivered',
+];
 
 export const STATUS_LABELS = {
   pending: 'Pending',
   confirmed: 'Confirmed',
   processing: 'Processing',
   packed: 'Packed',
+  out_from_warehouse: 'Out from Warehouse',
+  delivery_warehouse: 'Delivery Warehouse',
   shipped: 'Shipped',
   out_for_delivery: 'Out for Delivery',
   delivered: 'Delivered',
@@ -19,7 +30,7 @@ export const STATUS_LABELS = {
   refunded: 'Refunded',
 };
 
-export const ALL_STATUSES = [...STATUS_STEPS, 'cancelled', 'refunded'];
+export const ALL_STATUSES = [...STATUS_STEPS, 'shipped', 'cancelled', 'refunded'];
 
 export const PAYMENT_LABELS = {
   cod: 'Cash on Delivery',

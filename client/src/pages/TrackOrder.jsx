@@ -11,13 +11,18 @@ const STEP_ICONS = {
   confirmed: 'checkCircle',
   processing: 'package',
   packed: 'box',
+  out_from_warehouse: 'truck',
+  delivery_warehouse: 'box',
   shipped: 'truck',
   out_for_delivery: 'truck',
   delivered: 'home',
 };
 
 export function OrderTimeline({ order }) {
-  const reachedIdx = STATUS_STEPS.indexOf(order.status);
+  let reachedIdx = STATUS_STEPS.indexOf(order.status);
+  if (reachedIdx === -1 && order.status === 'shipped') {
+    reachedIdx = STATUS_STEPS.indexOf('out_from_warehouse');
+  }
   if (order.status === 'cancelled')
     return <div className="alert-error"><Ic name="x" size={15} /> Yeh order cancel ho chuka hai. Kisi bhi sawal ke liye chat support se rabta karein.</div>;
   if (order.status === 'refunded')

@@ -371,6 +371,8 @@
   border: 1px solid #bfdbfe;
 }
 
+.status-tag.status-out_from_warehouse,
+.status-tag.status-delivery_warehouse,
 .status-tag.status-shipped,
 .status-tag.status-out_for_delivery {
   background: #e0e7ff;

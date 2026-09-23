@@ -47,6 +47,8 @@ export default function ChatInbox() {
 
   // Messages & Form State
   const [messages, setMessages] = useState([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [text, setText] = useState('');
   const [file, setFile] = useState(null);
   const [filePreview, setFilePreview] = useState(null);
@@ -57,8 +59,10 @@ export default function ChatInbox() {
   const [q, setQ] = useState('');
 
   const scrollRef = useRef(null);
+  const threadMessagesRef = useRef(null);
   const fileInputRef = useRef(null);
   const textInputRef = useRef(null);
+  const isNearBottomRef = useRef(true);
 
   // Load current admin info & auto-reply settings
   useEffect(() => {
@@ -132,27 +136,58 @@ export default function ChatInbox() {
     }).finally(() => setLoading(false));
   }, []);
 
-  // Periodic Refresh (keeps active conversation & unread counts fresh)
+  const scrollToBottom = (behavior = 'smooth') => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollIntoView({ behavior });
+    }
+  };
+
+  const handleThreadScroll = (e) => {
+    const el = e.currentTarget;
+    const threshold = 150;
+    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    isNearBottomRef.current = distanceToBottom <= threshold;
+  };
+
+  // Periodic Refresh (keeps active conversation & unread counts fresh without scroll jumps)
   useEffect(() => {
     const interval = setInterval(() => {
       loadSellerConvos();
       loadTeamMembers();
       if (activeTab === 'sellers' && selectedSellerId) {
-        loadSellerMessages(selectedSellerId, false);
+        loadSellerMessages(selectedSellerId, true);
       } else if (activeTab === 'team' && selectedTeamId) {
-        loadTeamMessages(selectedTeamId, false);
+        loadTeamMessages(selectedTeamId, true);
       }
     }, 4000);
     return () => clearInterval(interval);
   }, [activeTab, selectedSellerId, selectedTeamId]);
 
   // Load Messages for Selected Seller
-  const loadSellerMessages = (cid, clearExisting = true) => {
+  const loadSellerMessages = (cid, isPolling = false) => {
     if (!cid) return;
-    api(`/chat/admin/conversations/${cid}/messages`)
+    api(`/chat/admin/conversations/${cid}/messages?limit=100`)
       .then((data) => {
         const msgList = Array.isArray(data) ? data : (data?.messages || []);
-        setMessages(msgList);
+        const more = Boolean(data?.hasMore);
+
+        if (!isPolling) {
+          setMessages(msgList);
+          setHasMore(more);
+          setTimeout(() => scrollToBottom('auto'), 50);
+        } else {
+          setMessages((prev) => {
+            if (!Array.isArray(prev) || prev.length === 0) return msgList;
+            const existingIds = new Set(prev.map((m) => m._id));
+            const newOnes = msgList.filter((m) => !existingIds.has(m._id));
+            if (newOnes.length === 0) return prev; // No new messages: retain exact reference!
+            if (isNearBottomRef.current) {
+              setTimeout(() => scrollToBottom('smooth'), 50);
+            }
+            return [...prev, ...newOnes];
+          });
+        }
+
         setSellerConvos((prev) =>
           Array.isArray(prev) ? prev.map((c) => (c._id === cid ? { ...c, unreadForAdmin: 0 } : c)) : []
         );
@@ -161,13 +196,31 @@ export default function ChatInbox() {
   };
 
   // Load Messages for Selected Team Member
-  const loadTeamMessages = (targetAdminId, clearExisting = true) => {
+  const loadTeamMessages = (targetAdminId, isPolling = false) => {
     if (!targetAdminId) return;
-    api(`/chat/admin/team/${targetAdminId}/messages`)
+    api(`/chat/admin/team/${targetAdminId}/messages?limit=100`)
       .then((data) => {
-        const msgList = Array.isArray(data?.messages) ? data.messages : [];
-        setMessages(msgList);
+        const msgList = Array.isArray(data?.messages) ? data.messages : (Array.isArray(data) ? data : []);
+        const more = Boolean(data?.hasMore);
         if (data?.targetAdmin) setSelectedTeamTarget(data.targetAdmin);
+
+        if (!isPolling) {
+          setMessages(msgList);
+          setHasMore(more);
+          setTimeout(() => scrollToBottom('auto'), 50);
+        } else {
+          setMessages((prev) => {
+            if (!Array.isArray(prev) || prev.length === 0) return msgList;
+            const existingIds = new Set(prev.map((m) => m._id));
+            const newOnes = msgList.filter((m) => !existingIds.has(m._id));
+            if (newOnes.length === 0) return prev;
+            if (isNearBottomRef.current) {
+              setTimeout(() => scrollToBottom('smooth'), 50);
+            }
+            return [...prev, ...newOnes];
+          });
+        }
+
         setTeamMembers((prev) =>
           Array.isArray(prev) ? prev.map((t) => (t._id === targetAdminId ? { ...t, unreadCount: 0 } : t)) : []
         );
@@ -175,17 +228,62 @@ export default function ChatInbox() {
       .catch((e) => console.error('Load team messages error:', e));
   };
 
+  // Load Earlier (Older) Messages with Scroll Anchoring
+  const handleLoadEarlier = async () => {
+    if (loadingEarlier || !hasMore || messages.length === 0) return;
+    const earliest = messages[0]?.createdAt;
+    if (!earliest) return;
+
+    setLoadingEarlier(true);
+    const container = threadMessagesRef.current;
+    const prevScrollHeight = container ? container.scrollHeight : 0;
+    const prevScrollTop = container ? container.scrollTop : 0;
+
+    try {
+      let data;
+      if (activeTab === 'sellers') {
+        data = await api(`/chat/admin/conversations/${selectedSellerId}/messages?before=${encodeURIComponent(earliest)}&limit=100`);
+      } else {
+        data = await api(`/chat/admin/team/${selectedTeamId}/messages?before=${encodeURIComponent(earliest)}&limit=100`);
+      }
+
+      const olderMsgs = Array.isArray(data) ? data : (data?.messages || []);
+      const more = Boolean(data?.hasMore);
+      setHasMore(more);
+
+      if (olderMsgs.length > 0) {
+        setMessages((prev) => {
+          const existingIds = new Set(prev.map((m) => m._id));
+          const freshOlder = olderMsgs.filter((m) => !existingIds.has(m._id));
+          return [...freshOlder, ...prev];
+        });
+
+        // Anchor scroll position to prevent visual jump
+        requestAnimationFrame(() => {
+          if (container) {
+            const newScrollHeight = container.scrollHeight;
+            container.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load earlier messages:', err);
+    } finally {
+      setLoadingEarlier(false);
+    }
+  };
+
   // Switch Selected Seller
   useEffect(() => {
     if (activeTab === 'sellers' && selectedSellerId) {
-      loadSellerMessages(selectedSellerId);
+      loadSellerMessages(selectedSellerId, false);
     }
   }, [activeTab, selectedSellerId]);
 
   // Switch Selected Team Member
   useEffect(() => {
     if (activeTab === 'team' && selectedTeamId) {
-      loadTeamMessages(selectedTeamId);
+      loadTeamMessages(selectedTeamId, false);
     }
   }, [activeTab, selectedTeamId]);
 
@@ -206,6 +304,9 @@ export default function ChatInbox() {
           if (prev.some((m) => m?._id === msg?._id)) return prev;
           return [...prev, msg];
         });
+        if (isNearBottomRef.current) {
+          setTimeout(() => scrollToBottom('smooth'), 50);
+        }
         api(`/chat/admin/conversations/${selectedSellerId}/read`, { method: 'POST' }).catch(() => {});
       }
       loadSellerConvos();
@@ -221,6 +322,9 @@ export default function ChatInbox() {
             if (prev.some((m) => m?._id === msg?._id)) return prev;
             return [...prev, msg];
           });
+          if (isNearBottomRef.current) {
+            setTimeout(() => scrollToBottom('smooth'), 50);
+          }
           if (selectedTeamId) {
             api(`/chat/admin/team/${selectedTeamId}/read`, { method: 'POST' }).catch(() => {});
           }
@@ -300,10 +404,7 @@ export default function ChatInbox() {
     };
   }, [activeTab, selectedSellerId, selectedTeamId, me]);
 
-  // Auto-scroll on new messages
-  useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  // Note: Auto-scroll is handled via smart scrollToBottom on new send / receive when near bottom
 
   // Attachments Handling
   const handleFileChange = (e) => {
@@ -388,7 +489,7 @@ export default function ChatInbox() {
 
       if (activeTab === 'sellers') {
         // Send to Seller Support Thread
-        await api(`/chat/admin/conversations/${selectedSellerId}/reply`, {
+        const newMsg = await api(`/chat/admin/conversations/${selectedSellerId}/reply`, {
           method: 'POST',
           body: {
             text: clean,
@@ -399,11 +500,14 @@ export default function ChatInbox() {
             replyTo: targetReply,
           },
         });
-        loadSellerMessages(selectedSellerId);
+        if (newMsg?._id) {
+          setMessages((prev) => (prev.some((m) => m._id === newMsg._id) ? prev : [...prev, newMsg]));
+        }
+        setTimeout(() => scrollToBottom('smooth'), 50);
         loadSellerConvos();
       } else {
         // Send to Team Member Direct Thread
-        await api(`/chat/admin/team/${selectedTeamId}/send`, {
+        const newMsg = await api(`/chat/admin/team/${selectedTeamId}/send`, {
           method: 'POST',
           body: {
             text: clean,
@@ -414,7 +518,10 @@ export default function ChatInbox() {
             replyTo: targetReply,
           },
         });
-        loadTeamMessages(selectedTeamId);
+        if (newMsg?._id) {
+          setMessages((prev) => (prev.some((m) => m._id === newMsg._id) ? prev : [...prev, newMsg]));
+        }
+        setTimeout(() => scrollToBottom('smooth'), 50);
         loadTeamMembers();
       }
     } catch (err) {
@@ -847,7 +954,49 @@ export default function ChatInbox() {
               </div>
             </div>
 
-            <div className="admin-thread-messages">
+            <div
+              ref={threadMessagesRef}
+              onScroll={handleThreadScroll}
+              className="admin-thread-messages"
+            >
+              {hasMore && (
+                <div style={{ textAlign: 'center', padding: '12px 0 16px' }}>
+                  <button
+                    type="button"
+                    onClick={handleLoadEarlier}
+                    disabled={loadingEarlier}
+                    style={{
+                      padding: '7px 18px',
+                      fontSize: 12.5,
+                      fontWeight: 700,
+                      borderRadius: 20,
+                      border: '1px solid #cbd5e1',
+                      background: '#f8fafc',
+                      color: '#1e293b',
+                      cursor: loadingEarlier ? 'not-allowed' : 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                    }}
+                  >
+                    {loadingEarlier ? (
+                      <span>⏳ Loading earlier messages...</span>
+                    ) : (
+                      <>
+                        <span>⬆️</span>
+                        <span>Load earlier messages (Purani chat dekhein)</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+              {!hasMore && messages.length >= 50 && (
+                <div style={{ textAlign: 'center', padding: '8px 0 14px', fontSize: 11.5, color: '#94a3b8' }}>
+                  📜 Beginning of conversation history
+                </div>
+              )}
+
               {messages.map((m) => {
                 const isAdmin = m.sender === 'admin' || m.sender === 'staff';
                 return (
@@ -902,7 +1051,49 @@ export default function ChatInbox() {
               </div>
             </div>
 
-            <div className="admin-thread-messages">
+            <div
+              ref={threadMessagesRef}
+              onScroll={handleThreadScroll}
+              className="admin-thread-messages"
+            >
+              {hasMore && (
+                <div style={{ textAlign: 'center', padding: '12px 0 16px' }}>
+                  <button
+                    type="button"
+                    onClick={handleLoadEarlier}
+                    disabled={loadingEarlier}
+                    style={{
+                      padding: '7px 18px',
+                      fontSize: 12.5,
+                      fontWeight: 700,
+                      borderRadius: 20,
+                      border: '1px solid #cbd5e1',
+                      background: '#f8fafc',
+                      color: '#1e293b',
+                      cursor: loadingEarlier ? 'not-allowed' : 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                    }}
+                  >
+                    {loadingEarlier ? (
+                      <span>⏳ Loading earlier messages...</span>
+                    ) : (
+                      <>
+                        <span>⬆️</span>
+                        <span>Load earlier messages (Purani chat dekhein)</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+              {!hasMore && messages.length >= 50 && (
+                <div style={{ textAlign: 'center', padding: '8px 0 14px', fontSize: 11.5, color: '#94a3b8' }}>
+                  📜 Beginning of conversation history
+                </div>
+              )}
+
               {messages.map((m) => {
                 const isMe = String(m.senderAdmin) === String(me?.id) || (m.sender === 'admin' && !m.senderAdmin && m.senderName === me?.name);
                 return (
