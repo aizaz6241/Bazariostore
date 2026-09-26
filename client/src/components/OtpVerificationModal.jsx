@@ -7,6 +7,7 @@ export default function OtpVerificationModal({
   email,
   title = 'Verify Your Email Address',
   subtitle = 'We sent a 6-digit verification code to',
+  notice = '',
   onVerify, // async (otpString) => Promise<void>
   onResend, // async () => Promise<void>
   busy = false,
@@ -154,6 +155,26 @@ export default function OtpVerificationModal({
         </div>
 
         <form onSubmit={handleSubmit} className="otp-modal-body">
+          {notice && (
+            <div style={{
+              background: '#eff6ff',
+              border: '1px solid #bfdbfe',
+              color: '#1d4ed8',
+              padding: '10px 14px',
+              borderRadius: '8px',
+              fontSize: '13px',
+              marginBottom: 16,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              fontWeight: 600,
+            }}>
+              <Ic name="shield" size={16} />
+              <span>{notice}</span>
+            </div>
+          )}
+
           {error && (
             <div className="alert-error" style={{ marginBottom: 16 }}>
               <Ic name="shield" size={15} />

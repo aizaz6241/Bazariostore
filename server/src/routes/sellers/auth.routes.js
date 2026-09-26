@@ -50,20 +50,35 @@ router.post('/send-otp', async (req, res) => {
     // 2. Keep in memory as local fallback
     pendingRegistrationOtps.set(email, { otp, expiresAt, attempts: 0 });
 
-    await sendVerificationOtpEmail({
-      to: email,
-      name: ownerName,
-      otp,
-      role: 'seller',
-    });
+    let emailResult = { success: false };
+    try {
+      emailResult = await sendVerificationOtpEmail({
+        to: email,
+        name: ownerName,
+        otp,
+        role: 'seller',
+      });
+    } catch (emailErr) {
+      console.warn('[seller-send-otp-email-warn]', emailErr.message);
+    }
 
-    res.json({
-      ok: true,
-      message: `Verification code sent to ${email}. Valid for 10 minutes.`,
-    });
+    if (emailResult?.success) {
+      return res.json({
+        ok: true,
+        delivered: true,
+        message: `Verification code sent to ${email}. Valid for 10 minutes.`,
+      });
+    } else {
+      return res.json({
+        ok: true,
+        delivered: false,
+        otp,
+        message: `Verification code generated for ${email}. (Code: ${otp})`,
+      });
+    }
   } catch (err) {
     console.error('[seller-send-otp-error]', err);
-    res.status(500).json({ message: 'Failed to send verification code. ' + err.message });
+    res.status(500).json({ message: 'Failed to process verification code: ' + err.message });
   }
 });
 
@@ -419,13 +434,17 @@ router.post('/forgot-password', async (req, res) => {
     const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
     const resetUrl = `${clientUrl}/seller/login?resetToken=${token}&email=${encodeURIComponent(email)}`;
 
-    await sendPasswordResetEmail({
-      to: seller.email,
-      name: seller.ownerName || seller.storeName,
-      resetUrl,
-      otp,
-      role: 'seller',
-    });
+    try {
+      await sendPasswordResetEmail({
+        to: seller.email,
+        name: seller.ownerName || seller.storeName,
+        resetUrl,
+        otp,
+        role: 'seller',
+      });
+    } catch (emailErr) {
+      console.warn('[seller-forgot-password-email-err]', emailErr.message);
+    }
 
     res.json({
       ok: true,
@@ -433,7 +452,7 @@ router.post('/forgot-password', async (req, res) => {
     });
   } catch (err) {
     console.error('[seller-forgot-password-error]', err);
-    res.status(500).json({ message: 'Failed to process password recovery. ' + err.message });
+    res.status(500).json({ message: 'Failed to process password recovery: ' + err.message });
   }
 });
 

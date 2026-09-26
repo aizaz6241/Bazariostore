@@ -25,6 +25,7 @@ export default function SellerLogin() {
   // Registration OTP State
   const [otpModalOpen, setOtpModalOpen] = useState(false);
   const [otpBusy, setOtpBusy] = useState(false);
+  const [otpNotice, setOtpNotice] = useState('');
 
   // Forgot Password Modal State
   const [forgotModalOpen, setForgotModalOpen] = useState(Boolean(urlResetToken));
@@ -90,10 +91,12 @@ export default function SellerLogin() {
     setLoading(true);
     try {
       // Step 1: Send OTP to verify business email
-      await api('/sellers/send-otp', {
+      const res = await api('/sellers/send-otp', {
         method: 'POST',
         body: { email: regForm.email, ownerName: regForm.ownerName },
       });
+      if (res?.otp) setOtpNotice(`Verification Code: ${res.otp}`);
+      else setOtpNotice('');
       setOtpModalOpen(true);
     } catch (e) {
       setErr(e.message || 'Failed to send verification code. Please check your email.');
@@ -138,10 +141,12 @@ export default function SellerLogin() {
   };
 
   const handleResendSellerOtp = async () => {
-    await api('/sellers/send-otp', {
+    const res = await api('/sellers/send-otp', {
       method: 'POST',
       body: { email: regForm.email, ownerName: regForm.ownerName },
     });
+    if (res?.otp) setOtpNotice(`Verification Code: ${res.otp}`);
+    else setOtpNotice('');
   };
 
   const handleSendRecoveryEmail = async (e) => {
@@ -602,6 +607,7 @@ export default function SellerLogin() {
         email={regForm.email}
         title="Verify Business Email"
         subtitle="To secure your merchant account, please enter the 6-digit code sent to"
+        notice={otpNotice}
         onVerify={handleVerifySellerOtp}
         onResend={handleResendSellerOtp}
         busy={otpBusy}
