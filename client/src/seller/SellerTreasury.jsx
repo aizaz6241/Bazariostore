@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { sapi, money } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
+import '../styles/seller/treasury.css';
 
 export default function SellerTreasury() {
   const { formatMoney } = useCurrency();
@@ -136,29 +137,11 @@ export default function SellerTreasury() {
     <div className="seller-treasury-page">
       {/* Toast Notification */}
       {toastMessage && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: '30px',
-            right: '30px',
-            background: '#0f172a',
-            color: '#fff',
-            padding: '14px 22px',
-            borderRadius: '10px',
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)',
-            zIndex: 99999,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            fontSize: '13.5px',
-            fontWeight: 600,
-            borderLeft: '4px solid #10b981',
-          }}
-        >
+        <div className="treasury-toast-banner">
           <span>{toastMessage}</span>
           <button
             onClick={() => setToastMessage('')}
-            style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px' }}
+            className="treasury-toast-close"
           >
             ✕
           </button>
@@ -166,50 +149,31 @@ export default function SellerTreasury() {
       )}
 
       {/* Header Banner */}
-      <div className="seller-page-header" style={{ background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)', color: '#fff', padding: '24px 28px', borderRadius: '16px', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.08)' }}>
-        <div>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', padding: '3px 10px', borderRadius: '20px', fontSize: '11.5px', fontWeight: 700, marginBottom: '8px', border: '1px solid rgba(96, 165, 250, 0.3)' }}>
+      <div className="seller-page-header treasury-hero-banner">
+        <div className="treasury-hero-left">
+          <div className="treasury-hero-badge">
             ✨ MASTER PRODUCT TREASURY
           </div>
-          <h2 style={{ fontSize: '22px', fontWeight: 900, margin: '0 0 6px', color: '#f8fafc', letterSpacing: '-0.5px' }}>
+          <h2 className="treasury-hero-title">
             Browse & Import Products to Your Store
           </h2>
-          <p style={{ margin: 0, color: '#94a3b8', fontSize: '13.5px', maxWidth: '640px', lineHeight: 1.45 }}>
+          <p className="treasury-hero-desc">
             All products are stocked centrally in Bazario warehouse. Click <b>"Add to Store"</b> to instantly list them in your catalog. Central stock automatically syncs across all orders!
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ background: 'rgba(255, 255, 255, 0.08)', padding: '10px 16px', borderRadius: '10px', textAlign: 'center', border: '1px solid rgba(255, 255, 255, 0.12)' }}>
-            <div style={{ fontSize: '10.5px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>
-              Master Catalog
-            </div>
-            <div style={{ fontSize: '20px', fontWeight: 800, color: '#38bdf8' }}>{totalInTreasury} Items</div>
+        <div className="treasury-hero-stats">
+          <div className="treasury-stat-box">
+            <div className="treasury-stat-lbl">Master Catalog</div>
+            <div className="treasury-stat-val val-blue">{totalInTreasury} Items</div>
           </div>
 
-          <div style={{ background: 'rgba(255, 255, 255, 0.08)', padding: '10px 16px', borderRadius: '10px', textAlign: 'center', border: '1px solid rgba(255, 255, 255, 0.12)' }}>
-            <div style={{ fontSize: '10.5px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 700 }}>
-              In Your Store
-            </div>
-            <div style={{ fontSize: '20px', fontWeight: 800, color: '#4ade80' }}>{inMyStoreCount} Items</div>
+          <div className="treasury-stat-box">
+            <div className="treasury-stat-lbl">In Your Store</div>
+            <div className="treasury-stat-val val-green">{inMyStoreCount} Items</div>
           </div>
 
-          <Link
-            to="/seller/products"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '10px 16px',
-              background: '#ffffff',
-              color: '#0f172a',
-              borderRadius: '8px',
-              fontWeight: 700,
-              textDecoration: 'none',
-              fontSize: '13px',
-              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-            }}
-          >
+          <Link to="/seller/products" className="treasury-my-prods-link">
             My Products →
           </Link>
         </div>
@@ -218,75 +182,65 @@ export default function SellerTreasury() {
       {/* Filter and Search Bar */}
       <div className="seller-treasury-toolbar">
         <div className="treasury-search-row">
-          <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: '10px', flex: '1 1 300px' }}>
+          <form onSubmit={handleSearchSubmit} className="treasury-search-form">
             <div className="treasury-input-wrap">
-              <span className="search-icon"><Ic name="search" size={17} /></span>
+              <span className="search-icon"><Ic name="search" size={16} /></span>
               <input
                 type="text"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Search by title, brand, or SKU..."
+                placeholder="Search title, brand, or SKU…"
               />
+              {q && (
+                <button
+                  type="button"
+                  onClick={() => setQ('')}
+                  className="treasury-clear-search-btn"
+                  title="Clear search"
+                  aria-label="Clear search"
+                >
+                  ✕
+                </button>
+              )}
             </div>
-            <button type="submit" className="seller-btn-pri" style={{ padding: '0 18px', height: '42px' }}>
-              Search
+            <button type="submit" className="treasury-search-btn">
+              <Ic name="search" size={15} />
+              <span>Search</span>
             </button>
           </form>
 
           {/* Store Filter Tabs */}
-          <div style={{ display: 'flex', gap: '6px', background: '#f1f5f9', padding: '4px', borderRadius: '8px', flexWrap: 'wrap' }}>
+          <div className="treasury-store-filter-tabs">
             <button
+              type="button"
               onClick={() => setStoreFilter('not_added')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: 'none',
-                background: storeFilter === 'not_added' ? '#fff' : 'transparent',
-                color: storeFilter === 'not_added' ? '#0f172a' : '#64748b',
-                fontWeight: storeFilter === 'not_added' ? 700 : 500,
-                fontSize: '12.5px',
-                cursor: 'pointer',
-                boxShadow: storeFilter === 'not_added' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-              }}
+              className={`treasury-store-tab ${storeFilter === 'not_added' ? 'active' : ''}`}
             >
-              Available to Add ({products.filter((p) => !p.isAddedToStore).length})
+              <span className="tab-label-full">Available to Add</span>
+              <span className="tab-label-short">Available</span>
+              <span className="tab-count-badge">({products.filter((p) => !p.isAddedToStore).length})</span>
             </button>
 
             <button
+              type="button"
               onClick={() => setStoreFilter('all')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: 'none',
-                background: storeFilter === 'all' ? '#fff' : 'transparent',
-                color: storeFilter === 'all' ? '#0f172a' : '#64748b',
-                fontWeight: storeFilter === 'all' ? 700 : 500,
-                fontSize: '12.5px',
-                cursor: 'pointer',
-                boxShadow: storeFilter === 'all' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-              }}
+              className={`treasury-store-tab ${storeFilter === 'all' ? 'active' : ''}`}
             >
-              All Products ({products.length})
+              <span className="tab-label-full">All Products</span>
+              <span className="tab-label-short">All</span>
+              <span className="tab-count-badge">({products.length})</span>
             </button>
 
             <button
+              type="button"
               onClick={() => setStoreFilter('added')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: 'none',
-                background: storeFilter === 'added' ? '#fff' : 'transparent',
-                color: storeFilter === 'added' ? '#0f172a' : '#64748b',
-                fontWeight: storeFilter === 'added' ? 700 : 500,
-                fontSize: '12.5px',
-                cursor: 'pointer',
-                boxShadow: storeFilter === 'added' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-              }}
+              className={`treasury-store-tab ${storeFilter === 'added' ? 'active' : ''}`}
             >
-              In My Store ({inMyStoreCount})
+              <span className="tab-label-full">In My Store</span>
+              <span className="tab-label-short">In Store</span>
+              <span className="tab-count-badge">({inMyStoreCount})</span>
             </button>
           </div>
-
         </div>
 
         {/* Category Pills Bar */}
@@ -360,15 +314,28 @@ export default function SellerTreasury() {
 
                   {/* Stock Pill */}
                   <div className="treasury-stock-pill">
-                    📦 {stockQty.toLocaleString()} in Warehouse
+                    📦 {stockQty.toLocaleString()}
                   </div>
 
-                  {/* In Store Tag */}
-                  {isAdded && (
-                    <div className="treasury-in-store-tag">
-                      ✓ Added to Store
-                    </div>
-                  )}
+                  {/* Top Action Button or In-Store Badge */}
+                  <div className="treasury-top-action-wrap">
+                    {!isAdded ? (
+                      <button
+                        type="button"
+                        className="treasury-top-add-btn"
+                        onClick={(e) => handleAddToStore(p, e)}
+                        disabled={isLoading || isOutOfStock}
+                        title="Add to Store"
+                      >
+                        <Ic name="plus" size={13} />
+                        <span>{isLoading ? 'Adding…' : 'Add to Store'}</span>
+                      </button>
+                    ) : (
+                      <div className="treasury-in-store-tag">
+                        ✓ In Store
+                      </div>
+                    )}
+                  </div>
 
                   {/* Desktop Hover Overlay */}
                   <div className="treasury-hover-action-overlay">
@@ -406,31 +373,9 @@ export default function SellerTreasury() {
 
                 {/* Card Body Details */}
                 <div className="treasury-card-body">
-                  {isAdded && (
-                    <div
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        background: '#ecfdf5',
-                        color: '#047857',
-                        border: '1px solid #a7f3d0',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        fontSize: '10px',
-                        fontWeight: 800,
-                        marginBottom: '6px',
-                        alignSelf: 'flex-start',
-                        boxShadow: '0 1px 2px rgba(16, 185, 129, 0.1)',
-                      }}
-                    >
-                      ✓ Already in Store
-                    </div>
-                  )}
-
                   <div className="treasury-card-meta">
                     <span className="treasury-card-brand">{p.brand || p.category?.name || 'General'}</span>
-                    <span style={{ fontFamily: 'monospace' }}>SKU: {p.sku || 'N/A'}</span>
+                    <span className="treasury-sku-text">SKU: {p.sku || 'N/A'}</span>
                   </div>
 
                   <h3 className="treasury-card-title" title={p.name}>
@@ -448,75 +393,37 @@ export default function SellerTreasury() {
                   </div>
                 </div>
 
-                {/* Mobile Direct Add / Remove Button (Visible on Touch/Mobile Screens) */}
-                <div className="treasury-mobile-add-btn">
+                {/* Bottom Action Button Bar */}
+                <div className="treasury-card-bottom-actions">
                   {!isAdded ? (
                     <button
                       type="button"
+                      className="treasury-btn-bottom-add"
                       onClick={(e) => handleAddToStore(p, e)}
                       disabled={isLoading || isOutOfStock}
-                      style={{
-                        width: '100%',
-                        padding: '10px',
-                        background: isOutOfStock ? '#94a3b8' : '#2563eb',
-                        color: '#ffffff',
-                        border: 'none',
-                        borderRadius: '8px',
-                        fontWeight: 700,
-                        fontSize: '13px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '6px',
-                        cursor: isOutOfStock ? 'not-allowed' : 'pointer',
-                      }}
                     >
-                      <Ic name="plus" size={16} />
+                      <Ic name="plus" size={15} />
                       {isLoading ? 'Adding…' : 'Add to Store'}
                     </button>
                   ) : (
-                    <div style={{ display: 'flex', gap: '4px', width: '100%' }}>
+                    <div className="treasury-bottom-added-group">
                       <Link
                         to="/seller/products"
-                        style={{
-                          flex: 1,
-                          padding: '5px 3px',
-                          background: '#ecfdf5',
-                          color: '#065f46',
-                          border: '1px solid #a7f3d0',
-                          borderRadius: '4px',
-                          fontSize: '10px',
-                          fontWeight: 800,
-                          textAlign: 'center',
-                          textDecoration: 'none',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
+                        className="treasury-btn-bottom-view"
+                        onClick={(e) => e.stopPropagation()}
                       >
                         ✓ In Store
                       </Link>
                       <button
                         type="button"
+                        className="treasury-btn-bottom-remove"
                         onClick={(e) => handleRemoveFromStore(p, e)}
                         disabled={isLoading}
                         title="Remove product from your store"
-                        style={{
-                          padding: '5px 5px',
-                          background: '#fef2f2',
-                          color: '#b91c1c',
-                          border: '1px solid #fca5a5',
-                          borderRadius: '4px',
-                          fontSize: '9.5px',
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                        }}
                       >
                         {isLoading ? '…' : 'Remove'}
                       </button>
                     </div>
-
                   )}
                 </div>
               </div>

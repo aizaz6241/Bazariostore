@@ -13,6 +13,8 @@ import './styles/seller.css';
 import './styles/admin.css';
 import './styles/chat.css';
 import './styles/responsive.css';
+import './styles/seller/treasury.css';
+import './styles/admin/treasury.css';
 import './styles.css';
 
 // PWA Service Worker Management
