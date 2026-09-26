@@ -7,19 +7,23 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-// Factory to create high-reliability transporter with forced IPv4 and connection pooling
-function createTransporter(port = 465, secure = true) {
+const DEFAULT_FROM = process.env.EMAIL_FROM || '"Bazario Support" <itxezooo@gmail.com>';
+
+/**
+ * Factory to create high-reliability transporter for serverless (Vercel) & persistent runtimes.
+ * NOTE: pool MUST be false in serverless to prevent frozen zombie socket timeouts.
+ */
+function createTransporter(port = 587, secure = false) {
   return nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port,
     secure,
-    family: 4, // CRITICAL: Force IPv4 to prevent Node.js DNS hanging on unroutable IPv6
-    pool: true, // Keep connection pool warm to eliminate cold TLS handshake timeouts
-    maxConnections: 3,
-    maxMessages: 50,
-    connectionTimeout: 10000, // 10s connection timeout
-    greetingTimeout: 7000,    // 7s greeting timeout
-    socketTimeout: 15000,     // 15s socket timeout
+    requireTLS: port === 587,
+    family: 4, // Force IPv4 to prevent DNS hanging on unroutable IPv6
+    pool: false, // CRITICAL FOR VERCEL: Do not pool sockets in ephemeral Lambdas!
+    connectionTimeout: 7000, // 7s max connection timeout
+    greetingTimeout: 4000,
+    socketTimeout: 10000,
     auth: {
       user: process.env.EMAIL_USER || 'itxezooo@gmail.com',
       pass: process.env.EMAIL_PASS || 'vhqlxwhngiqhehbo',
@@ -27,10 +31,70 @@ function createTransporter(port = 465, secure = true) {
   });
 }
 
-const transporter = createTransporter(465, true);
-const fallbackTransporter = createTransporter(587, false);
+// Global transporters: Port 587 (STARTTLS) primary for cloud / Vercel compatibility, Port 465 fallback
+const primaryTransporter = createTransporter(587, false);
+const fallbackTransporter = createTransporter(465, true);
 
-const DEFAULT_FROM = process.env.EMAIL_FROM || '"Bazario Support" <itxezooo@gmail.com>';
+/**
+ * Unified Email Dispatcher with Multi-Provider Support:
+ * 1. If RESEND_API_KEY is configured, sends via native HTTPS REST API (Port 443 - zero socket block)
+ * 2. Otherwise uses Nodemailer Port 587 (STARTTLS) with automatic Port 465 fallback
+ */
+export async function sendEmail({ to, subject, html, text }) {
+  const targetEmail = Array.isArray(to) ? to[0] : to;
+
+  // 1. Resend HTTPS REST API (Port 443) - 100% immune to cloud SMTP port blocks
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: process.env.RESEND_FROM || process.env.EMAIL_FROM || 'Bazario <onboarding@resend.dev>',
+          to: [targetEmail],
+          subject,
+          html,
+          text,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data?.id) {
+        console.log(`[Resend-Sent] Email to ${targetEmail} (Id: ${data.id})`);
+        return { success: true, messageId: data.id, provider: 'resend' };
+      }
+      console.warn('[Resend-Warning] Resend API error, falling back to SMTP:', data);
+    } catch (resendErr) {
+      console.warn('[Resend-Warning] Resend failed, falling back to SMTP:', resendErr.message);
+    }
+  }
+
+  // 2. Serverless SMTP (Port 587 STARTTLS first, then Port 465 fallback)
+  try {
+    const info = await primaryTransporter.sendMail({
+      from: DEFAULT_FROM,
+      to: targetEmail,
+      subject,
+      html,
+      text,
+    });
+    console.log(`[Email-Sent] (Port 587) to ${targetEmail} (MessageId: ${info.messageId})`);
+    return { success: true, messageId: info.messageId, provider: 'smtp-587' };
+  } catch (primaryErr) {
+    console.warn(`[Email-Warning] Port 587 failed (${primaryErr.message}). Retrying on Port 465...`);
+    const info = await fallbackTransporter.sendMail({
+      from: DEFAULT_FROM,
+      to: targetEmail,
+      subject,
+      html,
+      text,
+    });
+    console.log(`[Email-Sent] (Port 465) to ${targetEmail} (MessageId: ${info.messageId})`);
+    return { success: true, messageId: info.messageId, provider: 'smtp-465' };
+  }
+}
 
 /**
  * Base Email Wrapper with Responsive Styling & Professional Branding
@@ -121,26 +185,11 @@ export async function sendVerificationOtpEmail({ to, name = 'User', otp, role = 
       bodyContent,
     });
 
-    let info;
-    try {
-      info = await transporter.sendMail({
-        from: DEFAULT_FROM,
-        to,
-        subject: `[Bazario] ${otp} is your verification code`,
-        html,
-      });
-    } catch (primaryErr) {
-      console.warn(`[Email-Warning] Port 465 send failed (${primaryErr.message}). Retrying on Port 587 (TLS)...`);
-      info = await fallbackTransporter.sendMail({
-        from: DEFAULT_FROM,
-        to,
-        subject: `[Bazario] ${otp} is your verification code`,
-        html,
-      });
-    }
-
-    console.log(`[Email-Sent] Verification OTP to ${to} (MessageId: ${info.messageId})`);
-    return { success: true, messageId: info.messageId };
+    return await sendEmail({
+      to,
+      subject: `[Bazario] ${otp} is your verification code`,
+      html,
+    });
   } catch (error) {
     console.error(`[Email-Error] Failed to send verification OTP to ${to}:`, error);
     throw error;
@@ -183,15 +232,11 @@ export async function sendPasswordResetEmail({ to, name = 'User', resetUrl, otp,
       bodyContent,
     });
 
-    const info = await transporter.sendMail({
-      from: DEFAULT_FROM,
+    return await sendEmail({
       to,
       subject: `[Bazario] Password Reset Request`,
       html,
     });
-
-    console.log(`[Email-Sent] Password reset to ${to} (MessageId: ${info.messageId})`);
-    return { success: true, messageId: info.messageId };
   } catch (error) {
     console.error(`[Email-Error] Failed to send password reset email to ${to}:`, error);
     throw error;
@@ -228,8 +273,7 @@ export async function sendWelcomeEmail({ to, name = 'User', role = 'Customer' })
       bodyContent,
     });
 
-    await transporter.sendMail({
-      from: DEFAULT_FROM,
+    return await sendEmail({
       to,
       subject: `[Bazario] Welcome aboard, ${name}! 🎉`,
       html,
@@ -269,8 +313,7 @@ export async function sendSellerApprovalEmail({ to, name, storeName }) {
       bodyContent,
     });
 
-    await transporter.sendMail({
-      from: DEFAULT_FROM,
+    return await sendEmail({
       to,
       subject: `[Bazario] Your Merchant Store "${storeName}" is Approved! 🚀`,
       html,
@@ -281,7 +324,8 @@ export async function sendSellerApprovalEmail({ to, name, storeName }) {
 }
 
 export default {
-  transporter,
+  transporter: primaryTransporter,
+  sendEmail,
   sendVerificationOtpEmail,
   sendPasswordResetEmail,
   sendWelcomeEmail,

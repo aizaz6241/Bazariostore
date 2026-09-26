@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import Seller from '../../models/Seller.js';
+import RegistrationOtp from '../../models/RegistrationOtp.js';
 import { authSeller } from '../../middleware/auth.js';
 import { slugify } from './helpers.js';
 import { notify } from '../../utils/notify.js';
@@ -15,7 +16,7 @@ function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// In-memory / temporary registration OTP store
+// In-memory fallback cache
 const pendingRegistrationOtps = new Map();
 
 // POST /api/sellers/send-otp (Send / Resend OTP to seller business email)
@@ -35,6 +36,18 @@ router.post('/send-otp', async (req, res) => {
     const otp = generateOtp();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
 
+    // 1. Persist to MongoDB Atlas so all Vercel serverless instances share this record
+    try {
+      await RegistrationOtp.findOneAndUpdate(
+        { email },
+        { otp, expiresAt, attempts: 0, verified: false, name: ownerName },
+        { upsert: true, new: true }
+      );
+    } catch (dbErr) {
+      console.error('[RegistrationOtp-Save-Error]', dbErr.message);
+    }
+
+    // 2. Keep in memory as local fallback
     pendingRegistrationOtps.set(email, { otp, expiresAt, attempts: 0 });
 
     await sendVerificationOtpEmail({
@@ -64,28 +77,43 @@ router.post('/verify-otp', async (req, res) => {
       return res.status(400).json({ message: 'Email and 6-digit verification code are required' });
     }
 
-    const record = pendingRegistrationOtps.get(email);
+    // Check MongoDB first, fallback to memory
+    let record = null;
+    try {
+      record = await RegistrationOtp.findOne({ email });
+    } catch {}
+    if (!record) {
+      record = pendingRegistrationOtps.get(email);
+    }
+
     if (!record) {
       return res.status(400).json({ message: 'No pending verification found. Please request a new code.' });
     }
 
     if (new Date() > new Date(record.expiresAt)) {
+      try { await RegistrationOtp.deleteOne({ email }); } catch {}
       pendingRegistrationOtps.delete(email);
       return res.status(400).json({ message: 'Verification code has expired. Please request a new code.' });
     }
 
     if (record.attempts >= 5) {
+      try { await RegistrationOtp.deleteOne({ email }); } catch {}
       pendingRegistrationOtps.delete(email);
       return res.status(400).json({ message: 'Too many invalid attempts. Please request a new code.' });
     }
 
     if (record.otp !== code) {
-      record.attempts += 1;
+      record.attempts = (record.attempts || 0) + 1;
+      if (record.save) await record.save();
       return res.status(400).json({ message: 'Invalid verification code. Please check your email.' });
     }
 
-    // Mark verified in memory
+    // Mark verified in MongoDB and memory
     record.verified = true;
+    if (record.save) await record.save();
+    if (pendingRegistrationOtps.has(email)) {
+      pendingRegistrationOtps.get(email).verified = true;
+    }
 
     res.json({
       ok: true,
@@ -131,14 +159,21 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: 'A merchant account with this email already exists' });
     }
 
-    // Check OTP if passed or verified
-    const pending = pendingRegistrationOtps.get(cleanEmail);
+    // Check OTP if passed or verified (MongoDB first, then memory)
+    let record = null;
+    try {
+      record = await RegistrationOtp.findOne({ email: cleanEmail });
+    } catch {}
+    const pending = record || pendingRegistrationOtps.get(cleanEmail);
+
     let isEmailVerified = false;
     if (otp && pending && pending.otp === String(otp).trim() && new Date() <= new Date(pending.expiresAt)) {
       isEmailVerified = true;
+      try { await RegistrationOtp.deleteOne({ email: cleanEmail }); } catch {}
       pendingRegistrationOtps.delete(cleanEmail);
     } else if (pending && pending.verified) {
       isEmailVerified = true;
+      try { await RegistrationOtp.deleteOne({ email: cleanEmail }); } catch {}
       pendingRegistrationOtps.delete(cleanEmail);
     }
 
