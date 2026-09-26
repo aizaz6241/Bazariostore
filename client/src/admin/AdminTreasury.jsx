@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom';
 import { api, money } from '../api.js';
 import { Toggle, ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
+import '../styles/admin/treasury.css';
 
 export default function AdminTreasury() {
+  const [viewMode, setViewMode] = useState('cards');
   const [products, setProducts] = useState([]);
   const [summary, setSummary] = useState({
     totalProducts: 0,
@@ -192,7 +194,7 @@ export default function AdminTreasury() {
       {/* Filters Toolbar */}
       <div className="treasury-filter-card">
         <div className="treasury-filter-left">
-          <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: '8px', flex: '1 1 300px' }}>
+          <form onSubmit={handleSearchSubmit} className="treasury-admin-search-form">
             <div className="treasury-search-box">
               <span className="treasury-search-icon"><Ic name="search" size={16} /></span>
               <input
@@ -200,48 +202,81 @@ export default function AdminTreasury() {
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search by title, SKU, brand…"
               />
+              {q && (
+                <button
+                  type="button"
+                  onClick={() => setQ('')}
+                  className="treasury-search-clear-btn"
+                  title="Clear search"
+                  aria-label="Clear search"
+                >
+                  ✕
+                </button>
+              )}
             </div>
-            <button type="submit" className="btn-primary" style={{ padding: '0 16px', height: '40px' }}>
+            <button type="submit" className="btn-primary treasury-search-submit-btn">
               Search
             </button>
           </form>
 
-          <select
-            className="treasury-select"
-            value={selectedCat}
-            onChange={(e) => setSelectedCat(e.target.value)}
-          >
-            <option value="">All Categories ({categories.length})</option>
-            {categories.map((c) => (
-              <option key={c._id} value={c._id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <div className="treasury-selects-row">
+            <select
+              className="treasury-select"
+              value={selectedCat}
+              onChange={(e) => setSelectedCat(e.target.value)}
+            >
+              <option value="">All Categories ({categories.length})</option>
+              {categories.map((c) => (
+                <option key={c._id} value={c._id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
 
-          <select
-            className="treasury-select"
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-          >
-            <option value="">Sort: Newest First</option>
-            <option value="stock-desc">Stock: High to Low</option>
-            <option value="stock-asc">Stock: Low to High</option>
-            <option value="price-asc">Price: Low to High</option>
-            <option value="price-desc">Price: High to Low</option>
-            <option value="name">Product Name (A-Z)</option>
-          </select>
+            <select
+              className="treasury-select"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+            >
+              <option value="">Sort: Newest First</option>
+              <option value="stock-desc">Stock: High to Low</option>
+              <option value="stock-asc">Stock: Low to High</option>
+              <option value="price-asc">Price: Low to High</option>
+              <option value="price-desc">Price: High to Low</option>
+              <option value="name">Product Name (A-Z)</option>
+            </select>
+          </div>
         </div>
 
-        <div className="treasury-filter-stats">
-          Total: <b style={{ color: '#0f172a' }}>{products.length}</b> items
+        <div className="treasury-filter-right">
+          <div className="treasury-filter-stats">
+            Total: <b style={{ color: '#0f172a' }}>{products.length}</b> items
+          </div>
+          <div className="treasury-view-toggle">
+            <button
+              type="button"
+              className={`view-toggle-btn ${viewMode === 'cards' ? 'active' : ''}`}
+              onClick={() => setViewMode('cards')}
+              title="Card Grid View"
+            >
+              <Ic name="grid" size={14} /> <span>Cards</span>
+            </button>
+            <button
+              type="button"
+              className={`view-toggle-btn ${viewMode === 'table' ? 'active' : ''}`}
+              onClick={() => setViewMode('table')}
+              title="Table View"
+            >
+              <Ic name="list" size={14} /> <span>Table</span>
+            </button>
+          </div>
         </div>
       </div>
 
       <ErrorBox error={error} />
 
-      {/* Main Treasury Products Table */}
-      <div className="treasury-table-container">
+      {/* Main Treasury Products Container */}
+      <div className={`treasury-table-container ${viewMode === 'cards' ? 'cards-mode' : ''}`}>
         {loading ? (
           <div style={{ padding: '48px', textAlign: 'center', color: '#64748b' }}>
             <p style={{ fontSize: '15px', fontWeight: 600 }}>Loading master products from Treasury…</p>
@@ -256,6 +291,109 @@ export default function AdminTreasury() {
             <Link to="/admin/treasury/new" className="btn-treasury-add">
               + Add First Master Product
             </Link>
+          </div>
+        ) : viewMode === 'cards' ? (
+          <div className="admin-treasury-cards-grid">
+            {products.map((p) => {
+              const isOut = (p.stock || 0) <= 0;
+              const isLow = !isOut && (p.stock || 0) <= (p.lowStockThreshold || 10);
+              const margin =
+                p.price > 0 && p.costPrice > 0
+                  ? Math.round(((p.price - p.costPrice) / p.price) * 100)
+                  : null;
+
+              return (
+                <div
+                  key={p._id}
+                  className={`admin-treasury-card ${p.active ? '' : 'is-inactive'}`}
+                >
+                  {/* Top Image Box */}
+                  <div className="admin-card-img-box">
+                    <img
+                      src={p.image || p.images?.[0]?.url || '/img/products/serum.svg'}
+                      alt={p.name}
+                      loading="lazy"
+                    />
+
+                    {/* Stock Badge Top Left */}
+                    <div className={`admin-card-stock-pill ${isOut ? 'out' : isLow ? 'low' : 'ok'}`}>
+                      📦 {(p.stock || 0).toLocaleString()} {isOut ? 'Out' : 'Units'}
+                    </div>
+
+                    {/* Active Toggle Top Right */}
+                    <div className="admin-card-active-toggle" title={p.active ? 'Active in Treasury' : 'Inactive'}>
+                      <Toggle small on={p.active} onChange={() => toggleActive(p)} />
+                    </div>
+                  </div>
+
+                  {/* Card Body */}
+                  <div className="admin-card-body">
+                    <div className="admin-card-meta">
+                      <span className="admin-card-brand">{p.brand || 'General'}</span>
+                      <span className="admin-card-sku">SKU: {p.sku || 'N/A'}</span>
+                    </div>
+
+                    <span className="admin-card-cat-badge">
+                      {p.category?.name || 'General'}
+                    </span>
+
+                    <h3 className="admin-card-title" title={p.name}>
+                      {p.name}
+                    </h3>
+
+                    {/* Pricing */}
+                    <div className="admin-card-pricing">
+                      <div className="admin-card-prices">
+                        <span className="admin-card-retail">{money(p.price)}</span>
+                        <span className="admin-card-cost">Cost: {money(p.costPrice || 0)}</span>
+                      </div>
+                      {margin !== null && (
+                        <div className="admin-card-margin">
+                          +{margin}%
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Listed By Sellers Button */}
+                    <button
+                      type="button"
+                      className="admin-card-sellers-btn"
+                      onClick={() => viewSellers(p)}
+                      title="View sellers listing this product"
+                    >
+                      🏪 {p.sellersCount || 0} {(p.sellersCount || 0) === 1 ? 'Seller' : 'Sellers'}
+                    </button>
+                  </div>
+
+                  {/* Card Bottom Actions */}
+                  <div className="admin-card-actions">
+                    <button
+                      type="button"
+                      className="admin-btn-card-stock"
+                      onClick={() => openRestock(p)}
+                      title="Adjust Central Stock"
+                    >
+                      <Ic name="plus" size={13} /> Stock
+                    </button>
+                    <Link
+                      to={`/admin/treasury/${p._id}`}
+                      className="admin-btn-card-edit"
+                      title="Edit Product"
+                    >
+                      Edit
+                    </Link>
+                    <button
+                      type="button"
+                      className="admin-btn-card-delete"
+                      onClick={() => deleteProduct(p)}
+                      title="Delete Product"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div className="treasury-table-scroll">
