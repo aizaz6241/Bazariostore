@@ -13,6 +13,10 @@ export default function SellerLogin() {
 
   const [mode, setMode] = useState('login'); // 'login' | 'register'
   
+  // Registration Submitted State
+  const [submittedInfo, setSubmittedInfo] = useState(null);
+  const [isPendingApprovalErr, setIsPendingApprovalErr] = useState(false);
+
   // Login State
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -49,6 +53,7 @@ export default function SellerLogin() {
   const submit = async (e) => {
     e.preventDefault();
     setErr('');
+    setIsPendingApprovalErr(false);
     setSuccessMsg('');
     setLoading(true);
     try {
@@ -59,6 +64,9 @@ export default function SellerLogin() {
       loginSeller(data.token, data.seller);
       navigate('/seller');
     } catch (e) {
+      if (e.isPendingApproval || (e.message && e.message.toLowerCase().includes('pending admin approval'))) {
+        setIsPendingApprovalErr(true);
+      }
       setErr(e.message || 'Login failed. Please check your business email and password.');
     } finally {
       setLoading(false);
@@ -81,6 +89,7 @@ export default function SellerLogin() {
   const handleRegister = async (e) => {
     e.preventDefault();
     setErr('');
+    setIsPendingApprovalErr(false);
     setSuccessMsg('');
     setLoading(true);
     try {
@@ -89,8 +98,15 @@ export default function SellerLogin() {
         body: regForm,
       });
 
-      setSuccessMsg(res?.message || '🎉 Application submitted successfully! Platform Admin will review your KYC documents and approve your account.');
-      setMode('login');
+      setSubmittedInfo({
+        storeName: regForm.storeName,
+        ownerName: regForm.ownerName,
+        email: regForm.email,
+        phone: regForm.phone,
+        submittedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      });
+      setEmail(regForm.email); // Pre-fill email in login tab
+      setMode('submitted');
       setRegForm({
         storeName: '',
         ownerName: '',
@@ -161,7 +177,7 @@ export default function SellerLogin() {
 
   return (
     <div className="auth-page">
-      <div className="card auth-card" style={{ maxWidth: mode === 'register' ? 560 : 440 }}>
+      <div className="card auth-card" style={{ maxWidth: mode === 'register' ? 560 : mode === 'submitted' ? 500 : 440 }}>
         {/* Brand & Badge */}
         <div className="seller-auth-brand">
           <div className="amazon-logo-seller">
@@ -188,7 +204,7 @@ export default function SellerLogin() {
         <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: 8, padding: 3, marginBottom: 16 }}>
           <button
             type="button"
-            onClick={() => { setMode('login'); setErr(''); }}
+            onClick={() => { setMode('login'); setErr(''); setIsPendingApprovalErr(false); }}
             style={{
               flex: 1,
               padding: '8px 12px',
@@ -206,7 +222,7 @@ export default function SellerLogin() {
           </button>
           <button
             type="button"
-            onClick={() => { setMode('register'); setErr(''); }}
+            onClick={() => { setMode('register'); setErr(''); setIsPendingApprovalErr(false); }}
             style={{
               flex: 1,
               padding: '8px 12px',
@@ -222,23 +238,201 @@ export default function SellerLogin() {
           >
             📝 Register as Seller
           </button>
+          {mode === 'submitted' && (
+            <button
+              type="button"
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                border: 'none',
+                borderRadius: 6,
+                fontSize: 13,
+                fontWeight: 800,
+                cursor: 'default',
+                background: '#ffffff',
+                color: '#b45309',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+              }}
+            >
+              ⏳ Review Status
+            </button>
+          )}
         </div>
 
-        {successMsg && (
+        {/* Pending Approval Error Notice when attempting to log in */}
+        {isPendingApprovalErr && (
+          <div style={{
+            background: '#fffbeb',
+            border: '1.5px solid #fde68a',
+            borderRadius: 8,
+            padding: '14px 16px',
+            marginBottom: 16,
+            color: '#92400e',
+            textAlign: 'left',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+              <span style={{ fontSize: 22 }}>⏳</span>
+              <div>
+                <b style={{ display: 'block', fontSize: 13.5, marginBottom: 4, color: '#b45309' }}>
+                  Account Under Review (اکاؤنٹ ابھی جائزہ میں ہے)
+                </b>
+                <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: '#78350f' }}>
+                  Aapki merchant application abhi Super Admin team ke review aur approval ke liye pending hai. Direct sign-in abhi active nahi hai. Platform Admin jab aapke KYC documents verify karke <b>Approve</b> karega, tab aap log in kar sakenge.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {successMsg && !isPendingApprovalErr && mode !== 'submitted' && (
           <div className="alert-success" style={{ marginBottom: 16 }}>
             <Ic name="checkCircle" size={16} />
             <span>{successMsg}</span>
           </div>
         )}
 
-        {err && (
+        {err && !isPendingApprovalErr && (
           <div className="alert-error" style={{ marginBottom: 16 }}>
             <Ic name="shield" size={16} />
             <span>{err}</span>
           </div>
         )}
 
-        {mode === 'login' ? (
+        {mode === 'submitted' ? (
+          <div className="seller-submitted-view" style={{ textAlign: 'center', padding: '6px 2px' }}>
+            <div style={{
+              width: 68,
+              height: 68,
+              borderRadius: '50%',
+              background: '#fef3c7',
+              color: '#d97706',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 34,
+              margin: '0 auto 16px',
+              border: '2px solid #fde68a',
+              boxShadow: '0 4px 14px rgba(217, 119, 6, 0.15)',
+            }}>
+              📋
+            </div>
+
+            <h3 style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', marginBottom: 6 }}>
+              Application Successfully Submitted!
+            </h3>
+            <p style={{ fontSize: 13.5, color: '#64748b', marginBottom: 18, lineHeight: 1.5 }}>
+              Aapki merchant registration request Super Admin team ko bhej di gayi hai.
+            </p>
+
+            {/* Crucial Notice: Direct Sign-in Not Active */}
+            <div style={{
+              background: '#fffbeb',
+              border: '1.5px solid #fde68a',
+              borderRadius: 10,
+              padding: '14px 16px',
+              textAlign: 'left',
+              marginBottom: 18,
+            }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <span style={{ fontSize: 22 }}>⚠️</span>
+                <div>
+                  <b style={{ color: '#b45309', fontSize: 13.5, display: 'block', marginBottom: 4 }}>
+                    Abhi Aap Directly Sign In Nahi Kar Sakte!
+                  </b>
+                  <p style={{ margin: 0, fontSize: 12.5, color: '#78350f', lineHeight: 1.5 }}>
+                    Aapka account abhi <b>Review &amp; Verification</b> status mein hai. Platform Admin pehle aapke KYC documents (ID, passport, bank details) ka jaiza lenge. Approval milne ke baad hi aapka account active hoga aur aap apne registered email aur password se sign in kar sakenge.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Application Summary Box */}
+            {submittedInfo && (
+              <div style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: 10,
+                padding: '14px 16px',
+                textAlign: 'left',
+                marginBottom: 18,
+                fontSize: 13,
+              }}>
+                <div style={{ fontWeight: 800, color: '#334155', marginBottom: 10, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                  📑 Registration Details
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, color: '#475569', fontSize: 12.5 }}>
+                  <div><b>Store Name:</b> <span style={{ color: '#0f172a', fontWeight: 600 }}>{submittedInfo.storeName}</span></div>
+                  <div><b>Owner:</b> <span style={{ color: '#0f172a', fontWeight: 600 }}>{submittedInfo.ownerName}</span></div>
+                  <div style={{ gridColumn: 'span 2' }}><b>Email:</b> <span style={{ color: '#0f172a', fontWeight: 600 }}>{submittedInfo.email}</span></div>
+                  <div style={{ gridColumn: 'span 2', marginTop: 4 }}>
+                    <b>Current Status:</b>{' '}
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      background: '#fef3c7',
+                      color: '#b45309',
+                      padding: '3px 10px',
+                      borderRadius: 12,
+                      fontWeight: 800,
+                      fontSize: 11.5,
+                      border: '1px solid #fde68a',
+                    }}>
+                      ⏳ Under Review (Pending Admin Approval)
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Next Steps Guide */}
+            <div style={{
+              background: '#f0fdf4',
+              border: '1px solid #bbf7d0',
+              borderRadius: 10,
+              padding: '12px 14px',
+              textAlign: 'left',
+              marginBottom: 20,
+              fontSize: 12.5,
+              color: '#166534',
+            }}>
+              <b style={{ display: 'block', marginBottom: 4 }}>✨ Agla Step Kya Hoga?</b>
+              <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>
+                <li>Admin panel se KYC documents verify kiye jayenge.</li>
+                <li>Admin ke <b>Approve</b> karne ke baad account activate hoga.</li>
+                <li>Approval ke baad aap isi portal par aakar login kar sakenge.</li>
+              </ul>
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button
+                type="button"
+                className="btn-primary btn-block"
+                style={{ padding: '12px', fontSize: 13.5, fontWeight: 800 }}
+                onClick={() => {
+                  setMode('login');
+                  setErr('');
+                  setIsPendingApprovalErr(false);
+                }}
+              >
+                Go to Sign In Portal →
+              </button>
+              <button
+                type="button"
+                className="btn-outline btn-block"
+                style={{ padding: '10px', fontSize: 13 }}
+                onClick={() => {
+                  setMode('register');
+                  setErr('');
+                  setIsPendingApprovalErr(false);
+                }}
+              >
+                Submit Another Application
+              </button>
+            </div>
+          </div>
+        ) : mode === 'login' ? (
           <form onSubmit={submit} className="auth-form-clean">
             <div className="field">
               <label>Business Email Address</label>
