@@ -274,10 +274,10 @@ export default function SellerLogin() {
               <span style={{ fontSize: 22 }}>⏳</span>
               <div>
                 <b style={{ display: 'block', fontSize: 13.5, marginBottom: 4, color: '#b45309' }}>
-                  Account Under Review (اکاؤنٹ ابھی جائزہ میں ہے)
+                  Account Under Review
                 </b>
                 <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: '#78350f' }}>
-                  Aapki merchant application abhi Super Admin team ke review aur approval ke liye pending hai. Direct sign-in abhi active nahi hai. Platform Admin jab aapke KYC documents verify karke <b>Approve</b> karega, tab aap log in kar sakenge.
+                  Your merchant application is currently pending review and verification by the Super Admin team. Direct sign-in is not active yet. Once the Platform Admin approves your account, you will be able to log in.
                 </p>
               </div>
             </div>
@@ -321,7 +321,7 @@ export default function SellerLogin() {
               Application Successfully Submitted!
             </h3>
             <p style={{ fontSize: 13.5, color: '#64748b', marginBottom: 18, lineHeight: 1.5 }}>
-              Aapki merchant registration request Super Admin team ko bhej di gayi hai.
+              Your merchant registration request has been forwarded to the Super Admin team.
             </p>
 
             {/* Crucial Notice: Direct Sign-in Not Active */}
@@ -337,10 +337,10 @@ export default function SellerLogin() {
                 <span style={{ fontSize: 22 }}>⚠️</span>
                 <div>
                   <b style={{ color: '#b45309', fontSize: 13.5, display: 'block', marginBottom: 4 }}>
-                    Abhi Aap Directly Sign In Nahi Kar Sakte!
+                    Direct Sign-In Is Not Active Yet!
                   </b>
                   <p style={{ margin: 0, fontSize: 12.5, color: '#78350f', lineHeight: 1.5 }}>
-                    Aapka account abhi <b>Review &amp; Verification</b> status mein hai. Platform Admin pehle aapke KYC documents (ID, passport, bank details) ka jaiza lenge. Approval milne ke baad hi aapka account active hoga aur aap apne registered email aur password se sign in kar sakenge.
+                    Your account is currently under <b>Review &amp; Verification</b>. The Platform Admin will review your KYC documents (ID, passport, bank details). Once approved, your account will be activated and you will be able to sign in using your registered business email and password.
                   </p>
                 </div>
               </div>
@@ -396,11 +396,11 @@ export default function SellerLogin() {
               fontSize: 12.5,
               color: '#166534',
             }}>
-              <b style={{ display: 'block', marginBottom: 4 }}>✨ Agla Step Kya Hoga?</b>
+              <b style={{ display: 'block', marginBottom: 4 }}>✨ What Happens Next?</b>
               <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>
-                <li>Admin panel se KYC documents verify kiye jayenge.</li>
-                <li>Admin ke <b>Approve</b> karne ke baad account activate hoga.</li>
-                <li>Approval ke baad aap isi portal par aakar login kar sakenge.</li>
+                <li>Compliance team will verify your KYC documents.</li>
+                <li>Your account will be activated once approved by the Super Admin.</li>
+                <li>After approval, you can sign in directly through this portal.</li>
               </ul>
             </div>
 
