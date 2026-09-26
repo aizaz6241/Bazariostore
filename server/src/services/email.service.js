@@ -1,7 +1,15 @@
 import nodemailer from 'nodemailer';
+import dns from 'dns';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+// Force Node.js globally to prioritize IPv4 over IPv6
+if (dns.setDefaultResultOrder) {
+  try {
+    dns.setDefaultResultOrder('ipv4first');
+  } catch {}
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,11 +27,14 @@ function createTransporter(port = 587, secure = false) {
     port,
     secure,
     requireTLS: port === 587,
-    family: 4, // Force IPv4 to prevent DNS hanging on unroutable IPv6
     pool: false, // CRITICAL FOR VERCEL: Do not pool sockets in ephemeral Lambdas!
-    connectionTimeout: 7000, // 7s max connection timeout
-    greetingTimeout: 4000,
+    connectionTimeout: 8000, // 8s max connection timeout
+    greetingTimeout: 5000,
     socketTimeout: 10000,
+    lookup: (hostname, options, callback) => {
+      // Hard-lock to IPv4: strictly prevents connect ENETUNREACH on IPv6 in Vercel AWS Lambda
+      return dns.lookup(hostname, { family: 4 }, callback);
+    },
     auth: {
       user: process.env.EMAIL_USER || 'itxezooo@gmail.com',
       pass: process.env.EMAIL_PASS || 'vhqlxwhngiqhehbo',

@@ -1,3 +1,10 @@
+import dns from 'dns';
+if (dns.setDefaultResultOrder) {
+  try {
+    dns.setDefaultResultOrder('ipv4first');
+  } catch {}
+}
+
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
