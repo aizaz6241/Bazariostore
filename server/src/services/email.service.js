@@ -7,17 +7,28 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-// Create Nodemailer Transporter with Gmail SMTP
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  host: 'smtp.gmail.com',
-  port: 465,
-  secure: true,
-  auth: {
-    user: process.env.EMAIL_USER || 'itxezooo@gmail.com',
-    pass: process.env.EMAIL_PASS || 'vhqlxwhngiqhehbo',
-  },
-});
+// Factory to create high-reliability transporter with forced IPv4 and connection pooling
+function createTransporter(port = 465, secure = true) {
+  return nodemailer.createTransport({
+    host: 'smtp.gmail.com',
+    port,
+    secure,
+    family: 4, // CRITICAL: Force IPv4 to prevent Node.js DNS hanging on unroutable IPv6
+    pool: true, // Keep connection pool warm to eliminate cold TLS handshake timeouts
+    maxConnections: 3,
+    maxMessages: 50,
+    connectionTimeout: 10000, // 10s connection timeout
+    greetingTimeout: 7000,    // 7s greeting timeout
+    socketTimeout: 15000,     // 15s socket timeout
+    auth: {
+      user: process.env.EMAIL_USER || 'itxezooo@gmail.com',
+      pass: process.env.EMAIL_PASS || 'vhqlxwhngiqhehbo',
+    },
+  });
+}
+
+const transporter = createTransporter(465, true);
+const fallbackTransporter = createTransporter(587, false);
 
 const DEFAULT_FROM = process.env.EMAIL_FROM || '"Bazario Support" <itxezooo@gmail.com>';
 
@@ -102,18 +113,31 @@ export async function sendVerificationOtpEmail({ to, name = 'User', otp, role = 
       <p style="font-size: 13px; color: #64748b; margin-top: 20px;">If you did not request this registration, please ignore this email.</p>
     `;
 
+    console.log(`🔑 [OTP-Service] Generated ${otp} for ${to} (${roleLabel})`);
+
     const html = getEmailLayout({
       title: `Bazario Verification Code: ${otp}`,
       preheader: `Your verification code is ${otp}. Valid for 10 minutes.`,
       bodyContent,
     });
 
-    const info = await transporter.sendMail({
-      from: DEFAULT_FROM,
-      to,
-      subject: `[Bazario] ${otp} is your verification code`,
-      html,
-    });
+    let info;
+    try {
+      info = await transporter.sendMail({
+        from: DEFAULT_FROM,
+        to,
+        subject: `[Bazario] ${otp} is your verification code`,
+        html,
+      });
+    } catch (primaryErr) {
+      console.warn(`[Email-Warning] Port 465 send failed (${primaryErr.message}). Retrying on Port 587 (TLS)...`);
+      info = await fallbackTransporter.sendMail({
+        from: DEFAULT_FROM,
+        to,
+        subject: `[Bazario] ${otp} is your verification code`,
+        html,
+      });
+    }
 
     console.log(`[Email-Sent] Verification OTP to ${to} (MessageId: ${info.messageId})`);
     return { success: true, messageId: info.messageId };
