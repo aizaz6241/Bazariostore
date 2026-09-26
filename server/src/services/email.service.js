@@ -55,16 +55,17 @@ export async function sendEmail({ to, subject, html, text }) {
   const targetEmail = Array.isArray(to) ? to[0] : to;
 
   // 1. Resend HTTPS REST API (Port 443) - 100% immune to cloud SMTP port blocks
-  if (process.env.RESEND_API_KEY) {
+  const resendKey = process.env.RESEND_API_KEY;
+  if (resendKey) {
     try {
       const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+          Authorization: `Bearer ${resendKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: process.env.RESEND_FROM || process.env.EMAIL_FROM || 'Bazario <onboarding@resend.dev>',
+          from: process.env.RESEND_FROM || (process.env.EMAIL_FROM && !process.env.EMAIL_FROM.includes('@gmail.com') ? process.env.EMAIL_FROM : 'Bazario <onboarding@resend.dev>'),
           to: [targetEmail],
           subject,
           html,
