@@ -3,7 +3,6 @@ import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import Ic from '../components/Icons.jsx';
-import OtpVerificationModal from '../components/OtpVerificationModal.jsx';
 
 export default function SellerLogin() {
   const navigate = useNavigate();
@@ -21,11 +20,6 @@ export default function SellerLogin() {
   const [err, setErr] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
-
-  // Registration OTP State
-  const [otpModalOpen, setOtpModalOpen] = useState(false);
-  const [otpBusy, setOtpBusy] = useState(false);
-  const [otpNotice, setOtpNotice] = useState('');
 
   // Forgot Password Modal State
   const [forgotModalOpen, setForgotModalOpen] = useState(Boolean(urlResetToken));
@@ -90,37 +84,11 @@ export default function SellerLogin() {
     setSuccessMsg('');
     setLoading(true);
     try {
-      // Step 1: Send OTP to verify business email
-      const res = await api('/sellers/send-otp', {
-        method: 'POST',
-        body: { email: regForm.email, ownerName: regForm.ownerName },
-      });
-      if (res?.otp) setOtpNotice(`Verification Code: ${res.otp}`);
-      else setOtpNotice('');
-      setOtpModalOpen(true);
-    } catch (e) {
-      setErr(e.message || 'Failed to send verification code. Please check your email.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleVerifySellerOtp = async (otpString) => {
-    setOtpBusy(true);
-    try {
-      // Step 2: Verify OTP
-      await api('/sellers/verify-otp', {
-        method: 'POST',
-        body: { email: regForm.email, otp: otpString },
-      });
-
-      // Step 3: Complete registration with verified OTP
       const res = await api('/sellers/register', {
         method: 'POST',
-        body: { ...regForm, otp: otpString },
+        body: regForm,
       });
 
-      setOtpModalOpen(false);
       setSuccessMsg(res?.message || '🎉 Application submitted successfully! Platform Admin will review your KYC documents and approve your account.');
       setMode('login');
       setRegForm({
@@ -135,18 +103,11 @@ export default function SellerLogin() {
         bankStatementDocument: '',
         description: '',
       });
+    } catch (e) {
+      setErr(e.message || 'Registration failed. Please check your information and try again.');
     } finally {
-      setOtpBusy(false);
+      setLoading(false);
     }
-  };
-
-  const handleResendSellerOtp = async () => {
-    const res = await api('/sellers/send-otp', {
-      method: 'POST',
-      body: { email: regForm.email, ownerName: regForm.ownerName },
-    });
-    if (res?.otp) setOtpNotice(`Verification Code: ${res.otp}`);
-    else setOtpNotice('');
   };
 
   const handleSendRecoveryEmail = async (e) => {
@@ -600,18 +561,6 @@ export default function SellerLogin() {
         </div>
       )}
 
-      {/* Seller Registration OTP Verification Modal */}
-      <OtpVerificationModal
-        isOpen={otpModalOpen}
-        onClose={() => setOtpModalOpen(false)}
-        email={regForm.email}
-        title="Verify Business Email"
-        subtitle="To secure your merchant account, please enter the 6-digit code sent to"
-        notice={otpNotice}
-        onVerify={handleVerifySellerOtp}
-        onResend={handleResendSellerOtp}
-        busy={otpBusy}
-      />
     </div>
   );
 }

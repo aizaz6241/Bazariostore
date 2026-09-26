@@ -54,26 +54,12 @@ router.post('/send-otp', async (req, res) => {
     user.emailOtp = { code: otp, expiresAt, attempts: 0 };
     await user.save();
 
-    let emailResult = { success: false };
-    try {
-      emailResult = await sendVerificationOtpEmail({ to: email, name: user.name || name, otp, role: 'customer' });
-    } catch (emailErr) {
-      console.warn('[customer-send-otp-email-warn]', emailErr.message);
-    }
+    await sendVerificationOtpEmail({ to: email, name: user.name || name, otp, role: 'customer' });
 
-    if (emailResult?.success) {
-      res.json({ ok: true, delivered: true, message: `Verification code sent to ${email}. Valid for 10 minutes.` });
-    } else {
-      res.json({
-        ok: true,
-        delivered: false,
-        otp,
-        message: `Verification code generated for ${email}. (Code: ${otp})`,
-      });
-    }
+    res.json({ ok: true, message: `Verification code sent to ${email}. Valid for 10 minutes.` });
   } catch (err) {
     console.error('[send-otp-error]', err);
-    res.status(500).json({ message: 'Failed to process verification code: ' + err.message });
+    res.status(500).json({ message: 'Failed to send verification code. ' + err.message });
   }
 });
 
@@ -164,17 +150,12 @@ router.post('/register', async (req, res) => {
     await user.save();
 
     // Send OTP verification email
-    let emailResult = { success: false };
-    try {
-      emailResult = await sendVerificationOtpEmail({
-        to: clean,
-        name: user.name,
-        otp,
-        role: 'customer',
-      });
-    } catch (emailErr) {
-      console.warn('[customer-register-email-warn]', emailErr.message);
-    }
+    await sendVerificationOtpEmail({
+      to: clean,
+      name: user.name,
+      otp,
+      role: 'customer',
+    });
 
     notify(req.app, {
       type: 'customer',
@@ -186,12 +167,8 @@ router.post('/register', async (req, res) => {
     res.status(201).json({
       ok: true,
       requiresOtp: true,
-      delivered: Boolean(emailResult?.success),
-      otp: emailResult?.success ? undefined : otp,
       email: clean,
-      message: emailResult?.success
-        ? `Registration initiated! We sent a 6-digit verification code to ${clean}.`
-        : `Registration initiated! Verification code: ${otp}`,
+      message: `Registration initiated! We sent a 6-digit verification code to ${clean}.`,
     });
   } catch (e) {
     res.status(500).json({ message: e.message });

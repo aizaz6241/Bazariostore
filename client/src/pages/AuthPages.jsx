@@ -134,7 +134,6 @@ export function Register() {
   const [busy, setBusy] = useState(false);
   const [otpModalOpen, setOtpModalOpen] = useState(false);
   const [otpBusy, setOtpBusy] = useState(false);
-  const [otpNotice, setOtpNotice] = useState('');
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
@@ -145,8 +144,6 @@ export function Register() {
     try {
       const res = await api('/user/register', { method: 'POST', body: form });
       if (res.requiresOtp) {
-        if (res.otp) setOtpNotice(`Verification Code: ${res.otp}`);
-        else setOtpNotice('');
         setOtpModalOpen(true);
       } else if (res.token) {
         login(res.token, res.user);
@@ -175,12 +172,10 @@ export function Register() {
   };
 
   const handleResendOtp = async () => {
-    const res = await api('/user/send-otp', {
+    await api('/user/send-otp', {
       method: 'POST',
       body: { email: form.email, name: form.name },
     });
-    if (res?.otp) setOtpNotice(`Verification Code: ${res.otp}`);
-    else setOtpNotice('');
   };
 
   return (
@@ -218,7 +213,6 @@ export function Register() {
         onClose={() => setOtpModalOpen(false)}
         email={form.email}
         title="Verify Customer Email"
-        notice={otpNotice}
         onVerify={handleVerifyOtp}
         onResend={handleResendOtp}
         busy={otpBusy}

@@ -3,7 +3,6 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import Seller from '../../models/Seller.js';
-import RegistrationOtp from '../../models/RegistrationOtp.js';
 import { authSeller } from '../../middleware/auth.js';
 import { slugify } from './helpers.js';
 import { notify } from '../../utils/notify.js';
@@ -16,128 +15,24 @@ function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// In-memory fallback cache
+// In-memory / temporary registration OTP store
 const pendingRegistrationOtps = new Map();
 
-// POST /api/sellers/send-otp (Send / Resend OTP to seller business email)
+// POST /api/sellers/send-otp (Send OTP bypassed)
 router.post('/send-otp', async (req, res) => {
-  try {
-    const email = (req.body?.email || '').toLowerCase().trim();
-    const ownerName = (req.body?.ownerName || 'Merchant').trim();
-    if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
-      return res.status(400).json({ message: 'Valid business email required' });
-    }
-
-    const existing = await Seller.findOne({ email });
-    if (existing && existing.isEmailVerified) {
-      return res.status(400).json({ message: 'A merchant account with this email already exists' });
-    }
-
-    const otp = generateOtp();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
-
-    // 1. Persist to MongoDB Atlas so all Vercel serverless instances share this record
-    try {
-      await RegistrationOtp.findOneAndUpdate(
-        { email },
-        { otp, expiresAt, attempts: 0, verified: false, name: ownerName },
-        { upsert: true, new: true }
-      );
-    } catch (dbErr) {
-      console.error('[RegistrationOtp-Save-Error]', dbErr.message);
-    }
-
-    // 2. Keep in memory as local fallback
-    pendingRegistrationOtps.set(email, { otp, expiresAt, attempts: 0 });
-
-    let emailResult = { success: false };
-    try {
-      emailResult = await sendVerificationOtpEmail({
-        to: email,
-        name: ownerName,
-        otp,
-        role: 'seller',
-      });
-    } catch (emailErr) {
-      console.warn('[seller-send-otp-email-warn]', emailErr.message);
-    }
-
-    if (emailResult?.success) {
-      return res.json({
-        ok: true,
-        delivered: true,
-        message: `Verification code sent to ${email}. Valid for 10 minutes.`,
-      });
-    } else {
-      return res.json({
-        ok: true,
-        delivered: false,
-        otp,
-        message: `Verification code generated for ${email}. (Code: ${otp})`,
-      });
-    }
-  } catch (err) {
-    console.error('[seller-send-otp-error]', err);
-    res.status(500).json({ message: 'Failed to process verification code: ' + err.message });
-  }
+  res.json({
+    ok: true,
+    message: 'OTP verification is bypassed. You can proceed with registration.',
+  });
 });
 
-// POST /api/sellers/verify-otp (Verify seller OTP)
+// POST /api/sellers/verify-otp (Verify seller OTP - Bypassed)
 router.post('/verify-otp', async (req, res) => {
-  try {
-    const email = (req.body?.email || '').toLowerCase().trim();
-    const code = String(req.body?.otp || req.body?.code || '').trim();
-
-    if (!email || !code) {
-      return res.status(400).json({ message: 'Email and 6-digit verification code are required' });
-    }
-
-    // Check MongoDB first, fallback to memory
-    let record = null;
-    try {
-      record = await RegistrationOtp.findOne({ email });
-    } catch {}
-    if (!record) {
-      record = pendingRegistrationOtps.get(email);
-    }
-
-    if (!record) {
-      return res.status(400).json({ message: 'No pending verification found. Please request a new code.' });
-    }
-
-    if (new Date() > new Date(record.expiresAt)) {
-      try { await RegistrationOtp.deleteOne({ email }); } catch {}
-      pendingRegistrationOtps.delete(email);
-      return res.status(400).json({ message: 'Verification code has expired. Please request a new code.' });
-    }
-
-    if (record.attempts >= 5) {
-      try { await RegistrationOtp.deleteOne({ email }); } catch {}
-      pendingRegistrationOtps.delete(email);
-      return res.status(400).json({ message: 'Too many invalid attempts. Please request a new code.' });
-    }
-
-    if (record.otp !== code) {
-      record.attempts = (record.attempts || 0) + 1;
-      if (record.save) await record.save();
-      return res.status(400).json({ message: 'Invalid verification code. Please check your email.' });
-    }
-
-    // Mark verified in MongoDB and memory
-    record.verified = true;
-    if (record.save) await record.save();
-    if (pendingRegistrationOtps.has(email)) {
-      pendingRegistrationOtps.get(email).verified = true;
-    }
-
-    res.json({
-      ok: true,
-      verified: true,
-      message: 'Business email verified successfully! 🎉',
-    });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
+  res.json({
+    ok: true,
+    verified: true,
+    message: 'OTP verification is bypassed.',
+  });
 });
 
 // POST /api/sellers/register (Seller self-registers with KYC document)
@@ -174,23 +69,11 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: 'A merchant account with this email already exists' });
     }
 
-    // Check OTP if passed or verified (MongoDB first, then memory)
-    let record = null;
-    try {
-      record = await RegistrationOtp.findOne({ email: cleanEmail });
-    } catch {}
-    const pending = record || pendingRegistrationOtps.get(cleanEmail);
-
-    let isEmailVerified = false;
-    if (otp && pending && pending.otp === String(otp).trim() && new Date() <= new Date(pending.expiresAt)) {
-      isEmailVerified = true;
-      try { await RegistrationOtp.deleteOne({ email: cleanEmail }); } catch {}
-      pendingRegistrationOtps.delete(cleanEmail);
-    } else if (pending && pending.verified) {
-      isEmailVerified = true;
-      try { await RegistrationOtp.deleteOne({ email: cleanEmail }); } catch {}
+    // OTP requirement removed - seller registers directly for admin KYC approval
+    if (pendingRegistrationOtps.has(cleanEmail)) {
       pendingRegistrationOtps.delete(cleanEmail);
     }
+    const isEmailVerified = true;
 
     let baseSlug = slugify(storeName);
     let storeSlug = baseSlug;
@@ -434,17 +317,13 @@ router.post('/forgot-password', async (req, res) => {
     const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
     const resetUrl = `${clientUrl}/seller/login?resetToken=${token}&email=${encodeURIComponent(email)}`;
 
-    try {
-      await sendPasswordResetEmail({
-        to: seller.email,
-        name: seller.ownerName || seller.storeName,
-        resetUrl,
-        otp,
-        role: 'seller',
-      });
-    } catch (emailErr) {
-      console.warn('[seller-forgot-password-email-err]', emailErr.message);
-    }
+    await sendPasswordResetEmail({
+      to: seller.email,
+      name: seller.ownerName || seller.storeName,
+      resetUrl,
+      otp,
+      role: 'seller',
+    });
 
     res.json({
       ok: true,
@@ -452,7 +331,7 @@ router.post('/forgot-password', async (req, res) => {
     });
   } catch (err) {
     console.error('[seller-forgot-password-error]', err);
-    res.status(500).json({ message: 'Failed to process password recovery: ' + err.message });
+    res.status(500).json({ message: 'Failed to process password recovery. ' + err.message });
   }
 });
 

@@ -1,132 +1,29 @@
 import nodemailer from 'nodemailer';
-import dns from 'dns';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
-
-// Force Node.js globally to prioritize IPv4 over IPv6
-if (dns.setDefaultResultOrder) {
-  try {
-    dns.setDefaultResultOrder('ipv4first');
-  } catch {}
-}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-const DEFAULT_FROM = process.env.EMAIL_FROM || '"Bazario Support" <itxezooo@gmail.com>';
+// Create Nodemailer Transporter with Gmail SMTP only when credentials are provided
+const hasEmailCreds = Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
 
-/**
- * Factory to create high-reliability transporter for serverless (Vercel) & persistent runtimes.
- * NOTE: pool MUST be false in serverless to prevent frozen zombie socket timeouts.
- */
-function createTransporter(port = 587, secure = false) {
-  return nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port,
-    secure,
-    requireTLS: port === 587,
-    pool: false, // CRITICAL FOR VERCEL: Do not pool sockets in ephemeral Lambdas!
-    connectionTimeout: 8000, // 8s max connection timeout
-    greetingTimeout: 5000,
-    socketTimeout: 10000,
-    lookup: (hostname, options, callback) => {
-      // Hard-lock to IPv4: strictly prevents connect ENETUNREACH on IPv6 in Vercel AWS Lambda
-      return dns.lookup(hostname, { family: 4 }, callback);
-    },
-    auth: {
-      user: process.env.EMAIL_USER || 'itxezooo@gmail.com',
-      pass: process.env.EMAIL_PASS || 'vhqlxwhngiqhehbo',
-    },
-  });
-}
+const transporter = hasEmailCreds
+  ? nodemailer.createTransport({
+      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    })
+  : null;
 
-// Global transporters: Port 587 (STARTTLS) primary for cloud / Vercel compatibility, Port 465 fallback
-const primaryTransporter = createTransporter(587, false);
-const fallbackTransporter = createTransporter(465, true);
-
-// Built-in fallback API key (base64 encoded to comply with git push protection)
-const DEFAULT_RESEND_KEY = Buffer.from('cmVfUVFQYm5BRlVfNzVuRm1GeVlUTVM4MjNvWVhMVE5iMUdN', 'base64').toString('utf8');
-
-/**
- * Unified Email Dispatcher with Multi-Provider Support:
- * 1. If RESEND_API_KEY is configured, sends via native HTTPS REST API (Port 443 - zero socket block)
- * 2. In serverless (Vercel), skips raw SMTP if Resend is restricted to avoid 16-second socket timeouts
- * 3. On persistent runtimes (localhost / VPS), falls back to Nodemailer SMTP (587 -> 465)
- */
-export async function sendEmail({ to, subject, html, text }) {
-  const targetEmail = Array.isArray(to) ? to[0] : to;
-  const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
-
-  // 1. Resend HTTPS REST API (Port 443) - 100% immune to cloud SMTP port blocks
-  const resendKey = process.env.RESEND_API_KEY || DEFAULT_RESEND_KEY;
-  if (resendKey) {
-    try {
-      const res = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${resendKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: process.env.RESEND_FROM || (process.env.EMAIL_FROM && !process.env.EMAIL_FROM.includes('@gmail.com') ? process.env.EMAIL_FROM : 'Bazario <onboarding@resend.dev>'),
-          to: [targetEmail],
-          subject,
-          html,
-          text,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok && data?.id) {
-        console.log(`[Resend-Sent] Email to ${targetEmail} (Id: ${data.id})`);
-        return { success: true, messageId: data.id, provider: 'resend' };
-      }
-      console.warn('[Resend-Warning] Resend API response:', data);
-
-      // On serverless runtimes (Vercel), AWS Lambda strictly blocks outbound SMTP ports 587/465.
-      // Attempting SMTP here causes a 16s freeze and socket timeout.
-      if (isServerless) {
-        console.warn('[Serverless-Email] Skipping raw SMTP on Vercel to prevent socket freeze. Resend error:', data?.message);
-        return { success: false, error: data?.message || 'Email delivery restricted in serverless environment' };
-      }
-    } catch (resendErr) {
-      console.warn('[Resend-Warning] Resend fetch failed:', resendErr.message);
-      if (isServerless) {
-        return { success: false, error: resendErr.message };
-      }
-    }
-  }
-
-  // 2. Localhost / VPS SMTP (Port 587 STARTTLS first, then Port 465 fallback)
-  try {
-    const info = await primaryTransporter.sendMail({
-      from: DEFAULT_FROM,
-      to: targetEmail,
-      subject,
-      html,
-      text,
-    });
-    console.log(`[Email-Sent] (Port 587) to ${targetEmail} (MessageId: ${info.messageId})`);
-    return { success: true, messageId: info.messageId, provider: 'smtp-587' };
-  } catch (primaryErr) {
-    console.warn(`[Email-Warning] Port 587 failed (${primaryErr.message}). Retrying on Port 465...`);
-    try {
-      const info = await fallbackTransporter.sendMail({
-        from: DEFAULT_FROM,
-        to: targetEmail,
-        subject,
-        html,
-        text,
-      });
-      console.log(`[Email-Sent] (Port 465) to ${targetEmail} (MessageId: ${info.messageId})`);
-      return { success: true, messageId: info.messageId, provider: 'smtp-465' };
-    } catch (fallbackErr) {
-      console.error(`[Email-Error] SMTP delivery failed to ${targetEmail}: ${fallbackErr.message}`);
-      return { success: false, error: fallbackErr.message };
-    }
-  }
-}
+const DEFAULT_FROM = process.env.EMAIL_FROM || (process.env.EMAIL_USER ? `"Bazario Support" <${process.env.EMAIL_USER}>` : '"Bazario Support" <noreply@bazario.com>');
 
 /**
  * Base Email Wrapper with Responsive Styling & Professional Branding
@@ -189,6 +86,10 @@ function getEmailLayout({ title, preheader, bodyContent }) {
  * 1. Send 6-Digit Email Verification OTP (Customer or Seller Registration)
  */
 export async function sendVerificationOtpEmail({ to, name = 'User', otp, role = 'Customer' }) {
+  if (!transporter) {
+    console.warn(`[Email-Service] Skipped sending verification OTP to ${to} (EMAIL_USER / EMAIL_PASS not configured in .env).`);
+    return { success: false, skipped: true };
+  }
   try {
     const roleLabel = role === 'seller' ? 'Seller Merchant Hub' : 'Customer Account';
     const bodyContent = `
@@ -209,22 +110,24 @@ export async function sendVerificationOtpEmail({ to, name = 'User', otp, role = 
       <p style="font-size: 13px; color: #64748b; margin-top: 20px;">If you did not request this registration, please ignore this email.</p>
     `;
 
-    console.log(`🔑 [OTP-Service] Generated ${otp} for ${to} (${roleLabel})`);
-
     const html = getEmailLayout({
       title: `Bazario Verification Code: ${otp}`,
       preheader: `Your verification code is ${otp}. Valid for 10 minutes.`,
       bodyContent,
     });
 
-    return await sendEmail({
+    const info = await transporter.sendMail({
+      from: DEFAULT_FROM,
       to,
       subject: `[Bazario] ${otp} is your verification code`,
       html,
     });
+
+    console.log(`[Email-Sent] Verification OTP to ${to} (MessageId: ${info.messageId})`);
+    return { success: true, messageId: info.messageId };
   } catch (error) {
     console.error(`[Email-Error] Failed to send verification OTP to ${to}:`, error);
-    return { success: false, error: error.message };
+    throw error;
   }
 }
 
@@ -232,6 +135,10 @@ export async function sendVerificationOtpEmail({ to, name = 'User', otp, role = 
  * 2. Send Password Reset Email (Direct Link + 6-Digit OTP)
  */
 export async function sendPasswordResetEmail({ to, name = 'User', resetUrl, otp, role = 'user' }) {
+  if (!transporter) {
+    console.warn(`[Email-Service] Skipped sending password reset to ${to} (EMAIL_USER / EMAIL_PASS not configured in .env).`);
+    return { success: false, skipped: true };
+  }
   try {
     const roleLabel = role === 'seller' ? 'Merchant Store' : role === 'admin' ? 'Super Admin' : 'Customer Account';
     const bodyContent = `
@@ -264,14 +171,18 @@ export async function sendPasswordResetEmail({ to, name = 'User', resetUrl, otp,
       bodyContent,
     });
 
-    return await sendEmail({
+    const info = await transporter.sendMail({
+      from: DEFAULT_FROM,
       to,
       subject: `[Bazario] Password Reset Request`,
       html,
     });
+
+    console.log(`[Email-Sent] Password reset to ${to} (MessageId: ${info.messageId})`);
+    return { success: true, messageId: info.messageId };
   } catch (error) {
     console.error(`[Email-Error] Failed to send password reset email to ${to}:`, error);
-    return { success: false, error: error.message };
+    throw error;
   }
 }
 
@@ -279,6 +190,10 @@ export async function sendPasswordResetEmail({ to, name = 'User', resetUrl, otp,
  * 3. Send Welcome Email Upon Successful Verification
  */
 export async function sendWelcomeEmail({ to, name = 'User', role = 'Customer' }) {
+  if (!transporter) {
+    console.warn(`[Email-Service] Skipped sending welcome email to ${to} (EMAIL_USER / EMAIL_PASS not configured in .env).`);
+    return { success: false, skipped: true };
+  }
   try {
     const isSeller = role === 'seller';
     const bodyContent = `
@@ -305,7 +220,8 @@ export async function sendWelcomeEmail({ to, name = 'User', role = 'Customer' })
       bodyContent,
     });
 
-    return await sendEmail({
+    await transporter.sendMail({
+      from: DEFAULT_FROM,
       to,
       subject: `[Bazario] Welcome aboard, ${name}! 🎉`,
       html,
@@ -319,6 +235,10 @@ export async function sendWelcomeEmail({ to, name = 'User', role = 'Customer' })
  * 4. Send Seller Approval Email Notification
  */
 export async function sendSellerApprovalEmail({ to, name, storeName }) {
+  if (!transporter) {
+    console.warn(`[Email-Service] Skipped sending seller approval email to ${to} (EMAIL_USER / EMAIL_PASS not configured in .env).`);
+    return { success: false, skipped: true };
+  }
   try {
     const bodyContent = `
       <h2 class="email-heading" style="color: #16a34a;">Congratulations! Your Merchant Store is Approved 🚀</h2>
@@ -345,7 +265,8 @@ export async function sendSellerApprovalEmail({ to, name, storeName }) {
       bodyContent,
     });
 
-    return await sendEmail({
+    await transporter.sendMail({
+      from: DEFAULT_FROM,
       to,
       subject: `[Bazario] Your Merchant Store "${storeName}" is Approved! 🚀`,
       html,
@@ -356,8 +277,7 @@ export async function sendSellerApprovalEmail({ to, name, storeName }) {
 }
 
 export default {
-  transporter: primaryTransporter,
-  sendEmail,
+  transporter,
   sendVerificationOtpEmail,
   sendPasswordResetEmail,
   sendWelcomeEmail,
