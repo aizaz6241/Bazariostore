@@ -1,0 +1,740 @@
+[
+  {
+    "sku": "TRZ-B5-SNY-XB100-BLK",
+    "name": "Sony SRS-XB100 Compact Portable Wireless Bluetooth Speaker",
+    "brand": "Sony",
+    "categoryName": "Electronics & Audio",
+    "category": "6a88faa687b7b84a343930c9",
+    "price": 59.99,
+    "image": "https://images.unsplash.com/photo-1608043152269-423dbba4e7e1?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-INS-FLOW-WHT",
+    "name": "Insta360 Flow AI-Tracking Smartphone Gimbal Stabilizer",
+    "brand": "Insta360",
+    "categoryName": "Mobiles & Tablets",
+    "category": "6a88faa687b7b84a343930c7",
+    "price": 159,
+    "image": "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-ACC-ANK-NANO30",
+    "name": "Anker Nano 30W GaN Ultra-Compact Foldable USB-C Fast Charger",
+    "brand": "Anker",
+    "categoryName": "Mobile Accessories",
+    "category": "6ab784652f03a483e2d4fd5e",
+    "price": 19.99,
+    "image": "https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-LIN-PEN",
+    "name": "Waterproof Ultra-Precision Felt-Tip Liquid Eyeliner Pen (Carbon Black)",
+    "brand": "VogueGlam",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 19,
+    "image": "https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B6-LOG-ANY-3S",
+    "name": "Logitech MX Anywhere 3S Compact Wireless Performance Mouse",
+    "brand": "Logitech",
+    "categoryName": "Laptops & Computers",
+    "category": "6a88faa687b7b84a343930c8",
+    "price": 79.99,
+    "image": "https://images.unsplash.com/photo-1615663245857-ac93bb7c39e7?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-OFC-KYC-Q1PRO",
+    "name": "Keychron Q1 Pro QMK/VIA Custom Wireless Mechanical Keyboard",
+    "brand": "Keychron",
+    "categoryName": "Office & Stationery",
+    "category": "6ab784662f03a483e2d4fd64",
+    "price": 199,
+    "image": "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B6-WDB-SN85-2TB",
+    "name": "WD_BLACK SN850X 2TB NVMe SSD with Custom Aluminum Heatsink",
+    "brand": "Western Digital",
+    "categoryName": "Laptops & Computers",
+    "category": "6a88faa687b7b84a343930c8",
+    "price": 169.99,
+    "image": "https://images.unsplash.com/photo-1597872200969-2b65d56bd16b?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B6-KEN-SD57-TB4",
+    "name": "Kensington SD5700T Thunderbolt 4 Dual 4K Docking Station",
+    "brand": "Kensington",
+    "categoryName": "Laptops & Computers",
+    "category": "6a88faa687b7b84a343930c8",
+    "price": 239.99,
+    "image": "https://images.unsplash.com/photo-1544652478-6653e09f18a2?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B4-GRM-INST2-SLR",
+    "name": "Garmin Instinct 2 Solar Rugged GPS Tactical Watch",
+    "brand": "Garmin",
+    "categoryName": "Watches & Wearables",
+    "category": "6a88faa787b7b84a343930cb",
+    "price": 249.99,
+    "image": "https://images.unsplash.com/photo-1579586337278-3befd40fd17a?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B6-TIS-PRX-80BL",
+    "name": "Tissot PRX Powermatic 80 Blue Dial Steel Automatic Watch",
+    "brand": "Tissot",
+    "categoryName": "Watches & Wearables",
+    "category": "6a88faa787b7b84a343930cb",
+    "price": 249,
+    "image": "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-BTY-GLD-50ML",
+    "name": "Pure 24K Gold & Snail Mucin Intensive Repair Cream (50ml)",
+    "brand": "Aura & Glow",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 48,
+    "image": "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-CRM-CER",
+    "name": "Multi-Ceramide & Peptide Barrier Restore Hydrating Cream (50ml)",
+    "brand": "AuraGlow",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 36,
+    "image": "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-SRM-HYA",
+    "name": "Multi-Molecular Hyaluronic Acid 2% + B5 Intense Plumping Hydration Serum (30ml)",
+    "brand": "BotanicaPure",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 32,
+    "image": "https://images.unsplash.com/photo-1608248597359-0a6042456e30?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-EYE-CAF",
+    "name": "Caffeine 5% + Peptides Dark Circle & Puffiness Brightening Eye Cream (15ml)",
+    "brand": "AuraGlow",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 27,
+    "image": "https://images.unsplash.com/photo-1608248597359-0a6042456e30?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-BTY-IONDRY-MAT",
+    "name": "Salon Pro High-Speed Ionic Hair Dryer with Magnetic Nozzles (1600W)",
+    "brand": "Aura & Glow",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 135,
+    "image": "https://images.unsplash.com/photo-1585751119414-ef2636f8aede?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B6-T3-AIR-LUXE",
+    "name": "T3 AireLuxe Professional Digital Ionic Hair Dryer",
+    "brand": "T3 Micro",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 199.99,
+    "image": "https://images.unsplash.com/photo-1585751119414-ef2636f8aede?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B4-FLW-STG-MBK",
+    "name": "Fellow Stagg EKG Electric Gooseneck Pour-Over Kettle",
+    "brand": "Fellow",
+    "categoryName": "Home & Kitchen",
+    "category": "6a88faa787b7b84a343930cd",
+    "price": 165,
+    "image": "https://images.unsplash.com/photo-1544816155-12df9643f363?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-HOM-LDG-12SKL",
+    "name": "Lodge 12-Inch Pre-Seasoned Cast Iron Skillet with Handle Grip",
+    "brand": "Lodge",
+    "categoryName": "Home & Kitchen",
+    "category": "6a88faa787b7b84a343930cd",
+    "price": 39.9,
+    "image": "https://images.unsplash.com/photo-1590794056226-79ef3a8147e1?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B4-THB-MINI2-BLK",
+    "name": "Theragun Mini 2.0 Portable Deep Tissue Massage Gun",
+    "brand": "Therabody",
+    "categoryName": "Sports & Fitness",
+    "category": "6a88faa787b7b84a343930ce",
+    "price": 179,
+    "image": "https://images.unsplash.com/photo-1518611012118-696072aa579a?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B6-AUD-A2P-WHT",
+    "name": "Audioengine A2+ Wireless Powered Desktop Speaker System",
+    "brand": "Audioengine",
+    "categoryName": "Electronics & Audio",
+    "category": "6a88faa687b7b84a343930c9",
+    "price": 249,
+    "image": "https://images.unsplash.com/photo-1545454675-3531b543be5d?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-VEH-CLK-2AIR",
+    "name": "Carlinkit 5.0 2air Wireless CarPlay & Wireless Android Auto Adapter",
+    "brand": "Carlinkit",
+    "categoryName": "Vehicles & Automotive",
+    "category": "6ab784662f03a483e2d4fd61",
+    "price": 58,
+    "image": "https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-ACC-BAS-BLD65",
+    "name": "Baseus Blade 65W Retractable USB-C Cable Power Bank (20,000mAh)",
+    "brand": "Baseus",
+    "categoryName": "Mobile Accessories",
+    "category": "6ab784652f03a483e2d4fd5e",
+    "price": 59.99,
+    "image": "https://images.unsplash.com/photo-1609592424364-7bf5dfb3e41c?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-OFC-BNQ-BAR",
+    "name": "BenQ ScreenBar Pro Automatic Auto-Dimming LED Monitor Light Bar",
+    "brand": "BenQ",
+    "categoryName": "Office & Stationery",
+    "category": "6ab784662f03a483e2d4fd64",
+    "price": 139,
+    "image": "https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B6-NUP-AIR-75V2",
+    "name": "NuPhy Air75 V2 Low-Profile Wireless Mechanical Keyboard",
+    "brand": "NuPhy",
+    "categoryName": "Laptops & Computers",
+    "category": "6a88faa687b7b84a343930c8",
+    "price": 139.95,
+    "image": "https://images.unsplash.com/photo-1595225476474-87563907a212?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B6-HAM-KHK-38MM",
+    "name": "Hamilton Khaki Field Mechanical 38mm Military Watch",
+    "brand": "Hamilton",
+    "categoryName": "Watches & Wearables",
+    "category": "6a88faa787b7b84a343930cb",
+    "price": 245,
+    "image": "https://images.unsplash.com/photo-1509042239860-f550ce710b93?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-MSK-GOLD",
+    "name": "24K Bio-Collagen Hydrogel Rejuvenating Overnight Sleeping Mask (Set of 5)",
+    "brand": "AuraGlow",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 34,
+    "image": "https://images.unsplash.com/photo-1515377905703-c4788e51af15?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B4-BBY-NANO-125",
+    "name": "BaBylissPRO Nano Titanium Digital Flat Iron (1.25 Inch)",
+    "brand": "BaBylissPRO",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 149.99,
+    "image": "https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-DEC-CRB-AMB2",
+    "name": "Ribbed Amber Glass Hurricane Candle Holders (Set of 2)",
+    "brand": "Crate & Barrel",
+    "categoryName": "Home Decor & Living",
+    "category": "6ab784652f03a483e2d4fd5d",
+    "price": 42,
+    "image": "https://images.unsplash.com/photo-1603006905003-be475563bc59?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-KIT-ZWL-7KNF",
+    "name": "Zwilling Twin Signature 7-Piece German Stainless Steel Knife Block Set",
+    "brand": "Zwilling",
+    "categoryName": "Kitchen & Dining",
+    "category": "6ab784652f03a483e2d4fd5c",
+    "price": 179.99,
+    "image": "https://images.unsplash.com/photo-1593618998160-e34014e67546?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-KIT-OXO-8GLS",
+    "name": "OXO Good Grips 8-Piece Glass Smart Seal Food Storage Container Set",
+    "brand": "OXO",
+    "categoryName": "Kitchen & Dining",
+    "category": "6ab784652f03a483e2d4fd5c",
+    "price": 32.99,
+    "image": "https://images.unsplash.com/photo-1610701596007-11502861dcfa?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B6-IRO-QLK-KBH",
+    "name": "Ironmaster Quick-Lock Adjustable Kettlebell Handle",
+    "brand": "Ironmaster",
+    "categoryName": "Sports & Fitness",
+    "category": "6a88faa787b7b84a343930ce",
+    "price": 149,
+    "image": "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B5-HYD-32OZ-PAC",
+    "name": "Hydro Flask 32 oz Wide Mouth Stainless Water Bottle (Flex Straw)",
+    "brand": "Hydro Flask",
+    "categoryName": "Sports & Fitness",
+    "category": "6a88faa787b7b84a343930ce",
+    "price": 44.95,
+    "image": "https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B6-SPE-LZR-INT",
+    "name": "Speedo Fastskin LZR Pure Intent High Waist Jammer",
+    "brand": "Speedo",
+    "categoryName": "Sports & Fitness",
+    "category": "6a88faa787b7b84a343930ce",
+    "price": 249,
+    "image": "https://images.unsplash.com/photo-1530549387789-4c1017266635?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B6-HYP-VOLT-2P",
+    "name": "Hyperice Hypervolt 2 Pro Deep Tissue Percussion Massager",
+    "brand": "Hyperice",
+    "categoryName": "Sports & Fitness",
+    "category": "6a88faa787b7b84a343930ce",
+    "price": 249,
+    "image": "https://images.unsplash.com/photo-1574680096145-d05b474e2155?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-HLT-THB-PROPLS",
+    "name": "Theragun PRO Plus 6-in-1 Percussive Therapy Muscle Massager",
+    "brand": "Therabody",
+    "categoryName": "Health & Wellness",
+    "category": "6ab784662f03a483e2d4fd65",
+    "price": 499,
+    "image": "https://images.unsplash.com/photo-1574680096145-d05b474e2155?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B4-ANK-PRM-20K",
+    "name": "Anker Prime 20,000mAh Power Bank (200W Output)",
+    "brand": "Anker",
+    "categoryName": "Mobiles & Tablets",
+    "category": "6a88faa687b7b84a343930c7",
+    "price": 129.99,
+    "image": "https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-ACC-ESR-CRYO",
+    "name": "ESR CryoBoost HaloLock 3-in-1 MagSafe Wireless Charging Stand with Fan",
+    "brand": "ESR",
+    "categoryName": "Mobile Accessories",
+    "category": "6ab784652f03a483e2d4fd5e",
+    "price": 69.99,
+    "image": "https://images.unsplash.com/photo-1586953208448-b95a79798f07?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B6-SUU-9PK-TI",
+    "name": "Suunto 9 Peak Pro Titanium GPS Multisport Watch",
+    "brand": "Suunto",
+    "categoryName": "Watches & Wearables",
+    "category": "6a88faa787b7b84a343930cb",
+    "price": 249,
+    "image": "https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-SHOE-SLM-XT6",
+    "name": "Salomon XT-6 Gore-Tex Waterproof Trail Running & Lifestyle Shoes",
+    "brand": "Salomon",
+    "categoryName": "Shoes & Footwear",
+    "category": "6ab784662f03a483e2d4fd60",
+    "price": 220,
+    "image": "https://images.unsplash.com/photo-1539185441755-769473a23570?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B5-REV-VOL2-BLK",
+    "name": "Revlon One-Step Volumizer PLUS 2.0 Ceramic Hot Air Brush",
+    "brand": "Revlon",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 69.99,
+    "image": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-BLSH-CRM",
+    "name": "Soft Dewy Liquid Cream Blush with Cushion Wand (Peachy Coral)",
+    "brand": "AuraGlow",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 26,
+    "image": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B6-DDG-LED-MASK",
+    "name": "Dr. Dennis Gross DRx SpectraLite FaceWare Pro LED Mask",
+    "brand": "Dr. Dennis Gross",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 249,
+    "image": "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-KIT-CSR-GSNK",
+    "name": "Cosori Electric Smart Gooseneck Temperature Control Kettle (0.8L)",
+    "brand": "Cosori",
+    "categoryName": "Kitchen & Dining",
+    "category": "6ab784652f03a483e2d4fd5c",
+    "price": 69.99,
+    "image": "https://images.unsplash.com/photo-1517256064527-09c73fc73e38?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-ACC-AUL-G05",
+    "name": "Aulumu G05 4-in-1 Titanium EDC Phone Kickstand & Box Cutter",
+    "brand": "Aulumu",
+    "categoryName": "Mobile Accessories",
+    "category": "6ab784652f03a483e2d4fd5e",
+    "price": 39.99,
+    "image": "https://images.unsplash.com/photo-1584438784894-089d6a62b8fa?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-ACC-BLK-GYM",
+    "name": "Belkin MagSafe Magnetic Fitness Phone Mount for Gym Equipment",
+    "brand": "Belkin",
+    "categoryName": "Mobile Accessories",
+    "category": "6ab784652f03a483e2d4fd5e",
+    "price": 34.99,
+    "image": "https://images.unsplash.com/photo-1517420704952-d9f39e95b43e?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B6-ANK-C300-CAM",
+    "name": "Anker PowerConf C300 AI-Powered 1080p 60fps Conference Webcam",
+    "brand": "AnkerWork",
+    "categoryName": "Laptops & Computers",
+    "category": "6a88faa687b7b84a343930c8",
+    "price": 99.99,
+    "image": "https://images.unsplash.com/photo-1587826080692-f439cd0b70da?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-OFC-ANK-C310",
+    "name": "AnkerWork C310 4K HDR Webcam with AI Autofocus & Dual Stereo Mics",
+    "brand": "AnkerWork",
+    "categoryName": "Office & Stationery",
+    "category": "6ab784662f03a483e2d4fd64",
+    "price": 89.99,
+    "image": "https://images.unsplash.com/photo-1587826080692-f439cd0b70da?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-ACC-UGR-100W",
+    "name": "UGREEN Nexode 100W 4-Port GaN Desktop Fast Charging Hub",
+    "brand": "UGREEN",
+    "categoryName": "Mobile Accessories",
+    "category": "6ab784652f03a483e2d4fd5e",
+    "price": 49.99,
+    "image": "https://images.unsplash.com/photo-1585338107529-13afc5f02586?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-KIT-CRW-4PC",
+    "name": "Caraway Non-Toxic Ceramic Non-Stick 4-Piece Cookware Set",
+    "brand": "Caraway",
+    "categoryName": "Kitchen & Dining",
+    "category": "6ab784652f03a483e2d4fd5c",
+    "price": 395,
+    "image": "https://images.unsplash.com/photo-1584990347449-3e3c04239e33?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-DEC-LLG-LMP",
+    "name": "Minimalist Fluted Ceramic Table Lamp with Oatmeal Linen Shade",
+    "brand": "Lulu & Georgia",
+    "categoryName": "Home Decor & Living",
+    "category": "6ab784652f03a483e2d4fd5d",
+    "price": 89,
+    "image": "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-KID-HTC-RST2",
+    "name": "Hatch Rest 2nd Gen All-in-One Smart Sound Machine & Night Light",
+    "brand": "Hatch",
+    "categoryName": "Baby & Kids",
+    "category": "6ab784662f03a483e2d4fd62",
+    "price": 69.99,
+    "image": "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-HLT-PHL-WAKE",
+    "name": "Philips SmartSleep Wake-Up Light Sunrise Simulation Alarm Clock",
+    "brand": "Philips",
+    "categoryName": "Health & Wellness",
+    "category": "6ab784662f03a483e2d4fd65",
+    "price": 99.99,
+    "image": "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B6-TRX-PRO-4SYS",
+    "name": "TRX PRO4 Suspension Trainer System",
+    "brand": "TRX",
+    "categoryName": "Sports & Fitness",
+    "category": "6a88faa787b7b84a343930ce",
+    "price": 229.95,
+    "image": "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-MSC-LASH",
+    "name": "High-Impact Waterproof Volumizing & Lengthening Mascara (Jet Black)",
+    "brand": "VogueGlam",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 25,
+    "image": "https://images.unsplash.com/photo-1512496015851-a90fb38ba796?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-OFC-LCH-A5DOT",
+    "name": "Leuchtturm1917 Medium A5 Hardcover Dotted Journal Notebook",
+    "brand": "Leuchtturm1917",
+    "categoryName": "Office & Stationery",
+    "category": "6ab784662f03a483e2d4fd64",
+    "price": 24.5,
+    "image": "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B6-PHI-HUE-65G",
+    "name": "Philips Hue Play Gradient Lightstrip 65-inch Ambient TV Lighting",
+    "brand": "Philips Hue",
+    "categoryName": "Home & Kitchen",
+    "category": "6a88faa787b7b84a343930cd",
+    "price": 249,
+    "image": "https://images.unsplash.com/photo-1513506003901-1e6a229e2d15?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-DEC-GOV-FLR2",
+    "name": "Govee RGBIC Wi-Fi Smart Floor Lamp 2 with Matter & Alexa Support",
+    "brand": "Govee",
+    "categoryName": "Home Decor & Living",
+    "category": "6ab784652f03a483e2d4fd5d",
+    "price": 119.99,
+    "image": "https://images.unsplash.com/photo-1513506003901-1e6a229e2d15?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-B6-EDI-R128-DBS",
+    "name": "Edifier R1280DBs Powered Bluetooth Bookshelf Speakers",
+    "brand": "Edifier",
+    "categoryName": "Electronics & Audio",
+    "category": "6a88faa687b7b84a343930c9",
+    "price": 139.99,
+    "image": "https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-EDP-AMB",
+    "name": "Golden Amber, Vanilla Bourbon & White Musk Luxury Eau De Parfum (100ml)",
+    "brand": "LuxeBotanicals",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 78,
+    "image": "https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-HLT-GLW",
+    "name": "Baked Champagne Shimmer Strobe Highlighting Powder (8g)",
+    "brand": "VogueGlam",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 28,
+    "image": "https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-SRM-VITC",
+    "name": "20% Vitamin C + Ferulic Acid + Vitamin E Antioxidant Glow Serum (30ml)",
+    "brand": "AuraGlow",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 38,
+    "image": "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-TON-ROSE",
+    "name": "100% Organic Damask Rosewater Facial Hydrosol Mist Toner (120ml)",
+    "brand": "LuxeBotanicals",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 22,
+    "image": "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-EDP-SNT",
+    "name": "Santal & Cardamom Unisex Woody Eau De Parfum (100ml)",
+    "brand": "LuxeBotanicals",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 85,
+    "image": "https://images.unsplash.com/photo-1547887537-6158d64c35b3?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-KIT-ANO-NANO",
+    "name": "Anova Culinary Precision Sous Vide Nano Cooker (Bluetooth)",
+    "brand": "Anova",
+    "categoryName": "Kitchen & Dining",
+    "category": "6ab784652f03a483e2d4fd5c",
+    "price": 99,
+    "image": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-KID-SKP-ACT",
+    "name": "Skip Hop Explore & More 3-Stage Interactive Activity Center Play Table",
+    "brand": "Skip Hop",
+    "categoryName": "Baby & Kids",
+    "category": "6ab784662f03a483e2d4fd62",
+    "price": 142,
+    "image": "https://images.unsplash.com/photo-1566576912321-d58ddd7a6088?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-KID-BBJ-BLISS",
+    "name": "BabyBjörn Bouncer Bliss Ergonomic Natural Rocking Baby Seat (Cotton)",
+    "brand": "BabyBjörn",
+    "categoryName": "Baby & Kids",
+    "category": "6ab784662f03a483e2d4fd62",
+    "price": 210,
+    "image": "https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-KID-FRD-SNOT",
+    "name": "FridaBaby NoseFrida SnotSucker Baby Nasal Aspirator Deluxe Set",
+    "brand": "Frida",
+    "categoryName": "Baby & Kids",
+    "category": "6ab784662f03a483e2d4fd62",
+    "price": 24.99,
+    "image": "https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-BRS-SET",
+    "name": "12-Piece Professional Ultra-Soft Vegan Makeup Brush Set with Travel Case",
+    "brand": "VogueGlam",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 39,
+    "image": "https://images.unsplash.com/photo-1596462502278-27bfdc403348?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-SHOE-UGG-ULTRA",
+    "name": "UGG Classic Ultra Mini Genuine Twinface Sheepskin Ankle Boots",
+    "brand": "UGG",
+    "categoryName": "Shoes & Footwear",
+    "category": "6ab784662f03a483e2d4fd60",
+    "price": 150,
+    "image": "https://images.unsplash.com/photo-1520639888713-7851133b1ed0?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-TRV-MNS-PLUS",
+    "name": "Monos Carry-On Plus Unbreakable Polycarbonate Hard-Shell Suitcase",
+    "brand": "Monos",
+    "categoryName": "Outdoor, Luggage & Travel",
+    "category": "6ab784662f03a483e2d4fd66",
+    "price": 275,
+    "image": "https://images.unsplash.com/photo-1565026057447-bc90a3dceb87?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-BWASH-EUC",
+    "name": "Aromatherapy Eucalyptus & Spearmint Foaming Body Wash (500ml)",
+    "brand": "AuraGlow",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 24,
+    "image": "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-SOAP-CHR",
+    "name": "Activated Bamboo Charcoal & Tea Tree Purifying Detox Bar Soap",
+    "brand": "BotanicaPure",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 12.5,
+    "image": "https://images.unsplash.com/photo-1607006411601-775c8cc632dc?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-SHMP-ARG",
+    "name": "Moroccan Argan Oil Hydrating & Repairing Shampoo (350ml)",
+    "brand": "BotanicaPure",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 28,
+    "image": "https://images.unsplash.com/photo-1535585209827-a15fcdbc4c2d?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-CLN-SAL",
+    "name": "Salicylic Acid 2% Daily Gentle Exfoliating Cleanser (200ml)",
+    "brand": "AuraGlow",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 24,
+    "image": "https://images.unsplash.com/photo-1535585209827-a15fcdbc4c2d?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-SUN-SPF50",
+    "name": "Daily Invisible Water-Gel Broad Spectrum SPF 50+ Sunscreen (50ml)",
+    "brand": "BotanicaPure",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 29,
+    "image": "https://images.unsplash.com/photo-1571781926291-c477ebfd024b?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-MSK-CLAY",
+    "name": "French Green Clay & Matcha Purifying Pore Tightening Face Mask (100g)",
+    "brand": "BotanicaPure",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 25,
+    "image": "https://images.unsplash.com/photo-1571781926291-c477ebfd024b?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-CLN-FOAM",
+    "name": "Green Tea & Centella Asiatica Calming Foam Face Wash (150ml)",
+    "brand": "BotanicaPure",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 21,
+    "image": "https://images.unsplash.com/photo-1526947425960-945c6e72858f?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-SRM-NIA",
+    "name": "Niacinamide 10% + Zinc 1% Oil Control & Pore Refining Facial Serum (30ml)",
+    "brand": "AuraGlow",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 26,
+    "image": "https://images.unsplash.com/photo-1617897903246-719242758050?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-LIP-OIL",
+    "name": "Peptide Hydrating Lip Glow Treatment Oil (Berry Blossom)",
+    "brand": "AuraGlow",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 20,
+    "image": "https://images.unsplash.com/photo-1616949755610-8c9bbc08f138?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-LIP-NUDE",
+    "name": "Ultra-Creamy Satin Finish Hydrating Lipstick (Nude Elegance)",
+    "brand": "VogueGlam",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 22,
+    "image": "https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-EYE-PLT",
+    "name": "18-Color Warm Sunset & Desert Rose Eyeshadow Palette",
+    "brand": "VogueGlam",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 48,
+    "image": "https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "sku": "TRZ-COS-PWD-SET",
+    "name": "Translucent Micro-Fine Blur Setting Powder with Velvet Puff (20g)",
+    "brand": "VogueGlam",
+    "categoryName": "Beauty & Fragrances",
+    "category": "6a88faa787b7b84a343930cc",
+    "price": 32,
+    "image": "https://images.unsplash.com/photo-1631729371254-42c2892f0e6e?w=800&auto=format&fit=crop&q=80"
+  }
+]

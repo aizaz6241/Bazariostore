@@ -12,7 +12,7 @@ export default function SellerLogin() {
   const urlEmail = params.get('email') || '';
 
   const [mode, setMode] = useState('login'); // 'login' | 'register'
-  
+
   // Registration Submitted State
   const [submittedInfo, setSubmittedInfo] = useState(null);
   const [isPendingApprovalErr, setIsPendingApprovalErr] = useState(false);
@@ -525,7 +525,7 @@ export default function SellerLogin() {
                   type="text"
                   value={regForm.phone}
                   onChange={(e) => setRegForm({ ...regForm, phone: e.target.value })}
-                  placeholder="+91 9876543210"
+                  placeholder=""
                   required
                 />
               </div>

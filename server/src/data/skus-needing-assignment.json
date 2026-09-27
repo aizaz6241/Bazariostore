@@ -1,0 +1,992 @@
+[
+  {
+    "_id": "6a98e0c9901d0f96a7820707",
+    "sku": "TRZ-FSH-JKT-09",
+    "name": "Bespoke Lambskin Leather Biker Jacket",
+    "brand": "Vogue & Velvet",
+    "category": "Fashion & Apparel",
+    "categorySlug": "fashion",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e3e6f85be289736076de",
+    "sku": "TRZ-ANK-SP1-BLK",
+    "name": "Anker Soundcore Space One Noise Cancelling Headphones",
+    "brand": "Anker",
+    "category": "Electronics & Audio",
+    "categorySlug": "electronics",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1546435770-a3e426bf472b?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e3e8f85be28973607745",
+    "sku": "TRZ-CAS-GA2100-BLK",
+    "name": "Casio G-Shock GA-2100 Carbon Core Guard Watch",
+    "brand": "Casio",
+    "category": "Watches & Wearables",
+    "categorySlug": "watches",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1533139502658-0198f920d8e8?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e3e8f85be2897360774c",
+    "sku": "TRZ-FSH-HD450-OAT",
+    "name": "Heavyweight Fleece Oversized Streetwear Hoodie (450 GSM)",
+    "brand": "Vogue & Velvet",
+    "category": "Fashion & Apparel",
+    "categorySlug": "fashion",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e3e9f85be28973607766",
+    "sku": "TRZ-FSH-AVT-GLD",
+    "name": "Polarized Aviator Sunglasses with Titanium Alloy Frame",
+    "brand": "Vogue & Velvet",
+    "category": "Fashion & Apparel",
+    "categorySlug": "fashion",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1511499767150-a48a237f0083?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e3e9f85be28973607774",
+    "sku": "TRZ-BTY-USCL-PNK",
+    "name": "Sonic Pulsating Facial Cleansing Brush with Red Light Therapy",
+    "brand": "Aura & Glow",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e3e9f85be2897360777a",
+    "sku": "TRZ-BTY-RHP-30ML",
+    "name": "Organic Cold-Pressed Rosehip & Marula Youth Facial Oil (30ml)",
+    "brand": "Aura & Glow",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "reason": "broken",
+    "currentImage": "https://images.unsplash.com/photo-1608248597359-0a6042456e30?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e4ef901d0f96a78207c1",
+    "sku": "TRZ-MFT-MAGWLT-BRN",
+    "name": "MOFT Snap-On Stand & MagSafe Wallet (Vegan Leather)",
+    "brand": "MOFT",
+    "category": "Mobiles & Tablets",
+    "categorySlug": "mobiles",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1586953208448-b95a79798f07?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e4f1901d0f96a78207d2",
+    "sku": "TRZ-BTY-TFNE-15ML",
+    "name": "Tom Ford Noir Extreme Parfum Travel Atomizer (15ml)",
+    "brand": "Tom Ford",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e4f1901d0f96a78207d6",
+    "sku": "TRZ-BTY-DIP-BAIES",
+    "name": "Diptyque Baies Luxury Scented Candle in Mouth-Blown Glass (190g)",
+    "brand": "Diptyque",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1603006905003-be475563bc59?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e97d901d0f96a7820922",
+    "sku": "TRZ-B4-CLD-TS4-DOCK",
+    "name": "CalDigit TS4 Thunderbolt 4 18-Port Docking Station",
+    "brand": "CalDigit",
+    "category": "Laptops & Computers",
+    "categorySlug": "laptops",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1544652478-6653e09f18a2?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e97e901d0f96a7820928",
+    "sku": "TRZ-B4-MSH-EMB2-BLK",
+    "name": "Marshall Emberton II Portable Bluetooth Speaker",
+    "brand": "Marshall",
+    "category": "Electronics & Audio",
+    "categorySlug": "electronics",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1545454675-3531b543be5d?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e97f901d0f96a7820930",
+    "sku": "TRZ-B4-BLR-TKY-TOTE",
+    "name": "Bellroy Tokyo Totepack Premium Water-Resistant Bag",
+    "brand": "Bellroy",
+    "category": "Fashion & Apparel",
+    "categorySlug": "fashion",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e97f901d0f96a7820933",
+    "sku": "TRZ-B4-RAY-WYF-POL",
+    "name": "Ray-Ban Wayfarer Classic Polarized Sunglasses (RB2140)",
+    "brand": "Ray-Ban",
+    "category": "Fashion & Apparel",
+    "categorySlug": "fashion",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1511499767150-a48a237f0083?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e97f901d0f96a7820934",
+    "sku": "TRZ-B4-RDG-CRB-WAL",
+    "name": "Ridge Slim RFID-Blocking Carbon Fiber Wallet",
+    "brand": "The Ridge",
+    "category": "Fashion & Apparel",
+    "categorySlug": "fashion",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1627123424574-724758594e93?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e97f901d0f96a7820935",
+    "sku": "TRZ-B4-TMB-6IN-WHT",
+    "name": "Timberland 6-Inch Premium Waterproof Nubuck Leather Boots",
+    "brand": "Timberland",
+    "category": "Fashion & Apparel",
+    "categorySlug": "fashion",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1549298916-b41d501d3772?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e97f901d0f96a7820936",
+    "sku": "TRZ-B4-DYS-SUP-FCH",
+    "name": "Dyson Supersonic Ionic Hair Dryer (Iron/Fuchsia)",
+    "brand": "Dyson",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e97f901d0f96a7820937",
+    "sku": "TRZ-B4-NUF-TRN-WHT",
+    "name": "NuFACE Trinity Facial Toning Device with Microcurrent",
+    "brand": "NuFACE",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e980901d0f96a7820939",
+    "sku": "TRZ-B4-FOR-LUN4-PNK",
+    "name": "FOREO LUNA 4 Smart Facial Cleansing & Firming Massager",
+    "brand": "FOREO",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e980901d0f96a782093a",
+    "sku": "TRZ-B4-BBY-NANO-125",
+    "name": "BaBylissPRO Nano Titanium Digital Flat Iron (1.25 Inch)",
+    "brand": "BaBylissPRO",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e980901d0f96a782093e",
+    "sku": "TRZ-B4-FLW-STG-MBK",
+    "name": "Fellow Stagg EKG Electric Gooseneck Pour-Over Kettle",
+    "brand": "Fellow",
+    "category": "Home & Kitchen",
+    "categorySlug": "home",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1544816155-12df9643f363?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e980901d0f96a7820940",
+    "sku": "TRZ-B4-THB-MINI2-BLK",
+    "name": "Theragun Mini 2.0 Portable Deep Tissue Massage Gun",
+    "brand": "Therabody",
+    "category": "Sports & Fitness",
+    "categorySlug": "sports",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1518611012118-696072aa579a?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e981901d0f96a7820941",
+    "sku": "TRZ-B4-BWF-552-SNGL",
+    "name": "Bowflex SelectTech 552 Adjustable Dumbbell (Single)",
+    "brand": "Bowflex",
+    "category": "Sports & Fitness",
+    "categorySlug": "sports",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1584735935682-2f2b69dff9d2?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e981901d0f96a7820944",
+    "sku": "TRZ-B4-MDK-PRO-BLK",
+    "name": "Manduka PRO Yoga & Pilates Mat (6mm Extra Thick)",
+    "brand": "Manduka",
+    "category": "Sports & Fitness",
+    "categorySlug": "sports",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1545205597-3d9d02c29597?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e9bc901d0f96a7820992",
+    "sku": "TRZ-B5-SAT-SLMX1-GRY",
+    "name": "Satechi Slim X1 Bluetooth Backlit Wireless Keyboard",
+    "brand": "Satechi",
+    "category": "Laptops & Computers",
+    "categorySlug": "laptops",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e9bd901d0f96a7820995",
+    "sku": "TRZ-B5-ANK-737-120W",
+    "name": "Anker 737 GaNPrime 120W 3-Port Fast Wall Charger",
+    "brand": "Anker",
+    "category": "Laptops & Computers",
+    "categorySlug": "laptops",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e9bd901d0f96a7820996",
+    "sku": "TRZ-B5-SNY-XB100-BLK",
+    "name": "Sony SRS-XB100 Compact Portable Wireless Bluetooth Speaker",
+    "brand": "Sony",
+    "category": "Electronics & Audio",
+    "categorySlug": "electronics",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e9bd901d0f96a782099a",
+    "sku": "TRZ-B5-BLR-HDSK-CHR",
+    "name": "Bellroy Hide & Seek Premium RFID Leather Bi-Fold Wallet",
+    "brand": "Bellroy",
+    "category": "Fashion & Apparel",
+    "categorySlug": "fashion",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1627123424574-724758594e93?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e9be901d0f96a782099c",
+    "sku": "TRZ-B5-HRS-LITAM-NVY",
+    "name": "Herschel Little America Classic 25L Travel Backpack",
+    "brand": "Herschel",
+    "category": "Fashion & Apparel",
+    "categorySlug": "fashion",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e9be901d0f96a782099e",
+    "sku": "TRZ-B5-CTZ-PRO-200M",
+    "name": "Citizen Eco-Drive Promaster Diver Watch (BN0150-28E)",
+    "brand": "Citizen",
+    "category": "Watches & Wearables",
+    "categorySlug": "watches",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e9be901d0f96a78209a1",
+    "sku": "TRZ-B5-NIN-AF161-XL",
+    "name": "Ninja Air Fryer XL 5.5 Qt 5-in-1 Programmable Cooker",
+    "brand": "Ninja",
+    "category": "Home & Kitchen",
+    "categorySlug": "home",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e9bf901d0f96a78209a5",
+    "sku": "TRZ-B5-HYD-32OZ-PAC",
+    "name": "Hydro Flask 32 oz Wide Mouth Stainless Water Bottle (Flex Straw)",
+    "brand": "Hydro Flask",
+    "category": "Sports & Fitness",
+    "categorySlug": "sports",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a98e9bf901d0f96a78209a7",
+    "sku": "TRZ-B5-TRG-GRID-ORG",
+    "name": "TriggerPoint GRID Multi-Density Deep Tissue Foam Roller",
+    "brand": "TriggerPoint",
+    "category": "Sports & Fitness",
+    "categorySlug": "sports",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1518611012118-696072aa579a?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944af901d0f96a7821fdf",
+    "sku": "TRZ-B6-ANK-Q2-3IN1",
+    "name": "Anker MagGo Qi2 Certified 15W Foldable 3-in-1 Charging Station",
+    "brand": "Anker",
+    "category": "Mobiles & Tablets",
+    "categorySlug": "mobiles",
+    "reason": "broken",
+    "currentImage": "https://images.unsplash.com/photo-1622445262464-84b1456045b6?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944af901d0f96a7821fe0",
+    "sku": "TRZ-B6-ZHY-SM5-GMB",
+    "name": "Zhiyun Smooth 5S AI Professional 3-Axis Smartphone Gimbal",
+    "brand": "Zhiyun",
+    "category": "Mobiles & Tablets",
+    "categorySlug": "mobiles",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b0901d0f96a7821fe2",
+    "sku": "TRZ-B6-NIT-NB10-GEN3",
+    "name": "Nitecore NB10000 Gen 3 Ultra-Light Carbon Fiber Power Bank",
+    "brand": "Nitecore",
+    "category": "Mobiles & Tablets",
+    "categorySlug": "mobiles",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b0901d0f96a7821fe3",
+    "sku": "TRZ-B6-SHU-MV88-KIT",
+    "name": "Shure MV88+ Video Kit Stereo Condenser Smartphone Microphone",
+    "brand": "Shure",
+    "category": "Mobiles & Tablets",
+    "categorySlug": "mobiles",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b0901d0f96a7821fe5",
+    "sku": "TRZ-B6-LOG-ANY-3S",
+    "name": "Logitech MX Anywhere 3S Compact Wireless Performance Mouse",
+    "brand": "Logitech",
+    "category": "Laptops & Computers",
+    "categorySlug": "laptops",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1615663245857-ac93bb7c39e7?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b0901d0f96a7821fe6",
+    "sku": "TRZ-B6-NUP-AIR-75V2",
+    "name": "NuPhy Air75 V2 Low-Profile Wireless Mechanical Keyboard",
+    "brand": "NuPhy",
+    "category": "Laptops & Computers",
+    "categorySlug": "laptops",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b2901d0f96a7821fe8",
+    "sku": "TRZ-B6-KEN-SD57-TB4",
+    "name": "Kensington SD5700T Thunderbolt 4 Dual 4K Docking Station",
+    "brand": "Kensington",
+    "category": "Laptops & Computers",
+    "categorySlug": "laptops",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1544652478-6653e09f18a2?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b2901d0f96a7821fe9",
+    "sku": "TRZ-B6-WDB-SN85-2TB",
+    "name": "WD_BLACK SN850X 2TB NVMe SSD with Custom Aluminum Heatsink",
+    "brand": "Western Digital",
+    "category": "Laptops & Computers",
+    "categorySlug": "laptops",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1597872200969-2b65d56bd16b?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b2901d0f96a7821fea",
+    "sku": "TRZ-B6-ROO-STND-V3",
+    "name": "Roost V3 Ultra-Portable Height Adjustable Laptop Stand",
+    "brand": "Roost",
+    "category": "Laptops & Computers",
+    "categorySlug": "laptops",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1541807084-5c52b6b3adef?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b2901d0f96a7821feb",
+    "sku": "TRZ-B6-ANK-C300-CAM",
+    "name": "Anker PowerConf C300 AI-Powered 1080p 60fps Conference Webcam",
+    "brand": "AnkerWork",
+    "category": "Laptops & Computers",
+    "categorySlug": "laptops",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1587826080692-f439cd0b70da?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b3901d0f96a7821ff0",
+    "sku": "TRZ-B6-EDI-R128-DBS",
+    "name": "Edifier R1280DBs Powered Bluetooth Bookshelf Speakers",
+    "brand": "Edifier",
+    "category": "Electronics & Audio",
+    "categorySlug": "electronics",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1545454675-3531b543be5d?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b3901d0f96a7821ff3",
+    "sku": "TRZ-B6-AER-TRV-PK3",
+    "name": "Aer Travel Pack 3 Cordura Ballistic Carry-On Backpack",
+    "brand": "Aer",
+    "category": "Fashion & Apparel",
+    "categorySlug": "fashion",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b3901d0f96a7821ff4",
+    "sku": "TRZ-B6-THU-CPT-BRN",
+    "name": "Thursday Boot Co. Captain Handcrafted Leather Boots",
+    "brand": "Thursday Boot Co.",
+    "category": "Fashion & Apparel",
+    "categorySlug": "fashion",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b4901d0f96a7821ff5",
+    "sku": "TRZ-B6-PAT-BSW-GRY",
+    "name": "Patagonia Better Sweater 1/4-Zip Recycled Fleece Pullover",
+    "brand": "Patagonia",
+    "category": "Fashion & Apparel",
+    "categorySlug": "fashion",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b4901d0f96a7821ff6",
+    "sku": "TRZ-B6-SEC-SLM-BLK",
+    "name": "Secrid Slimwallet Matte Leather Cardprotector",
+    "brand": "Secrid",
+    "category": "Fashion & Apparel",
+    "categorySlug": "fashion",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1627123424574-724758594e93?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b4901d0f96a7821ff7",
+    "sku": "TRZ-B6-BEL-TRN-20L",
+    "name": "Bellroy Transit Workpack 20L Water-Resistant Commuter Bag",
+    "brand": "Bellroy",
+    "category": "Fashion & Apparel",
+    "categorySlug": "fashion",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b4901d0f96a7821ff8",
+    "sku": "TRZ-B6-BAR-ASH-OLV",
+    "name": "Barbour Ashby Waxed Weatherproof Heritage Jacket",
+    "brand": "Barbour",
+    "category": "Fashion & Apparel",
+    "categorySlug": "fashion",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b4901d0f96a7821ff9",
+    "sku": "TRZ-B6-DIT-STA-GLD",
+    "name": "Dita Statesman Titanium Accent Hand-Finished Sunglasses",
+    "brand": "Dita",
+    "category": "Fashion & Apparel",
+    "categorySlug": "fashion",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1511499767150-a48a237f0083?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b4901d0f96a7821ffb",
+    "sku": "TRZ-B6-HAM-KHK-38MM",
+    "name": "Hamilton Khaki Field Mechanical 38mm Military Watch",
+    "brand": "Hamilton",
+    "category": "Watches & Wearables",
+    "categorySlug": "watches",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1524805444758-089113d48a6d?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b5901d0f96a7821ffd",
+    "sku": "TRZ-B6-SUU-9PK-TI",
+    "name": "Suunto 9 Peak Pro Titanium GPS Multisport Watch",
+    "brand": "Suunto",
+    "category": "Watches & Wearables",
+    "categorySlug": "watches",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b6901d0f96a7822005",
+    "sku": "TRZ-B6-T3-AIR-LUXE",
+    "name": "T3 AireLuxe Professional Digital Ionic Hair Dryer",
+    "brand": "T3 Micro",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b6901d0f96a7822009",
+    "sku": "TRZ-B6-LEC-DUT-55C",
+    "name": "Le Creuset Enameled Cast Iron Round Dutch Oven 5.5-Quart",
+    "brand": "Le Creuset",
+    "category": "Home & Kitchen",
+    "categorySlug": "home",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b7901d0f96a782200b",
+    "sku": "TRZ-B6-BRE-SMT-PRO",
+    "name": "Breville Smart Oven Pro Convection Countertop Oven",
+    "brand": "Breville",
+    "category": "Home & Kitchen",
+    "categorySlug": "home",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1544816155-12df9643f363?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b7901d0f96a782200d",
+    "sku": "TRZ-B6-INS-PRO-PLUS",
+    "name": "Instant Pot Pro Plus 6-Quart Smart Multi-Cooker",
+    "brand": "Instant Pot",
+    "category": "Home & Kitchen",
+    "categorySlug": "home",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1585515320310-259814833e62?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b7901d0f96a782200f",
+    "sku": "TRZ-B6-PHI-HUE-65G",
+    "name": "Philips Hue Play Gradient Lightstrip 65-inch Ambient TV Lighting",
+    "brand": "Philips Hue",
+    "category": "Home & Kitchen",
+    "categorySlug": "home",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b8901d0f96a7822010",
+    "sku": "TRZ-B6-HYP-VOLT-2P",
+    "name": "Hyperice Hypervolt 2 Pro Deep Tissue Percussion Massager",
+    "brand": "Hyperice",
+    "category": "Sports & Fitness",
+    "categorySlug": "sports",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b8901d0f96a7822013",
+    "sku": "TRZ-B6-WAH-TCK-XHR",
+    "name": "Wahoo TICKR X Heart Rate Monitor & Motion Sensor",
+    "brand": "Wahoo Fitness",
+    "category": "Sports & Fitness",
+    "categorySlug": "sports",
+    "reason": "broken",
+    "currentImage": "https://images.unsplash.com/photo-1510519138197-06b8628cbf47?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b8901d0f96a7822014",
+    "sku": "TRZ-B6-IRO-QLK-KBH",
+    "name": "Ironmaster Quick-Lock Adjustable Kettlebell Handle",
+    "brand": "Ironmaster",
+    "category": "Sports & Fitness",
+    "categorySlug": "sports",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1584735935682-2f2b69dff9d2?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b8901d0f96a7822015",
+    "sku": "TRZ-B6-CON-PM5-KIT",
+    "name": "Concept2 RowErg Performance Monitor PM5 Sensor Kit",
+    "brand": "Concept2",
+    "category": "Sports & Fitness",
+    "categorySlug": "sports",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6a9944b8901d0f96a7822016",
+    "sku": "TRZ-B6-SPE-LZR-INT",
+    "name": "Speedo Fastskin LZR Pure Intent High Waist Jammer",
+    "brand": "Speedo",
+    "category": "Sports & Fitness",
+    "categorySlug": "sports",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1530549387789-4c1017266635?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab784672f03a483e2d4fd74",
+    "sku": "TRZ-KIT-IP-PRO6",
+    "name": "Instant Pot Pro 10-in-1 Pressure Cooker & Slow Cooker (6-Quart)",
+    "brand": "Instant Pot",
+    "category": "Kitchen & Dining",
+    "categorySlug": "kitchen",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1544233726-9f1d2b27be8b?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab784682f03a483e2d4fd75",
+    "sku": "TRZ-KIT-LDG-6DTCH",
+    "name": "Lodge 6-Quart Enameled Cast Iron Dutch Oven (Island Spice Red)",
+    "brand": "Lodge",
+    "category": "Kitchen & Dining",
+    "categorySlug": "kitchen",
+    "reason": "broken",
+    "currentImage": "https://images.unsplash.com/photo-1584990347449-399042b9195b?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab784682f03a483e2d4fd77",
+    "sku": "TRZ-KIT-CSR-GSNK",
+    "name": "Cosori Electric Smart Gooseneck Temperature Control Kettle (0.8L)",
+    "brand": "Cosori",
+    "category": "Kitchen & Dining",
+    "categorySlug": "kitchen",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1517256064527-09c73fc73e38?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab784682f03a483e2d4fd78",
+    "sku": "TRZ-KIT-ZWL-7KNF",
+    "name": "Zwilling Twin Signature 7-Piece German Stainless Steel Knife Block Set",
+    "brand": "Zwilling",
+    "category": "Kitchen & Dining",
+    "categorySlug": "kitchen",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1593618998160-e34014e67546?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab784682f03a483e2d4fd79",
+    "sku": "TRZ-KIT-CRW-4PC",
+    "name": "Caraway Non-Toxic Ceramic Non-Stick 4-Piece Cookware Set",
+    "brand": "Caraway",
+    "category": "Kitchen & Dining",
+    "categorySlug": "kitchen",
+    "reason": "broken",
+    "currentImage": "https://images.unsplash.com/photo-1584990347449-399042b9195b?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab784682f03a483e2d4fd7c",
+    "sku": "TRZ-KIT-OXO-8GLS",
+    "name": "OXO Good Grips 8-Piece Glass Smart Seal Food Storage Container Set",
+    "brand": "OXO",
+    "category": "Kitchen & Dining",
+    "categorySlug": "kitchen",
+    "reason": "broken",
+    "currentImage": "https://images.unsplash.com/photo-1584990347449-399042b9195b?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab784692f03a483e2d4fd7d",
+    "sku": "TRZ-DEC-LLG-LMP",
+    "name": "Minimalist Fluted Ceramic Table Lamp with Oatmeal Linen Shade",
+    "brand": "Lulu & Georgia",
+    "category": "Home Decor & Living",
+    "categorySlug": "home-decor",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846a2f03a483e2d4fd86",
+    "sku": "TRZ-DEC-GOV-FLR2",
+    "name": "Govee RGBIC Wi-Fi Smart Floor Lamp 2 with Matter & Alexa Support",
+    "brand": "Govee",
+    "category": "Home Decor & Living",
+    "categorySlug": "home-decor",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846a2f03a483e2d4fd88",
+    "sku": "TRZ-ACC-ESR-CRYO",
+    "name": "ESR CryoBoost HaloLock 3-in-1 MagSafe Wireless Charging Stand with Fan",
+    "brand": "ESR",
+    "category": "Mobile Accessories",
+    "categorySlug": "mobile-accessories",
+    "reason": "broken",
+    "currentImage": "https://images.unsplash.com/photo-1622445262464-84b1456045b6?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846a2f03a483e2d4fd89",
+    "sku": "TRZ-ACC-SPG-UH15P",
+    "name": "Spigen Ultra Hybrid MagFit Shockproof Clear Case for iPhone 15 Pro Max",
+    "brand": "Spigen",
+    "category": "Mobile Accessories",
+    "categorySlug": "mobile-accessories",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1601784551446-20c9e07cdbdb?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846a2f03a483e2d4fd8a",
+    "sku": "TRZ-ACC-ANK-NANO30",
+    "name": "Anker Nano 30W GaN Ultra-Compact Foldable USB-C Fast Charger",
+    "brand": "Anker",
+    "category": "Mobile Accessories",
+    "categorySlug": "mobile-accessories",
+    "reason": "broken",
+    "currentImage": "https://images.unsplash.com/photo-1609592424364-7bf5dfb3e41c?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846a2f03a483e2d4fd8b",
+    "sku": "TRZ-ACC-BAS-BLD65",
+    "name": "Baseus Blade 65W Retractable USB-C Cable Power Bank (20,000mAh)",
+    "brand": "Baseus",
+    "category": "Mobile Accessories",
+    "categorySlug": "mobile-accessories",
+    "reason": "broken",
+    "currentImage": "https://images.unsplash.com/photo-1609592424364-7bf5dfb3e41c?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846a2f03a483e2d4fd8d",
+    "sku": "TRZ-ACC-BLK-GYM",
+    "name": "Belkin MagSafe Magnetic Fitness Phone Mount for Gym Equipment",
+    "brand": "Belkin",
+    "category": "Mobile Accessories",
+    "categorySlug": "mobile-accessories",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1517420704952-d9f39e95b43e?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846a2f03a483e2d4fd8f",
+    "sku": "TRZ-ACC-TOR-DMND",
+    "name": "Torras Diamond Shield 9H+ Shatterproof Screen Protector (2-Pack)",
+    "brand": "Torras",
+    "category": "Mobile Accessories",
+    "categorySlug": "mobile-accessories",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1601784551446-20c9e07cdbdb?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846a2f03a483e2d4fd90",
+    "sku": "TRZ-ACC-MFT-SNAP",
+    "name": "MOFT Snap-on MagSafe Phone Stand & Vegan Leather Wallet",
+    "brand": "MOFT",
+    "category": "Mobile Accessories",
+    "categorySlug": "mobile-accessories",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1586953208448-b95a79798f07?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846a2f03a483e2d4fd91",
+    "sku": "TRZ-ACC-AUL-G05",
+    "name": "Aulumu G05 4-in-1 Titanium EDC Phone Kickstand & Box Cutter",
+    "brand": "Aulumu",
+    "category": "Mobile Accessories",
+    "categorySlug": "mobile-accessories",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1589492477829-5e65395b66cc?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846c2f03a483e2d4fda6",
+    "sku": "TRZ-SHOE-SLM-XT6",
+    "name": "Salomon XT-6 Gore-Tex Waterproof Trail Running & Lifestyle Shoes",
+    "brand": "Salomon",
+    "category": "Shoes & Footwear",
+    "categorySlug": "shoes",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846c2f03a483e2d4fda9",
+    "sku": "TRZ-SHOE-UGG-ULTRA",
+    "name": "UGG Classic Ultra Mini Genuine Twinface Sheepskin Ankle Boots",
+    "brand": "UGG",
+    "category": "Shoes & Footwear",
+    "categorySlug": "shoes",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846d2f03a483e2d4fdab",
+    "sku": "TRZ-SHOE-VEJ-CMP",
+    "name": "Veja Campo ChromeFree Leather Clean Low-Top White Sneakers",
+    "brand": "Veja",
+    "category": "Shoes & Footwear",
+    "categorySlug": "shoes",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1549298916-b41d501d3772?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846d2f03a483e2d4fdb4",
+    "sku": "TRZ-VEH-CLK-2AIR",
+    "name": "Carlinkit 5.0 2air Wireless CarPlay & Wireless Android Auto Adapter",
+    "brand": "Carlinkit",
+    "category": "Vehicles & Automotive",
+    "categorySlug": "vehicles",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846d2f03a483e2d4fdb7",
+    "sku": "TRZ-VEH-BGV-30QT",
+    "name": "BougeRV 12V 30-Quart Portable Car Freezer Refrigerator (-4°F to 50°F)",
+    "brand": "BougeRV",
+    "category": "Vehicles & Automotive",
+    "categorySlug": "vehicles",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846e2f03a483e2d4fdba",
+    "sku": "TRZ-KID-BBJ-BLISS",
+    "name": "BabyBjörn Bouncer Bliss Ergonomic Natural Rocking Baby Seat (Cotton)",
+    "brand": "BabyBjörn",
+    "category": "Baby & Kids",
+    "categorySlug": "baby-kids",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846e2f03a483e2d4fdbb",
+    "sku": "TRZ-KID-HTC-RST2",
+    "name": "Hatch Rest 2nd Gen All-in-One Smart Sound Machine & Night Light",
+    "brand": "Hatch",
+    "category": "Baby & Kids",
+    "categorySlug": "baby-kids",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1566576912321-d58ddd7a6088?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846e2f03a483e2d4fdbd",
+    "sku": "TRZ-KID-SKP-ACT",
+    "name": "Skip Hop Explore & More 3-Stage Interactive Activity Center Play Table",
+    "brand": "Skip Hop",
+    "category": "Baby & Kids",
+    "categorySlug": "baby-kids",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1566576912321-d58ddd7a6088?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846f2f03a483e2d4fdc9",
+    "sku": "TRZ-OFC-KYC-Q1PRO",
+    "name": "Keychron Q1 Pro QMK/VIA Custom Wireless Mechanical Keyboard",
+    "brand": "Keychron",
+    "category": "Office & Stationery",
+    "categorySlug": "office-supplies",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846f2f03a483e2d4fdca",
+    "sku": "TRZ-OFC-BNQ-BAR",
+    "name": "BenQ ScreenBar Pro Automatic Auto-Dimming LED Monitor Light Bar",
+    "brand": "BenQ",
+    "category": "Office & Stationery",
+    "categorySlug": "office-supplies",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846f2f03a483e2d4fdcc",
+    "sku": "TRZ-OFC-LCH-A5DOT",
+    "name": "Leuchtturm1917 Medium A5 Hardcover Dotted Journal Notebook",
+    "brand": "Leuchtturm1917",
+    "category": "Office & Stationery",
+    "categorySlug": "office-supplies",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab7846f2f03a483e2d4fdce",
+    "sku": "TRZ-OFC-ANK-C310",
+    "name": "AnkerWork C310 4K HDR Webcam with AI Autofocus & Dual Stereo Mics",
+    "brand": "AnkerWork",
+    "category": "Office & Stationery",
+    "categorySlug": "office-supplies",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab784702f03a483e2d4fdcf",
+    "sku": "TRZ-HLT-THB-PROPLS",
+    "name": "Theragun PRO Plus 6-in-1 Percussive Therapy Muscle Massager",
+    "brand": "Therabody",
+    "category": "Health & Wellness",
+    "categorySlug": "health",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab784702f03a483e2d4fdd2",
+    "sku": "TRZ-HLT-WPK-AQ90",
+    "name": "Waterpik Aquarius Professional Water Flosser with 10 Pressure Settings",
+    "brand": "Waterpik",
+    "category": "Health & Wellness",
+    "categorySlug": "health",
+    "reason": "broken",
+    "currentImage": "https://images.unsplash.com/photo-1559591937-e62fb3d8d5bb?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab784702f03a483e2d4fdd4",
+    "sku": "TRZ-HLT-PHL-WAKE",
+    "name": "Philips SmartSleep Wake-Up Light Sunrise Simulation Alarm Clock",
+    "brand": "Philips",
+    "category": "Health & Wellness",
+    "categorySlug": "health",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab784702f03a483e2d4fdd5",
+    "sku": "TRZ-HLT-OMR-PLAT",
+    "name": "Omron Platinum Wireless Upper Arm Blood Pressure Monitor",
+    "brand": "Omron",
+    "category": "Health & Wellness",
+    "categorySlug": "health",
+    "reason": "mismatch",
+    "currentImage": "https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab784702f03a483e2d4fdd6",
+    "sku": "TRZ-HLT-DYS-NURL",
+    "name": "Dyson Supersonic Nural Intelligent Scalp-Protecting Hair Dryer",
+    "brand": "Dyson",
+    "category": "Health & Wellness",
+    "categorySlug": "health",
+    "reason": "mismatch",
+    "currentImage": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab784702f03a483e2d4fdd8",
+    "sku": "TRZ-TRV-YET-T45",
+    "name": "YETI Tundra 45 Hard Cooler with PermaFrost Commercial Insulation",
+    "brand": "YETI",
+    "category": "Outdoor, Luggage & Travel",
+    "categorySlug": "outdoor-travel",
+    "reason": "mismatch",
+    "currentImage": "https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab784702f03a483e2d4fdd9",
+    "sku": "TRZ-TRV-NTC-NB10K",
+    "name": "Nitecore NB10000 Gen 3 Carbon Fiber Ultralight Power Bank (10,000mAh)",
+    "brand": "Nitecore",
+    "category": "Outdoor, Luggage & Travel",
+    "categorySlug": "outdoor-travel",
+    "reason": "broken",
+    "currentImage": "https://images.unsplash.com/photo-1609592424364-7bf5dfb3e41c?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab784712f03a483e2d4fdde",
+    "sku": "TRZ-TRV-PKD-ED20",
+    "name": "Peak Design Everyday Backpack V2 20L Weatherproof Camera Bag",
+    "brand": "Peak Design",
+    "category": "Outdoor, Luggage & Travel",
+    "categorySlug": "outdoor-travel",
+    "reason": "duplicate",
+    "currentImage": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=800&auto=format&fit=crop&q=80"
+  }
+]

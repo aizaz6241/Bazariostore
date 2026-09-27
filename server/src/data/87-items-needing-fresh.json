@@ -1,0 +1,494 @@
+[
+  {
+    "sku": "TRZ-B5-SNY-XB100-BLK",
+    "name": "Sony SRS-XB100 Compact Portable Wireless Bluetooth Speaker",
+    "category": "6a88faa687b7b84a343930c9",
+    "brand": "Sony"
+  },
+  {
+    "sku": "TRZ-INS-FLOW-WHT",
+    "name": "Insta360 Flow AI-Tracking Smartphone Gimbal Stabilizer",
+    "category": "6a88faa687b7b84a343930c7",
+    "brand": "Insta360"
+  },
+  {
+    "sku": "TRZ-ACC-ANK-NANO30",
+    "name": "Anker Nano 30W GaN Ultra-Compact Foldable USB-C Fast Charger",
+    "category": "6ab784652f03a483e2d4fd5e",
+    "brand": "Anker"
+  },
+  {
+    "sku": "TRZ-COS-LIN-PEN",
+    "name": "Waterproof Ultra-Precision Felt-Tip Liquid Eyeliner Pen (Carbon Black)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "VogueGlam"
+  },
+  {
+    "sku": "TRZ-B6-LOG-ANY-3S",
+    "name": "Logitech MX Anywhere 3S Compact Wireless Performance Mouse",
+    "category": "6a88faa687b7b84a343930c8",
+    "brand": "Logitech"
+  },
+  {
+    "sku": "TRZ-OFC-KYC-Q1PRO",
+    "name": "Keychron Q1 Pro QMK/VIA Custom Wireless Mechanical Keyboard",
+    "category": "6ab784662f03a483e2d4fd64",
+    "brand": "Keychron"
+  },
+  {
+    "sku": "TRZ-B6-WDB-SN85-2TB",
+    "name": "WD_BLACK SN850X 2TB NVMe SSD with Custom Aluminum Heatsink",
+    "category": "6a88faa687b7b84a343930c8",
+    "brand": "Western Digital"
+  },
+  {
+    "sku": "TRZ-B6-KEN-SD57-TB4",
+    "name": "Kensington SD5700T Thunderbolt 4 Dual 4K Docking Station",
+    "category": "6a88faa687b7b84a343930c8",
+    "brand": "Kensington"
+  },
+  {
+    "sku": "TRZ-B4-GRM-INST2-SLR",
+    "name": "Garmin Instinct 2 Solar Rugged GPS Tactical Watch",
+    "category": "6a88faa787b7b84a343930cb",
+    "brand": "Garmin"
+  },
+  {
+    "sku": "TRZ-B6-TIS-PRX-80BL",
+    "name": "Tissot PRX Powermatic 80 Blue Dial Steel Automatic Watch",
+    "category": "6a88faa787b7b84a343930cb",
+    "brand": "Tissot"
+  },
+  {
+    "sku": "TRZ-BTY-GLD-50ML",
+    "name": "Pure 24K Gold & Snail Mucin Intensive Repair Cream (50ml)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "Aura & Glow"
+  },
+  {
+    "sku": "TRZ-COS-CRM-CER",
+    "name": "Multi-Ceramide & Peptide Barrier Restore Hydrating Cream (50ml)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "AuraGlow"
+  },
+  {
+    "sku": "TRZ-COS-SRM-HYA",
+    "name": "Multi-Molecular Hyaluronic Acid 2% + B5 Intense Plumping Hydration Serum (30ml)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "BotanicaPure"
+  },
+  {
+    "sku": "TRZ-COS-EYE-CAF",
+    "name": "Caffeine 5% + Peptides Dark Circle & Puffiness Brightening Eye Cream (15ml)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "AuraGlow"
+  },
+  {
+    "sku": "TRZ-B6-T3-AIR-LUXE",
+    "name": "T3 AireLuxe Professional Digital Ionic Hair Dryer",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "T3 Micro"
+  },
+  {
+    "sku": "TRZ-HLT-DYS-NURL",
+    "name": "Dyson Supersonic Nural Intelligent Scalp-Protecting Hair Dryer",
+    "category": "6ab784662f03a483e2d4fd65",
+    "brand": "Dyson"
+  },
+  {
+    "sku": "TRZ-B4-FLW-STG-MBK",
+    "name": "Fellow Stagg EKG Electric Gooseneck Pour-Over Kettle",
+    "category": "6a88faa787b7b84a343930cd",
+    "brand": "Fellow"
+  },
+  {
+    "sku": "TRZ-HOM-LDG-12SKL",
+    "name": "Lodge 12-Inch Pre-Seasoned Cast Iron Skillet with Handle Grip",
+    "category": "6a88faa787b7b84a343930cd",
+    "brand": "Lodge"
+  },
+  {
+    "sku": "TRZ-B4-THB-MINI2-BLK",
+    "name": "Theragun Mini 2.0 Portable Deep Tissue Massage Gun",
+    "category": "6a88faa787b7b84a343930ce",
+    "brand": "Therabody"
+  },
+  {
+    "sku": "TRZ-B6-AUD-A2P-WHT",
+    "name": "Audioengine A2+ Wireless Powered Desktop Speaker System",
+    "category": "6a88faa687b7b84a343930c9",
+    "brand": "Audioengine"
+  },
+  {
+    "sku": "TRZ-VEH-CLK-2AIR",
+    "name": "Carlinkit 5.0 2air Wireless CarPlay & Wireless Android Auto Adapter",
+    "category": "6ab784662f03a483e2d4fd61",
+    "brand": "Carlinkit"
+  },
+  {
+    "sku": "TRZ-ACC-BAS-BLD65",
+    "name": "Baseus Blade 65W Retractable USB-C Cable Power Bank (20,000mAh)",
+    "category": "6ab784652f03a483e2d4fd5e",
+    "brand": "Baseus"
+  },
+  {
+    "sku": "TRZ-OFC-BNQ-BAR",
+    "name": "BenQ ScreenBar Pro Automatic Auto-Dimming LED Monitor Light Bar",
+    "category": "6ab784662f03a483e2d4fd64",
+    "brand": "BenQ"
+  },
+  {
+    "sku": "TRZ-B6-NUP-AIR-75V2",
+    "name": "NuPhy Air75 V2 Low-Profile Wireless Mechanical Keyboard",
+    "category": "6a88faa687b7b84a343930c8",
+    "brand": "NuPhy"
+  },
+  {
+    "sku": "TRZ-B6-HAM-KHK-38MM",
+    "name": "Hamilton Khaki Field Mechanical 38mm Military Watch",
+    "category": "6a88faa787b7b84a343930cb",
+    "brand": "Hamilton"
+  },
+  {
+    "sku": "TRZ-COS-MSK-GOLD",
+    "name": "24K Bio-Collagen Hydrogel Rejuvenating Overnight Sleeping Mask (Set of 5)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "AuraGlow"
+  },
+  {
+    "sku": "TRZ-B4-BBY-NANO-125",
+    "name": "BaBylissPRO Nano Titanium Digital Flat Iron (1.25 Inch)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "BaBylissPRO"
+  },
+  {
+    "sku": "TRZ-DEC-CRB-AMB2",
+    "name": "Ribbed Amber Glass Hurricane Candle Holders (Set of 2)",
+    "category": "6ab784652f03a483e2d4fd5d",
+    "brand": "Crate & Barrel"
+  },
+  {
+    "sku": "TRZ-KIT-ZWL-7KNF",
+    "name": "Zwilling Twin Signature 7-Piece German Stainless Steel Knife Block Set",
+    "category": "6ab784652f03a483e2d4fd5c",
+    "brand": "Zwilling"
+  },
+  {
+    "sku": "TRZ-KIT-OXO-8GLS",
+    "name": "OXO Good Grips 8-Piece Glass Smart Seal Food Storage Container Set",
+    "category": "6ab784652f03a483e2d4fd5c",
+    "brand": "OXO"
+  },
+  {
+    "sku": "TRZ-B6-IRO-QLK-KBH",
+    "name": "Ironmaster Quick-Lock Adjustable Kettlebell Handle",
+    "category": "6a88faa787b7b84a343930ce",
+    "brand": "Ironmaster"
+  },
+  {
+    "sku": "TRZ-B5-HYD-32OZ-PAC",
+    "name": "Hydro Flask 32 oz Wide Mouth Stainless Water Bottle (Flex Straw)",
+    "category": "6a88faa787b7b84a343930ce",
+    "brand": "Hydro Flask"
+  },
+  {
+    "sku": "TRZ-B6-SPE-LZR-INT",
+    "name": "Speedo Fastskin LZR Pure Intent High Waist Jammer",
+    "category": "6a88faa787b7b84a343930ce",
+    "brand": "Speedo"
+  },
+  {
+    "sku": "TRZ-B6-HYP-VOLT-2P",
+    "name": "Hyperice Hypervolt 2 Pro Deep Tissue Percussion Massager",
+    "category": "6a88faa787b7b84a343930ce",
+    "brand": "Hyperice"
+  },
+  {
+    "sku": "TRZ-HLT-THB-PROPLS",
+    "name": "Theragun PRO Plus 6-in-1 Percussive Therapy Muscle Massager",
+    "category": "6ab784662f03a483e2d4fd65",
+    "brand": "Therabody"
+  },
+  {
+    "sku": "TRZ-TRV-NTC-NB10K",
+    "name": "Nitecore NB10000 Gen 3 Carbon Fiber Ultralight Power Bank (10,000mAh)",
+    "category": "6ab784662f03a483e2d4fd66",
+    "brand": "Nitecore"
+  },
+  {
+    "sku": "TRZ-ACC-ESR-CRYO",
+    "name": "ESR CryoBoost HaloLock 3-in-1 MagSafe Wireless Charging Stand with Fan",
+    "category": "6ab784652f03a483e2d4fd5e",
+    "brand": "ESR"
+  },
+  {
+    "sku": "TRZ-B6-SUU-9PK-TI",
+    "name": "Suunto 9 Peak Pro Titanium GPS Multisport Watch",
+    "category": "6a88faa787b7b84a343930cb",
+    "brand": "Suunto"
+  },
+  {
+    "sku": "TRZ-SHOE-SLM-XT6",
+    "name": "Salomon XT-6 Gore-Tex Waterproof Trail Running & Lifestyle Shoes",
+    "category": "6ab784662f03a483e2d4fd60",
+    "brand": "Salomon"
+  },
+  {
+    "sku": "TRZ-B5-REV-VOL2-BLK",
+    "name": "Revlon One-Step Volumizer PLUS 2.0 Ceramic Hot Air Brush",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "Revlon"
+  },
+  {
+    "sku": "TRZ-COS-BLSH-CRM",
+    "name": "Soft Dewy Liquid Cream Blush with Cushion Wand (Peachy Coral)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "AuraGlow"
+  },
+  {
+    "sku": "TRZ-B6-DDG-LED-MASK",
+    "name": "Dr. Dennis Gross DRx SpectraLite FaceWare Pro LED Mask",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "Dr. Dennis Gross"
+  },
+  {
+    "sku": "TRZ-KIT-CSR-GSNK",
+    "name": "Cosori Electric Smart Gooseneck Temperature Control Kettle (0.8L)",
+    "category": "6ab784652f03a483e2d4fd5c",
+    "brand": "Cosori"
+  },
+  {
+    "sku": "TRZ-ACC-AUL-G05",
+    "name": "Aulumu G05 4-in-1 Titanium EDC Phone Kickstand & Box Cutter",
+    "category": "6ab784652f03a483e2d4fd5e",
+    "brand": "Aulumu"
+  },
+  {
+    "sku": "TRZ-ACC-BLK-GYM",
+    "name": "Belkin MagSafe Magnetic Fitness Phone Mount for Gym Equipment",
+    "category": "6ab784652f03a483e2d4fd5e",
+    "brand": "Belkin"
+  },
+  {
+    "sku": "TRZ-B6-ANK-C300-CAM",
+    "name": "Anker PowerConf C300 AI-Powered 1080p 60fps Conference Webcam",
+    "category": "6a88faa687b7b84a343930c8",
+    "brand": "AnkerWork"
+  },
+  {
+    "sku": "TRZ-OFC-ANK-C310",
+    "name": "AnkerWork C310 4K HDR Webcam with AI Autofocus & Dual Stereo Mics",
+    "category": "6ab784662f03a483e2d4fd64",
+    "brand": "AnkerWork"
+  },
+  {
+    "sku": "TRZ-ACC-UGR-100W",
+    "name": "UGREEN Nexode 100W 4-Port GaN Desktop Fast Charging Hub",
+    "category": "6ab784652f03a483e2d4fd5e",
+    "brand": "UGREEN"
+  },
+  {
+    "sku": "TRZ-KIT-CRW-4PC",
+    "name": "Caraway Non-Toxic Ceramic Non-Stick 4-Piece Cookware Set",
+    "category": "6ab784652f03a483e2d4fd5c",
+    "brand": "Caraway"
+  },
+  {
+    "sku": "TRZ-DEC-LLG-LMP",
+    "name": "Minimalist Fluted Ceramic Table Lamp with Oatmeal Linen Shade",
+    "category": "6ab784652f03a483e2d4fd5d",
+    "brand": "Lulu & Georgia"
+  },
+  {
+    "sku": "TRZ-KID-HTC-RST2",
+    "name": "Hatch Rest 2nd Gen All-in-One Smart Sound Machine & Night Light",
+    "category": "6ab784662f03a483e2d4fd62",
+    "brand": "Hatch"
+  },
+  {
+    "sku": "TRZ-HLT-PHL-WAKE",
+    "name": "Philips SmartSleep Wake-Up Light Sunrise Simulation Alarm Clock",
+    "category": "6ab784662f03a483e2d4fd65",
+    "brand": "Philips"
+  },
+  {
+    "sku": "TRZ-B6-TRX-PRO-4SYS",
+    "name": "TRX PRO4 Suspension Trainer System",
+    "category": "6a88faa787b7b84a343930ce",
+    "brand": "TRX"
+  },
+  {
+    "sku": "TRZ-COS-MSC-LASH",
+    "name": "High-Impact Waterproof Volumizing & Lengthening Mascara (Jet Black)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "VogueGlam"
+  },
+  {
+    "sku": "TRZ-OFC-LCH-A5DOT",
+    "name": "Leuchtturm1917 Medium A5 Hardcover Dotted Journal Notebook",
+    "category": "6ab784662f03a483e2d4fd64",
+    "brand": "Leuchtturm1917"
+  },
+  {
+    "sku": "TRZ-B6-PHI-HUE-65G",
+    "name": "Philips Hue Play Gradient Lightstrip 65-inch Ambient TV Lighting",
+    "category": "6a88faa787b7b84a343930cd",
+    "brand": "Philips Hue"
+  },
+  {
+    "sku": "TRZ-DEC-GOV-FLR2",
+    "name": "Govee RGBIC Wi-Fi Smart Floor Lamp 2 with Matter & Alexa Support",
+    "category": "6ab784652f03a483e2d4fd5d",
+    "brand": "Govee"
+  },
+  {
+    "sku": "TRZ-B6-EDI-R128-DBS",
+    "name": "Edifier R1280DBs Powered Bluetooth Bookshelf Speakers",
+    "category": "6a88faa687b7b84a343930c9",
+    "brand": "Edifier"
+  },
+  {
+    "sku": "TRZ-COS-EDP-AMB",
+    "name": "Golden Amber, Vanilla Bourbon & White Musk Luxury Eau De Parfum (100ml)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "LuxeBotanicals"
+  },
+  {
+    "sku": "TRZ-COS-HLT-GLW",
+    "name": "Baked Champagne Shimmer Strobe Highlighting Powder (8g)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "VogueGlam"
+  },
+  {
+    "sku": "TRZ-COS-SRM-VITC",
+    "name": "20% Vitamin C + Ferulic Acid + Vitamin E Antioxidant Glow Serum (30ml)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "AuraGlow"
+  },
+  {
+    "sku": "TRZ-COS-TON-ROSE",
+    "name": "100% Organic Damask Rosewater Facial Hydrosol Mist Toner (120ml)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "LuxeBotanicals"
+  },
+  {
+    "sku": "TRZ-COS-EDP-SNT",
+    "name": "Santal & Cardamom Unisex Woody Eau De Parfum (100ml)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "LuxeBotanicals"
+  },
+  {
+    "sku": "TRZ-KIT-ANO-NANO",
+    "name": "Anova Culinary Precision Sous Vide Nano Cooker (Bluetooth)",
+    "category": "6ab784652f03a483e2d4fd5c",
+    "brand": "Anova"
+  },
+  {
+    "sku": "TRZ-KID-SKP-ACT",
+    "name": "Skip Hop Explore & More 3-Stage Interactive Activity Center Play Table",
+    "category": "6ab784662f03a483e2d4fd62",
+    "brand": "Skip Hop"
+  },
+  {
+    "sku": "TRZ-KID-BBJ-BLISS",
+    "name": "BabyBjörn Bouncer Bliss Ergonomic Natural Rocking Baby Seat (Cotton)",
+    "category": "6ab784662f03a483e2d4fd62",
+    "brand": "BabyBjörn"
+  },
+  {
+    "sku": "TRZ-KID-FRD-SNOT",
+    "name": "FridaBaby NoseFrida SnotSucker Baby Nasal Aspirator Deluxe Set",
+    "category": "6ab784662f03a483e2d4fd62",
+    "brand": "Frida"
+  },
+  {
+    "sku": "TRZ-COS-BRS-SET",
+    "name": "12-Piece Professional Ultra-Soft Vegan Makeup Brush Set with Travel Case",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "VogueGlam"
+  },
+  {
+    "sku": "TRZ-SHOE-UGG-ULTRA",
+    "name": "UGG Classic Ultra Mini Genuine Twinface Sheepskin Ankle Boots",
+    "category": "6ab784662f03a483e2d4fd60",
+    "brand": "UGG"
+  },
+  {
+    "sku": "TRZ-TRV-MNS-PLUS",
+    "name": "Monos Carry-On Plus Unbreakable Polycarbonate Hard-Shell Suitcase",
+    "category": "6ab784662f03a483e2d4fd66",
+    "brand": "Monos"
+  },
+  {
+    "sku": "TRZ-COS-BWASH-EUC",
+    "name": "Aromatherapy Eucalyptus & Spearmint Foaming Body Wash (500ml)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "AuraGlow"
+  },
+  {
+    "sku": "TRZ-COS-SOAP-CHR",
+    "name": "Activated Bamboo Charcoal & Tea Tree Purifying Detox Bar Soap",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "BotanicaPure"
+  },
+  {
+    "sku": "TRZ-COS-SHMP-ARG",
+    "name": "Moroccan Argan Oil Hydrating & Repairing Shampoo (350ml)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "BotanicaPure"
+  },
+  {
+    "sku": "TRZ-COS-CLN-SAL",
+    "name": "Salicylic Acid 2% Daily Gentle Exfoliating Cleanser (200ml)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "AuraGlow"
+  },
+  {
+    "sku": "TRZ-COS-SUN-SPF50",
+    "name": "Daily Invisible Water-Gel Broad Spectrum SPF 50+ Sunscreen (50ml)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "BotanicaPure"
+  },
+  {
+    "sku": "TRZ-COS-MSK-CLAY",
+    "name": "French Green Clay & Matcha Purifying Pore Tightening Face Mask (100g)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "BotanicaPure"
+  },
+  {
+    "sku": "TRZ-COS-CLN-FOAM",
+    "name": "Green Tea & Centella Asiatica Calming Foam Face Wash (150ml)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "BotanicaPure"
+  },
+  {
+    "sku": "TRZ-COS-SRM-NIA",
+    "name": "Niacinamide 10% + Zinc 1% Oil Control & Pore Refining Facial Serum (30ml)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "AuraGlow"
+  },
+  {
+    "sku": "TRZ-COS-LIP-OIL",
+    "name": "Peptide Hydrating Lip Glow Treatment Oil (Berry Blossom)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "AuraGlow"
+  },
+  {
+    "sku": "TRZ-COS-LIP-NUDE",
+    "name": "Ultra-Creamy Satin Finish Hydrating Lipstick (Nude Elegance)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "VogueGlam"
+  },
+  {
+    "sku": "TRZ-COS-EYE-PLT",
+    "name": "18-Color Warm Sunset & Desert Rose Eyeshadow Palette",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "VogueGlam"
+  },
+  {
+    "sku": "TRZ-COS-PWD-SET",
+    "name": "Translucent Micro-Fine Blur Setting Powder with Velvet Puff (20g)",
+    "category": "6a88faa787b7b84a343930cc",
+    "brand": "VogueGlam"
+  }
+]

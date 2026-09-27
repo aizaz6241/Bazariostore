@@ -1,0 +1,1157 @@
+[
+  {
+    "sku": "TRZ-WAT-CHR-001",
+    "name": "Chronos Heritage Swiss Automatic Chronograph Watch",
+    "cat": "Watches & Wearables"
+  },
+  {
+    "sku": "TRZ-FSH-JKT-09",
+    "name": "Bespoke Lambskin Leather Biker Jacket",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-BTY-SRM-50ML",
+    "name": "Advanced Botanical Retinol & Hyaluronic Face Serum",
+    "cat": "Beauty & Fragrances"
+  },
+  {
+    "sku": "TRZ-ANK-SP1-BLK",
+    "name": "Anker Soundcore Space One Noise Cancelling Headphones",
+    "cat": "Electronics & Audio"
+  },
+  {
+    "sku": "TRZ-SNY-WFC700-WHT",
+    "name": "Sony WF-C700N Truly Wireless Earbuds with ANC",
+    "cat": "Electronics & Audio"
+  },
+  {
+    "sku": "TRZ-HPX-QCST-RGB",
+    "name": "HyperX QuadCast S RGB USB Gaming Microphone",
+    "cat": "Electronics & Audio"
+  },
+  {
+    "sku": "TRZ-B4-DJI-OM6-PLT",
+    "name": "DJI Osmo Mobile 6 Smartphone Gimbal Stabilizer",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-BSS-GAN140W",
+    "name": "Baseus 140W Multi-Port GaN5 Pro Fast Charger",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-SPG-MAGFIT-CLR",
+    "name": "Spigen Ultra Hybrid MagFit Clear Case & Stand",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-B4-LOG-MXM3S-GRY",
+    "name": "Logitech MX Master 3S Performance Wireless Mouse",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-KCH-K2PRO-RGB",
+    "name": "Keychron K2 Pro QMK/VIA Wireless Mechanical Keyboard",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-SND-EXT1TB",
+    "name": "SanDisk Extreme 1TB Portable Rugged External SSD",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-ANK-DOCK12IN1",
+    "name": "Anker 575 USB-C Triple Display 12-in-1 Docking Station",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-AMZ-GTR4-BLK",
+    "name": "Amazfit GTR 4 Smart Watch with Dual-Band GPS",
+    "cat": "Watches & Wearables"
+  },
+  {
+    "sku": "TRZ-SKO-5SP-SLV",
+    "name": "Seiko 5 Sports Automatic Dive-Style Stainless Watch",
+    "cat": "Watches & Wearables"
+  },
+  {
+    "sku": "TRZ-CAS-GA2100-BLK",
+    "name": "Casio G-Shock GA-2100 Carbon Core Guard Watch",
+    "cat": "Watches & Wearables"
+  },
+  {
+    "sku": "TRZ-FSH-HD450-OAT",
+    "name": "Heavyweight Fleece Oversized Streetwear Hoodie (450 GSM)",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-FSH-WLT-BRN",
+    "name": "Minimalist Top-Grain Italian Leather Bifold Wallet with RFID",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-FSH-AVT-GLD",
+    "name": "Polarized Aviator Sunglasses with Titanium Alloy Frame",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-BTY-USCL-PNK",
+    "name": "Sonic Pulsating Facial Cleansing Brush with Red Light Therapy",
+    "cat": "Beauty & Fragrances"
+  },
+  {
+    "sku": "TRZ-BTY-RHP-30ML",
+    "name": "Organic Cold-Pressed Rosehip & Marula Youth Facial Oil (30ml)",
+    "cat": "Beauty & Fragrances"
+  },
+  {
+    "sku": "TRZ-BTY-IONDRY-MAT",
+    "name": "Salon Pro High-Speed Ionic Hair Dryer with Magnetic Nozzles (1600W)",
+    "cat": "Beauty & Fragrances"
+  },
+  {
+    "sku": "TRZ-HOM-AFXL-BLK",
+    "name": "Ninja Digital Air Fryer XL 8-in-1 Dual-Zone (6-Quart)",
+    "cat": "Home & Kitchen"
+  },
+  {
+    "sku": "TRZ-HOM-KTL-MAT",
+    "name": "Electric Pour-Over Gooseneck Kettle with Variable Temp Control",
+    "cat": "Home & Kitchen"
+  },
+  {
+    "sku": "TRZ-HOM-DTC-BLU",
+    "name": "Cast Iron Dutch Oven 6-Quart Enameled Ceramic Coating",
+    "cat": "Home & Kitchen"
+  },
+  {
+    "sku": "TRZ-SPT-MGUN-PRO",
+    "name": "TheraPro Deep Tissue Percussion Muscle Massage Gun",
+    "cat": "Sports & Fitness"
+  },
+  {
+    "sku": "TRZ-SPT-DMB-40LB",
+    "name": "Adjustable Cast Iron Dumbbell Set with Grip Stand (40 LBS)",
+    "cat": "Sports & Fitness"
+  },
+  {
+    "sku": "TRZ-BSE-MIC-BLK",
+    "name": "Bose SoundLink Micro Rugged Bluetooth Speaker",
+    "cat": "Electronics & Audio"
+  },
+  {
+    "sku": "TRZ-ELG-STDK-MK2",
+    "name": "Elgato Stream Deck MK.2 Broadcast Controller (15 LCD Keys)",
+    "cat": "Electronics & Audio"
+  },
+  {
+    "sku": "TRZ-ANK-PB737-140W",
+    "name": "Anker 737 Power Bank (PowerCore 24K, 140W 3-Port)",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-SAM-45W-BLK",
+    "name": "Samsung 45W USB-C Super Fast Wall Charger with 5A Cable",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-MFT-MAGWLT-BRN",
+    "name": "MOFT Snap-On Stand & MagSafe Wallet (Vegan Leather)",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-APL-PNC-USBC",
+    "name": "Apple Pencil (USB-C) Precision Drawing Stylus",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-RZR-DAV3-BLK",
+    "name": "Razer DeathAdder V3 Pro Ultra-Lightweight Wireless Gaming Mouse",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-RND-MSTD-SLV",
+    "name": "Rain Design mStand Ergonomic Aluminum Laptop Riser",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-FSH-CHL-BRN",
+    "name": "Genuine Nubuck Leather Chelsea Boots with Goodyear Welt",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-HSH-LAM-NVY",
+    "name": "Herschel Little America 25L Laptop Backpack",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-BTY-TFNE-15ML",
+    "name": "Tom Ford Noir Extreme Parfum Travel Atomizer (15ml)",
+    "cat": "Beauty & Fragrances"
+  },
+  {
+    "sku": "TRZ-BTY-DMR-05MM",
+    "name": "Dermaroller Titanium 540-Needle Facial Roller (0.5mm)",
+    "cat": "Beauty & Fragrances"
+  },
+  {
+    "sku": "TRZ-BTY-BBL-TI1",
+    "name": "BaBylissPRO Nano Titanium 1\" Ultra-Thin Flat Iron",
+    "cat": "Beauty & Fragrances"
+  },
+  {
+    "sku": "TRZ-BTY-GLD-50ML",
+    "name": "Pure 24K Gold & Snail Mucin Intensive Repair Cream (50ml)",
+    "cat": "Beauty & Fragrances"
+  },
+  {
+    "sku": "TRZ-BTY-DIP-BAIES",
+    "name": "Diptyque Baies Luxury Scented Candle in Mouth-Blown Glass (190g)",
+    "cat": "Beauty & Fragrances"
+  },
+  {
+    "sku": "TRZ-HOM-KNF-VG10",
+    "name": "Japanese 67-Layer Damascus Steel 8\" Chef Knife (VG-10)",
+    "cat": "Home & Kitchen"
+  },
+  {
+    "sku": "TRZ-HOM-LDG-12SKL",
+    "name": "Lodge 12-Inch Pre-Seasoned Cast Iron Skillet with Handle Grip",
+    "cat": "Home & Kitchen"
+  },
+  {
+    "sku": "TRZ-HOM-OXO-10POP",
+    "name": "OXO Good Grips 10-Piece Airtight Food Storage Container Set",
+    "cat": "Home & Kitchen"
+  },
+  {
+    "sku": "TRZ-SPT-BFX-840KB",
+    "name": "Bowflex SelectTech 840 Adjustable Kettlebell (8 to 40 LBS)",
+    "cat": "Sports & Fitness"
+  },
+  {
+    "sku": "TRZ-SPT-LLM-5MM",
+    "name": "Lululemon The Reversible Mat 5mm Natural Rubber Yoga Mat",
+    "cat": "Sports & Fitness"
+  },
+  {
+    "sku": "TRZ-SPT-HYD-32OZ",
+    "name": "Hydro Flask 32 oz Wide Mouth Vacuum Insulated Water Bottle",
+    "cat": "Sports & Fitness"
+  },
+  {
+    "sku": "TRZ-SPT-SPD-ELT",
+    "name": "Speedo Fastskin Hyper Elite Mirror Swimming Goggles",
+    "cat": "Sports & Fitness"
+  },
+  {
+    "sku": "TRZ-B4-ANK-PRM-20K",
+    "name": "Anker Prime 20,000mAh Power Bank (200W Output)",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-B4-BLK-MAG3IN1",
+    "name": "Belkin BoostCharge Pro 3-in-1 MagSafe Wireless Stand",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-B4-SPG-TGARM-BLK",
+    "name": "Spigen Tough Armor MagFit Rugged Phone Case & Stand",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-B4-KEY-Q1PRO-RGB",
+    "name": "Keychron Q1 Pro Wireless Custom Mechanical Keyboard",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-B4-CLD-TS4-DOCK",
+    "name": "CalDigit TS4 Thunderbolt 4 18-Port Docking Station",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-B4-RD-MSTAND-SLV",
+    "name": "Rain Design mStand Aluminum Ergonomic Laptop Stand",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-B4-SND-EXT2TB-NVME",
+    "name": "SanDisk 2TB Extreme PRO Portable SSD (2000MB/s)",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-B4-BOS-QCU-EAR",
+    "name": "Bose QuietComfort Ultra Noise Cancelling Earbuds",
+    "cat": "Electronics & Audio"
+  },
+  {
+    "sku": "TRZ-B4-SHR-MV7P-BLK",
+    "name": "Shure MV7+ USB/XLR Podcast Dynamic Microphone",
+    "cat": "Electronics & Audio"
+  },
+  {
+    "sku": "TRZ-B4-MSH-EMB2-BLK",
+    "name": "Marshall Emberton II Portable Bluetooth Speaker",
+    "cat": "Electronics & Audio"
+  },
+  {
+    "sku": "TRZ-B4-SEI-SRPD55-BLK",
+    "name": "Seiko 5 Sports Automatic Skeleton Watch (SRPD55K1)",
+    "cat": "Watches & Wearables"
+  },
+  {
+    "sku": "TRZ-B4-GRM-INST2-SLR",
+    "name": "Garmin Instinct 2 Solar Rugged GPS Tactical Watch",
+    "cat": "Watches & Wearables"
+  },
+  {
+    "sku": "TRZ-B4-NRD-PIO-NAVY",
+    "name": "Nordgreen Pioneer Minimalist Chronograph Watch (42mm)",
+    "cat": "Watches & Wearables"
+  },
+  {
+    "sku": "TRZ-B4-BLR-TKY-TOTE",
+    "name": "Bellroy Tokyo Totepack Premium Water-Resistant Bag",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-B4-PKD-SLG-6L",
+    "name": "Peak Design Everyday Sling 6L (V2 Ash Edition)",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-B4-RAY-WYF-POL",
+    "name": "Ray-Ban Wayfarer Classic Polarized Sunglasses (RB2140)",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-B4-RDG-CRB-WAL",
+    "name": "Ridge Slim RFID-Blocking Carbon Fiber Wallet",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-B4-TMB-6IN-WHT",
+    "name": "Timberland 6-Inch Premium Waterproof Nubuck Leather Boots",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-B4-DYS-SUP-FCH",
+    "name": "Dyson Supersonic Ionic Hair Dryer (Iron/Fuchsia)",
+    "cat": "Beauty & Fragrances"
+  },
+  {
+    "sku": "TRZ-B4-NUF-TRN-WHT",
+    "name": "NuFACE Trinity Facial Toning Device with Microcurrent",
+    "cat": "Beauty & Fragrances"
+  },
+  {
+    "sku": "TRZ-B4-FOR-LUN4-PNK",
+    "name": "FOREO LUNA 4 Smart Facial Cleansing & Firming Massager",
+    "cat": "Beauty & Fragrances"
+  },
+  {
+    "sku": "TRZ-B4-BBY-NANO-125",
+    "name": "BaBylissPRO Nano Titanium Digital Flat Iron (1.25 Inch)",
+    "cat": "Beauty & Fragrances"
+  },
+  {
+    "sku": "TRZ-B4-BRV-TOUCH-SS",
+    "name": "Breville Barista Touch Espresso Machine (Brushed Steel)",
+    "cat": "Home & Kitchen"
+  },
+  {
+    "sku": "TRZ-B4-FLW-STG-MBK",
+    "name": "Fellow Stagg EKG Electric Gooseneck Pour-Over Kettle",
+    "cat": "Home & Kitchen"
+  },
+  {
+    "sku": "TRZ-B4-THB-MINI2-BLK",
+    "name": "Theragun Mini 2.0 Portable Deep Tissue Massage Gun",
+    "cat": "Sports & Fitness"
+  },
+  {
+    "sku": "TRZ-B4-BWF-552-SNGL",
+    "name": "Bowflex SelectTech 552 Adjustable Dumbbell (Single)",
+    "cat": "Sports & Fitness"
+  },
+  {
+    "sku": "TRZ-B4-MDK-PRO-BLK",
+    "name": "Manduka PRO Yoga & Pilates Mat (6mm Extra Thick)",
+    "cat": "Sports & Fitness"
+  },
+  {
+    "sku": "TRZ-B5-POP-MAG-BLK",
+    "name": "PopSockets PopGrip with MagSafe Detachable Grip & Stand",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-B5-PKD-CAR-MNT",
+    "name": "Peak Design Mobile Wireless Charging Magnetic Car Mount",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-B5-UAG-MON-KVL",
+    "name": "UAG Monarch Rugged Kevlar Military-Grade Protective Case",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-B5-SAT-SLMX1-GRY",
+    "name": "Satechi Slim X1 Bluetooth Backlit Wireless Keyboard",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-B5-LOG-C920X-PRO",
+    "name": "Logitech C920x Pro HD 1080p Stream Webcam with Privacy Shutter",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-B5-ANK-737-120W",
+    "name": "Anker 737 GaNPrime 120W 3-Port Fast Wall Charger",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-B5-SNY-XB100-BLK",
+    "name": "Sony SRS-XB100 Compact Portable Wireless Bluetooth Speaker",
+    "cat": "Electronics & Audio"
+  },
+  {
+    "sku": "TRZ-B5-AT-M50X-BLK",
+    "name": "Audio-Technica ATH-M50x Professional Studio Monitor Headphones",
+    "cat": "Electronics & Audio"
+  },
+  {
+    "sku": "TRZ-B5-ROD-WLME-SYS",
+    "name": "Rode Wireless ME Ultra-Compact Wireless Microphone System",
+    "cat": "Electronics & Audio"
+  },
+  {
+    "sku": "TRZ-B5-BLR-HDSK-CHR",
+    "name": "Bellroy Hide & Seek Premium RFID Leather Bi-Fold Wallet",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-B5-DGN-LDN-ONYX",
+    "name": "Dagne Dover Landon Neoprene Water-Resistant Carryall Duffle",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-B5-HRS-LITAM-NVY",
+    "name": "Herschel Little America Classic 25L Travel Backpack",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-B5-TMX-MAR-SLV",
+    "name": "Timex Marlin Automatic Mechanical Date Watch (40mm)",
+    "cat": "Watches & Wearables"
+  },
+  {
+    "sku": "TRZ-B5-CTZ-PRO-200M",
+    "name": "Citizen Eco-Drive Promaster Diver Watch (BN0150-28E)",
+    "cat": "Watches & Wearables"
+  },
+  {
+    "sku": "TRZ-B5-REV-VOL2-BLK",
+    "name": "Revlon One-Step Volumizer PLUS 2.0 Ceramic Hot Air Brush",
+    "cat": "Beauty & Fragrances"
+  },
+  {
+    "sku": "TRZ-B5-NIN-AF161-XL",
+    "name": "Ninja Air Fryer XL 5.5 Qt 5-in-1 Programmable Cooker",
+    "cat": "Home & Kitchen"
+  },
+  {
+    "sku": "TRZ-B5-EMB-MUG2-14Z",
+    "name": "Ember Temperature Control Smart Mug 2 (14 oz, Matte Black)",
+    "cat": "Home & Kitchen"
+  },
+  {
+    "sku": "TRZ-B5-PHL-HUE-KIT",
+    "name": "Philips Hue White & Color Ambiance Smart LED Starter Kit",
+    "cat": "Home & Kitchen"
+  },
+  {
+    "sku": "TRZ-B5-HYD-32OZ-PAC",
+    "name": "Hydro Flask 32 oz Wide Mouth Stainless Water Bottle (Flex Straw)",
+    "cat": "Sports & Fitness"
+  },
+  {
+    "sku": "TRZ-B5-GRM-HRMPRO-PLS",
+    "name": "Garmin HRM-Pro Plus Premium Chest Strap Heart Rate Monitor",
+    "cat": "Sports & Fitness"
+  },
+  {
+    "sku": "TRZ-B5-TRG-GRID-ORG",
+    "name": "TriggerPoint GRID Multi-Density Deep Tissue Foam Roller",
+    "cat": "Sports & Fitness"
+  },
+  {
+    "sku": "TRZ-B6-TOR-OST-15P",
+    "name": "Torras 360 Ostand Spin Magnetic Case for iPhone 15 Pro Max",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-B6-ANK-Q2-3IN1",
+    "name": "Anker MagGo Qi2 Certified 15W Foldable 3-in-1 Charging Station",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-B6-ZHY-SM5-GMB",
+    "name": "Zhiyun Smooth 5S AI Professional 3-Axis Smartphone Gimbal",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-B6-ESR-GEO-WLT",
+    "name": "ESR Geo Wallet with Built-in Apple Find My Locator",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-B6-NIT-NB10-GEN3",
+    "name": "Nitecore NB10000 Gen 3 Ultra-Light Carbon Fiber Power Bank",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-B6-SHU-MV88-KIT",
+    "name": "Shure MV88+ Video Kit Stereo Condenser Smartphone Microphone",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-B6-MOF-NOT-STD",
+    "name": "MOFT Snap-on Phone Stand & Magnetic Notepad Case",
+    "cat": "Mobiles & Tablets"
+  },
+  {
+    "sku": "TRZ-B6-LOG-ANY-3S",
+    "name": "Logitech MX Anywhere 3S Compact Wireless Performance Mouse",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-B6-NUP-AIR-75V2",
+    "name": "NuPhy Air75 V2 Low-Profile Wireless Mechanical Keyboard",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-B6-BNQ-SCR-HALO",
+    "name": "BenQ ScreenBar Halo Wireless Dial Monitor Light Bar",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-B6-KEN-SD57-TB4",
+    "name": "Kensington SD5700T Thunderbolt 4 Dual 4K Docking Station",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-B6-WDB-SN85-2TB",
+    "name": "WD_BLACK SN850X 2TB NVMe SSD with Custom Aluminum Heatsink",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-B6-ROO-STND-V3",
+    "name": "Roost V3 Ultra-Portable Height Adjustable Laptop Stand",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-B6-ANK-C300-CAM",
+    "name": "Anker PowerConf C300 AI-Powered 1080p 60fps Conference Webcam",
+    "cat": "Laptops & Computers"
+  },
+  {
+    "sku": "TRZ-B6-SEN-ACC-PLUS",
+    "name": "Sennheiser Accentum Plus Wireless ANC Headphones",
+    "cat": "Electronics & Audio"
+  },
+  {
+    "sku": "TRZ-B6-JBL-CHG-5BLK",
+    "name": "JBL Charge 5 Portable Waterproof Bluetooth Speaker",
+    "cat": "Electronics & Audio"
+  },
+  {
+    "sku": "TRZ-B6-ROD-VMG-II",
+    "name": "Rode VideoMic GO II Lightweight Directional Shotgun Mic",
+    "cat": "Electronics & Audio"
+  },
+  {
+    "sku": "TRZ-B6-EDI-R128-DBS",
+    "name": "Edifier R1280DBs Powered Bluetooth Bookshelf Speakers",
+    "cat": "Electronics & Audio"
+  },
+  {
+    "sku": "TRZ-B6-SNY-XE30-BLU",
+    "name": "Sony SRS-XE300 X-Series Portable Wireless Speaker",
+    "cat": "Electronics & Audio"
+  },
+  {
+    "sku": "TRZ-B6-SHU-AON-50G2",
+    "name": "Shure AONIC 50 Gen 2 Premium Wireless Studio Headphones",
+    "cat": "Electronics & Audio"
+  },
+  {
+    "sku": "TRZ-B6-AER-TRV-PK3",
+    "name": "Aer Travel Pack 3 Cordura Ballistic Carry-On Backpack",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-B6-THU-CPT-BRN",
+    "name": "Thursday Boot Co. Captain Handcrafted Leather Boots",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-B6-PAT-BSW-GRY",
+    "name": "Patagonia Better Sweater 1/4-Zip Recycled Fleece Pullover",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-B6-SEC-SLM-BLK",
+    "name": "Secrid Slimwallet Matte Leather Cardprotector",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-B6-BEL-TRN-20L",
+    "name": "Bellroy Transit Workpack 20L Water-Resistant Commuter Bag",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-B6-BAR-ASH-OLV",
+    "name": "Barbour Ashby Waxed Weatherproof Heritage Jacket",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-B6-DIT-STA-GLD",
+    "name": "Dita Statesman Titanium Accent Hand-Finished Sunglasses",
+    "cat": "Fashion & Apparel"
+  },
+  {
+    "sku": "TRZ-B6-HAM-KHK-38MM",
+    "name": "Hamilton Khaki Field Mechanical 38mm Military Watch",
+    "cat": "Watches & Wearables"
+  },
+  {
+    "sku": "TRZ-B6-SEI-PRS-SKY",
+    "name": "Seiko Presage Cocktail Time Skydiving Automatic Dress Watch",
+    "cat": "Watches & Wearables"
+  },
+  {
+    "sku": "TRZ-B6-SUU-9PK-TI",
+    "name": "Suunto 9 Peak Pro Titanium GPS Multisport Watch",
+    "cat": "Watches & Wearables"
+  },
+  {
+    "sku": "TRZ-B6-WIT-SCN-W2",
+    "name": "Withings ScanWatch 2 Hybrid Smartwatch with ECG & SpO2",
+    "cat": "Watches & Wearables"
+  },
+  {
+    "sku": "TRZ-B6-COR-PAC-3W",
+    "name": "COROS PACE 3 Lightweight GPS Sport Watch",
+    "cat": "Watches & Wearables"
+  },
+  {
+    "sku": "TRZ-B6-ORI-BAM-V4B",
+    "name": "Orient Bambino Version 4 Automatic Dress Watch",
+    "cat": "Watches & Wearables"
+  },
+  {
+    "sku": "TRZ-B6-MFK-BR54-EXT",
+    "name": "Maison Francis Kurkdjian Baccarat Rouge 540 Extrait de Parfum Travel Spray",
+    "cat": "Beauty & Fragrances"
+  },
+  {
+    "sku": "TRZ-B6-SKC-CEF-30ML",
+    "name": "SkinCeuticals C E Ferulic Combination Antioxidant Serum",
+    "cat": "Beauty & Fragrances"
+  },
+  {
+    "sku": "TRZ-B6-T3-AIR-LUXE",
+    "name": "T3 AireLuxe Professional Digital Ionic Hair Dryer",
+    "cat": "Beauty & Fragrances"
+  },
+  {
+    "sku": "TRZ-B6-DDG-LED-MASK",
+    "name": "Dr. Dennis Gross DRx SpectraLite FaceWare Pro LED Mask",
+    "cat": "Beauty & Fragrances"
+  },
+  {
+    "sku": "TRZ-B6-MAR-JAZ-100",
+    "name": "Maison Margiela REPLICA Jazz Club Eau de Toilette",
+    "cat": "Beauty & Fragrances"
+  },
+  {
+    "sku": "TRZ-B6-LEC-DUT-55C",
+    "name": "Le Creuset Enameled Cast Iron Round Dutch Oven 5.5-Quart",
+    "cat": "Home & Kitchen"
+  },
+  {
+    "sku": "TRZ-B6-DEL-DED-EXP",
+    "name": "DeLonghi Dedica Deluxe Pump Espresso Coffee Machine",
+    "cat": "Home & Kitchen"
+  },
+  {
+    "sku": "TRZ-B6-BRE-SMT-PRO",
+    "name": "Breville Smart Oven Pro Convection Countertop Oven",
+    "cat": "Home & Kitchen"
+  },
+  {
+    "sku": "TRZ-B6-INS-PRO-PLUS",
+    "name": "Instant Pot Pro Plus 6-Quart Smart Multi-Cooker",
+    "cat": "Home & Kitchen"
+  },
+  {
+    "sku": "TRZ-B6-PHI-HUE-65G",
+    "name": "Philips Hue Play Gradient Lightstrip 65-inch Ambient TV Lighting",
+    "cat": "Home & Kitchen"
+  },
+  {
+    "sku": "TRZ-B6-HYP-VOLT-2P",
+    "name": "Hyperice Hypervolt 2 Pro Deep Tissue Percussion Massager",
+    "cat": "Sports & Fitness"
+  },
+  {
+    "sku": "TRZ-B6-TRX-PRO-4SYS",
+    "name": "TRX PRO4 Suspension Trainer System",
+    "cat": "Sports & Fitness"
+  },
+  {
+    "sku": "TRZ-B6-WAH-TCK-XHR",
+    "name": "Wahoo TICKR X Heart Rate Monitor & Motion Sensor",
+    "cat": "Sports & Fitness"
+  },
+  {
+    "sku": "TRZ-B6-IRO-QLK-KBH",
+    "name": "Ironmaster Quick-Lock Adjustable Kettlebell Handle",
+    "cat": "Sports & Fitness"
+  },
+  {
+    "sku": "TRZ-B6-CON-PM5-KIT",
+    "name": "Concept2 RowErg Performance Monitor PM5 Sensor Kit",
+    "cat": "Sports & Fitness"
+  },
+  {
+    "sku": "TRZ-B6-SPE-LZR-INT",
+    "name": "Speedo Fastskin LZR Pure Intent High Waist Jammer",
+    "cat": "Sports & Fitness"
+  },
+  {
+    "sku": "TRZ-TOY-FP-BOT4",
+    "name": "Fisher-Price 4-in-1 Ultimate Learning Bot with Lights & Sounds",
+    "cat": "Toys & Games"
+  },
+  {
+    "sku": "TRZ-TOY-HW-GAR-TRX",
+    "name": "Hot Wheels City Ultimate Garage with Moving Robo T-Rex",
+    "cat": "Toys & Games"
+  },
+  {
+    "sku": "TRZ-TOY-MD-CHEF",
+    "name": "Melissa & Doug Wooden Chef Pretend Kitchen Playset",
+    "cat": "Toys & Games"
+  },
+  {
+    "sku": "TRZ-TOY-BND-TUNI",
+    "name": "Bandai Tamagotchi Uni Virtual Interactive Pet with Wi-Fi & Color LCD",
+    "cat": "Toys & Games"
+  },
+  {
+    "sku": "TRZ-KIT-IP-PRO6",
+    "name": "Instant Pot Pro 10-in-1 Pressure Cooker & Slow Cooker (6-Quart)",
+    "cat": "Kitchen & Dining"
+  },
+  {
+    "sku": "TRZ-KIT-LDG-6DTCH",
+    "name": "Lodge 6-Quart Enameled Cast Iron Dutch Oven (Island Spice Red)",
+    "cat": "Kitchen & Dining"
+  },
+  {
+    "sku": "TRZ-KIT-CUI-14FP",
+    "name": "Cuisinart 14-Cup Custom Food Processor with Stainless Steel Blades",
+    "cat": "Kitchen & Dining"
+  },
+  {
+    "sku": "TRZ-KIT-CSR-GSNK",
+    "name": "Cosori Electric Smart Gooseneck Temperature Control Kettle (0.8L)",
+    "cat": "Kitchen & Dining"
+  },
+  {
+    "sku": "TRZ-KIT-ZWL-7KNF",
+    "name": "Zwilling Twin Signature 7-Piece German Stainless Steel Knife Block Set",
+    "cat": "Kitchen & Dining"
+  },
+  {
+    "sku": "TRZ-KIT-CRW-4PC",
+    "name": "Caraway Non-Toxic Ceramic Non-Stick 4-Piece Cookware Set",
+    "cat": "Kitchen & Dining"
+  },
+  {
+    "sku": "TRZ-KIT-ANO-NANO",
+    "name": "Anova Culinary Precision Sous Vide Nano Cooker (Bluetooth)",
+    "cat": "Kitchen & Dining"
+  },
+  {
+    "sku": "TRZ-KIT-OXO-8GLS",
+    "name": "OXO Good Grips 8-Piece Glass Smart Seal Food Storage Container Set",
+    "cat": "Kitchen & Dining"
+  },
+  {
+    "sku": "TRZ-DEC-LLG-LMP",
+    "name": "Minimalist Fluted Ceramic Table Lamp with Oatmeal Linen Shade",
+    "cat": "Home Decor & Living"
+  },
+  {
+    "sku": "TRZ-DEC-NRC-CNV3",
+    "name": "Nordic Abstract Geometric Framed Canvas Wall Art (Set of 3, 24x36\")",
+    "cat": "Home Decor & Living"
+  },
+  {
+    "sku": "TRZ-DEC-CRB-AMB2",
+    "name": "Ribbed Amber Glass Hurricane Candle Holders (Set of 2)",
+    "cat": "Home Decor & Living"
+  },
+  {
+    "sku": "TRZ-DEC-GNG-OAK2",
+    "name": "Solid North American White Oak Floating Shelves (Set of 2, 24\")",
+    "cat": "Home Decor & Living"
+  },
+  {
+    "sku": "TRZ-DEC-GOV-FLR2",
+    "name": "Govee RGBIC Wi-Fi Smart Floor Lamp 2 with Matter & Alexa Support",
+    "cat": "Home Decor & Living"
+  },
+  {
+    "sku": "TRZ-ACC-ESR-CRYO",
+    "name": "ESR CryoBoost HaloLock 3-in-1 MagSafe Wireless Charging Stand with Fan",
+    "cat": "Mobile Accessories"
+  },
+  {
+    "sku": "TRZ-ACC-SPG-UH15P",
+    "name": "Spigen Ultra Hybrid MagFit Shockproof Clear Case for iPhone 15 Pro Max",
+    "cat": "Mobile Accessories"
+  },
+  {
+    "sku": "TRZ-ACC-ANK-NANO30",
+    "name": "Anker Nano 30W GaN Ultra-Compact Foldable USB-C Fast Charger",
+    "cat": "Mobile Accessories"
+  },
+  {
+    "sku": "TRZ-ACC-BAS-BLD65",
+    "name": "Baseus Blade 65W Retractable USB-C Cable Power Bank (20,000mAh)",
+    "cat": "Mobile Accessories"
+  },
+  {
+    "sku": "TRZ-ACC-UGR-100W",
+    "name": "UGREEN Nexode 100W 4-Port GaN Desktop Fast Charging Hub",
+    "cat": "Mobile Accessories"
+  },
+  {
+    "sku": "TRZ-ACC-BLK-GYM",
+    "name": "Belkin MagSafe Magnetic Fitness Phone Mount for Gym Equipment",
+    "cat": "Mobile Accessories"
+  },
+  {
+    "sku": "TRZ-ACC-SHG-STM2",
+    "name": "Shargeek Storm 2 100W Cyberpunk Transparent Power Bank (25,600mAh)",
+    "cat": "Mobile Accessories"
+  },
+  {
+    "sku": "TRZ-ACC-TOR-DMND",
+    "name": "Torras Diamond Shield 9H+ Shatterproof Screen Protector (2-Pack)",
+    "cat": "Mobile Accessories"
+  },
+  {
+    "sku": "TRZ-ACC-MFT-SNAP",
+    "name": "MOFT Snap-on MagSafe Phone Stand & Vegan Leather Wallet",
+    "cat": "Mobile Accessories"
+  },
+  {
+    "sku": "TRZ-ACC-AUL-G05",
+    "name": "Aulumu G05 4-in-1 Titanium EDC Phone Kickstand & Box Cutter",
+    "cat": "Mobile Accessories"
+  },
+  {
+    "sku": "TRZ-ACC-NTU-240W",
+    "name": "Native Union Belt Cable Pro 240W Braided USB-C to USB-C (8ft)",
+    "cat": "Mobile Accessories"
+  },
+  {
+    "sku": "TRZ-ACC-RZR-KSH2",
+    "name": "Razer Kishi V2 Mobile Gaming Controller for iPhone & Android",
+    "cat": "Mobile Accessories"
+  },
+  {
+    "sku": "TRZ-CLO-PAT-RTRX",
+    "name": "Patagonia Classic Retro-X Windproof Deep-Pile Fleece Jacket",
+    "cat": "Clothes & Apparel"
+  },
+  {
+    "sku": "TRZ-CLO-RNC-TERRY",
+    "name": "Reigning Champ Midweight French Terry Pullover Hoodie (Heather Grey)",
+    "cat": "Clothes & Apparel"
+  },
+  {
+    "sku": "TRZ-CLO-LEV-501SLV",
+    "name": "Levi's Premium 501 Original Fit Raw Selvedge Rigid Denim Jeans",
+    "cat": "Clothes & Apparel"
+  },
+  {
+    "sku": "TRZ-CLO-BRB-BEAU",
+    "name": "Barbour Classic Beaufort Waxed Weatherproof Sporting Field Jacket",
+    "cat": "Clothes & Apparel"
+  },
+  {
+    "sku": "TRZ-SHOE-NK-AJ1LF",
+    "name": "Nike Air Jordan 1 Retro High OG 'Lost & Found' Chicago",
+    "cat": "Shoes & Footwear"
+  },
+  {
+    "sku": "TRZ-SHOE-BRK-BSTN",
+    "name": "Birkenstock Boston Oiled Leather Slip-On Clogs (Habana Brown)",
+    "cat": "Shoes & Footwear"
+  },
+  {
+    "sku": "TRZ-SHOE-SLM-XT6",
+    "name": "Salomon XT-6 Gore-Tex Waterproof Trail Running & Lifestyle Shoes",
+    "cat": "Shoes & Footwear"
+  },
+  {
+    "sku": "TRZ-SHOE-HKA-CLF9",
+    "name": "Hoka Clifton 9 Lightweight Daily Road Running Trainers",
+    "cat": "Shoes & Footwear"
+  },
+  {
+    "sku": "TRZ-SHOE-UGG-ULTRA",
+    "name": "UGG Classic Ultra Mini Genuine Twinface Sheepskin Ankle Boots",
+    "cat": "Shoes & Footwear"
+  },
+  {
+    "sku": "TRZ-SHOE-VEJ-CMP",
+    "name": "Veja Campo ChromeFree Leather Clean Low-Top White Sneakers",
+    "cat": "Shoes & Footwear"
+  },
+  {
+    "sku": "TRZ-VEH-70M-A810",
+    "name": "70mai A810 4K UHD Front & Rear Dual Dash Cam with Sony Starvis 2",
+    "cat": "Vehicles & Automotive"
+  },
+  {
+    "sku": "TRZ-VEH-NCO-GB40",
+    "name": "NOCO Boost Plus GB40 1000A UltraSafe Car Battery Jump Starter",
+    "cat": "Vehicles & Automotive"
+  },
+  {
+    "sku": "TRZ-VEH-AST-150",
+    "name": "AstroAI 150 PSI Cordless Electric Tire Inflator & Air Compressor Pump",
+    "cat": "Vehicles & Automotive"
+  },
+  {
+    "sku": "TRZ-VEH-CHM-16PC",
+    "name": "Chemical Guys HOL148 16-Piece Arsenal Ultimate Car Detailing Wash Kit",
+    "cat": "Vehicles & Automotive"
+  },
+  {
+    "sku": "TRZ-VEH-FTC-4KOEM",
+    "name": "FitCamX OEM Look Integrated Discreet 4K Dash Cam (Plug & Play)",
+    "cat": "Vehicles & Automotive"
+  },
+  {
+    "sku": "TRZ-VEH-THS-VAC12",
+    "name": "ThisWorx Portable High-Power 12V Handheld Car Vacuum Cleaner",
+    "cat": "Vehicles & Automotive"
+  },
+  {
+    "sku": "TRZ-VEH-WTH-FLR",
+    "name": "WeatherTech Custom Laser-Measured All-Weather FloorLiner Mats",
+    "cat": "Vehicles & Automotive"
+  },
+  {
+    "sku": "TRZ-VEH-SCM-1281",
+    "name": "Schumacher SC1281 100A Engine Starter & 30A Smart Rapid Battery Charger",
+    "cat": "Vehicles & Automotive"
+  },
+  {
+    "sku": "TRZ-VEH-CLK-2AIR",
+    "name": "Carlinkit 5.0 2air Wireless CarPlay & Wireless Android Auto Adapter",
+    "cat": "Vehicles & Automotive"
+  },
+  {
+    "sku": "TRZ-VEH-GRM-CAT",
+    "name": "Garmin Catalyst Driving Performance Optimizer & 1080p Telemetry Cam",
+    "cat": "Vehicles & Automotive"
+  },
+  {
+    "sku": "TRZ-VEH-TRQ-DA",
+    "name": "TORQ TORQX Random Orbital Dual-Action Professional Car Polisher",
+    "cat": "Vehicles & Automotive"
+  },
+  {
+    "sku": "TRZ-VEH-BGV-30QT",
+    "name": "BougeRV 12V 30-Quart Portable Car Freezer Refrigerator (-4°F to 50°F)",
+    "cat": "Vehicles & Automotive"
+  },
+  {
+    "sku": "TRZ-KID-GRC-4EVR",
+    "name": "Graco 4Ever DLX 4-in-1 Convertible Car Seat (10 Years of Use)",
+    "cat": "Baby & Kids"
+  },
+  {
+    "sku": "TRZ-KID-NNT-PRO",
+    "name": "Nanit Pro Smart Baby Monitor & Wall Mount with Sleep Tracking Camera",
+    "cat": "Baby & Kids"
+  },
+  {
+    "sku": "TRZ-KID-BBJ-BLISS",
+    "name": "BabyBjörn Bouncer Bliss Ergonomic Natural Rocking Baby Seat (Cotton)",
+    "cat": "Baby & Kids"
+  },
+  {
+    "sku": "TRZ-KID-HTC-RST2",
+    "name": "Hatch Rest 2nd Gen All-in-One Smart Sound Machine & Night Light",
+    "cat": "Baby & Kids"
+  },
+  {
+    "sku": "TRZ-KID-ERG-BRZ",
+    "name": "Ergobaby Omni Breeze All-Position Breathable Mesh Baby Carrier",
+    "cat": "Baby & Kids"
+  },
+  {
+    "sku": "TRZ-KID-SKP-ACT",
+    "name": "Skip Hop Explore & More 3-Stage Interactive Activity Center Play Table",
+    "cat": "Baby & Kids"
+  },
+  {
+    "sku": "TRZ-KID-FRD-SNOT",
+    "name": "FridaBaby NoseFrida SnotSucker Baby Nasal Aspirator Deluxe Set",
+    "cat": "Baby & Kids"
+  },
+  {
+    "sku": "TRZ-KID-STK-TRPP",
+    "name": "Stokke Tripp Trapp High Chair with Cushion Set (Natural Beechwood)",
+    "cat": "Baby & Kids"
+  },
+  {
+    "sku": "TRZ-PET-PSF-1GAL",
+    "name": "PetSafe Drinkwell 1-Gallon Stainless Steel Pet Water Fountain",
+    "cat": "Pet Supplies"
+  },
+  {
+    "sku": "TRZ-PET-FRB-360",
+    "name": "Furbo 360° Dog Camera with Treat Dispenser & Barking Alert",
+    "cat": "Pet Supplies"
+  },
+  {
+    "sku": "TRZ-PET-CHK-LNCH",
+    "name": "Chuckit! Classic Ball Launcher with Ultra Bounce Rubber Balls (2-Pack)",
+    "cat": "Pet Supplies"
+  },
+  {
+    "sku": "TRZ-PET-KNH-THRM",
+    "name": "K&H Pet Products Thermo-Snuggly Sleeper Heated Orthopedic Dog Bed",
+    "cat": "Pet Supplies"
+  },
+  {
+    "sku": "TRZ-PET-PKT-SOLO",
+    "name": "Petkit Fresh Element Solo Smart Automatic Feeder (3L Capacity)",
+    "cat": "Pet Supplies"
+  },
+  {
+    "sku": "TRZ-PET-RFW-FRNT",
+    "name": "Ruffwear Front Range Padded All-Day Everyday Dog Trail Harness",
+    "cat": "Pet Supplies"
+  },
+  {
+    "sku": "TRZ-PET-FUR-MDLG",
+    "name": "Furminator Undercoat De-Shedding Tool for Medium/Large Dogs",
+    "cat": "Pet Supplies"
+  },
+  {
+    "sku": "TRZ-OFC-HM-AERON",
+    "name": "Herman Miller Aeron Ergonomic Task Chair (Graphite Frame / Size B)",
+    "cat": "Office & Stationery"
+  },
+  {
+    "sku": "TRZ-OFC-KYC-Q1PRO",
+    "name": "Keychron Q1 Pro QMK/VIA Custom Wireless Mechanical Keyboard",
+    "cat": "Office & Stationery"
+  },
+  {
+    "sku": "TRZ-OFC-BNQ-BAR",
+    "name": "BenQ ScreenBar Pro Automatic Auto-Dimming LED Monitor Light Bar",
+    "cat": "Office & Stationery"
+  },
+  {
+    "sku": "TRZ-OFC-LCH-A5DOT",
+    "name": "Leuchtturm1917 Medium A5 Hardcover Dotted Journal Notebook",
+    "cat": "Office & Stationery"
+  },
+  {
+    "sku": "TRZ-OFC-ANK-C310",
+    "name": "AnkerWork C310 4K HDR Webcam with AI Autofocus & Dual Stereo Mics",
+    "cat": "Office & Stationery"
+  },
+  {
+    "sku": "TRZ-HLT-THB-PROPLS",
+    "name": "Theragun PRO Plus 6-in-1 Percussive Therapy Muscle Massager",
+    "cat": "Health & Wellness"
+  },
+  {
+    "sku": "TRZ-HLT-ORB-IO9",
+    "name": "Oral-B iO Series 9 Electric Toothbrush with AI 3D Teeth Tracking",
+    "cat": "Health & Wellness"
+  },
+  {
+    "sku": "TRZ-HLT-WPK-AQ90",
+    "name": "Waterpik Aquarius Professional Water Flosser with 10 Pressure Settings",
+    "cat": "Health & Wellness"
+  },
+  {
+    "sku": "TRZ-HLT-WTH-SCAN",
+    "name": "Withings Body Scan Smart Connected Health Station & 6-Lead ECG Scale",
+    "cat": "Health & Wellness"
+  },
+  {
+    "sku": "TRZ-HLT-PHL-WAKE",
+    "name": "Philips SmartSleep Wake-Up Light Sunrise Simulation Alarm Clock",
+    "cat": "Health & Wellness"
+  },
+  {
+    "sku": "TRZ-HLT-OMR-PLAT",
+    "name": "Omron Platinum Wireless Upper Arm Blood Pressure Monitor",
+    "cat": "Health & Wellness"
+  },
+  {
+    "sku": "TRZ-HLT-DYS-NURL",
+    "name": "Dyson Supersonic Nural Intelligent Scalp-Protecting Hair Dryer",
+    "cat": "Health & Wellness"
+  },
+  {
+    "sku": "TRZ-TRV-YET-T45",
+    "name": "YETI Tundra 45 Hard Cooler with PermaFrost Commercial Insulation",
+    "cat": "Outdoor, Luggage & Travel"
+  },
+  {
+    "sku": "TRZ-TRV-NTC-NB10K",
+    "name": "Nitecore NB10000 Gen 3 Carbon Fiber Ultralight Power Bank (10,000mAh)",
+    "cat": "Outdoor, Luggage & Travel"
+  },
+  {
+    "sku": "TRZ-TRV-MTD-BST28",
+    "name": "Matador Beast28 Ultralight Technical Packable Mountain Backpack (28L)",
+    "cat": "Outdoor, Luggage & Travel"
+  },
+  {
+    "sku": "TRZ-TRV-STN-40OZ",
+    "name": "Stanley Quencher H2.0 FlowState Vacuum Insulated Tumbler (40 oz)",
+    "cat": "Outdoor, Luggage & Travel"
+  },
+  {
+    "sku": "TRZ-TRV-OSP-FP40",
+    "name": "Osprey Farpoint 40 Men's Travel Backpack (Carry-On Compliant)",
+    "cat": "Outdoor, Luggage & Travel"
+  },
+  {
+    "sku": "TRZ-TRV-BIO-STV2",
+    "name": "BioLite CampStove 2+ Electricity Generating Wood Camping Stove",
+    "cat": "Outdoor, Luggage & Travel"
+  },
+  {
+    "sku": "TRZ-TRV-PKD-ED20",
+    "name": "Peak Design Everyday Backpack V2 20L Weatherproof Camera Bag",
+    "cat": "Outdoor, Luggage & Travel"
+  }
+]
