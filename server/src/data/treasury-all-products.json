@@ -63,7 +63,7 @@
     "categorySlug": "beauty",
     "price": 58,
     "costPrice": 22,
-    "image": "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e3e6f85be289736076de",
@@ -74,7 +74,7 @@
     "categorySlug": "electronics",
     "price": 99.99,
     "costPrice": 62,
-    "image": "https://images.unsplash.com/photo-1546435770-a3e426bf472b?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1585515320310-259814833e62?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e3e6f85be289736076e6",
@@ -107,7 +107,7 @@
     "categorySlug": "electronics",
     "price": 159.99,
     "costPrice": 105,
-    "image": "https://images.unsplash.com/photo-1583775253835-43093952f4c9?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1590602847861-f357a9332bbc?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e3e6f85be289736076fb",
@@ -129,7 +129,7 @@
     "categorySlug": "mobiles",
     "price": 159.99,
     "costPrice": 112,
-    "image": "https://images.unsplash.com/photo-1589492477829-5e65395b66cc?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e3e7f85be28973607708",
@@ -140,7 +140,7 @@
     "categorySlug": "mobiles",
     "price": 69.99,
     "costPrice": 38,
-    "image": "https://images.unsplash.com/photo-1622445268462-328bbfd07660?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e3e7f85be2897360770f",
@@ -195,7 +195,7 @@
     "categorySlug": "laptops",
     "price": 179.99,
     "costPrice": 115,
-    "image": "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1544652478-6653e09f18a2?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e3e8f85be28973607730",
@@ -206,7 +206,7 @@
     "categorySlug": "watches",
     "price": 199.99,
     "costPrice": 128,
-    "image": "https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1579586337278-3befd40fd17a?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e3e8f85be28973607737",
@@ -217,7 +217,7 @@
     "categorySlug": "watches",
     "price": 245,
     "costPrice": 155,
-    "image": "https://images.unsplash.com/photo-1524805444758-089113d48a6d?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1612817288484-6f916006741a?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e3e8f85be2897360773e",
@@ -239,7 +239,7 @@
     "categorySlug": "watches",
     "price": 99,
     "costPrice": 58,
-    "image": "https://images.unsplash.com/photo-1533139502658-0198f920d8e8?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e3e8f85be2897360774c",
@@ -250,7 +250,7 @@
     "categorySlug": "fashion",
     "price": 54.99,
     "costPrice": 26,
-    "image": "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1445205170230-053b83016050?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e3e8f85be28973607756",
@@ -272,7 +272,7 @@
     "categorySlug": "fashion",
     "price": 45,
     "costPrice": 19,
-    "image": "https://images.unsplash.com/photo-1627123424574-724758594e93?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1566174053879-31528523f8ae?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e3e9f85be28973607766",
@@ -283,7 +283,7 @@
     "categorySlug": "fashion",
     "price": 68,
     "costPrice": 31,
-    "image": "https://images.unsplash.com/photo-1511499767150-a48a237f0083?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e3e9f85be2897360776d",
@@ -305,7 +305,7 @@
     "categorySlug": "beauty",
     "price": 89,
     "costPrice": 44,
-    "image": "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e3e9f85be2897360777a",
@@ -327,7 +327,7 @@
     "categorySlug": "beauty",
     "price": 135,
     "costPrice": 78,
-    "image": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1727364438136-6edc10ef0a52?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e3e9f85be28973607787",
@@ -338,7 +338,7 @@
     "categorySlug": "home",
     "price": 169.99,
     "costPrice": 108,
-    "image": "https://images.unsplash.com/photo-1585515320310-259814833e62?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1556912172-45b7abe8b7e1?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e3eaf85be2897360778d",
@@ -360,7 +360,7 @@
     "categorySlug": "home",
     "price": 89.95,
     "costPrice": 52,
-    "image": "https://images.unsplash.com/photo-1584990347449-3e3c04239e33?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1590794056226-79ef3a8147e1?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e3eaf85be2897360779b",
@@ -393,7 +393,7 @@
     "categorySlug": "sports",
     "price": 149.99,
     "costPrice": 89,
-    "image": "https://images.unsplash.com/photo-1584735935682-2f2b69dff9d2?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1586401100295-7a8096fd231a?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e4ee901d0f96a78207b9",
@@ -459,7 +459,7 @@
     "categorySlug": "mobiles",
     "price": 149.99,
     "costPrice": 95,
-    "image": "https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1609592424364-7bf5dfb3e41c?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e4ef901d0f96a78207bf",
@@ -470,7 +470,7 @@
     "categorySlug": "mobiles",
     "price": 159,
     "costPrice": 104,
-    "image": "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=800&auto=format&fit=crop&q=80"
+    "image": "https://cdn.dummyjson.com/product-images/mobile-accessories/selfie-stick-monopod/thumbnail.webp"
   },
   {
     "_id": "6a98e4ef901d0f96a78207c0",
@@ -481,7 +481,7 @@
     "categorySlug": "mobiles",
     "price": 39.99,
     "costPrice": 19,
-    "image": "https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1622445268462-328bbfd07660?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e4ef901d0f96a78207c1",
@@ -492,7 +492,7 @@
     "categorySlug": "mobiles",
     "price": 34.99,
     "costPrice": 15,
-    "image": "https://images.unsplash.com/photo-1586953208448-b95a79798f07?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1598327105666-5b89351aff97?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e4ef901d0f96a78207c2",
@@ -503,7 +503,7 @@
     "categorySlug": "mobiles",
     "price": 79,
     "costPrice": 54,
-    "image": "https://images.unsplash.com/photo-1541807084-5c52b6b3adef?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1585336261026-77894a8217bb?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e4ef901d0f96a78207c3",
@@ -635,7 +635,7 @@
     "categorySlug": "fashion",
     "price": 159,
     "costPrice": 92,
-    "image": "https://images.unsplash.com/photo-1549298916-b41d501d3772?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1610030469983-98e550d6193c?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e4f0901d0f96a78207cf",
@@ -646,7 +646,7 @@
     "categorySlug": "fashion",
     "price": 110,
     "costPrice": 62,
-    "image": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1509744645300-a2098b11871a?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e4f0901d0f96a78207d0",
@@ -679,7 +679,7 @@
     "categorySlug": "beauty",
     "price": 65,
     "costPrice": 34,
-    "image": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1594035910387-fea47794261f?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e4f1901d0f96a78207d3",
@@ -690,7 +690,7 @@
     "categorySlug": "beauty",
     "price": 32,
     "costPrice": 12,
-    "image": "https://images.unsplash.com/photo-1512290900672-1f55b6a0b4b2?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1515377905703-c4788e51af15?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e4f1901d0f96a78207d4",
@@ -712,7 +712,7 @@
     "categorySlug": "beauty",
     "price": 48,
     "costPrice": 20,
-    "image": "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1629732097571-b042b35aa3ed?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e4f1901d0f96a78207d6",
@@ -767,7 +767,7 @@
     "categorySlug": "home",
     "price": 39.9,
     "costPrice": 18,
-    "image": "https://images.unsplash.com/photo-1544233726-9f1d2b27be8b?w=800&auto=format&fit=crop&q=80"
+    "image": "https://cdn.dummyjson.com/product-images/kitchen-accessories/pan/thumbnail.webp"
   },
   {
     "_id": "6a98e4f1901d0f96a78207db",
@@ -778,7 +778,7 @@
     "categorySlug": "home",
     "price": 112.99,
     "costPrice": 68,
-    "image": "https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1610701596007-11502861dcfa?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e4f1901d0f96a78207dc",
@@ -789,7 +789,7 @@
     "categorySlug": "sports",
     "price": 149,
     "costPrice": 92,
-    "image": "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e4f2901d0f96a78207dd",
@@ -844,7 +844,7 @@
     "categorySlug": "mobiles",
     "price": 129.99,
     "costPrice": 88,
-    "image": "https://images.unsplash.com/photo-1609592424364-7bf5dfb3e41c?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1566554738544-d962991c3fee?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e97c901d0f96a782091d",
@@ -855,7 +855,7 @@
     "categorySlug": "mobiles",
     "price": 149.99,
     "costPrice": 99,
-    "image": "https://images.unsplash.com/photo-1622445262464-84b1456045b6?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1586953208448-b95a79798f07?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e97c901d0f96a782091e",
@@ -866,7 +866,7 @@
     "categorySlug": "mobiles",
     "price": 39.99,
     "costPrice": 18.5,
-    "image": "https://images.unsplash.com/photo-1580910051074-3eb694886505?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1601784551446-20c9e07cdbdb?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e97c901d0f96a7820920",
@@ -888,7 +888,7 @@
     "categorySlug": "laptops",
     "price": 199.99,
     "costPrice": 138,
-    "image": "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1618384887929-16ec33fab9ef?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e97d901d0f96a7820922",
@@ -899,7 +899,7 @@
     "categorySlug": "laptops",
     "price": 249.99,
     "costPrice": 175,
-    "image": "https://images.unsplash.com/photo-1544652478-6653e09f18a2?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1611186871348-b1ce696e52c9?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e97d901d0f96a7820923",
@@ -910,7 +910,7 @@
     "categorySlug": "laptops",
     "price": 44.99,
     "costPrice": 22,
-    "image": "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1587614382346-4ec70e388b28?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e97d901d0f96a7820925",
@@ -921,7 +921,7 @@
     "categorySlug": "laptops",
     "price": 189.99,
     "costPrice": 132,
-    "image": "https://images.unsplash.com/photo-1597872200969-2b65d56bd16b?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1531492746076-161ca9bcad58?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e97d901d0f96a7820926",
@@ -932,7 +932,7 @@
     "categorySlug": "electronics",
     "price": 229.99,
     "costPrice": 155,
-    "image": "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1572536147248-ac59a8abfa4b?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e97d901d0f96a7820927",
@@ -943,7 +943,7 @@
     "categorySlug": "electronics",
     "price": 249,
     "costPrice": 172,
-    "image": "https://images.unsplash.com/photo-1590602847861-f357a9332bbc?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e97e901d0f96a7820928",
@@ -954,7 +954,7 @@
     "categorySlug": "electronics",
     "price": 169.99,
     "costPrice": 114,
-    "image": "https://images.unsplash.com/photo-1545454675-3531b543be5d?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1543512214-318c7553f230?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e97e901d0f96a7820929",
@@ -987,7 +987,7 @@
     "categorySlug": "watches",
     "price": 245,
     "costPrice": 168,
-    "image": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e97e901d0f96a782092d",
@@ -998,7 +998,7 @@
     "categorySlug": "watches",
     "price": 249.99,
     "costPrice": 172,
-    "image": "https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1773399452188-a42e29543bf2?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e97e901d0f96a782092e",
@@ -1009,7 +1009,7 @@
     "categorySlug": "watches",
     "price": 189,
     "costPrice": 122,
-    "image": "https://images.unsplash.com/photo-1524805444758-089113d48a6d?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1524592094714-0f0654e20314?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e97e901d0f96a782092f",
@@ -1031,7 +1031,7 @@
     "categorySlug": "fashion",
     "price": 179,
     "costPrice": 118,
-    "image": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e97f901d0f96a7820931",
@@ -1064,7 +1064,7 @@
     "categorySlug": "fashion",
     "price": 125,
     "costPrice": 78,
-    "image": "https://images.unsplash.com/photo-1627123424574-724758594e93?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1598560917505-59a3ad559071?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e97f901d0f96a7820935",
@@ -1075,7 +1075,7 @@
     "categorySlug": "fashion",
     "price": 198,
     "costPrice": 135,
-    "image": "https://images.unsplash.com/photo-1549298916-b41d501d3772?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1543163521-1bf539c55dd2?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e97f901d0f96a7820936",
@@ -1097,7 +1097,7 @@
     "categorySlug": "beauty",
     "price": 235,
     "costPrice": 160,
-    "image": "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1512290900672-1f55b6a0b4b2?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e980901d0f96a7820939",
@@ -1108,7 +1108,7 @@
     "categorySlug": "beauty",
     "price": 189,
     "costPrice": 120,
-    "image": "https://images.unsplash.com/photo-1556228720-195a672e8a03?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e980901d0f96a782093a",
@@ -1119,7 +1119,7 @@
     "categorySlug": "beauty",
     "price": 149.99,
     "costPrice": 98,
-    "image": "https://images.unsplash.com/photo-1527799820374-dcf8d9d4a388?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1577716595717-f4c363695556?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e980901d0f96a782093b",
@@ -1130,7 +1130,7 @@
     "categorySlug": "home",
     "price": 249.99,
     "costPrice": 175,
-    "image": "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1517256064527-09c73fc73e38?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e980901d0f96a782093c",
@@ -1163,7 +1163,7 @@
     "categorySlug": "home",
     "price": 165,
     "costPrice": 110,
-    "image": "https://images.unsplash.com/photo-1544816155-12df9643f363?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1650940925927-f4a30c930a4d?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e980901d0f96a7820940",
@@ -1174,7 +1174,7 @@
     "categorySlug": "sports",
     "price": 179,
     "costPrice": 115,
-    "image": "https://images.unsplash.com/photo-1518611012118-696072aa579a?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1755254926947-5ce855ba0035?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e981901d0f96a7820941",
@@ -1185,7 +1185,7 @@
     "categorySlug": "sports",
     "price": 199,
     "costPrice": 132,
-    "image": "https://images.unsplash.com/photo-1584735935682-2f2b69dff9d2?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e981901d0f96a7820942",
@@ -1207,7 +1207,7 @@
     "categorySlug": "sports",
     "price": 138,
     "costPrice": 88,
-    "image": "https://images.unsplash.com/photo-1545205597-3d9d02c29597?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e981901d0f96a7820945",
@@ -1229,7 +1229,7 @@
     "categorySlug": "mobiles",
     "price": 34.99,
     "costPrice": 16,
-    "image": "https://images.unsplash.com/photo-1586953208448-b95a79798f07?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1584438784894-089d6a62b8fa?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e9bc901d0f96a782098f",
@@ -1251,7 +1251,7 @@
     "categorySlug": "mobiles",
     "price": 59.99,
     "costPrice": 28,
-    "image": "https://images.unsplash.com/photo-1541807084-5c52b6b3adef?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1592899677977-9c10ca588bbd?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e9bc901d0f96a7820991",
@@ -1273,7 +1273,7 @@
     "categorySlug": "laptops",
     "price": 69.99,
     "costPrice": 42,
-    "image": "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1541807084-5c52b6b3adef?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e9bd901d0f96a7820994",
@@ -1295,7 +1295,7 @@
     "categorySlug": "laptops",
     "price": 89.99,
     "costPrice": 55,
-    "image": "https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1585338107529-13afc5f02586?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e9bd901d0f96a7820996",
@@ -1306,7 +1306,7 @@
     "categorySlug": "electronics",
     "price": 59.99,
     "costPrice": 36,
-    "image": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=800&auto=format&fit=crop&q=80"
+    "image": "https://cdn.dummyjson.com/product-images/mobile-accessories/amazon-echo-plus/thumbnail.webp"
   },
   {
     "_id": "6a98e9bd901d0f96a7820997",
@@ -1339,7 +1339,7 @@
     "categorySlug": "electronics",
     "price": 149,
     "costPrice": 99,
-    "image": "https://images.unsplash.com/photo-1590602847861-f357a9332bbc?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1583775253835-43093952f4c9?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e9bd901d0f96a782099a",
@@ -1350,7 +1350,7 @@
     "categorySlug": "fashion",
     "price": 89,
     "costPrice": 52,
-    "image": "https://images.unsplash.com/photo-1627123424574-724758594e93?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1606760227091-3dd870d97f1d?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e9be901d0f96a782099b",
@@ -1361,7 +1361,7 @@
     "categorySlug": "fashion",
     "price": 185,
     "costPrice": 115,
-    "image": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1630019852942-f89202989a59?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e9be901d0f96a782099c",
@@ -1372,7 +1372,7 @@
     "categorySlug": "fashion",
     "price": 110,
     "costPrice": 68,
-    "image": "https://images.unsplash.com/photo-1548036328-c9fa89d128fa?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e9be901d0f96a782099d",
@@ -1383,7 +1383,7 @@
     "categorySlug": "watches",
     "price": 249,
     "costPrice": 165,
-    "image": "https://images.unsplash.com/photo-1524805444758-089113d48a6d?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1539874701095-7101dd5923b0?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e9be901d0f96a782099e",
@@ -1394,7 +1394,7 @@
     "categorySlug": "watches",
     "price": 225,
     "costPrice": 150,
-    "image": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1524805444758-089113d48a6d?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e9be901d0f96a782099f",
@@ -1405,7 +1405,7 @@
     "categorySlug": "beauty",
     "price": 69.99,
     "costPrice": 38,
-    "image": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1734111719430-fe4a3973f8af?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e9be901d0f96a78209a0",
@@ -1427,7 +1427,7 @@
     "categorySlug": "home",
     "price": 129.99,
     "costPrice": 85,
-    "image": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1584990347449-3e3c04239e33?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e9bf901d0f96a78209a2",
@@ -1460,7 +1460,7 @@
     "categorySlug": "sports",
     "price": 44.95,
     "costPrice": 24,
-    "image": "https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1625708458528-802ec79b1ed8?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e9bf901d0f96a78209a6",
@@ -1471,7 +1471,7 @@
     "categorySlug": "sports",
     "price": 129.99,
     "costPrice": 84,
-    "image": "https://images.unsplash.com/photo-1510519138171-c70d76b6408a?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1599058917212-d750089bc07e?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a98e9bf901d0f96a78209a7",
@@ -1482,7 +1482,7 @@
     "categorySlug": "sports",
     "price": 39.99,
     "costPrice": 18,
-    "image": "https://images.unsplash.com/photo-1518611012118-696072aa579a?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944af901d0f96a7821fde",
@@ -1493,7 +1493,7 @@
     "categorySlug": "mobiles",
     "price": 39.99,
     "costPrice": 18,
-    "image": "https://images.unsplash.com/photo-1601784551446-20c9e07cdbdb?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944af901d0f96a7821fdf",
@@ -1504,7 +1504,7 @@
     "categorySlug": "mobiles",
     "price": 109.99,
     "costPrice": 65,
-    "image": "https://images.unsplash.com/photo-1622445262464-84b1456045b6?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1589492477829-5e65395b66cc?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944af901d0f96a7821fe0",
@@ -1515,7 +1515,7 @@
     "categorySlug": "mobiles",
     "price": 199,
     "costPrice": 125,
-    "image": "https://images.unsplash.com/photo-1527443224154-c4a3942d3acf?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1589872766859-24d100fb40f8?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944af901d0f96a7821fe1",
@@ -1526,7 +1526,7 @@
     "categorySlug": "mobiles",
     "price": 45.99,
     "costPrice": 22,
-    "image": "https://images.unsplash.com/photo-1627123424574-724758594e93?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1512496015851-a90fb38ba796?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b0901d0f96a7821fe2",
@@ -1537,7 +1537,7 @@
     "categorySlug": "mobiles",
     "price": 64.95,
     "costPrice": 35,
-    "image": "https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1510557880182-3d4d3cba35a5?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b0901d0f96a7821fe3",
@@ -1548,7 +1548,7 @@
     "categorySlug": "mobiles",
     "price": 249,
     "costPrice": 145,
-    "image": "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1583391733956-3750e0ff4e8b?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b0901d0f96a7821fe4",
@@ -1559,7 +1559,7 @@
     "categorySlug": "mobiles",
     "price": 38,
     "costPrice": 17.5,
-    "image": "https://images.unsplash.com/photo-1544816155-12df9643f363?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b0901d0f96a7821fe5",
@@ -1570,7 +1570,7 @@
     "categorySlug": "laptops",
     "price": 79.99,
     "costPrice": 46,
-    "image": "https://images.unsplash.com/photo-1615663245857-ac93bb7c39e7?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1782919254067-ddb82cae4080?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b0901d0f96a7821fe6",
@@ -1581,7 +1581,7 @@
     "categorySlug": "laptops",
     "price": 139.95,
     "costPrice": 82,
-    "image": "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1595044426077-d36d9236d54a?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b0901d0f96a7821fe7",
@@ -1592,7 +1592,7 @@
     "categorySlug": "laptops",
     "price": 179,
     "costPrice": 110,
-    "image": "https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1513506003901-1e6a229e2d15?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b2901d0f96a7821fe8",
@@ -1603,7 +1603,7 @@
     "categorySlug": "laptops",
     "price": 239.99,
     "costPrice": 142,
-    "image": "https://images.unsplash.com/photo-1544652478-6653e09f18a2?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1616578273577-5d54546f4dec?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b2901d0f96a7821fe9",
@@ -1614,7 +1614,7 @@
     "categorySlug": "laptops",
     "price": 169.99,
     "costPrice": 105,
-    "image": "https://images.unsplash.com/photo-1597872200969-2b65d56bd16b?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1760708626495-91e1415be067?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b2901d0f96a7821fea",
@@ -1625,7 +1625,7 @@
     "categorySlug": "laptops",
     "price": 89.95,
     "costPrice": 42,
-    "image": "https://images.unsplash.com/photo-1541807084-5c52b6b3adef?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b2901d0f96a7821feb",
@@ -1636,7 +1636,7 @@
     "categorySlug": "laptops",
     "price": 99.99,
     "costPrice": 52,
-    "image": "https://images.unsplash.com/photo-1587826080692-f439cd0b70da?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1586985564150-11ee04838034?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b2901d0f96a7821fec",
@@ -1658,7 +1658,7 @@
     "categorySlug": "electronics",
     "price": 149.95,
     "costPrice": 88,
-    "image": "https://images.unsplash.com/photo-1545454675-3531b543be5d?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b3901d0f96a7821fee",
@@ -1669,7 +1669,7 @@
     "categorySlug": "electronics",
     "price": 249,
     "costPrice": 145,
-    "image": "https://images.unsplash.com/photo-1543512214-318c7553f230?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1711374704947-2b9cf5958311?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b3901d0f96a7821fef",
@@ -1680,7 +1680,7 @@
     "categorySlug": "electronics",
     "price": 99,
     "costPrice": 55,
-    "image": "https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1520523839898-507123490795?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b3901d0f96a7821ff0",
@@ -1691,7 +1691,7 @@
     "categorySlug": "electronics",
     "price": 139.99,
     "costPrice": 78,
-    "image": "https://images.unsplash.com/photo-1545454675-3531b543be5d?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1786875950828-d15928cd2772?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b3901d0f96a7821ff1",
@@ -1713,7 +1713,7 @@
     "categorySlug": "electronics",
     "price": 249,
     "costPrice": 145,
-    "image": "https://images.unsplash.com/photo-1583394838336-acd977736f90?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1484704849700-f032a568e944?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b3901d0f96a7821ff3",
@@ -1724,7 +1724,7 @@
     "categorySlug": "fashion",
     "price": 249,
     "costPrice": 135,
-    "image": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1501555088652-021faa106b9b?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b3901d0f96a7821ff4",
@@ -1735,7 +1735,7 @@
     "categorySlug": "fashion",
     "price": 199,
     "costPrice": 115,
-    "image": "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1610945265064-0e34e5519bbf?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b4901d0f96a7821ff5",
@@ -1746,7 +1746,7 @@
     "categorySlug": "fashion",
     "price": 139,
     "costPrice": 75,
-    "image": "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1617627143750-d86bc21e42bb?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b4901d0f96a7821ff6",
@@ -1757,7 +1757,7 @@
     "categorySlug": "fashion",
     "price": 79.95,
     "costPrice": 42,
-    "image": "https://images.unsplash.com/photo-1627123424574-724758594e93?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b4901d0f96a7821ff7",
@@ -1768,7 +1768,7 @@
     "categorySlug": "fashion",
     "price": 199,
     "costPrice": 112,
-    "image": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b4901d0f96a7821ff8",
@@ -1779,7 +1779,7 @@
     "categorySlug": "fashion",
     "price": 249,
     "costPrice": 145,
-    "image": "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b4901d0f96a7821ff9",
@@ -1790,7 +1790,7 @@
     "categorySlug": "fashion",
     "price": 249,
     "costPrice": 135,
-    "image": "https://images.unsplash.com/photo-1511499767150-a48a237f0083?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b4901d0f96a7821ffa",
@@ -1801,7 +1801,7 @@
     "categorySlug": "watches",
     "price": 249,
     "costPrice": 145,
-    "image": "https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=800&auto=format&fit=crop&q=80"
+    "image": "https://cdn.dummyjson.com/product-images/womens-watches/iwc-ingenieur-automatic-steel/thumbnail.webp"
   },
   {
     "_id": "6a9944b4901d0f96a7821ffb",
@@ -1812,7 +1812,7 @@
     "categorySlug": "watches",
     "price": 245,
     "costPrice": 140,
-    "image": "https://images.unsplash.com/photo-1524805444758-089113d48a6d?w=800&auto=format&fit=crop&q=80"
+    "image": "https://cdn.dummyjson.com/product-images/mens-watches/brown-leather-belt-watch/thumbnail.webp"
   },
   {
     "_id": "6a9944b5901d0f96a7821ffc",
@@ -1834,7 +1834,7 @@
     "categorySlug": "watches",
     "price": 249,
     "costPrice": 145,
-    "image": "https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1654195131868-cac1d8429d86?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b5901d0f96a7821ffe",
@@ -1845,7 +1845,7 @@
     "categorySlug": "watches",
     "price": 249,
     "costPrice": 145,
-    "image": "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1544117518-30df578096a4?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b5901d0f96a7821fff",
@@ -1856,7 +1856,7 @@
     "categorySlug": "watches",
     "price": 189,
     "costPrice": 110,
-    "image": "https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1517430816045-df4b7de11d1d?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b5901d0f96a7822000",
@@ -1867,7 +1867,7 @@
     "categorySlug": "watches",
     "price": 145,
     "costPrice": 78,
-    "image": "https://images.unsplash.com/photo-1524805444758-089113d48a6d?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1526045478516-99145907023c?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b5901d0f96a7822001",
@@ -1911,7 +1911,7 @@
     "categorySlug": "beauty",
     "price": 199.99,
     "costPrice": 115,
-    "image": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1522338140262-f46f5913618a?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b6901d0f96a7822006",
@@ -1922,7 +1922,7 @@
     "categorySlug": "beauty",
     "price": 249,
     "costPrice": 145,
-    "image": "https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1740350631565-6a5081a2f841?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b6901d0f96a7822007",
@@ -1944,7 +1944,7 @@
     "categorySlug": "beauty",
     "price": 160,
     "costPrice": 90,
-    "image": "https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1547887537-6158d64c35b3?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b6901d0f96a7822009",
@@ -1955,7 +1955,7 @@
     "categorySlug": "home",
     "price": 249,
     "costPrice": 145,
-    "image": "https://images.unsplash.com/photo-1584269600464-37b1b58a9fe7?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1584990347449-399042b9195b?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b7901d0f96a782200a",
@@ -1966,7 +1966,7 @@
     "categorySlug": "home",
     "price": 229.95,
     "costPrice": 130,
-    "image": "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1509785307050-d4066910ec1e?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b7901d0f96a782200b",
@@ -1977,7 +1977,7 @@
     "categorySlug": "home",
     "price": 249,
     "costPrice": 145,
-    "image": "https://images.unsplash.com/photo-1544816155-12df9643f363?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b7901d0f96a782200c",
@@ -1999,7 +1999,7 @@
     "categorySlug": "home",
     "price": 169.95,
     "costPrice": 95,
-    "image": "https://images.unsplash.com/photo-1585515320310-259814833e62?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1507089947368-19c1da9775ae?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b7901d0f96a782200e",
@@ -2021,7 +2021,7 @@
     "categorySlug": "home",
     "price": 249,
     "costPrice": 145,
-    "image": "https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1618403323851-ac3d38029495?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b8901d0f96a7822010",
@@ -2032,7 +2032,7 @@
     "categorySlug": "sports",
     "price": 249,
     "costPrice": 145,
-    "image": "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1746278925416-9d6c71f55c2d?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b8901d0f96a7822011",
@@ -2054,7 +2054,7 @@
     "categorySlug": "sports",
     "price": 229.95,
     "costPrice": 125,
-    "image": "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1669323149885-6bda5714e85b?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b8901d0f96a7822013",
@@ -2065,7 +2065,7 @@
     "categorySlug": "sports",
     "price": 79.99,
     "costPrice": 42,
-    "image": "https://images.unsplash.com/photo-1510519138197-06b8628cbf47?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1510519138171-c70d76b6408a?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b8901d0f96a7822014",
@@ -2076,7 +2076,7 @@
     "categorySlug": "sports",
     "price": 149,
     "costPrice": 85,
-    "image": "https://images.unsplash.com/photo-1584735935682-2f2b69dff9d2?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1566568531155-07244e00963d?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b8901d0f96a7822015",
@@ -2087,7 +2087,7 @@
     "categorySlug": "sports",
     "price": 189,
     "costPrice": 112,
-    "image": "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6a9944b8901d0f96a7822016",
@@ -2098,7 +2098,7 @@
     "categorySlug": "sports",
     "price": 249,
     "costPrice": 142,
-    "image": "https://images.unsplash.com/photo-1530549387789-4c1017266635?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1560089000-7433a4ebbd64?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784662f03a483e2d4fd67",
@@ -2197,7 +2197,7 @@
     "categorySlug": "toys",
     "price": 149.99,
     "costPrice": 98,
-    "image": "https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784672f03a483e2d4fd70",
@@ -2208,7 +2208,7 @@
     "categorySlug": "toys",
     "price": 59.99,
     "costPrice": 38,
-    "image": "https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1596462502278-27bfdc403348?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784672f03a483e2d4fd71",
@@ -2263,7 +2263,7 @@
     "categorySlug": "kitchen",
     "price": 79.9,
     "costPrice": 48,
-    "image": "https://images.unsplash.com/photo-1584990347449-399042b9195b?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784682f03a483e2d4fd76",
@@ -2274,7 +2274,7 @@
     "categorySlug": "kitchen",
     "price": 199.95,
     "costPrice": 135,
-    "image": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1589365278144-c9e705f843ba?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784682f03a483e2d4fd77",
@@ -2285,7 +2285,7 @@
     "categorySlug": "kitchen",
     "price": 69.99,
     "costPrice": 44,
-    "image": "https://images.unsplash.com/photo-1517256064527-09c73fc73e38?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1592417766326-088bf3da80c5?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784682f03a483e2d4fd78",
@@ -2296,7 +2296,7 @@
     "categorySlug": "kitchen",
     "price": 179.99,
     "costPrice": 115,
-    "image": "https://images.unsplash.com/photo-1593618998160-e34014e67546?w=800&auto=format&fit=crop&q=80"
+    "image": "https://cdn.dummyjson.com/product-images/kitchen-accessories/knife/thumbnail.webp"
   },
   {
     "_id": "6ab784682f03a483e2d4fd79",
@@ -2307,7 +2307,7 @@
     "categorySlug": "kitchen",
     "price": 395,
     "costPrice": 265,
-    "image": "https://images.unsplash.com/photo-1584990347449-399042b9195b?w=800&auto=format&fit=crop&q=80"
+    "image": "https://cdn.dummyjson.com/product-images/kitchen-accessories/silver-pot-with-glass-cap/thumbnail.webp"
   },
   {
     "_id": "6ab784682f03a483e2d4fd7a",
@@ -2329,7 +2329,7 @@
     "categorySlug": "kitchen",
     "price": 99,
     "costPrice": 62,
-    "image": "https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1580929753603-10519c6e480a?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784682f03a483e2d4fd7c",
@@ -2340,7 +2340,7 @@
     "categorySlug": "kitchen",
     "price": 32.99,
     "costPrice": 19,
-    "image": "https://images.unsplash.com/photo-1584990347449-399042b9195b?w=800&auto=format&fit=crop&q=80"
+    "image": "https://cdn.dummyjson.com/product-images/kitchen-accessories/lunch-box/thumbnail.webp"
   },
   {
     "_id": "6ab784692f03a483e2d4fd7d",
@@ -2351,7 +2351,7 @@
     "categorySlug": "home-decor",
     "price": 89,
     "costPrice": 52,
-    "image": "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=800&auto=format&fit=crop&q=80"
+    "image": "https://cdn.dummyjson.com/product-images/home-decoration/table-lamp/thumbnail.webp"
   },
   {
     "_id": "6ab784692f03a483e2d4fd7e",
@@ -2362,7 +2362,7 @@
     "categorySlug": "home-decor",
     "price": 68,
     "costPrice": 36,
-    "image": "https://images.unsplash.com/photo-1579783902614-a3fb3927b675?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784692f03a483e2d4fd7f",
@@ -2373,7 +2373,7 @@
     "categorySlug": "home-decor",
     "price": 42,
     "costPrice": 22,
-    "image": "https://images.unsplash.com/photo-1603006905003-be475563bc59?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1625093742435-6fa192b6fb10?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784692f03a483e2d4fd80",
@@ -2428,7 +2428,7 @@
     "categorySlug": "home-decor",
     "price": 54.99,
     "costPrice": 32,
-    "image": "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1532372320572-cda25653a26d?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784692f03a483e2d4fd85",
@@ -2450,7 +2450,7 @@
     "categorySlug": "home-decor",
     "price": 119.99,
     "costPrice": 75,
-    "image": "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1766928714376-3263576f7b73?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846a2f03a483e2d4fd87",
@@ -2472,7 +2472,7 @@
     "categorySlug": "mobile-accessories",
     "price": 69.99,
     "costPrice": 42,
-    "image": "https://images.unsplash.com/photo-1622445262464-84b1456045b6?w=800&auto=format&fit=crop&q=80"
+    "image": "https://cdn.dummyjson.com/product-images/mobile-accessories/apple-airpower-wireless-charger/thumbnail.webp"
   },
   {
     "_id": "6ab7846a2f03a483e2d4fd89",
@@ -2483,7 +2483,7 @@
     "categorySlug": "mobile-accessories",
     "price": 24.99,
     "costPrice": 11,
-    "image": "https://images.unsplash.com/photo-1601784551446-20c9e07cdbdb?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1695048133142-1a20484d2569?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846a2f03a483e2d4fd8a",
@@ -2494,7 +2494,7 @@
     "categorySlug": "mobile-accessories",
     "price": 19.99,
     "costPrice": 9.5,
-    "image": "https://images.unsplash.com/photo-1609592424364-7bf5dfb3e41c?w=800&auto=format&fit=crop&q=80"
+    "image": "https://cdn.dummyjson.com/product-images/mobile-accessories/apple-iphone-charger/thumbnail.webp"
   },
   {
     "_id": "6ab7846a2f03a483e2d4fd8b",
@@ -2505,7 +2505,7 @@
     "categorySlug": "mobile-accessories",
     "price": 59.99,
     "costPrice": 36,
-    "image": "https://images.unsplash.com/photo-1609592424364-7bf5dfb3e41c?w=800&auto=format&fit=crop&q=80"
+    "image": "https://cdn.dummyjson.com/product-images/mobile-accessories/apple-magsafe-battery-pack/thumbnail.webp"
   },
   {
     "_id": "6ab7846a2f03a483e2d4fd8c",
@@ -2516,7 +2516,7 @@
     "categorySlug": "mobile-accessories",
     "price": 49.99,
     "costPrice": 29,
-    "image": "https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1603539495824-bf9158834f09?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846a2f03a483e2d4fd8d",
@@ -2527,7 +2527,7 @@
     "categorySlug": "mobile-accessories",
     "price": 34.99,
     "costPrice": 18,
-    "image": "https://images.unsplash.com/photo-1517420704952-d9f39e95b43e?w=800&auto=format&fit=crop&q=80"
+    "image": "https://cdn.dummyjson.com/product-images/mobile-accessories/monopod/thumbnail.webp"
   },
   {
     "_id": "6ab7846a2f03a483e2d4fd8e",
@@ -2538,7 +2538,7 @@
     "categorySlug": "mobile-accessories",
     "price": 199,
     "costPrice": 135,
-    "image": "https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1591488320449-011701bb6704?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846a2f03a483e2d4fd8f",
@@ -2549,7 +2549,7 @@
     "categorySlug": "mobile-accessories",
     "price": 21.99,
     "costPrice": 8,
-    "image": "https://images.unsplash.com/photo-1601784551446-20c9e07cdbdb?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1601924994987-69e26d50dc26?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846a2f03a483e2d4fd90",
@@ -2560,7 +2560,7 @@
     "categorySlug": "mobile-accessories",
     "price": 29.99,
     "costPrice": 15,
-    "image": "https://images.unsplash.com/photo-1586953208448-b95a79798f07?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1627123424574-724758594e93?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846a2f03a483e2d4fd91",
@@ -2571,7 +2571,7 @@
     "categorySlug": "mobile-accessories",
     "price": 39.99,
     "costPrice": 21,
-    "image": "https://images.unsplash.com/photo-1589492477829-5e65395b66cc?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1760443728221-0feabf5a0130?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846b2f03a483e2d4fd92",
@@ -2582,7 +2582,7 @@
     "categorySlug": "mobile-accessories",
     "price": 39.99,
     "costPrice": 20,
-    "image": "https://images.unsplash.com/photo-1583863788434-e58a36330cf0?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1616401784845-180882ba9ba8?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846b2f03a483e2d4fd93",
@@ -2593,7 +2593,7 @@
     "categorySlug": "mobile-accessories",
     "price": 79.99,
     "costPrice": 49,
-    "image": "https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1600080972464-8e5f35f63d08?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846b2f03a483e2d4fd94",
@@ -2648,7 +2648,7 @@
     "categorySlug": "clothing",
     "price": 108,
     "costPrice": 64,
-    "image": "https://images.unsplash.com/photo-1542272604-780c96856592?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846b2f03a483e2d4fd99",
@@ -2714,7 +2714,7 @@
     "categorySlug": "clothing",
     "price": 415,
     "costPrice": 275,
-    "image": "https://images.unsplash.com/photo-1489987707025-afc232f7ea0f?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1544441893-675973e31985?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846c2f03a483e2d4fd9f",
@@ -2802,7 +2802,7 @@
     "categorySlug": "shoes",
     "price": 220,
     "costPrice": 145,
-    "image": "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800&auto=format&fit=crop&q=80"
+    "image": "https://cdn.dummyjson.com/product-images/mens-shoes/puma-future-rider-trainers/thumbnail.webp"
   },
   {
     "_id": "6ab7846c2f03a483e2d4fda7",
@@ -2813,7 +2813,7 @@
     "categorySlug": "shoes",
     "price": 145,
     "costPrice": 92,
-    "image": "https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1584735935682-2f2b69dff9d2?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846c2f03a483e2d4fda8",
@@ -2835,7 +2835,7 @@
     "categorySlug": "shoes",
     "price": 150,
     "costPrice": 95,
-    "image": "https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?w=800&auto=format&fit=crop&q=80"
+    "image": "https://cdn.dummyjson.com/product-images/womens-shoes/black-&-brown-slipper/thumbnail.webp"
   },
   {
     "_id": "6ab7846c2f03a483e2d4fdaa",
@@ -2868,7 +2868,7 @@
     "categorySlug": "vehicles",
     "price": 149.99,
     "costPrice": 98,
-    "image": "https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1508974239320-0a029497e820?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846d2f03a483e2d4fdad",
@@ -2890,7 +2890,7 @@
     "categorySlug": "vehicles",
     "price": 45.99,
     "costPrice": 27,
-    "image": "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846d2f03a483e2d4fdaf",
@@ -2912,7 +2912,7 @@
     "categorySlug": "vehicles",
     "price": 168,
     "costPrice": 110,
-    "image": "https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1511919884226-fd3cad34687c?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846d2f03a483e2d4fdb1",
@@ -2923,7 +2923,7 @@
     "categorySlug": "vehicles",
     "price": 34.99,
     "costPrice": 18,
-    "image": "https://images.unsplash.com/photo-1520340356584-f9917d1eea6f?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1558317374-067fb5f30001?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846d2f03a483e2d4fdb2",
@@ -2945,7 +2945,7 @@
     "categorySlug": "vehicles",
     "price": 89.99,
     "costPrice": 56,
-    "image": "https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846d2f03a483e2d4fdb4",
@@ -2956,7 +2956,7 @@
     "categorySlug": "vehicles",
     "price": 58,
     "costPrice": 34,
-    "image": "https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1787750569966-b640cbd8f4e7?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846d2f03a483e2d4fdb5",
@@ -2967,7 +2967,7 @@
     "categorySlug": "vehicles",
     "price": 999.99,
     "costPrice": 740,
-    "image": "https://images.unsplash.com/photo-1549399542-7e3f8b79c341?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1542282088-72c9c27ed0cd?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846d2f03a483e2d4fdb6",
@@ -2978,7 +2978,7 @@
     "categorySlug": "vehicles",
     "price": 149.99,
     "costPrice": 95,
-    "image": "https://images.unsplash.com/photo-1520340356584-f9917d1eea6f?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1619642751034-765dfdf7c58e?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846d2f03a483e2d4fdb7",
@@ -2989,7 +2989,7 @@
     "categorySlug": "vehicles",
     "price": 199.99,
     "costPrice": 135,
-    "image": "https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1565026057447-bc90a3dceb87?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846e2f03a483e2d4fdb8",
@@ -3000,7 +3000,7 @@
     "categorySlug": "baby-kids",
     "price": 299.99,
     "costPrice": 195,
-    "image": "https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1519689680058-324335c77eba?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846e2f03a483e2d4fdb9",
@@ -3011,7 +3011,7 @@
     "categorySlug": "baby-kids",
     "price": 249,
     "costPrice": 165,
-    "image": "https://images.unsplash.com/photo-1519689680058-324335c77eba?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1555252333-9f8e92e65df9?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846e2f03a483e2d4fdba",
@@ -3022,7 +3022,7 @@
     "categorySlug": "baby-kids",
     "price": 210,
     "costPrice": 138,
-    "image": "https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1542901689-8917f44e3541?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846e2f03a483e2d4fdbb",
@@ -3033,7 +3033,7 @@
     "categorySlug": "baby-kids",
     "price": 69.99,
     "costPrice": 42,
-    "image": "https://images.unsplash.com/photo-1566576912321-d58ddd7a6088?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1613685301918-59b1039422cc?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846e2f03a483e2d4fdbc",
@@ -3044,7 +3044,7 @@
     "categorySlug": "baby-kids",
     "price": 199,
     "costPrice": 128,
-    "image": "https://images.unsplash.com/photo-1519689680058-324335c77eba?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1522771739844-6a9f6d5f14af?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846e2f03a483e2d4fdbd",
@@ -3055,7 +3055,7 @@
     "categorySlug": "baby-kids",
     "price": 142,
     "costPrice": 92,
-    "image": "https://images.unsplash.com/photo-1566576912321-d58ddd7a6088?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1618842676088-c4d48a6a7c9d?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846e2f03a483e2d4fdbe",
@@ -3066,7 +3066,7 @@
     "categorySlug": "baby-kids",
     "price": 24.99,
     "costPrice": 12,
-    "image": "https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1750085036915-6e21c6981586?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846e2f03a483e2d4fdbf",
@@ -3077,7 +3077,7 @@
     "categorySlug": "baby-kids",
     "price": 319,
     "costPrice": 215,
-    "image": "https://images.unsplash.com/photo-1515488042361-ee00e0ddd4e4?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1533090161767-e6ffed986c88?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846e2f03a483e2d4fdc0",
@@ -3099,7 +3099,7 @@
     "categorySlug": "pet-supplies",
     "price": 49.95,
     "costPrice": 28,
-    "image": "https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1548767797-d8c844163c4c?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846e2f03a483e2d4fdc2",
@@ -3121,7 +3121,7 @@
     "categorySlug": "pet-supplies",
     "price": 14.99,
     "costPrice": 7,
-    "image": "https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1535930891776-0c2dfb7fda1a?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846f2f03a483e2d4fdc4",
@@ -3132,7 +3132,7 @@
     "categorySlug": "pet-supplies",
     "price": 79.99,
     "costPrice": 48,
-    "image": "https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1541599540903-216a46ca1dc0?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846f2f03a483e2d4fdc5",
@@ -3143,7 +3143,7 @@
     "categorySlug": "pet-supplies",
     "price": 79.99,
     "costPrice": 49,
-    "image": "https://images.unsplash.com/photo-1587300003388-59208cc962cb?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846f2f03a483e2d4fdc6",
@@ -3165,7 +3165,7 @@
     "categorySlug": "pet-supplies",
     "price": 29.99,
     "costPrice": 14,
-    "image": "https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1516734212186-a967f81ad0d7?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846f2f03a483e2d4fdc8",
@@ -3187,7 +3187,7 @@
     "categorySlug": "office-supplies",
     "price": 199,
     "costPrice": 135,
-    "image": "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1635987391914-cb84b567e68f?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846f2f03a483e2d4fdca",
@@ -3198,7 +3198,7 @@
     "categorySlug": "office-supplies",
     "price": 139,
     "costPrice": 88,
-    "image": "https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1547658718-1cdaa0852790?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846f2f03a483e2d4fdcb",
@@ -3220,7 +3220,7 @@
     "categorySlug": "office-supplies",
     "price": 24.5,
     "costPrice": 12,
-    "image": "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1501618669935-18b6ecb13d6d?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab7846f2f03a483e2d4fdcd",
@@ -3242,7 +3242,7 @@
     "categorySlug": "office-supplies",
     "price": 89.99,
     "costPrice": 54,
-    "image": "https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1612831455359-970e23a1e4e9?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784702f03a483e2d4fdcf",
@@ -3253,7 +3253,7 @@
     "categorySlug": "health",
     "price": 499,
     "costPrice": 340,
-    "image": "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1755254926874-0512d5ae1a60?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784702f03a483e2d4fdd0",
@@ -3286,7 +3286,7 @@
     "categorySlug": "health",
     "price": 79.99,
     "costPrice": 48,
-    "image": "https://images.unsplash.com/photo-1559591937-e62fb3d8d5bb?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1567982047351-76b6f93e38ee?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784702f03a483e2d4fdd3",
@@ -3308,7 +3308,7 @@
     "categorySlug": "health",
     "price": 99.99,
     "costPrice": 62,
-    "image": "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1663416827757-c98066d93625?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784702f03a483e2d4fdd5",
@@ -3319,7 +3319,7 @@
     "categorySlug": "health",
     "price": 79.99,
     "costPrice": 48,
-    "image": "https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1584308666744-24d5c474f2ae?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784702f03a483e2d4fdd6",
@@ -3330,7 +3330,7 @@
     "categorySlug": "health",
     "price": 499.99,
     "costPrice": 360,
-    "image": "https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1585751119414-ef2636f8aede?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784702f03a483e2d4fdd7",
@@ -3341,7 +3341,7 @@
     "categorySlug": "outdoor-travel",
     "price": 275,
     "costPrice": 175,
-    "image": "https://images.unsplash.com/photo-1565026057447-bc90a3dceb87?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1502301197179-65228ab57f78?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784702f03a483e2d4fdd8",
@@ -3352,7 +3352,7 @@
     "categorySlug": "outdoor-travel",
     "price": 325,
     "costPrice": 220,
-    "image": "https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1527631746610-bca00a040d60?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784702f03a483e2d4fdd9",
@@ -3363,7 +3363,7 @@
     "categorySlug": "outdoor-travel",
     "price": 59.95,
     "costPrice": 36,
-    "image": "https://images.unsplash.com/photo-1609592424364-7bf5dfb3e41c?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784702f03a483e2d4fdda",
@@ -3374,7 +3374,7 @@
     "categorySlug": "outdoor-travel",
     "price": 140,
     "costPrice": 85,
-    "image": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1622560480605-d83c853bc5c3?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784712f03a483e2d4fddb",
@@ -3385,7 +3385,7 @@
     "categorySlug": "outdoor-travel",
     "price": 45,
     "costPrice": 24,
-    "image": "https://images.unsplash.com/photo-1517256064527-09c73fc73e38?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1577937927133-66ef06acdf18?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784712f03a483e2d4fddc",
@@ -3396,7 +3396,7 @@
     "categorySlug": "outdoor-travel",
     "price": 185,
     "costPrice": 118,
-    "image": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1546938576-6e6a64f317cc?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784712f03a483e2d4fddd",
@@ -3407,7 +3407,7 @@
     "categorySlug": "outdoor-travel",
     "price": 149.95,
     "costPrice": 98,
-    "image": "https://images.unsplash.com/photo-1501555088652-021faa106b9b?w=800&auto=format&fit=crop&q=80"
+    "image": "https://images.unsplash.com/photo-1510312305653-8ed496efae75?w=800&auto=format&fit=crop&q=80"
   },
   {
     "_id": "6ab784712f03a483e2d4fdde",
@@ -3419,5 +3419,401 @@
     "price": 279.95,
     "costPrice": 185,
     "image": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a151d7dffcb5f22c2ba9",
+    "name": "Organic French Lavender & Goat Milk Artisan Bar Soap",
+    "brand": "LuxeBotanicals",
+    "sku": "TRZ-COS-SOAP-LAV",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 12,
+    "costPrice": 5,
+    "image": "https://images.unsplash.com/photo-1607006411601-775c8cc632dc?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a152d7dffcb5f22c2bb1",
+    "name": "Raw Shea Butter & Colloidal Oatmeal Sensitive Skin Soap Bar",
+    "brand": "AuraGlow",
+    "sku": "TRZ-COS-SOAP-OAT",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 11.5,
+    "costPrice": 4.8,
+    "image": "https://images.unsplash.com/photo-1600857544200-b2f666a9a2ec?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a152d7dffcb5f22c2bb9",
+    "name": "Activated Bamboo Charcoal & Tea Tree Purifying Detox Bar Soap",
+    "brand": "BotanicaPure",
+    "sku": "TRZ-COS-SOAP-CHR",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 12.5,
+    "costPrice": 5.2,
+    "image": "https://cdn.dummyjson.com/product-images/skin-care/attitude-super-leaves-hand-soap/thumbnail.webp"
+  },
+  {
+    "_id": "6ab8a152d7dffcb5f22c2bc0",
+    "name": "Rose Clay & Botanical Jasmine Gentle Moisture Bar Soap",
+    "brand": "LuxeBotanicals",
+    "sku": "TRZ-COS-SOAP-ROSE",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 13,
+    "costPrice": 5.5,
+    "image": "https://images.unsplash.com/photo-1607006314644-88cb206fb7a7?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a152d7dffcb5f22c2bc7",
+    "name": "Aromatherapy Eucalyptus & Spearmint Foaming Body Wash (500ml)",
+    "brand": "AuraGlow",
+    "sku": "TRZ-COS-BWASH-EUC",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 24,
+    "costPrice": 11,
+    "image": "https://cdn.dummyjson.com/product-images/skin-care/olay-ultra-moisture-shea-butter-body-wash/thumbnail.webp"
+  },
+  {
+    "_id": "6ab8a152d7dffcb5f22c2bce",
+    "name": "Japanese Cherry Blossom Nourishing Moisture Shower Gel (400ml)",
+    "brand": "LuxeBotanicals",
+    "sku": "TRZ-COS-BWASH-SAK",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 22,
+    "costPrice": 9.5,
+    "image": "https://images.unsplash.com/photo-1535585209827-a15fcdbc4c2d?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a152d7dffcb5f22c2bd5",
+    "name": "Pink Himalayan Crystal Salt & Coconut Oil Body Polish Scrub (300g)",
+    "brand": "BotanicaPure",
+    "sku": "TRZ-COS-SCRUB-HIM",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 28,
+    "costPrice": 12,
+    "image": "https://images.unsplash.com/photo-1567928815117-640a34b281f6?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a152d7dffcb5f22c2bdc",
+    "name": "Whipped Raw African Shea & Cocoa Butter Ultra-Rich Body Cream (250ml)",
+    "brand": "AuraGlow",
+    "sku": "TRZ-COS-BBL-SHEA",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 26,
+    "costPrice": 11.5,
+    "image": "https://images.unsplash.com/photo-1571781926291-c477ebfd024b?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a153d7dffcb5f22c2be3",
+    "name": "Moroccan Argan Oil Hydrating & Repairing Shampoo (350ml)",
+    "brand": "BotanicaPure",
+    "sku": "TRZ-COS-SHMP-ARG",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 28,
+    "costPrice": 13,
+    "image": "https://images.unsplash.com/photo-1786457166579-92da3f9a23b8?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a153d7dffcb5f22c2bea",
+    "name": "Keratin Protein Smooth & Deep Moisture Conditioner (350ml)",
+    "brand": "BotanicaPure",
+    "sku": "TRZ-COS-COND-KER",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 28,
+    "costPrice": 13,
+    "image": "https://images.unsplash.com/photo-1526947425960-945c6e72858f?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a153d7dffcb5f22c2bf1",
+    "name": "100% Pure Cold-Pressed Rosemary & Biotin Hair & Scalp Oil (60ml)",
+    "brand": "AuraGlow",
+    "sku": "TRZ-COS-OIL-ROSE",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 22,
+    "costPrice": 9,
+    "image": "https://images.unsplash.com/photo-1617897903246-719242758050?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a153d7dffcb5f22c2bf8",
+    "name": "20% Vitamin C + Ferulic Acid + Vitamin E Antioxidant Glow Serum (30ml)",
+    "brand": "AuraGlow",
+    "sku": "TRZ-COS-SRM-VITC",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 38,
+    "costPrice": 16,
+    "image": "https://images.unsplash.com/photo-1741896135512-084b251887f7?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a153d7dffcb5f22c2bff",
+    "name": "Multi-Molecular Hyaluronic Acid 2% + B5 Intense Plumping Hydration Serum (30ml)",
+    "brand": "BotanicaPure",
+    "sku": "TRZ-COS-SRM-HYA",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 32,
+    "costPrice": 13.5,
+    "image": "https://images.unsplash.com/photo-1671493235081-5842463637cd?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a153d7dffcb5f22c2c06",
+    "name": "Niacinamide 10% + Zinc 1% Oil Control & Pore Refining Facial Serum (30ml)",
+    "brand": "AuraGlow",
+    "sku": "TRZ-COS-SRM-NIA",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 26,
+    "costPrice": 10.5,
+    "image": "https://images.unsplash.com/photo-1573461160327-b450ce3d8e7f?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a153d7dffcb5f22c2c0d",
+    "name": "Encapsulated 0.5% Retinol Night Renewal & Wrinkle Repair Serum (30ml)",
+    "brand": "LuxeBotanicals",
+    "sku": "TRZ-COS-SRM-RET",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 42,
+    "costPrice": 18,
+    "image": "https://images.unsplash.com/photo-1616949755610-8c9bbc08f138?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a154d7dffcb5f22c2c14",
+    "name": "Multi-Ceramide & Peptide Barrier Restore Hydrating Cream (50ml)",
+    "brand": "AuraGlow",
+    "sku": "TRZ-COS-CRM-CER",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 36,
+    "costPrice": 15,
+    "image": "https://cdn.dummyjson.com/product-images/skin-care/vaseline-men-body-and-face-lotion/thumbnail.webp"
+  },
+  {
+    "_id": "6ab8a154d7dffcb5f22c2c1b",
+    "name": "Daily Invisible Water-Gel Broad Spectrum SPF 50+ Sunscreen (50ml)",
+    "brand": "BotanicaPure",
+    "sku": "TRZ-COS-SUN-SPF50",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 29,
+    "costPrice": 12,
+    "image": "https://images.unsplash.com/photo-1578570217121-953e34ad3d14?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a154d7dffcb5f22c2c22",
+    "name": "Salicylic Acid 2% Daily Gentle Exfoliating Cleanser (200ml)",
+    "brand": "AuraGlow",
+    "sku": "TRZ-COS-CLN-SAL",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 24,
+    "costPrice": 9.5,
+    "image": "https://images.unsplash.com/photo-1745141063798-7fa04698ea80?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a154d7dffcb5f22c2c29",
+    "name": "100% Organic Damask Rosewater Facial Hydrosol Mist Toner (120ml)",
+    "brand": "LuxeBotanicals",
+    "sku": "TRZ-COS-TON-ROSE",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 22,
+    "costPrice": 9,
+    "image": "https://images.unsplash.com/photo-1599847987657-881f11b92a75?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a154d7dffcb5f22c2c30",
+    "name": "Caffeine 5% + Peptides Dark Circle & Puffiness Brightening Eye Cream (15ml)",
+    "brand": "AuraGlow",
+    "sku": "TRZ-COS-EYE-CAF",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 27,
+    "costPrice": 11,
+    "image": "https://images.unsplash.com/photo-1613803745799-ba6c10aace85?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a154d7dffcb5f22c2c37",
+    "name": "Velvet Matte Waterproof 16H Long-Wear Liquid Lipstick (Iconic Ruby Red)",
+    "brand": "VogueGlam",
+    "sku": "TRZ-COS-LIP-RED",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 24,
+    "costPrice": 9.5,
+    "image": "https://images.unsplash.com/photo-1586495777744-4413f21062fa?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a155d7dffcb5f22c2c3e",
+    "name": "Ultra-Creamy Satin Finish Hydrating Lipstick (Nude Elegance)",
+    "brand": "VogueGlam",
+    "sku": "TRZ-COS-LIP-NUDE",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 22,
+    "costPrice": 8.5,
+    "image": "https://cdn.dummyjson.com/product-images/beauty/red-lipstick/thumbnail.webp"
+  },
+  {
+    "_id": "6ab8a155d7dffcb5f22c2c45",
+    "name": "Peptide Hydrating Lip Glow Treatment Oil (Berry Blossom)",
+    "brand": "AuraGlow",
+    "sku": "TRZ-COS-LIP-OIL",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 20,
+    "costPrice": 7.5,
+    "image": "https://d3t32hsnjxo7q6.cloudfront.net/i/1c87435efe0a260a66b3df7cd58aaed0_ra,w158,h184_pa,w158,h184.jpg"
+  },
+  {
+    "_id": "6ab8a155d7dffcb5f22c2c4c",
+    "name": "Luminous Silk Breathable Full-Coverage Liquid Foundation (30ml)",
+    "brand": "VogueGlam",
+    "sku": "TRZ-COS-FND-SILK",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 45,
+    "costPrice": 19,
+    "image": "https://images.unsplash.com/photo-1631729371254-42c2892f0e6e?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a155d7dffcb5f22c2c53",
+    "name": "High-Impact Waterproof Volumizing & Lengthening Mascara (Jet Black)",
+    "brand": "VogueGlam",
+    "sku": "TRZ-COS-MSC-LASH",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 25,
+    "costPrice": 10,
+    "image": "https://cdn.dummyjson.com/product-images/beauty/essence-mascara-lash-princess/thumbnail.webp"
+  },
+  {
+    "_id": "6ab8a155d7dffcb5f22c2c5a",
+    "name": "18-Color Warm Sunset & Desert Rose Eyeshadow Palette",
+    "brand": "VogueGlam",
+    "sku": "TRZ-COS-EYE-PLT",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 48,
+    "costPrice": 21,
+    "image": "https://cdn.dummyjson.com/product-images/beauty/eyeshadow-palette-with-mirror/thumbnail.webp"
+  },
+  {
+    "_id": "6ab8a155d7dffcb5f22c2c61",
+    "name": "Soft Dewy Liquid Cream Blush with Cushion Wand (Peachy Coral)",
+    "brand": "AuraGlow",
+    "sku": "TRZ-COS-BLSH-CRM",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 26,
+    "costPrice": 10.5,
+    "image": "https://d3t32hsnjxo7q6.cloudfront.net/i/0b8787d62ced45700c0693b869645542_ra,w158,h184_pa,w158,h184.png"
+  },
+  {
+    "_id": "6ab8a156d7dffcb5f22c2c68",
+    "name": "Waterproof Ultra-Precision Felt-Tip Liquid Eyeliner Pen (Carbon Black)",
+    "brand": "VogueGlam",
+    "sku": "TRZ-COS-LIN-PEN",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 19,
+    "costPrice": 7,
+    "image": "https://d3t32hsnjxo7q6.cloudfront.net/i/d21a214b11528337f27647cbbd93de6b_ra,w158,h184_pa,w158,h184.png"
+  },
+  {
+    "_id": "6ab8a156d7dffcb5f22c2c6f",
+    "name": "Translucent Micro-Fine Blur Setting Powder with Velvet Puff (20g)",
+    "brand": "VogueGlam",
+    "sku": "TRZ-COS-PWD-SET",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 32,
+    "costPrice": 13,
+    "image": "https://cdn.dummyjson.com/product-images/beauty/powder-canister/thumbnail.webp"
+  },
+  {
+    "_id": "6ab8a156d7dffcb5f22c2c76",
+    "name": "Golden Amber, Vanilla Bourbon & White Musk Luxury Eau De Parfum (100ml)",
+    "brand": "LuxeBotanicals",
+    "sku": "TRZ-COS-EDP-AMB",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 78,
+    "costPrice": 34,
+    "image": "https://cdn.dummyjson.com/product-images/fragrances/dior-j'adore/thumbnail.webp"
+  },
+  {
+    "_id": "6ab8a157d7dffcb5f22c2c7d",
+    "name": "Santal & Cardamom Unisex Woody Eau De Parfum (100ml)",
+    "brand": "LuxeBotanicals",
+    "sku": "TRZ-COS-EDP-SNT",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 85,
+    "costPrice": 38,
+    "image": "https://cdn.dummyjson.com/product-images/fragrances/chanel-coco-noir-eau-de/thumbnail.webp"
+  },
+  {
+    "_id": "6ab8a157d7dffcb5f22c2c83",
+    "name": "Baked Champagne Shimmer Strobe Highlighting Powder (8g)",
+    "brand": "VogueGlam",
+    "sku": "TRZ-COS-HLT-GLW",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 28,
+    "costPrice": 11,
+    "image": "https://d3t32hsnjxo7q6.cloudfront.net/i/f15f238ecfe181067f7b6158ade61f6e_ra,w158,h184_pa,w158,h184.jpg"
+  },
+  {
+    "_id": "6ab8a157d7dffcb5f22c2c89",
+    "name": "12-Piece Professional Ultra-Soft Vegan Makeup Brush Set with Travel Case",
+    "brand": "VogueGlam",
+    "sku": "TRZ-COS-BRS-SET",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 39,
+    "costPrice": 16,
+    "image": "https://images.unsplash.com/photo-1620464003286-a5b0d79f32c2?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a157d7dffcb5f22c2c8f",
+    "name": "French Green Clay & Matcha Purifying Pore Tightening Face Mask (100g)",
+    "brand": "BotanicaPure",
+    "sku": "TRZ-COS-MSK-CLAY",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 25,
+    "costPrice": 10,
+    "image": "https://images.unsplash.com/photo-1626783416763-67a92e5e7266?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a158d7dffcb5f22c2c95",
+    "name": "24K Bio-Collagen Hydrogel Rejuvenating Overnight Sleeping Mask (Set of 5)",
+    "brand": "AuraGlow",
+    "sku": "TRZ-COS-MSK-GOLD",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 34,
+    "costPrice": 14,
+    "image": "https://images.unsplash.com/photo-1670201203150-bf8771401590?w=800&auto=format&fit=crop&q=80"
+  },
+  {
+    "_id": "6ab8a158d7dffcb5f22c2c9b",
+    "name": "Green Tea & Centella Asiatica Calming Foam Face Wash (150ml)",
+    "brand": "BotanicaPure",
+    "sku": "TRZ-COS-CLN-FOAM",
+    "category": "Beauty & Fragrances",
+    "categorySlug": "beauty",
+    "price": 21,
+    "costPrice": 8.5,
+    "image": "https://images.unsplash.com/photo-1748639320154-6ba118bccc74?w=800&auto=format&fit=crop&q=80"
   }
 ]
