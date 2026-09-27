@@ -77,6 +77,7 @@ router.post('/', authAdmin('sellers'), async (req, res) => {
       commissionRate: commissionRate !== undefined ? Number(commissionRate) : 10,
       address: { city: city || 'New York' },
       status: 'active',
+      verified: true,
     });
 
     await seller.save();
@@ -124,6 +125,7 @@ router.post('/:id/freeze', authAdmin('sellers'), async (req, res) => {
 
     seller.status = status;
     if (status === 'active') {
+      seller.verified = true;
       seller.freezeReason = '';
       seller.frozenAt = null;
       seller.frozenBy = '';

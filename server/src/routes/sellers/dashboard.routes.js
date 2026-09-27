@@ -109,6 +109,7 @@ router.get('/dashboard', authSeller, async (req, res) => {
         commissionRate: seller.commissionRate,
         rating: seller.rating,
         status: seller.status,
+        verified: Boolean(seller.verified || seller.status === 'active'),
         wallet: {
           ...(seller.wallet ? (seller.wallet.toObject ? seller.wallet.toObject() : seller.wallet) : {}),
           securityDeposit: securityDepositAmt,

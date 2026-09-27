@@ -216,6 +216,10 @@ router.get('/me', authSeller, async (req, res) => {
   try {
     const seller = await Seller.findById(req.seller.id).select('-passwordHash');
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
+    if (seller.status === 'active' && !seller.verified) {
+      seller.verified = true;
+      await seller.save();
+    }
     res.json(seller);
   } catch (err) {
     res.status(500).json({ message: err.message });

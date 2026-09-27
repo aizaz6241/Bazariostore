@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, fmtDate, money } from '../api.js';
 import Ic from '../components/Icons.jsx';
+import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
 
 export default function Applications() {
   const [sellers, setSellers] = useState([]);
@@ -200,7 +201,12 @@ export default function Applications() {
                     <div className="seller-name-cell">
                       <div className="avatar-chip">{s.storeName?.[0] || 'S'}</div>
                       <div>
-                        <b>{s.storeName}</b>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <b>{s.storeName}</b>
+                          {(s.verified || s.status === 'active') && (
+                            <VerifiedStoreBadge variant="icon" size={14} title="Verified Merchant Store" />
+                          )}
+                        </div>
                         <small className="muted block">{s.description || 'Merchant Store'}</small>
                       </div>
                     </div>

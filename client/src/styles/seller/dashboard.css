@@ -28,6 +28,15 @@
   margin: 0;
   letter-spacing: -0.3px;
 }
+.sdw-title-flex {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sdw-store-name {
+  color: #0f172a;
+}
 .seller-dash-welcome p {
   font-size: 13.5px;
   color: #64748b;

@@ -6,6 +6,7 @@ import SellerAppModal from '../components/SellerAppModal.jsx';
 import CurrencySelector from '../components/CurrencySelector.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 import { getSocket } from '../socket.js';
+import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
 
 export default function SellerDashboard() {
   const { formatMoney, currentCurrency } = useCurrency();
@@ -54,14 +55,26 @@ export default function SellerDashboard() {
 
   const { stats, salesByDay = [], topProducts = [], recentOrders = [], lowStockProducts = [] } = data || {};
   const maxDayRev = Math.max(...salesByDay.map((d) => d.revenue), 1000);
+  const isVerified = Boolean(data?.seller?.verified || data?.seller?.status === 'active');
 
   return (
     <div className="seller-dash">
       {/* Welcome Banner */}
       <div className="seller-dash-welcome">
         <div className="sdw-heading">
-          <h2>Seller Business Hub 🚀</h2>
-          <p>Welcome back, <b>{data?.seller?.storeName}</b>! Here is your real-time performance summary.</p>
+          <div className="sdw-title-flex">
+            <h2>Seller Business Hub 🚀</h2>
+            {isVerified && (
+              <VerifiedStoreBadge variant="pill" size={15} text="Verified Store" />
+            )}
+          </div>
+          <p>
+            Welcome back, <b className="sdw-store-name">{data?.seller?.storeName}</b>
+            {isVerified && (
+              <VerifiedStoreBadge variant="icon" size={15} style={{ marginLeft: 5 }} />
+            )}
+            ! Here is your real-time performance summary.
+          </p>
         </div>
         <div className="seller-quick-actions">
           <Link to="/seller/products" className="seller-btn-pri"><Ic name="plus" size={16} /> Add Product</Link>
@@ -71,6 +84,11 @@ export default function SellerDashboard() {
           </Link>
         </div>
       </div>
+
+      {/* ─── OFFICIAL VERIFIED STORE STATUS BANNER ─── */}
+      {isVerified && (
+        <VerifiedStoreBadge variant="banner" />
+      )}
 
       {/* ─── LIVE MERCHANT WALLET HERO & QUICK PAYOUT ACTIONS ─── */}
       <div className="seller-wallet-hero-card">

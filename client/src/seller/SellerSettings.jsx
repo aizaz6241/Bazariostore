@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { sapi } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import SellerAppModal from '../components/SellerAppModal.jsx';
+import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
 
 const INDIAN_BANKS = [
   'State Bank of India (SBI)',
@@ -230,9 +231,7 @@ export default function SellerSettings() {
               </div>
             </div>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ background: '#dcfce7', color: '#15803d', fontWeight: 800, fontSize: 11.5, padding: '4px 10px', borderRadius: 9999, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <Ic name="badgeCheck" size={13} /> Active &amp; Verified
-              </span>
+              <VerifiedStoreBadge variant="pill" text="Active & Verified" size={14} />
             </div>
           </div>
           <div className="scp-body" style={{ paddingTop: 12 }}>
@@ -285,7 +284,12 @@ export default function SellerSettings() {
               <div className="settings-logo-preview-box">
                 <img src={form.logo} alt="Store Logo" className="slp-img" onError={(e) => (e.target.style.display = 'none')} />
                 <div>
-                  <b className="slp-name">{form.storeName || 'Your Store'}</b>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <b className="slp-name">{form.storeName || 'Your Store'}</b>
+                    {Boolean(seller?.verified || seller?.status === 'active') && (
+                      <VerifiedStoreBadge variant="icon" size={15} />
+                    )}
+                  </div>
                   <small className="slp-sub">Live storefront logo badge preview</small>
                 </div>
               </div>

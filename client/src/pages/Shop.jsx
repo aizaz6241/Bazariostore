@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { useContent } from '../content.jsx';
 import ProductCard from '../components/ProductCard.jsx';
 import { Breadcrumb, TrustStrip } from '../components/Bits.jsx';
+import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
 
 export default function Shop() {
   const [params, setParams] = useSearchParams();
@@ -52,7 +53,12 @@ export default function Shop() {
       <div className="page-head">
         <div className="container">
           <Breadcrumb trail={[{ label: 'Shop', to: '/shop' }, ...(category ? [{ label: catName }] : []), ...(seller && sellerName ? [{ label: sellerName }] : [])]} />
-          <h1 className="page-title">{title}</h1>
+          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span>{title}</span>
+            {seller && sellerName && (
+              <VerifiedStoreBadge variant="pill" size={15} text="Verified Store" />
+            )}
+          </h1>
           {seller && sellerName && (
             <p className="seller-shop-subtitle">
               Verified Marketplace Merchant • Fast Prime Dispatch • Authentic Products Guarantee

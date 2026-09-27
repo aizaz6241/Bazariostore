@@ -144,15 +144,15 @@ export default function AdminTreasury() {
   return (
     <div className="admin-treasury-page">
       {/* Top Header Row */}
-      <div className="admin-h1-row">
-        <div>
-          <h1 className="admin-h1">📦 Product Treasury (Master Catalog)</h1>
-          <p className="muted" style={{ margin: '4px 0 0', fontSize: '13.5px' }}>
-            Master product collection with central warehouse stock. Sellers browse and import these items directly into their storefronts.
+      <div className="admin-h1-row treasury-header-row">
+        <div className="treasury-header-title-box">
+          <h1 className="admin-h1 treasury-page-title">📦 Product Treasury</h1>
+          <p className="muted treasury-header-desc">
+            Master product catalog with central warehouse stock for sellers to list in their storefronts.
           </p>
         </div>
-        <Link to="/admin/treasury/new" className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-          <Ic name="plus" size={15} /> ADD MASTER PRODUCT
+        <Link to="/admin/treasury/new" className="btn-primary treasury-add-btn">
+          <Ic name="plus" size={14} /> <span>ADD MASTER PRODUCT</span>
         </Link>
       </div>
 
@@ -193,33 +193,36 @@ export default function AdminTreasury() {
 
       {/* Filters Toolbar */}
       <div className="treasury-filter-card">
-        <div className="treasury-filter-left">
-          <form onSubmit={handleSearchSubmit} className="treasury-admin-search-form">
-            <div className="treasury-search-box">
-              <span className="treasury-search-icon"><Ic name="search" size={16} /></span>
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search by title, SKU, brand…"
-              />
-              {q && (
-                <button
-                  type="button"
-                  onClick={() => setQ('')}
-                  className="treasury-search-clear-btn"
-                  title="Clear search"
-                  aria-label="Clear search"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-            <button type="submit" className="btn-primary treasury-search-submit-btn">
-              Search
-            </button>
-          </form>
+        {/* Main Search Row */}
+        <form onSubmit={handleSearchSubmit} className="treasury-admin-search-form">
+          <div className="treasury-search-box">
+            <span className="treasury-search-icon"><Ic name="search" size={16} /></span>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search by title, SKU, brand…"
+            />
+            {q && (
+              <button
+                type="button"
+                onClick={() => setQ('')}
+                className="treasury-search-clear-btn"
+                title="Clear search"
+                aria-label="Clear search"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          <button type="submit" className="btn-primary treasury-search-submit-btn">
+            <Ic name="search" size={14} />
+            <span>Search</span>
+          </button>
+        </form>
 
-          <div className="treasury-selects-row">
+        {/* Secondary Filter & View Row */}
+        <div className="treasury-filter-controls-row">
+          <div className="treasury-selects-group">
             <select
               className="treasury-select"
               value={selectedCat}
@@ -246,29 +249,29 @@ export default function AdminTreasury() {
               <option value="name">Product Name (A-Z)</option>
             </select>
           </div>
-        </div>
 
-        <div className="treasury-filter-right">
-          <div className="treasury-filter-stats">
-            Total: <b style={{ color: '#0f172a' }}>{products.length}</b> items
-          </div>
-          <div className="treasury-view-toggle">
-            <button
-              type="button"
-              className={`view-toggle-btn ${viewMode === 'cards' ? 'active' : ''}`}
-              onClick={() => setViewMode('cards')}
-              title="Card Grid View"
-            >
-              <Ic name="grid" size={14} /> <span>Cards</span>
-            </button>
-            <button
-              type="button"
-              className={`view-toggle-btn ${viewMode === 'table' ? 'active' : ''}`}
-              onClick={() => setViewMode('table')}
-              title="Table View"
-            >
-              <Ic name="list" size={14} /> <span>Table</span>
-            </button>
+          <div className="treasury-filter-meta-group">
+            <span className="treasury-filter-stats">
+              Total: <b>{products.length}</b> items
+            </span>
+            <div className="treasury-view-toggle">
+              <button
+                type="button"
+                className={`view-toggle-btn ${viewMode === 'cards' ? 'active' : ''}`}
+                onClick={() => setViewMode('cards')}
+                title="Card Grid View"
+              >
+                <Ic name="grid" size={13} /> <span>Cards</span>
+              </button>
+              <button
+                type="button"
+                className={`view-toggle-btn ${viewMode === 'table' ? 'active' : ''}`}
+                onClick={() => setViewMode('table')}
+                title="Table View"
+              >
+                <Ic name="list" size={13} /> <span>Table</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -10,6 +10,7 @@ import SellerAppModal from '../components/SellerAppModal.jsx';
 import CurrencySelector from '../components/CurrencySelector.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 import { playNotificationSound } from '../utils/audio.js';
+import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
 
 const SELLER_NAV = [
   { to: '/seller', icon: 'grid', label: 'Dashboard', end: true },
@@ -215,6 +216,8 @@ export default function SellerLayout() {
     healthLabel = 'AT RISK';
   }
 
+  const isVerified = Boolean(seller?.verified || seller?.status === 'active');
+
   return (
     <div className="seller-portal-layout">
       {/* Mobile Backdrop */}
@@ -251,8 +254,19 @@ export default function SellerLayout() {
               )}
             </div>
             <div className="seller-store-meta">
-              <span className="store-name-text" title={seller?.storeName}>{seller?.storeName || 'My Store'}</span>
-              <span className="seller-rating-pill">⭐ {seller?.rating?.toFixed(1) || '5.0'} • Merchant</span>
+              <div className="seller-sidebar-store-title-row">
+                <span className="store-name-text" title={seller?.storeName}>{seller?.storeName || 'My Store'}</span>
+                {isVerified && (
+                  <VerifiedStoreBadge variant="icon" size={15} title="Official Verified Store" />
+                )}
+              </div>
+              {isVerified ? (
+                <div className="seller-sidebar-verified-badge-wrap">
+                  <VerifiedStoreBadge variant="pill" size={12} text="Verified Store" />
+                </div>
+              ) : (
+                <span className="seller-rating-pill">⭐ {seller?.rating?.toFixed(1) || '5.0'} • Merchant</span>
+              )}
             </div>
           </div>
         </div>
@@ -353,11 +367,24 @@ export default function SellerLayout() {
               <span className="smb-sub">SELLER</span>
             </div>
 
-            <span className={`store-active-indicator hide-on-mobile ${seller?.status === 'frozen' || seller?.status === 'suspended' ? 'status-frozen' : ''}`}>
-              <span className="pulse-dot"></span> Store: <b style={{ textTransform: 'uppercase' }}>{seller?.status || 'Active'}</b>
-            </span>
+            {/* Prominent Store Display with Verified Badge */}
+            <div className="seller-topbar-store-display">
+              <span className="seller-topbar-store-name" title={seller?.storeName || 'My Store'}>
+                {seller?.storeName || 'My Store'}
+              </span>
+              {isVerified ? (
+                <VerifiedStoreBadge variant="pill" size={15} text="Verified Store" />
+              ) : (
+                <span className="seller-pending-badge">⏳ Under Review</span>
+              )}
+            </div>
+
             <span className="seller-sep hide-on-tablet">|</span>
-            <span className="seller-owner-name hide-on-tablet">Owner: <b>{seller?.ownerName}</b></span>
+            <span className={`store-active-indicator hide-on-tablet ${seller?.status === 'frozen' || seller?.status === 'suspended' ? 'status-frozen' : ''}`}>
+              <span className="pulse-dot"></span> <b style={{ textTransform: 'uppercase' }}>{seller?.status || 'Active'}</b>
+            </span>
+            <span className="seller-sep hide-on-laptop">|</span>
+            <span className="seller-owner-name hide-on-laptop">Owner: <b>{seller?.ownerName}</b></span>
           </div>
 
           <div className="seller-top-right">
