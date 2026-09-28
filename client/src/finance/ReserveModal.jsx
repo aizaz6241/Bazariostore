@@ -9,7 +9,7 @@ export default function ReserveModal({
   totalUsdt = 0,
 }) {
   const [mode, setMode] = useState('target'); // 'target' | 'transfer'
-  const [targetReserve, setTargetReserve] = useState(String(currentReserve || 200));
+  const [targetReserve, setTargetReserve] = useState(String(currentReserve !== undefined && currentReserve !== null ? currentReserve : 0));
   const [action, setAction] = useState('allocate'); // 'allocate' | 'release'
   const [usdtAmount, setUsdtAmount] = useState('');
   const [notes, setNotes] = useState('');
@@ -18,7 +18,7 @@ export default function ReserveModal({
 
   useEffect(() => {
     if (isOpen) {
-      setTargetReserve(String(currentReserve !== undefined ? currentReserve : 200));
+      setTargetReserve(String(currentReserve !== undefined && currentReserve !== null ? currentReserve : 0));
       setUsdtAmount('');
       setNotes('');
       setError('');

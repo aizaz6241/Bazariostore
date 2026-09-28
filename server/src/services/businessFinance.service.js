@@ -9,7 +9,7 @@ export const DEFAULT_FINANCE_SETTINGS = {
   securityPin: '7860',
   defaultUsdtRate: 278.5,
   autoSyncBazario: true,
-  reinvestmentReserveUsdt: 200, // Reinvestment pool kept in Binance for sellers
+  reinvestmentReserveUsdt: 0, // Default 0; only reserved when partners explicitly decide to allocate
   partner1: {
     id: 'p1',
     name: 'Aizaz',
@@ -419,9 +419,7 @@ export async function calculateFinanceOverview(filterDate = {}) {
 
   // Dynamic Reinvestment Reserve calculation:
   // Initial target or allocated reserve minus seller payouts funded
-  const baselineReserve = (settings.reinvestmentReserveUsdt !== undefined && settings.reinvestmentReserveUsdt !== null && !isNaN(settings.reinvestmentReserveUsdt))
-    ? Number(settings.reinvestmentReserveUsdt)
-    : 200;
+  const baselineReserve = Number(settings.reinvestmentReserveUsdt || 0);
   const currentReinvestmentReserveUsdt = Math.min(
     currentBinanceUsdt,
     Math.max(0, baselineReserve + binanceReserveAllocated - binanceReserveReleased)

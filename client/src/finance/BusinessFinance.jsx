@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Ic from '../components/Icons.jsx';
 import PinLockScreen from './PinLockScreen.jsx';
 import TransactionModal from './TransactionModal.jsx';
-import P2PConvertModal from './P2PConvertModal.jsx';
 import ReserveModal from './ReserveModal.jsx';
 import SettingsModal from './SettingsModal.jsx';
 import InstallShortcutModal from './InstallShortcutModal.jsx';
@@ -42,7 +41,6 @@ export default function BusinessFinance() {
   // Modals State
   const [txModalOpen, setTxModalOpen] = useState(false);
   const [txModalData, setTxModalData] = useState(null);
-  const [p2pModalOpen, setP2pModalOpen] = useState(false);
   const [reserveModalOpen, setReserveModalOpen] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [installModalOpen, setInstallModalOpen] = useState(false);
@@ -166,17 +164,6 @@ export default function BusinessFinance() {
     loadData();
   };
 
-  // Binance P2P Convert
-  const handleP2pConvert = async (payload) => {
-    await apiFetch('/p2p-convert', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-    setStatusMsg(`Converted $${payload.usdtAmount} USDT into ₨ ${Number(payload.pkrAmount).toLocaleString('en-US')}`);
-    setTimeout(() => setStatusMsg(''), 4000);
-    loadData();
-  };
-
   // Adjust Reinvestment Reserve
   const handleAdjustReserve = async (payload) => {
     await apiFetch('/allocate-reserve', {
@@ -185,10 +172,10 @@ export default function BusinessFinance() {
     });
     setStatusMsg(
       payload.targetReserve !== undefined
-        ? `Seller reserve updated to $${payload.targetReserve} USDT`
+        ? `Seller reserve set to $${payload.targetReserve} USDT`
         : payload.action === 'allocate'
         ? 'USDT locked into Seller Reserve'
-        : 'USDT released to Net Profit Pool'
+        : 'USDT released to Main Wallet (Profit Pool)'
     );
     setTimeout(() => setStatusMsg(''), 4000);
     loadData();
@@ -242,7 +229,6 @@ export default function BusinessFinance() {
     if (txTypeFilter === 'income' && tx.type !== 'income') return false;
     if (txTypeFilter === 'expense' && (tx.type !== 'expense' || tx.category === 'seller_withdrawal' || tx.category === 'reinvestment')) return false;
     if (txTypeFilter === 'drawing' && tx.type !== 'drawing') return false;
-    if (txTypeFilter === 'conversion' && tx.type !== 'conversion') return false;
     if (txTypeFilter === 'reserve' && tx.type !== 'reserve_transfer' && tx.category !== 'seller_withdrawal') return false;
 
     if (searchQuery.trim()) {
@@ -344,7 +330,7 @@ export default function BusinessFinance() {
             </span>
           </div>
 
-          <div className="bf-hero-balance-label">Total Binance Balance</div>
+          <div className="bf-hero-balance-label">Total in Binance Wallet</div>
           <div className="bf-hero-amount">
             ${(binance.totalUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             <span className="bf-hero-currency">USDT</span>
@@ -373,11 +359,11 @@ export default function BusinessFinance() {
                       color: '#fcd34d',
                       fontSize: 11,
                       fontWeight: 700,
-                      padding: '2px 8px',
+                      padding: '3px 10px',
                       cursor: 'pointer',
                     }}
                   >
-                    ✏️ Edit
+                    🛡️ + Add / Adjust
                   </button>
                 </div>
                 <div className="bf-capsule-amount reserve-color">
@@ -385,7 +371,9 @@ export default function BusinessFinance() {
                   <small style={{ fontSize: 12, marginLeft: 3, opacity: 0.8 }}>USDT</small>
                 </div>
                 <div className="bf-capsule-sub">
-                  ≈ ₨ {(binance.reservePKREquivalent || 0).toLocaleString('en-US')} • For seller payouts
+                  {(binance.reinvestmentReserveUSDT || 0) === 0
+                    ? 'No reserve set • Full amount in profit pool'
+                    : `≈ ₨ ${(binance.reservePKREquivalent || 0).toLocaleString('en-US')} • For seller payouts`}
                 </div>
               </div>
             </div>
@@ -413,11 +401,12 @@ export default function BusinessFinance() {
             </div>
           </div>
 
-          {/* Quick Action Buttons */}
-          <div className="bf-hero-actions">
+          {/* Quick Action Buttons: Only Add Profit & Add Kharcha */}
+          <div className="bf-hero-actions" style={{ gridTemplateColumns: '1fr 1fr' }}>
             <button
               type="button"
               className="bf-btn-main primary"
+              style={{ padding: '14px', fontSize: 15 }}
               onClick={() => {
                 setTxModalData({ type: 'income', currency: 'USDT', category: 'seller_deposit' });
                 setTxModalOpen(true);
@@ -429,23 +418,15 @@ export default function BusinessFinance() {
 
             <button
               type="button"
-              className="bf-btn-main glass"
-              onClick={() => setP2pModalOpen(true)}
-            >
-              <span>🔄</span>
-              <span>P2P Cashout</span>
-            </button>
-
-            <button
-              type="button"
               className="bf-btn-main red-glass"
+              style={{ padding: '14px', fontSize: 15 }}
               onClick={() => {
                 setTxModalData({ type: 'expense', category: 'office_food', currency: 'PKR', paidBy: 'both_50_50' });
                 setTxModalOpen(true);
               }}
             >
               <span>🍔</span>
-              <span>+ Add Kharcha</span>
+              <span>+ Add Office Kharcha</span>
             </button>
           </div>
         </section>
@@ -472,28 +453,45 @@ export default function BusinessFinance() {
                 </div>
               </div>
 
-              {/* Glowing Available in Binance Box */}
-              <div className="bf-partner-glow">
+              {/* Big Glowing Available in Binance Box */}
+              <div className="bf-partner-glow" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 12 }}>
                 <div>
-                  <div className="bf-pglow-label">⚡ In Binance Wallet</div>
-                  <div className="bf-pglow-amount">
+                  <div className="bf-pglow-label">⚡ In Binance Wallet (Ready to Withdraw)</div>
+                  <div className="bf-pglow-amount" style={{ fontSize: 26, marginTop: 4 }}>
                     ${(p1.remainingInBinanceUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    <small style={{ fontSize: 13, color: 'var(--bf-gold)', marginLeft: 3 }}>USDT</small>
+                    <span style={{ fontSize: 14, color: 'var(--bf-gold)', marginLeft: 4 }}>USDT</span>
                   </div>
-                  <div className="bf-pglow-pkr">
+                  <div className="bf-pglow-pkr" style={{ fontSize: 12, marginTop: 2 }}>
                     ≈ ₨ {(p1.remainingInBinancePKR || 0).toLocaleString('en-US')} PKR
                   </div>
                 </div>
+
+                {/* Big Visible Withdraw Button */}
                 <button
                   type="button"
-                  className="bf-btn-sm gold"
-                  style={{ padding: '8px 14px', fontSize: 12, height: 38 }}
+                  className="bf-btn-submit"
+                  style={{
+                    padding: '13px 18px',
+                    fontSize: 14,
+                    fontWeight: 800,
+                    borderRadius: 12,
+                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                    color: '#000',
+                    boxShadow: '0 4px 15px rgba(245, 158, 11, 0.4)',
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                  }}
                   onClick={() => {
                     setTxModalData({ type: 'drawing', partnerName: p1.name, currency: 'USDT', walletSource: 'binance_usdt' });
                     setTxModalOpen(true);
                   }}
                 >
-                  <span>💸 Withdraw</span>
+                  <span style={{ fontSize: 16 }}>💸</span>
+                  <span>Withdraw {p1.name}'s Share</span>
                 </button>
               </div>
 
@@ -528,28 +526,45 @@ export default function BusinessFinance() {
                 </div>
               </div>
 
-              {/* Glowing Available in Binance Box */}
-              <div className="bf-partner-glow">
+              {/* Big Glowing Available in Binance Box */}
+              <div className="bf-partner-glow" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 12 }}>
                 <div>
-                  <div className="bf-pglow-label">⚡ In Binance Wallet</div>
-                  <div className="bf-pglow-amount">
+                  <div className="bf-pglow-label">⚡ In Binance Wallet (Ready to Withdraw)</div>
+                  <div className="bf-pglow-amount" style={{ fontSize: 26, marginTop: 4 }}>
                     ${(p2.remainingInBinanceUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    <small style={{ fontSize: 13, color: 'var(--bf-gold)', marginLeft: 3 }}>USDT</small>
+                    <span style={{ fontSize: 14, color: 'var(--bf-gold)', marginLeft: 4 }}>USDT</span>
                   </div>
-                  <div className="bf-pglow-pkr">
+                  <div className="bf-pglow-pkr" style={{ fontSize: 12, marginTop: 2 }}>
                     ≈ ₨ {(p2.remainingInBinancePKR || 0).toLocaleString('en-US')} PKR
                   </div>
                 </div>
+
+                {/* Big Visible Withdraw Button */}
                 <button
                   type="button"
-                  className="bf-btn-sm gold"
-                  style={{ padding: '8px 14px', fontSize: 12, height: 38 }}
+                  className="bf-btn-submit"
+                  style={{
+                    padding: '13px 18px',
+                    fontSize: 14,
+                    fontWeight: 800,
+                    borderRadius: 12,
+                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                    color: '#000',
+                    boxShadow: '0 4px 15px rgba(245, 158, 11, 0.4)',
+                    border: 'none',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                  }}
                   onClick={() => {
                     setTxModalData({ type: 'drawing', partnerName: p2.name, currency: 'USDT', walletSource: 'binance_usdt' });
                     setTxModalOpen(true);
                   }}
                 >
-                  <span>💸 Withdraw</span>
+                  <span style={{ fontSize: 16 }}>💸</span>
+                  <span>Withdraw {p2.name}'s Share</span>
                 </button>
               </div>
 
@@ -590,7 +605,7 @@ export default function BusinessFinance() {
               className="bf-btn-main red-glass"
               style={{ padding: '8px 16px', fontSize: 13 }}
               onClick={() => {
-                setTxModalData({ type: 'expense', category: 'office_food', currency: 'PKR', walletSource: 'pkr_cash', paidBy: 'both_50_50' });
+                setTxModalData({ type: 'expense', category: 'office_food', currency: 'PKR', paidBy: 'both_50_50' });
                 setTxModalOpen(true);
               }}
             >
@@ -620,13 +635,13 @@ export default function BusinessFinance() {
               </div>
             </div>
             <div className="bf-expense-chip">
-              <span className="bf-echip-label">{p1.name} (Paid)</span>
+              <span className="bf-echip-label">{p1.name} (Paid Cash)</span>
               <div className="bf-echip-val" style={{ color: '#93c5fd' }}>
                 ₨ {(officeExpenses.aizazPaidPKR || 0).toLocaleString('en-US')}
               </div>
             </div>
             <div className="bf-expense-chip">
-              <span className="bf-echip-label">{p2.name} (Paid)</span>
+              <span className="bf-echip-label">{p2.name} (Paid Cash)</span>
               <div className="bf-echip-val" style={{ color: '#c084fc' }}>
                 ₨ {(officeExpenses.abdullahPaidPKR || 0).toLocaleString('en-US')}
               </div>
@@ -731,7 +746,7 @@ export default function BusinessFinance() {
                 { id: 'income', label: '💰 Profits (USDT)' },
                 { id: 'expense', label: '🍔 Office Kharcha' },
                 { id: 'drawing', label: '💸 Withdrawals' },
-                { id: 'conversion', label: '🔄 P2P Cashout' },
+                { id: 'reserve', label: '🛡️ Seller Reserve' },
               ].map((f) => (
                 <button
                   key={f.id}
@@ -760,14 +775,13 @@ export default function BusinessFinance() {
                 const isIncome = tx.type === 'income';
                 const isExpense = tx.type === 'expense';
                 const isDrawing = tx.type === 'drawing';
-                const isConversion = tx.type === 'conversion';
                 const isUsdt = tx.currency === 'USDT' || tx.currency === 'USD';
 
                 return (
                   <div key={tx._id} className="bf-tx-item">
                     <div className="bf-tx-left">
                       <div className={`bf-tx-icon ${tx.type}`}>
-                        {isIncome ? '💰' : isExpense ? '🍔' : isDrawing ? '💸' : isConversion ? '🔄' : '💎'}
+                        {isIncome ? '💰' : isExpense ? '🍔' : isDrawing ? '💸' : '🛡️'}
                       </div>
                       <div>
                         <div className="bf-tx-desc">{tx.description}</div>
@@ -873,10 +887,10 @@ export default function BusinessFinance() {
         <button
           type="button"
           className="bf-nav-item"
-          onClick={() => setP2pModalOpen(true)}
+          onClick={() => setReserveModalOpen(true)}
         >
-          <span style={{ fontSize: 18 }}>🔄</span>
-          <span>P2P Cashout</span>
+          <span style={{ fontSize: 18 }}>🛡️</span>
+          <span>Reserve</span>
         </button>
 
         <button
@@ -898,14 +912,6 @@ export default function BusinessFinance() {
         initialData={txModalData}
         currentRate={currentRate}
         partnerNames={{ p1: p1.name, p2: p2.name }}
-      />
-
-      <P2PConvertModal
-        isOpen={p2pModalOpen}
-        onClose={() => setP2pModalOpen(false)}
-        onConvert={handleP2pConvert}
-        currentUsdtBalance={binance.totalUSDT || 0}
-        defaultRate={currentRate}
       />
 
       <ReserveModal
