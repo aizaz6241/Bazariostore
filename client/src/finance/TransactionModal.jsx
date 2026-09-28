@@ -16,10 +16,6 @@ const EXPENSE_CATEGORIES = [
 
 const INCOME_CATEGORIES = [
   { id: 'seller_deposit', label: 'Seller Deposit (USDT) 💰', emoji: '💰' },
-  { id: 'platform_profit', label: 'Marketplace Sales Profit 🛍️', emoji: '🛍️' },
-  { id: 'commission_income', label: 'Vendor Commission 🏷️', emoji: '🏷️' },
-  { id: 'trading_profit', label: 'Binance / Trading Gain 📈', emoji: '📈' },
-  { id: 'misc_income', label: 'Other Business Income 💵', emoji: '💵' },
 ];
 
 export default function TransactionModal({
@@ -380,24 +376,14 @@ export default function TransactionModal({
 
           {/* ────────────────── INCOME SPECIFIC SECTION ────────────────── */}
           {type === 'income' && (
-            <div>
-              <div className="bf-form-group">
-                <label className="bf-form-label">Profit Category</label>
-                <select
-                  className="bf-select"
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                >
-                  {INCOME_CATEGORIES.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255, 255, 255, 0.04)', border: '1px solid var(--bf-border)', padding: '10px 14px', borderRadius: 10, marginBottom: 10 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--bf-text-muted)' }}>Category:</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: '#fcd34d' }}>💰 Seller Deposit (USDT)</span>
               </div>
 
               {/* Destination info pill */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', padding: '10px 14px', borderRadius: 10, marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.25)', padding: '10px 14px', borderRadius: 10 }}>
                 <span style={{ fontSize: 16 }}>💎</span>
                 <span style={{ fontSize: 12, color: '#a7f3d0', fontWeight: 600 }}>
                   Directly credited into <b>Binance Main Wallet (USDT)</b>.

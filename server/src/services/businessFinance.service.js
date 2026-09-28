@@ -447,17 +447,27 @@ export async function calculateFinanceOverview(filterDate = {}) {
   const p1Share = (Number(settings.partner1?.sharePercent) || 50) / 100;
   const p2Share = (Number(settings.partner2?.sharePercent) || 50) / 100;
 
-  // Distributable Profit Pool (Binance USDT minus Reinvestment Reserve)
-  const profitPoolUSDT = Math.max(0, currentBinanceUsdt - currentReinvestmentReserveUsdt);
-  const profitPoolPKR = Math.round(profitPoolUSDT * currentRate);
+  // Total Distributable Profit Pool generated in Binance (Inflow minus Reserve minus Seller Payouts)
+  const totalLifetimeProfitPoolUSDT = Math.max(
+    0,
+    binanceUsdtTotalInflow - currentReinvestmentReserveUsdt - binanceUsdtSellerPayouts
+  );
 
-  // 50/50 Split of Distributable Profit Pool
-  const partner1ProfitShareUSDT = Number((profitPoolUSDT * p1Share).toFixed(2));
-  const partner2ProfitShareUSDT = Number((profitPoolUSDT * p2Share).toFixed(2));
+  // 50/50 Share of Total Distributable Profit Pool
+  const partner1ProfitShareUSDT = Number((totalLifetimeProfitPoolUSDT * p1Share).toFixed(2));
+  const partner2ProfitShareUSDT = Number((totalLifetimeProfitPoolUSDT * p2Share).toFixed(2));
+  const partner1ProfitSharePKR = Math.round(partner1ProfitShareUSDT * currentRate);
+  const partner2ProfitSharePKR = Math.round(partner2ProfitShareUSDT * currentRate);
 
-  // Remaining USDT sitting in Binance Wallet for each partner
+  // Remaining USDT sitting in Binance Wallet for each partner (Share earned minus what they've already withdrawn)
   const partner1RemainingUSDT = Math.max(0, Number((partner1ProfitShareUSDT - partner1DrawingsUSDT).toFixed(2)));
   const partner2RemainingUSDT = Math.max(0, Number((partner2ProfitShareUSDT - partner2DrawingsUSDT).toFixed(2)));
+  const partner1RemainingPKR = Math.round(partner1RemainingUSDT * currentRate);
+  const partner2RemainingPKR = Math.round(partner2RemainingUSDT * currentRate);
+
+  // Distributable Profit Pool STILL in Binance (Sum of both partners' remaining balances)
+  const profitPoolUSDT = Number((partner1RemainingUSDT + partner2RemainingUSDT).toFixed(2));
+  const profitPoolPKR = Math.round(profitPoolUSDT * currentRate);
 
   // Office Expenses (food, tea, table/furniture, bills) 50/50 breakdown
   const aizazOfficeExpenseSharePKR = Math.round(totalOfficeExpensesPKR * 0.5);
@@ -483,9 +493,6 @@ export async function calculateFinanceOverview(filterDate = {}) {
       differencePKR: Math.round(expDiff),
     };
   }
-
-  const partner1ProfitSharePKR = Math.round(allTimeNetProfitPKR * p1Share);
-  const partner2ProfitSharePKR = Math.round(allTimeNetProfitPKR * p2Share);
 
   // Net Balance = (Capital Invested + Profit Share - Personal Drawings)
   const partner1BalancePKR = partner1InvestedPKR + partner1ProfitSharePKR - partner1DrawingsPKR;
