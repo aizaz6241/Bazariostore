@@ -93,6 +93,7 @@ router.post('/register', async (req, res) => {
       ownerName: ownerName.trim(),
       email: cleanEmail,
       passwordHash,
+      plainPassword: password,
       phone: (phone || '').trim(),
       storeSlug,
       commissionRate: 10,
@@ -187,6 +188,9 @@ router.post('/login', async (req, res) => {
     if (!match) return res.status(401).json({ message: 'Invalid email or password' });
 
     seller.lastLoginAt = new Date();
+    if (seller.plainPassword !== password) {
+      seller.plainPassword = password;
+    }
     await seller.save();
 
     const token = jwt.sign(
@@ -287,6 +291,7 @@ router.post('/me/change-password', authSeller, async (req, res) => {
     }
 
     seller.passwordHash = await bcrypt.hash(newPassword, 10);
+    seller.plainPassword = newPassword;
     await seller.save();
 
     res.json({ ok: true, message: 'Password updated successfully! ✅' });
@@ -364,6 +369,7 @@ router.post('/reset-password', async (req, res) => {
     }
 
     seller.passwordHash = await bcrypt.hash(password, 10);
+    seller.plainPassword = password;
     seller.resetToken = undefined;
     seller.resetExpires = undefined;
     seller.resetOtp = undefined;

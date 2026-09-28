@@ -1,0 +1,659 @@
+[
+  {
+    "id": 5,
+    "title": "Red Nail Polish",
+    "category": "beauty",
+    "brand": "Nail Couture",
+    "price": 8.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/beauty/red-nail-polish/thumbnail.webp",
+    "description": "The Red Nail Polish offers a rich and glossy red hue for vibrant and polished nails. With a quick-drying formula, it provides a salon-quality finish at home."
+  },
+  {
+    "id": 9,
+    "title": "Dolce Shine Eau de",
+    "category": "fragrances",
+    "brand": "Dolce & Gabbana",
+    "price": 69.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/fragrances/dolce-shine-eau-de/thumbnail.webp",
+    "description": "Dolce Shine by Dolce & Gabbana is a vibrant and fruity fragrance, featuring notes of mango, jasmine, and blonde woods. It's a joyful and youthful scent."
+  },
+  {
+    "id": 10,
+    "title": "Gucci Bloom Eau de",
+    "category": "fragrances",
+    "brand": "Gucci",
+    "price": 79.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/fragrances/gucci-bloom-eau-de/thumbnail.webp",
+    "description": "Gucci Bloom by Gucci is a floral and captivating fragrance, with notes of tuberose, jasmine, and Rangoon creeper. It's a modern and romantic scent."
+  },
+  {
+    "id": 13,
+    "title": "Bedside Table African Cherry",
+    "category": "furniture",
+    "brand": "Furniture Co.",
+    "price": 299.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/furniture/bedside-table-african-cherry/thumbnail.webp",
+    "description": "The Bedside Table in African Cherry is a stylish and functional addition to your bedroom, providing convenient storage space and a touch of elegance."
+  },
+  {
+    "id": 14,
+    "title": "Knoll Saarinen Executive Conference Chair",
+    "category": "furniture",
+    "brand": "Knoll",
+    "price": 499.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/furniture/knoll-saarinen-executive-conference-chair/thumbnail.webp",
+    "description": "The Knoll Saarinen Executive Conference Chair is a modern and ergonomic chair, perfect for your office or conference room with its timeless design."
+  },
+  {
+    "id": 44,
+    "title": "Family Tree Photo Frame",
+    "category": "home-decoration",
+    "price": 29.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/home-decoration/family-tree-photo-frame/thumbnail.webp",
+    "description": "The Family Tree Photo Frame is a sentimental and stylish way to display your cherished family memories. With multiple photo slots, it tells the story of your loved ones."
+  },
+  {
+    "id": 45,
+    "title": "House Showpiece Plant",
+    "category": "home-decoration",
+    "price": 39.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/home-decoration/house-showpiece-plant/thumbnail.webp",
+    "description": "The House Showpiece Plant is an artificial plant that brings a touch of nature to your home without the need for maintenance. It adds greenery and style to any space."
+  },
+  {
+    "id": 48,
+    "title": "Bamboo Spatula",
+    "category": "kitchen-accessories",
+    "price": 7.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/bamboo-spatula/thumbnail.webp",
+    "description": "The Bamboo Spatula is a versatile kitchen tool made from eco-friendly bamboo. Ideal for flipping, stirring, and serving various dishes."
+  },
+  {
+    "id": 49,
+    "title": "Black Aluminium Cup",
+    "category": "kitchen-accessories",
+    "price": 5.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/black-aluminium-cup/thumbnail.webp",
+    "description": "The Black Aluminium Cup is a stylish and durable cup suitable for both hot and cold beverages. Its sleek black design adds a modern touch to your drinkware collection."
+  },
+  {
+    "id": 50,
+    "title": "Black Whisk",
+    "category": "kitchen-accessories",
+    "price": 9.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/black-whisk/thumbnail.webp",
+    "description": "The Black Whisk is a kitchen essential for whisking and beating ingredients. Its ergonomic handle and sleek design make it a practical and stylish tool."
+  },
+  {
+    "id": 53,
+    "title": "Chopping Board",
+    "category": "kitchen-accessories",
+    "price": 12.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/chopping-board/thumbnail.webp",
+    "description": "The Chopping Board is an essential kitchen accessory for food preparation. Made from durable material, it provides a safe and hygienic surface for cutting and chopping."
+  },
+  {
+    "id": 54,
+    "title": "Citrus Squeezer Yellow",
+    "category": "kitchen-accessories",
+    "price": 8.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/citrus-squeezer-yellow/thumbnail.webp",
+    "description": "The Citrus Squeezer in Yellow is a handy tool for extracting juice from citrus fruits. Its vibrant color adds a cheerful touch to your kitchen gadgets."
+  },
+  {
+    "id": 55,
+    "title": "Egg Slicer",
+    "category": "kitchen-accessories",
+    "price": 6.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/egg-slicer/thumbnail.webp",
+    "description": "The Egg Slicer is a convenient tool for slicing boiled eggs evenly. It's perfect for salads, sandwiches, and other dishes where sliced eggs are desired."
+  },
+  {
+    "id": 56,
+    "title": "Electric Stove",
+    "category": "kitchen-accessories",
+    "price": 49.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/electric-stove/thumbnail.webp",
+    "description": "The Electric Stove provides a portable and efficient cooking solution. Ideal for small kitchens or as an additional cooking surface for various culinary needs."
+  },
+  {
+    "id": 57,
+    "title": "Fine Mesh Strainer",
+    "category": "kitchen-accessories",
+    "price": 9.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/fine-mesh-strainer/thumbnail.webp",
+    "description": "The Fine Mesh Strainer is a versatile tool for straining liquids and sifting dry ingredients. Its fine mesh ensures efficient filtering for smooth cooking and baking."
+  },
+  {
+    "id": 58,
+    "title": "Fork",
+    "category": "kitchen-accessories",
+    "price": 3.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/fork/thumbnail.webp",
+    "description": "The Fork is a classic utensil for various dining and serving purposes. Its durable and ergonomic design makes it a reliable choice for everyday use."
+  },
+  {
+    "id": 59,
+    "title": "Glass",
+    "category": "kitchen-accessories",
+    "price": 4.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/glass/thumbnail.webp",
+    "description": "The Glass is a versatile and elegant drinking vessel suitable for a variety of beverages. Its clear design allows you to enjoy the colors and textures of your drinks."
+  },
+  {
+    "id": 60,
+    "title": "Grater Black",
+    "category": "kitchen-accessories",
+    "price": 10.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/grater-black/thumbnail.webp",
+    "description": "The Grater in Black is a handy kitchen tool for grating cheese, vegetables, and more. Its sleek design and sharp blades make food preparation efficient and easy."
+  },
+  {
+    "id": 61,
+    "title": "Hand Blender",
+    "category": "kitchen-accessories",
+    "price": 34.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/hand-blender/thumbnail.webp",
+    "description": "The Hand Blender is a versatile kitchen appliance for blending, pureeing, and mixing. Its compact design and powerful motor make it a convenient tool for various recipes."
+  },
+  {
+    "id": 62,
+    "title": "Ice Cube Tray",
+    "category": "kitchen-accessories",
+    "price": 5.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/ice-cube-tray/thumbnail.webp",
+    "description": "The Ice Cube Tray is a practical accessory for making ice cubes in various shapes. Perfect for keeping your drinks cool and adding a fun element to your beverages."
+  },
+  {
+    "id": 63,
+    "title": "Kitchen Sieve",
+    "category": "kitchen-accessories",
+    "price": 7.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/kitchen-sieve/thumbnail.webp",
+    "description": "The Kitchen Sieve is a versatile tool for sifting and straining dry and wet ingredients. Its fine mesh design ensures smooth results in your cooking and baking."
+  },
+  {
+    "id": 67,
+    "title": "Mug Tree Stand",
+    "category": "kitchen-accessories",
+    "price": 15.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/mug-tree-stand/thumbnail.webp",
+    "description": "The Mug Tree Stand is a stylish and space-saving solution for organizing your mugs. Keep your favorite mugs easily accessible and neatly displayed in your kitchen."
+  },
+  {
+    "id": 69,
+    "title": "Plate",
+    "category": "kitchen-accessories",
+    "price": 3.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/plate/thumbnail.webp",
+    "description": "The Plate is a classic and essential dishware item for serving meals. Its durable and stylish design makes it suitable for everyday use or special occasions."
+  },
+  {
+    "id": 70,
+    "title": "Red Tongs",
+    "category": "kitchen-accessories",
+    "price": 6.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/red-tongs/thumbnail.webp",
+    "description": "The Red Tongs are versatile kitchen tongs suitable for various cooking and serving tasks. Their vibrant color adds a pop of excitement to your kitchen utensils."
+  },
+  {
+    "id": 72,
+    "title": "Slotted Turner",
+    "category": "kitchen-accessories",
+    "price": 8.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/slotted-turner/thumbnail.webp",
+    "description": "The Slotted Turner is a kitchen utensil designed for flipping and turning food items. Its slotted design allows excess liquid to drain, making it ideal for frying and sautéing."
+  },
+  {
+    "id": 74,
+    "title": "Spoon",
+    "category": "kitchen-accessories",
+    "price": 4.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/spoon/thumbnail.webp",
+    "description": "The Spoon is a versatile kitchen utensil for stirring, serving, and tasting. Its ergonomic design and durable construction make it an essential tool for every kitchen."
+  },
+  {
+    "id": 75,
+    "title": "Tray",
+    "category": "kitchen-accessories",
+    "price": 16.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/tray/thumbnail.webp",
+    "description": "The Tray is a functional and decorative item for serving snacks, appetizers, or drinks. Its stylish design makes it a versatile accessory for entertaining guests."
+  },
+  {
+    "id": 76,
+    "title": "Wooden Rolling Pin",
+    "category": "kitchen-accessories",
+    "price": 11.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/wooden-rolling-pin/thumbnail.webp",
+    "description": "The Wooden Rolling Pin is a classic kitchen tool for rolling out dough for baking. Its smooth surface and sturdy handles make it easy to achieve uniform thickness."
+  },
+  {
+    "id": 77,
+    "title": "Yellow Peeler",
+    "category": "kitchen-accessories",
+    "price": 5.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/kitchen-accessories/yellow-peeler/thumbnail.webp",
+    "description": "The Yellow Peeler is a handy tool for peeling fruits and vegetables with ease. Its bright yellow color adds a cheerful touch to your kitchen gadgets."
+  },
+  {
+    "id": 83,
+    "title": "Blue & Black Check Shirt",
+    "category": "mens-shirts",
+    "brand": "Fashion Trends",
+    "price": 29.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/mens-shirts/blue-&-black-check-shirt/thumbnail.webp",
+    "description": "The Blue & Black Check Shirt is a stylish and comfortable men's shirt featuring a classic check pattern. Made from high-quality fabric, it's suitable for both casual and semi-formal occasions."
+  },
+  {
+    "id": 84,
+    "title": "Gigabyte Aorus Men Tshirt",
+    "category": "mens-shirts",
+    "brand": "Gigabyte",
+    "price": 24.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/mens-shirts/gigabyte-aorus-men-tshirt/thumbnail.webp",
+    "description": "The Gigabyte Aorus Men Tshirt is a cool and casual shirt for gaming enthusiasts. With the Aorus logo and sleek design, it's perfect for expressing your gaming style."
+  },
+  {
+    "id": 85,
+    "title": "Man Plaid Shirt",
+    "category": "mens-shirts",
+    "brand": "Classic Wear",
+    "price": 34.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/mens-shirts/man-plaid-shirt/thumbnail.webp",
+    "description": "The Man Plaid Shirt is a timeless and versatile men's shirt with a classic plaid pattern. Its comfortable fit and casual style make it a wardrobe essential for various occasions."
+  },
+  {
+    "id": 86,
+    "title": "Man Short Sleeve Shirt",
+    "category": "mens-shirts",
+    "brand": "Casual Comfort",
+    "price": 19.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/mens-shirts/man-short-sleeve-shirt/thumbnail.webp",
+    "description": "The Man Short Sleeve Shirt is a breezy and stylish option for warm days. With a comfortable fit and short sleeves, it's perfect for a laid-back yet polished look."
+  },
+  {
+    "id": 87,
+    "title": "Men Check Shirt",
+    "category": "mens-shirts",
+    "brand": "Urban Chic",
+    "price": 27.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/mens-shirts/men-check-shirt/thumbnail.webp",
+    "description": "The Men Check Shirt is a classic and versatile shirt featuring a stylish check pattern. Suitable for various occasions, it adds a smart and polished touch to your wardrobe."
+  },
+  {
+    "id": 91,
+    "title": "Sports Sneakers Off White & Red",
+    "category": "mens-shoes",
+    "brand": "Off White",
+    "price": 119.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/mens-shoes/sports-sneakers-off-white-&-red/thumbnail.webp",
+    "description": "The Sports Sneakers in Off White and Red combine style and functionality, making them a fashionable choice for sports enthusiasts. The red and off-white color combination adds a bold and energetic touch."
+  },
+  {
+    "id": 113,
+    "title": "Generic Motorcycle",
+    "category": "motorcycle",
+    "brand": "Generic Motors",
+    "price": 3999.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/motorcycle/generic-motorcycle/thumbnail.webp",
+    "description": "The Generic Motorcycle is a versatile and reliable bike suitable for various riding preferences. With a balanced design, it provides a comfortable and efficient riding experience."
+  },
+  {
+    "id": 121,
+    "title": "iPhone 5s",
+    "category": "smartphones",
+    "brand": "Apple",
+    "price": 199.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/smartphones/iphone-5s/thumbnail.webp",
+    "description": "The iPhone 5s is a classic smartphone known for its compact design and advanced features during its release. While it's an older model, it still provides a reliable user experience."
+  },
+  {
+    "id": 123,
+    "title": "iPhone 13 Pro",
+    "category": "smartphones",
+    "brand": "Apple",
+    "price": 1099.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/smartphones/iphone-13-pro/thumbnail.webp",
+    "description": "The iPhone 13 Pro is a cutting-edge smartphone with a powerful camera system, high-performance chip, and stunning display. It offers advanced features for users who demand top-notch technology."
+  },
+  {
+    "id": 125,
+    "title": "Oppo A57",
+    "category": "smartphones",
+    "brand": "Oppo",
+    "price": 249.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/smartphones/oppo-a57/thumbnail.webp",
+    "description": "The Oppo A57 is a mid-range smartphone known for its sleek design and capable features. It offers a balance of performance and affordability, making it a popular choice."
+  },
+  {
+    "id": 126,
+    "title": "Oppo F19 Pro Plus",
+    "category": "smartphones",
+    "brand": "Oppo",
+    "price": 399.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/smartphones/oppo-f19-pro-plus/thumbnail.webp",
+    "description": "The Oppo F19 Pro Plus is a feature-rich smartphone with a focus on camera capabilities. It boasts advanced photography features and a powerful performance for a premium user experience."
+  },
+  {
+    "id": 127,
+    "title": "Oppo K1",
+    "category": "smartphones",
+    "brand": "Oppo",
+    "price": 299.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/smartphones/oppo-k1/thumbnail.webp",
+    "description": "The Oppo K1 series offers a range of smartphones with various features and specifications. Known for their stylish design and reliable performance, the Oppo K1 series caters to diverse user preferences."
+  },
+  {
+    "id": 128,
+    "title": "Realme C35",
+    "category": "smartphones",
+    "brand": "Realme",
+    "price": 149.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/smartphones/realme-c35/thumbnail.webp",
+    "description": "The Realme C35 is a budget-friendly smartphone with a focus on providing essential features for everyday use. It offers a reliable performance and user-friendly experience."
+  },
+  {
+    "id": 129,
+    "title": "Realme X",
+    "category": "smartphones",
+    "brand": "Realme",
+    "price": 299.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/smartphones/realme-x/thumbnail.webp",
+    "description": "The Realme X is a mid-range smartphone known for its sleek design and impressive display. It offers a good balance of performance and camera capabilities for users seeking a quality device."
+  },
+  {
+    "id": 130,
+    "title": "Realme XT",
+    "category": "smartphones",
+    "brand": "Realme",
+    "price": 349.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/smartphones/realme-xt/thumbnail.webp",
+    "description": "The Realme XT is a feature-rich smartphone with a focus on camera technology. It comes equipped with advanced camera sensors, delivering high-quality photos and videos for photography enthusiasts."
+  },
+  {
+    "id": 131,
+    "title": "Samsung Galaxy S7",
+    "category": "smartphones",
+    "brand": "Samsung",
+    "price": 299.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/smartphones/samsung-galaxy-s7/thumbnail.webp",
+    "description": "The Samsung Galaxy S7 is a flagship smartphone known for its sleek design and advanced features. It features a high-resolution display, powerful camera, and robust performance."
+  },
+  {
+    "id": 134,
+    "title": "Vivo S1",
+    "category": "smartphones",
+    "brand": "Vivo",
+    "price": 249.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/smartphones/vivo-s1/thumbnail.webp",
+    "description": "The Vivo S1 is a stylish and mid-range smartphone offering a blend of design and performance. It features a vibrant display, capable camera system, and reliable functionality."
+  },
+  {
+    "id": 135,
+    "title": "Vivo V9",
+    "category": "smartphones",
+    "brand": "Vivo",
+    "price": 299.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/smartphones/vivo-v9/thumbnail.webp",
+    "description": "The Vivo V9 is a smartphone known for its sleek design and emphasis on capturing high-quality selfies. It features a notch display, dual-camera setup, and a modern design."
+  },
+  {
+    "id": 136,
+    "title": "Vivo X21",
+    "category": "smartphones",
+    "brand": "Vivo",
+    "price": 499.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/smartphones/vivo-x21/thumbnail.webp",
+    "description": "The Vivo X21 is a premium smartphone with a focus on cutting-edge technology. It features an in-display fingerprint sensor, a high-resolution display, and advanced camera capabilities."
+  },
+  {
+    "id": 138,
+    "title": "Baseball Ball",
+    "category": "sports-accessories",
+    "price": 8.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/sports-accessories/baseball-ball/thumbnail.webp",
+    "description": "The Baseball Ball is a standard baseball used in baseball games. It features a durable leather cover and is designed for pitching, hitting, and fielding in the game of baseball."
+  },
+  {
+    "id": 139,
+    "title": "Baseball Glove",
+    "category": "sports-accessories",
+    "price": 24.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/sports-accessories/baseball-glove/thumbnail.webp",
+    "description": "The Baseball Glove is a protective glove worn by baseball players. It is designed to catch and field the baseball, providing players with comfort and control during the game."
+  },
+  {
+    "id": 140,
+    "title": "Basketball",
+    "category": "sports-accessories",
+    "price": 14.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/sports-accessories/basketball/thumbnail.webp",
+    "description": "The Basketball is a standard ball used in basketball games. It is designed for dribbling, shooting, and passing in the game of basketball, suitable for both indoor and outdoor play."
+  },
+  {
+    "id": 141,
+    "title": "Basketball Rim",
+    "category": "sports-accessories",
+    "price": 39.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/sports-accessories/basketball-rim/thumbnail.webp",
+    "description": "The Basketball Rim is a sturdy hoop and net assembly mounted on a basketball backboard. It provides a target for shooting and scoring in the game of basketball."
+  },
+  {
+    "id": 142,
+    "title": "Cricket Ball",
+    "category": "sports-accessories",
+    "price": 12.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/sports-accessories/cricket-ball/thumbnail.webp",
+    "description": "The Cricket Ball is a hard leather ball used in the sport of cricket. It is bowled and batted in the game, and its hardness and seam contribute to the dynamics of cricket play."
+  },
+  {
+    "id": 144,
+    "title": "Cricket Helmet",
+    "category": "sports-accessories",
+    "price": 44.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/sports-accessories/cricket-helmet/thumbnail.webp",
+    "description": "The Cricket Helmet is a protective headgear worn by cricket players, especially batsmen and wicketkeepers. It provides protection against fast bowling and bouncers."
+  },
+  {
+    "id": 145,
+    "title": "Cricket Wicket",
+    "category": "sports-accessories",
+    "price": 29.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/sports-accessories/cricket-wicket/thumbnail.webp",
+    "description": "The Cricket Wicket is a set of three stumps and two bails, forming a wicket used in the sport of cricket. Batsmen aim to protect the wicket while scoring runs."
+  },
+  {
+    "id": 146,
+    "title": "Feather Shuttlecock",
+    "category": "sports-accessories",
+    "price": 5.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/sports-accessories/feather-shuttlecock/thumbnail.webp",
+    "description": "The Feather Shuttlecock is used in the sport of badminton. It features natural feathers and is designed for high-speed play, providing stability and accuracy during matches."
+  },
+  {
+    "id": 147,
+    "title": "Football",
+    "category": "sports-accessories",
+    "price": 17.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/sports-accessories/football/thumbnail.webp",
+    "description": "The Football, also known as a soccer ball, is the standard ball used in the sport of football (soccer). It is designed for kicking and passing in the game."
+  },
+  {
+    "id": 148,
+    "title": "Golf Ball",
+    "category": "sports-accessories",
+    "price": 9.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/sports-accessories/golf-ball/thumbnail.webp",
+    "description": "The Golf Ball is a small ball used in the sport of golf. It features dimples on its surface, providing aerodynamic lift and distance when struck by a golf club."
+  },
+  {
+    "id": 151,
+    "title": "Tennis Ball",
+    "category": "sports-accessories",
+    "price": 6.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/sports-accessories/tennis-ball/thumbnail.webp",
+    "description": "The Tennis Ball is a standard ball used in the sport of tennis. It is designed for bouncing and hitting with tennis rackets during matches or practice sessions."
+  },
+  {
+    "id": 152,
+    "title": "Tennis Racket",
+    "category": "sports-accessories",
+    "price": 49.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/sports-accessories/tennis-racket/thumbnail.webp",
+    "description": "The Tennis Racket is an essential piece of equipment used in the sport of tennis. It features a frame with strings and a grip, allowing players to hit the tennis ball."
+  },
+  {
+    "id": 153,
+    "title": "Volleyball",
+    "category": "sports-accessories",
+    "price": 11.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/sports-accessories/volleyball/thumbnail.webp",
+    "description": "The Volleyball is a standard ball used in the sport of volleyball. It is designed for passing, setting, and spiking over the net during volleyball matches."
+  },
+  {
+    "id": 154,
+    "title": "Black Sun Glasses",
+    "category": "sunglasses",
+    "brand": "Fashion Shades",
+    "price": 29.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/sunglasses/black-sun-glasses/thumbnail.webp",
+    "description": "The Black Sun Glasses are a classic and stylish choice, featuring a sleek black frame and tinted lenses. They provide both UV protection and a fashionable look."
+  },
+  {
+    "id": 155,
+    "title": "Classic Sun Glasses",
+    "category": "sunglasses",
+    "brand": "Fashion Shades",
+    "price": 24.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/sunglasses/classic-sun-glasses/thumbnail.webp",
+    "description": "The Classic Sun Glasses offer a timeless design with a neutral frame and UV-protected lenses. These sunglasses are versatile and suitable for various occasions."
+  },
+  {
+    "id": 156,
+    "title": "Green and Black Glasses",
+    "category": "sunglasses",
+    "brand": "Fashion Shades",
+    "price": 34.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/sunglasses/green-and-black-glasses/thumbnail.webp",
+    "description": "The Green and Black Glasses feature a bold combination of green and black colors, adding a touch of vibrancy to your eyewear collection. They are both stylish and eye-catching."
+  },
+  {
+    "id": 157,
+    "title": "Party Glasses",
+    "category": "sunglasses",
+    "brand": "Fashion Fun",
+    "price": 19.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/sunglasses/party-glasses/thumbnail.webp",
+    "description": "The Party Glasses are designed to add flair to your party outfit. With unique shapes or colorful frames, they're perfect for adding a playful touch to your look during celebrations."
+  },
+  {
+    "id": 158,
+    "title": "Sunglasses",
+    "category": "sunglasses",
+    "brand": "Fashion Shades",
+    "price": 22.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/sunglasses/sunglasses/thumbnail.webp",
+    "description": "The Sunglasses offer a classic and simple design with a focus on functionality. These sunglasses provide essential UV protection while maintaining a timeless look."
+  },
+  {
+    "id": 161,
+    "title": "Samsung Galaxy Tab White",
+    "category": "tablets",
+    "brand": "Samsung",
+    "price": 349.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/tablets/samsung-galaxy-tab-white/thumbnail.webp",
+    "description": "The Samsung Galaxy Tab in White is a sleek and versatile Android tablet. With a vibrant display, long-lasting battery, and a range of features, it offers a great user experience for various tasks."
+  },
+  {
+    "id": 162,
+    "title": "Blue Frock",
+    "category": "tops",
+    "price": 29.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/tops/blue-frock/thumbnail.webp",
+    "description": "The Blue Frock is a charming and stylish dress for various occasions. With a vibrant blue color and a comfortable design, it adds a touch of elegance to your wardrobe."
+  },
+  {
+    "id": 163,
+    "title": "Girl Summer Dress",
+    "category": "tops",
+    "price": 19.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/tops/girl-summer-dress/thumbnail.webp",
+    "description": "The Girl Summer Dress is a cute and breezy dress designed for warm weather. With playful patterns and lightweight fabric, it's perfect for keeping cool and stylish during the summer."
+  },
+  {
+    "id": 164,
+    "title": "Gray Dress",
+    "category": "tops",
+    "price": 34.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/tops/gray-dress/thumbnail.webp",
+    "description": "The Gray Dress is a versatile and chic option for various occasions. With a neutral gray color, it can be dressed up or down, making it a wardrobe staple for any fashion-forward individual."
+  },
+  {
+    "id": 165,
+    "title": "Short Frock",
+    "category": "tops",
+    "price": 24.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/tops/short-frock/thumbnail.webp",
+    "description": "The Short Frock is a playful and trendy dress with a shorter length. Ideal for casual outings or special occasions, it combines style and comfort for a fashionable look."
+  },
+  {
+    "id": 166,
+    "title": "Tartan Dress",
+    "category": "tops",
+    "price": 39.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/tops/tartan-dress/thumbnail.webp",
+    "description": "The Tartan Dress features a classic tartan pattern, bringing a timeless and sophisticated touch to your wardrobe. Perfect for fall and winter, it adds a hint of traditional charm."
+  },
+  {
+    "id": 182,
+    "title": "Green Crystal Earring",
+    "category": "womens-jewellery",
+    "price": 29.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/womens-jewellery/green-crystal-earring/thumbnail.webp",
+    "description": "The Green Crystal Earring is a dazzling accessory that features a vibrant green crystal. With a classic design, it adds a touch of elegance to your ensemble, perfect for formal or special occasions."
+  },
+  {
+    "id": 183,
+    "title": "Green Oval Earring",
+    "category": "womens-jewellery",
+    "price": 24.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/womens-jewellery/green-oval-earring/thumbnail.webp",
+    "description": "The Green Oval Earring is a stylish and versatile accessory with a unique oval shape. Whether for casual or dressy occasions, its green hue and contemporary design make it a standout piece."
+  },
+  {
+    "id": 184,
+    "title": "Tropical Earring",
+    "category": "womens-jewellery",
+    "price": 19.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/womens-jewellery/tropical-earring/thumbnail.webp",
+    "description": "The Tropical Earring is a fun and playful accessory inspired by tropical elements. Featuring vibrant colors and a lively design, it's perfect for adding a touch of summer to your look."
+  },
+  {
+    "id": 188,
+    "title": "Pampi Shoes",
+    "category": "womens-shoes",
+    "brand": "Pampi",
+    "price": 29.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/womens-shoes/pampi-shoes/thumbnail.webp",
+    "description": "Pampi Shoes offer a blend of comfort and style for everyday use. With a versatile design, they are suitable for various casual occasions, providing a trendy and relaxed look."
+  },
+  {
+    "id": 191,
+    "title": "Rolex Cellini Moonphase",
+    "category": "womens-watches",
+    "brand": "Rolex",
+    "price": 15999.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/womens-watches/rolex-cellini-moonphase/thumbnail.webp",
+    "description": "The Rolex Cellini Moonphase watch is a masterpiece of horology. Featuring a moon phase complication, it showcases the craftsmanship and elegance that Rolex is renowned for."
+  },
+  {
+    "id": 194,
+    "title": "Women's Wrist Watch",
+    "category": "womens-watches",
+    "brand": "Fashion Co.",
+    "price": 129.99,
+    "thumbnail": "https://cdn.dummyjson.com/product-images/womens-watches/women's-wrist-watch/thumbnail.webp",
+    "description": "The Women's Wrist Watch is a versatile and fashionable timepiece for everyday wear. With a comfortable strap and a simple yet elegant design, it complements various styles."
+  }
+]

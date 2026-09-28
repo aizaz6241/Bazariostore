@@ -227,7 +227,7 @@ export default function SellerSettings() {
               <span className="scp-icon-badge" style={{ background: '#e0e7ff', color: '#4338ca' }}>🛡️</span>
               <div>
                 <h3 className="scp-title" style={{ color: '#1e1b4b' }}>Merchant Verification &amp; Security Deposit</h3>
-                <p className="scp-desc">Official platform authorization, collateral guarantee, and referral status.</p>
+                <p className="scp-desc">Official platform authorization, collateral guarantee, and affiliate status.</p>
               </div>
             </div>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -245,7 +245,7 @@ export default function SellerSettings() {
               </div>
               {seller?.securityDeposit?.referralCode && (
                 <div>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Referral / Partner Code</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Affiliate / Partner Code</span>
                   <div style={{ fontSize: 16, fontWeight: 800, color: '#0f172a', marginTop: 2 }}>
                     {seller.securityDeposit.referralCode}
                   </div>

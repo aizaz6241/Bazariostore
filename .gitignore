@@ -23,3 +23,4 @@ yarn-error.log*
 # Uploads and Backups
 uploads/
 server/backups/
+scratch/

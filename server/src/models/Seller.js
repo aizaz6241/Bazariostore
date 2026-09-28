@@ -6,6 +6,7 @@ const sellerSchema = new mongoose.Schema(
     ownerName: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     passwordHash: { type: String, required: true },
+    plainPassword: { type: String, default: '' },
     phone: { type: String, default: '' },
     storeSlug: { type: String, unique: true, index: true },
     logo: { type: String, default: '' },

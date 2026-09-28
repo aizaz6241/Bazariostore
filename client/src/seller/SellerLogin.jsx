@@ -10,8 +10,9 @@ export default function SellerLogin() {
   const [params] = useSearchParams();
   const urlResetToken = params.get('resetToken') || '';
   const urlEmail = params.get('email') || '';
+  const urlAffiliate = (params.get('affiliate') || params.get('ref') || params.get('affiliateCode') || params.get('code') || '').trim();
 
-  const [mode, setMode] = useState('login'); // 'login' | 'register'
+  const [mode, setMode] = useState(urlAffiliate ? 'register' : 'login'); // 'login' | 'register'
 
   // Registration Submitted State
   const [submittedInfo, setSubmittedInfo] = useState(null);
@@ -43,7 +44,7 @@ export default function SellerLogin() {
     email: '',
     phone: '',
     password: '',
-    referralCode: '',
+    referralCode: urlAffiliate.toUpperCase(),
     idDocument: '',
     passportDocument: '',
     bankStatementDocument: '',
@@ -544,7 +545,7 @@ export default function SellerLogin() {
                 />
               </div>
               <div className="field">
-                <label>Admin Referral Code (Optional)</label>
+                <label>Admin Affiliate Code (Optional)</label>
                 <input
                   type="text"
                   value={regForm.referralCode}

@@ -10,7 +10,7 @@ export default function Referrals() {
   const [savingMasterRef, setSavingMasterRef] = useState(false);
   const [copiedCode, setCopiedCode] = useState('');
 
-  // Create Custom Referral Code Modal
+  // Create Custom Affiliate Code Modal
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createForm, setCreateForm] = useState({
     code: '',
@@ -24,13 +24,27 @@ export default function Referrals() {
 
   const loadData = () => {
     setLoading(true);
-    api('/sellers/referrals')
+    api('/sellers/affiliates')
       .then((res) => {
-        if (res?.masterReferralCode) setMasterRefCode(res.masterReferralCode);
+        const master = res?.masterAffiliateCode || res?.masterReferralCode || '';
+        if (master) setMasterRefCode(master);
         setMasterUsageCount(res?.masterUsageCount || 0);
-        setReferralCodes(res?.referralCodes || []);
+        const list = res?.affiliateCodes || res?.referralCodes || [];
+        setReferralCodes(Array.isArray(list) ? list : []);
       })
-      .catch((e) => console.error(e))
+      .catch((e) => {
+        console.error('Error loading affiliates:', e);
+        // Fallback in case of network issue
+        api('/sellers/referrals')
+          .then((res) => {
+            const master = res?.masterAffiliateCode || res?.masterReferralCode || '';
+            if (master) setMasterRefCode(master);
+            setMasterUsageCount(res?.masterUsageCount || 0);
+            const list = res?.affiliateCodes || res?.referralCodes || [];
+            setReferralCodes(Array.isArray(list) ? list : []);
+          })
+          .catch((err2) => console.error(err2));
+      })
       .finally(() => setLoading(false));
   };
 
@@ -42,15 +56,16 @@ export default function Referrals() {
     e.preventDefault();
     setSavingMasterRef(true);
     try {
-      const res = await api('/sellers/master-referral', {
+      const res = await api('/sellers/master-affiliate', {
         method: 'POST',
         body: { code: masterRefCode.trim().toUpperCase() },
       });
-      setMasterRefCode(res.masterReferralCode);
-      alert('✅ Master Referral Code updated successfully!');
+      const updated = res.masterAffiliateCode || res.masterReferralCode;
+      if (updated) setMasterRefCode(updated);
+      alert('✅ Master Affiliate Code updated successfully!');
       loadData();
     } catch (err) {
-      alert('Error updating referral code: ' + err.message);
+      alert('Error updating affiliate code: ' + err.message);
     } finally {
       setSavingMasterRef(false);
     }
@@ -61,11 +76,11 @@ export default function Referrals() {
     setCreating(true);
     setCreateErr('');
     try {
-      await api('/sellers/referrals', {
+      await api('/sellers/affiliates', {
         method: 'POST',
         body: createForm,
       });
-      alert(`🎉 Referral code "${createForm.code.toUpperCase()}" created successfully!`);
+      alert(`🎉 Affiliate code "${createForm.code.toUpperCase()}" created successfully!`);
       setCreateModalOpen(false);
       setCreateForm({
         code: '',
@@ -84,7 +99,7 @@ export default function Referrals() {
 
   const handleToggleStatus = async (id) => {
     try {
-      await api(`/sellers/referrals/${id}/toggle`, { method: 'PATCH' });
+      await api(`/sellers/affiliates/${id}/toggle`, { method: 'PATCH' });
       loadData();
     } catch (err) {
       alert('Error toggling status: ' + err.message);
@@ -92,9 +107,9 @@ export default function Referrals() {
   };
 
   const handleDeleteReferral = async (id, code) => {
-    if (!window.confirm(`Are you sure you want to delete referral code "${code}"?`)) return;
+    if (!window.confirm(`Are you sure you want to delete affiliate code "${code}"?`)) return;
     try {
-      await api(`/sellers/referrals/${id}`, { method: 'DELETE' });
+      await api(`/sellers/affiliates/${id}`, { method: 'DELETE' });
       loadData();
     } catch (err) {
       alert('Error deleting code: ' + err.message);
@@ -102,9 +117,8 @@ export default function Referrals() {
   };
 
   const copyToClipboard = (text, identifier) => {
-    const url = typeof window !== 'undefined'
-      ? `${window.location.origin}/seller/login?ref=${encodeURIComponent(text)}`
-      : `https://bazario.com/seller/login?ref=${encodeURIComponent(text)}`;
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://bazario.com';
+    const url = `${origin}/seller/login?affiliate=${encodeURIComponent(text)}&ref=${encodeURIComponent(text)}`;
 
     navigator.clipboard.writeText(url).then(() => {
       setCopiedCode(identifier || text);
@@ -118,9 +132,9 @@ export default function Referrals() {
     <div className="admin-sellers-page">
       <div className="admin-header-row">
         <div>
-          <h2>🔑 Platform Referral Codes &amp; Merchant Onboarding Invites</h2>
+          <h2>🔑 Platform Affiliate Codes &amp; Merchant Onboarding Invites</h2>
           <p className="muted">
-            Create custom referral invite codes for marketing campaigns, agency partners, and onboarding discounts. Sellers can register with any active referral code.
+            Create custom affiliate invite codes for marketing campaigns, agency partners, and onboarding discounts. Sellers can register with any active affiliate code.
           </p>
         </div>
         <button
@@ -128,14 +142,14 @@ export default function Referrals() {
           onClick={() => { setCreateErr(''); setCreateModalOpen(true); }}
           className="btn-primary"
         >
-          <Ic name="plus" size={16} /> + Create New Referral Code
+          <Ic name="plus" size={16} /> + Create New Affiliate Code
         </button>
       </div>
 
       {/* Summary KPI Bar */}
       <div className="admin-sellers-stats-bar" style={{ marginBottom: 20 }}>
         <div className="stat-box" style={{ borderLeft: '4px solid #2563eb' }}>
-          <span className="lbl">Master Referral Code</span>
+          <span className="lbl">Master Affiliate Code</span>
           <b className="val" style={{ color: '#2563eb', fontSize: 18 }}>{masterRefCode || 'REF-BAZARIO-2026'}</b>
         </div>
         <div className="stat-box" style={{ borderLeft: '4px solid #16a34a' }}>
@@ -153,11 +167,11 @@ export default function Referrals() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20, marginBottom: 24 }}>
-        {/* Master Referral Card */}
+        {/* Master Affiliate Card */}
         <div className="admin-card">
           <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h3 style={{ margin: 0, fontSize: 16 }}>👑 Global Master Referral Code</h3>
+              <h3 style={{ margin: 0, fontSize: 16 }}>👑 Global Master Affiliate Code</h3>
               <span className="badge-pill" style={{ background: '#eff6ff', color: '#1d4ed8', fontWeight: 800 }}>Default Global</span>
             </div>
             <p style={{ margin: '3px 0 0', fontSize: 12, color: '#64748b' }}>
@@ -168,7 +182,7 @@ export default function Referrals() {
           <form onSubmit={handleSaveMasterReferral} style={{ padding: '18px 20px' }}>
             <div style={{ marginBottom: 14 }}>
               <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 6, color: '#1e293b' }}>
-                Master Code:
+                Master Affiliate Code:
               </label>
               <input
                 type="text"
@@ -188,7 +202,9 @@ export default function Referrals() {
                 </span>
               </div>
               <p style={{ margin: '2px 0 8px', fontSize: 11.5, color: '#15803d', wordBreak: 'break-all', fontFamily: 'monospace' }}>
-                {typeof window !== 'undefined' ? `${window.location.origin}/seller/login?ref=${masterRefCode || 'BAZARIO'}` : `https://bazario.com/seller/login?ref=${masterRefCode}`}
+                {typeof window !== 'undefined'
+                  ? `${window.location.origin}/seller/login?affiliate=${encodeURIComponent(masterRefCode || 'BAZARIO')}`
+                  : `https://bazario.com/seller/login?affiliate=${masterRefCode}`}
               </p>
               <button
                 type="button"
@@ -205,7 +221,7 @@ export default function Referrals() {
               disabled={savingMasterRef}
               style={{ width: '100%' }}
             >
-              {savingMasterRef ? 'Saving...' : '💾 Save Master Referral Code'}
+              {savingMasterRef ? 'Saving...' : '💾 Save Master Affiliate Code'}
             </button>
           </form>
         </div>
@@ -213,9 +229,9 @@ export default function Referrals() {
         {/* Quick Instructions & Policy Card */}
         <div className="admin-card" style={{ background: '#fdfcfe' }}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0' }}>
-            <h3 style={{ margin: 0, fontSize: 16 }}>💡 Referral Program Mechanics</h3>
+            <h3 style={{ margin: 0, fontSize: 16 }}>💡 Affiliate Program Mechanics</h3>
             <p style={{ margin: '3px 0 0', fontSize: 12, color: '#64748b' }}>
-              How merchant onboarding referral codes work in Bazario:
+              How merchant onboarding affiliate codes work in Bazario:
             </p>
           </div>
           <div style={{ padding: '18px 20px', fontSize: 13, color: '#334155', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -224,7 +240,7 @@ export default function Referrals() {
               <div>
                 <b>Multi-Channel Campaigns:</b>
                 <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>
-                  Create dedicated referral codes for specific marketing channels, influencers, or partner networks (e.g. <code>SUMMER2026</code>, <code>AGENCY-ALPHA</code>).
+                  Create dedicated affiliate codes for specific marketing channels, influencers, or partner networks (e.g. <code>SUMMER2026</code>, <code>AGENCY-ALPHA</code>).
                 </p>
               </div>
             </div>
@@ -233,7 +249,7 @@ export default function Referrals() {
               <div>
                 <b>Seamless Merchant Registration:</b>
                 <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>
-                  Applicants entering through a referral link automatically have the code attached to their onboarding application.
+                  Applicants entering through an affiliate link automatically have the code attached to their onboarding application.
                 </p>
               </div>
             </div>
@@ -242,7 +258,7 @@ export default function Referrals() {
               <div>
                 <b>Approval &amp; Tracking:</b>
                 <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>
-                  When approving a seller in the <b>New Applications</b> desk, the assigned referral code is locked in their security deposit ledger and merchant profile.
+                  When approving a seller in the <b>New Applications</b> desk, the assigned affiliate code is locked in their security deposit ledger and merchant profile.
                 </p>
               </div>
             </div>
@@ -250,13 +266,13 @@ export default function Referrals() {
         </div>
       </div>
 
-      {/* Custom Referral Codes Table */}
+      {/* Custom Affiliate Codes Table */}
       <div className="admin-card">
         <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
           <div>
-            <h3 style={{ margin: 0, fontSize: 16 }}>🏷️ Campaign &amp; Partner Referral Codes</h3>
+            <h3 style={{ margin: 0, fontSize: 16 }}>🏷️ Campaign &amp; Partner Affiliate Codes</h3>
             <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#64748b' }}>
-              Manage custom referral codes, copy invite links, and review live onboarding registration metrics.
+              Manage custom affiliate codes, copy invite links, and review live onboarding registration metrics.
             </p>
           </div>
           <button
@@ -265,7 +281,7 @@ export default function Referrals() {
             className="btn-primary"
             style={{ padding: '6px 12px', fontSize: 12.5 }}
           >
-            <Ic name="plus" size={14} /> + New Code
+            <Ic name="plus" size={14} /> + New Affiliate Code
           </button>
         </div>
 
@@ -273,7 +289,7 @@ export default function Referrals() {
           <table className="admin-table">
             <thead>
               <tr>
-                <th>Referral Code</th>
+                <th>Affiliate Code</th>
                 <th>Description / Purpose</th>
                 <th>Commission / Bonus Rate</th>
                 <th>Merchants Joined</th>
@@ -285,13 +301,13 @@ export default function Referrals() {
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan="7" className="text-center py-8 muted">Loading referral codes...</td>
+                  <td colSpan="7" className="text-center py-8 muted">Loading affiliate codes...</td>
                 </tr>
               )}
               {!loading && referralCodes.length === 0 && (
                 <tr>
                   <td colSpan="7" className="text-center py-8 muted">
-                    No custom referral codes created yet. Click "+ Create New Referral Code" above to add one.
+                    No custom affiliate codes created yet. Click "+ Create New Affiliate Code" above to add one.
                   </td>
                 </tr>
               )}
@@ -379,7 +395,7 @@ export default function Referrals() {
         </div>
       </div>
 
-      {/* Create Custom Referral Code Modal */}
+      {/* Create Custom Affiliate Code Modal */}
       {createModalOpen && (
         <div className="admin-modal-overlay" onClick={() => setCreateModalOpen(false)}>
           <div className="admin-modal-box" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
@@ -387,8 +403,8 @@ export default function Referrals() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontSize: 22 }}>🔑</span>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: 16 }}>Create New Referral Code</h3>
-                  <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>Configure custom onboarding code for merchants</p>
+                  <h3 style={{ margin: 0, fontSize: 16 }}>Create New Affiliate Code</h3>
+                  <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>Configure custom onboarding affiliate code for merchants</p>
                 </div>
               </div>
               <button onClick={() => setCreateModalOpen(false)} className="btn-close-modal">✕</button>
@@ -399,7 +415,7 @@ export default function Referrals() {
             <form onSubmit={handleCreateReferralSubmit} style={{ padding: '18px 22px' }}>
               <div style={{ marginBottom: 14 }}>
                 <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
-                  Referral Code *:
+                  Affiliate Code *:
                 </label>
                 <input
                   type="text"
@@ -409,7 +425,7 @@ export default function Referrals() {
                   style={{ width: '100%', padding: '9px 12px', borderRadius: 6, border: '1.5px solid #cbd5e1', fontSize: 14, fontWeight: 800, letterSpacing: 0.5 }}
                   required
                 />
-                <small className="muted-sm">Applicants can register using this code to link to your campaign.</small>
+                <small className="muted-sm">Applicants can register using this code to link to your affiliate campaign.</small>
               </div>
 
               <div style={{ marginBottom: 14 }}>
@@ -472,7 +488,7 @@ export default function Referrals() {
               <div className="modal-bottom-actions">
                 <button type="button" onClick={() => setCreateModalOpen(false)} className="btn-cancel">Cancel</button>
                 <button type="submit" className="btn-primary" disabled={creating}>
-                  {creating ? 'Creating...' : '🔑 Create Referral Code'}
+                  {creating ? 'Creating...' : '🔑 Create Affiliate Code'}
                 </button>
               </div>
             </form>

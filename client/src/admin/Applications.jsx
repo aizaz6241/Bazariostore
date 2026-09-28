@@ -173,7 +173,7 @@ export default function Applications() {
               <tr>
                 <th>Applicant Store</th>
                 <th>Owner &amp; Contacts</th>
-                <th>Referral Code</th>
+                <th>Affiliate Code</th>
                 <th>KYC Documents</th>
                 <th>Application Date</th>
                 <th>Status</th>
@@ -379,7 +379,7 @@ export default function Applications() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
                 <div>
                   <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
-                    Referral Code:
+                    Affiliate Code:
                   </label>
                   <input
                     type="text"

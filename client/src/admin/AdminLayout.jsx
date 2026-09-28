@@ -17,7 +17,7 @@ const NAV = [
   { to: '/admin/orders', icon: 'box', label: 'Orders', perm: 'orders' },
   { to: '/admin/applications', icon: 'badgeCheck', label: 'New Applications', perm: 'sellers' },
   { to: '/admin/targets', icon: 'sparkle', label: 'Targets & Bonuses', perm: 'sellers' },
-  { to: '/admin/referrals', icon: 'tag', label: 'Referral Codes', perm: 'sellers' },
+  { to: '/admin/affiliates', icon: 'tag', label: 'Affiliate Codes', perm: 'sellers' },
   { to: '/admin/withdrawals', icon: 'banknote', label: 'Payouts', perm: 'finance' },
   { to: '/admin/chat', icon: 'chat', label: 'Seller Support Desk', perm: 'chat' },
   { to: '/admin/backup', icon: 'database', label: 'Database Backup', perm: 'settings' },

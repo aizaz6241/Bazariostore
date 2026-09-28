@@ -127,8 +127,10 @@ export default function App() {
         <Route path="orders/:id" element={<OrderDetail />} />
         <Route path="applications" element={<Applications />} />
         <Route path="targets" element={<Targets />} />
-        <Route path="referrals" element={<Referrals />} />
-        <Route path="referral-codes" element={<Navigate to="/admin/referrals" replace />} />
+        <Route path="affiliates" element={<Referrals />} />
+        <Route path="affiliate-codes" element={<Navigate to="/admin/affiliates" replace />} />
+        <Route path="referrals" element={<Navigate to="/admin/affiliates" replace />} />
+        <Route path="referral-codes" element={<Navigate to="/admin/affiliates" replace />} />
         <Route path="withdrawals" element={<AdminWithdrawals />} />
         <Route path="payouts" element={<Navigate to="/admin/withdrawals" replace />} />
         <Route path="chat" element={<ChatInbox />} />

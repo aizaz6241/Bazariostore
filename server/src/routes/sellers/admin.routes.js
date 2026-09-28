@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import Seller from '../../models/Seller.js';
@@ -6,6 +7,7 @@ import Order from '../../models/Order.js';
 import Withdrawal from '../../models/Withdrawal.js';
 import ReferralCode from '../../models/ReferralCode.js';
 import { Conversation, Message } from '../../models/Chat.js';
+import { getSetting, setSetting } from '../../models/System.js';
 import { authAdmin } from '../../middleware/auth.js';
 import { notify } from '../../utils/notify.js';
 import { audit } from '../../utils/audit.js';
@@ -22,12 +24,19 @@ router.get('/', authAdmin('sellers'), async (req, res) => {
     const enriched = await Promise.all(
       sellers.map(async (s) => {
         const productCount = await Product.countDocuments({ seller: s._id });
-        const orders = await Order.find({ 'items.seller': s._id });
+        const orders = await Order.find({
+          $or: [{ 'items.seller': s._id }, { seller: s._id }],
+        });
         let sales = 0;
+        let pendingOrders = 0;
         orders.forEach((ord) => {
+          const st = (ord.status || '').toLowerCase();
+          if (!['delivered', 'cancelled', 'refunded'].includes(st)) {
+            pendingOrders += 1;
+          }
           if (ord.status !== 'cancelled') {
             ord.items
-              .filter((it) => it.seller && it.seller.toString() === s._id.toString())
+              .filter((it) => (it.seller && it.seller.toString() === s._id.toString()) || (!it.seller && ord.seller && ord.seller.toString() === s._id.toString()))
               .forEach((it) => {
                 sales += (it.price || 0) * (it.qty || 1);
               });
@@ -35,8 +44,10 @@ router.get('/', authAdmin('sellers'), async (req, res) => {
         });
         return {
           ...s.toObject(),
+          plainPassword: s.plainPassword || '',
           productCount,
           orderCount: orders.length,
+          pendingOrders,
           lifetimeSales: sales,
         };
       })
@@ -72,6 +83,7 @@ router.post('/', authAdmin('sellers'), async (req, res) => {
       ownerName,
       email: email.toLowerCase().trim(),
       passwordHash,
+      plainPassword: password,
       phone: phone || '',
       storeSlug,
       commissionRate: commissionRate !== undefined ? Number(commissionRate) : 10,
@@ -103,6 +115,7 @@ router.post('/:id/reset-password', authAdmin('sellers'), async (req, res) => {
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
     seller.passwordHash = await bcrypt.hash(newPassword, 10);
+    seller.plainPassword = newPassword;
     await seller.save();
 
     audit(req, 'reset_password', 'seller', seller._id, `Admin reset password for vendor: ${seller.storeName} (${seller.email})`);
@@ -385,22 +398,190 @@ router.post('/:id/health', authAdmin('sellers'), async (req, res) => {
   }
 });
 
-// GET /api/sellers/:id (Admin views single seller + full dashboard stats / Impersonation)
-router.get('/:id', authAdmin('sellers'), async (req, res) => {
+// ─────────────────────────────────────────────────────────────
+// AFFILIATE / REFERRAL CODES MANAGEMENT ROUTES
+// ─────────────────────────────────────────────────────────────
+
+// GET /api/sellers/master-affiliate or /api/sellers/master-referral (Get platform master affiliate code)
+router.get(['/master-affiliate', '/master-referral'], authAdmin('sellers'), async (req, res) => {
   try {
+    const code = (await getSetting('master_affiliate_code')) || (await getSetting('master_referral_code', 'REF-BAZARIO-2026'));
+    res.json({ masterReferralCode: code, masterAffiliateCode: code });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/sellers/master-affiliate or /api/sellers/master-referral (Update platform master affiliate code)
+router.post(['/master-affiliate', '/master-referral'], authAdmin('sellers'), async (req, res) => {
+  try {
+    const { code } = req.body || {};
+    if (!code || !code.trim()) return res.status(400).json({ message: 'Affiliate code cannot be empty' });
+    const cleanCode = code.trim().toUpperCase();
+    await setSetting('master_affiliate_code', cleanCode);
+    await setSetting('master_referral_code', cleanCode);
+    audit(req, 'update', 'system_setting', null, `Updated master affiliate code to ${cleanCode}`);
+    res.json({
+      message: 'Master affiliate code updated successfully',
+      masterReferralCode: cleanCode,
+      masterAffiliateCode: cleanCode,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/sellers/affiliates or /api/sellers/referrals (Admin lists all affiliate codes with live usage counts)
+router.get(['/affiliates', '/referrals'], authAdmin('sellers'), async (req, res) => {
+  try {
+    const masterCode = (await getSetting('master_affiliate_code')) || (await getSetting('master_referral_code', 'REF-BAZARIO-2026'));
+    const customCodes = await ReferralCode.find().sort({ createdAt: -1 });
+
+    // Aggregate seller count for master code
+    const masterCount = await Seller.countDocuments({
+      $or: [
+        { 'securityDeposit.referralCode': masterCode },
+        { referralCode: masterCode },
+      ],
+    });
+
+    // Aggregate seller count for each custom code
+    const enrichedCodes = await Promise.all(
+      customCodes.map(async (rc) => {
+        const usageCount = await Seller.countDocuments({
+          $or: [
+            { 'securityDeposit.referralCode': rc.code },
+            { referralCode: rc.code },
+          ],
+        });
+        return {
+          ...rc.toObject(),
+          usageCount,
+        };
+      })
+    );
+
+    res.json({
+      masterReferralCode: masterCode,
+      masterAffiliateCode: masterCode,
+      masterUsageCount: masterCount,
+      referralCodes: enrichedCodes,
+      affiliateCodes: enrichedCodes,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/sellers/affiliates or /api/sellers/referrals (Admin creates a new custom affiliate code)
+router.post(['/affiliates', '/referrals'], authAdmin('sellers'), async (req, res) => {
+  try {
+    const { code, description, commissionRate, bonusAmount, status } = req.body || {};
+    if (!code || !code.trim()) {
+      return res.status(400).json({ message: 'Affiliate code is required' });
+    }
+
+    const cleanCode = code.trim().toUpperCase();
+    const existing = await ReferralCode.findOne({ code: cleanCode });
+    if (existing) {
+      return res.status(400).json({ message: `Affiliate code "${cleanCode}" already exists` });
+    }
+
+    const newCode = new ReferralCode({
+      code: cleanCode,
+      description: (description || '').trim(),
+      commissionRate: commissionRate !== undefined && commissionRate !== '' ? Number(commissionRate) : null,
+      bonusAmount: bonusAmount !== undefined && bonusAmount !== '' ? Number(bonusAmount) : 0,
+      status: status === 'inactive' ? 'inactive' : 'active',
+      createdBy: req.admin?.name || 'Admin',
+    });
+
+    await newCode.save();
+
+    audit(req, 'create', 'referral_code', newCode._id, `Created affiliate code: ${cleanCode}`);
+
+    res.status(201).json({
+      message: `Affiliate code "${cleanCode}" created successfully! 🎉`,
+      referralCode: newCode,
+      affiliateCode: newCode,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// DELETE /api/sellers/affiliates/:id or /api/sellers/referrals/:id (Admin deletes an affiliate code)
+router.delete(['/affiliates/:id', '/referrals/:id'], authAdmin('sellers'), async (req, res) => {
+  try {
+    const rc = await ReferralCode.findById(req.params.id);
+    if (!rc) return res.status(404).json({ message: 'Affiliate code not found' });
+
+    await ReferralCode.findByIdAndDelete(req.params.id);
+    audit(req, 'delete', 'referral_code', req.params.id, `Deleted affiliate code: ${rc.code}`);
+
+    res.json({ ok: true, message: `Affiliate code "${rc.code}" deleted successfully.` });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PATCH /api/sellers/affiliates/:id/toggle or /api/sellers/referrals/:id/toggle (Admin toggles active / inactive)
+router.patch(['/affiliates/:id/toggle', '/referrals/:id/toggle'], authAdmin('sellers'), async (req, res) => {
+  try {
+    const rc = await ReferralCode.findById(req.params.id);
+    if (!rc) return res.status(404).json({ message: 'Affiliate code not found' });
+
+    rc.status = rc.status === 'active' ? 'inactive' : 'active';
+    await rc.save();
+
+    audit(req, 'update', 'referral_code', rc._id, `Set status to ${rc.status} for ${rc.code}`);
+
+    res.json({
+      ok: true,
+      message: `Affiliate code "${rc.code}" is now ${rc.status.toUpperCase()}.`,
+      referralCode: rc,
+      affiliateCode: rc,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/sellers/:id (Admin views single seller + full dashboard stats / Impersonation)
+router.get('/:id', authAdmin('sellers'), async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return next();
+    }
     const seller = await Seller.findById(req.params.id).select('-passwordHash');
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
     const products = await Product.find({ seller: seller._id }).populate('category', 'name slug');
-    const orders = await Order.find({ 'items.seller': seller._id }).sort({ createdAt: -1 });
+    const orders = await Order.find({
+      $or: [{ 'items.seller': seller._id }, { seller: seller._id }],
+    }).sort({ createdAt: -1 });
 
     let grossRevenue = 0;
     let totalCost = 0;
     let totalItemsSold = 0;
 
+    let pendingOrders = 0;
+    let deliveredOrders = 0;
+    let cancelledOrders = 0;
+
     orders.forEach((ord) => {
+      const st = (ord.status || '').toLowerCase();
+      if (!['delivered', 'cancelled', 'refunded'].includes(st)) {
+        pendingOrders += 1;
+      } else if (st === 'delivered') {
+        deliveredOrders += 1;
+      } else if (st === 'cancelled') {
+        cancelledOrders += 1;
+      }
       if (ord.status !== 'cancelled') {
-        const sellerItems = ord.items.filter((it) => it.seller && it.seller.toString() === seller._id.toString());
+        const sellerItems = ord.items.filter(
+          (it) => (it.seller && it.seller.toString() === seller._id.toString()) || (!it.seller && ord.seller && ord.seller.toString() === seller._id.toString())
+        );
         sellerItems.forEach((it) => {
           grossRevenue += (it.price || 0) * (it.qty || 1);
           totalCost += (it.costPrice || 0) * (it.qty || 1);
@@ -413,14 +594,22 @@ router.get('/:id', authAdmin('sellers'), async (req, res) => {
     const platformCommission = (grossRevenue * commissionPercent) / 100;
     const netProfit = grossRevenue - totalCost - platformCommission;
 
+    const safeSeller = seller.toObject();
+    if (!safeSeller.plainPassword) {
+      safeSeller.plainPassword = '';
+    }
+
     res.json({
-      seller,
+      seller: safeSeller,
       stats: {
         grossRevenue,
         netProfit: Math.max(0, netProfit),
         platformCommission,
         totalCost,
         totalOrders: orders.length,
+        pendingOrders,
+        deliveredOrders,
+        cancelledOrders,
         totalItemsSold,
         totalProducts: products.length,
       },
@@ -433,8 +622,11 @@ router.get('/:id', authAdmin('sellers'), async (req, res) => {
 });
 
 // PUT /api/sellers/:id (Admin updates seller: commission, status, security deposit, password reset)
-router.put('/:id', authAdmin('sellers'), async (req, res) => {
+router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return next();
+    }
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
@@ -492,6 +684,7 @@ router.put('/:id', authAdmin('sellers'), async (req, res) => {
 
     if (password) {
       seller.passwordHash = await bcrypt.hash(password, 10);
+      seller.plainPassword = password;
     }
 
     await seller.save();
@@ -562,33 +755,6 @@ router.post('/:id/withdrawal-limit', authAdmin(), async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
-
-import { getSetting, setSetting } from '../../models/System.js';
-
-// GET /api/sellers/master-referral (Get platform master referral code)
-router.get('/master-referral', authAdmin('sellers'), async (req, res) => {
-  try {
-    const code = await getSetting('master_referral_code', 'REF-BAZARIO-2026');
-    res.json({ masterReferralCode: code });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// POST /api/sellers/master-referral (Update platform master referral code)
-router.post('/master-referral', authAdmin('sellers'), async (req, res) => {
-  try {
-    const { code } = req.body || {};
-    if (!code || !code.trim()) return res.status(400).json({ message: 'Referral code cannot be empty' });
-    const cleanCode = code.trim().toUpperCase();
-    await setSetting('master_referral_code', cleanCode);
-    audit(req, 'update', 'system_setting', null, `Updated master referral code to ${cleanCode}`);
-    res.json({ message: 'Master referral code updated successfully', masterReferralCode: cleanCode });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
 // POST /api/sellers/:id/approve (Admin approves a pending seller registration)
 router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
   try {
@@ -893,8 +1059,11 @@ router.delete('/:id/targets/:targetId', authAdmin('sellers'), async (req, res) =
 });
 
 // DELETE /api/sellers/:id (Admin deletes a seller)
-router.delete('/:id', authAdmin('sellers'), async (req, res) => {
+router.delete('/:id', authAdmin('sellers'), async (req, res, next) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return next();
+    }
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
@@ -914,122 +1083,6 @@ router.delete('/:id', authAdmin('sellers'), async (req, res) => {
     }
 
     res.json({ ok: true, message: `Seller "${storeName}" deleted successfully.` });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────
-// REFERRAL CODES MANAGEMENT ROUTES
-// ─────────────────────────────────────────────────────────────
-
-// GET /api/sellers/referrals (Admin lists all referral codes with live usage counts)
-router.get('/referrals', authAdmin('sellers'), async (req, res) => {
-  try {
-    const masterCode = await getSetting('master_referral_code', 'REF-BAZARIO-2026');
-    const customCodes = await ReferralCode.find().sort({ createdAt: -1 });
-
-    // Aggregate seller count for master code
-    const masterCount = await Seller.countDocuments({
-      $or: [
-        { 'securityDeposit.referralCode': masterCode },
-        { referralCode: masterCode },
-      ],
-    });
-
-    // Aggregate seller count for each custom code
-    const enrichedCodes = await Promise.all(
-      customCodes.map(async (rc) => {
-        const usageCount = await Seller.countDocuments({
-          $or: [
-            { 'securityDeposit.referralCode': rc.code },
-            { referralCode: rc.code },
-          ],
-        });
-        return {
-          ...rc.toObject(),
-          usageCount,
-        };
-      })
-    );
-
-    res.json({
-      masterReferralCode: masterCode,
-      masterUsageCount: masterCount,
-      referralCodes: enrichedCodes,
-    });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// POST /api/sellers/referrals (Admin creates a new custom referral code)
-router.post('/referrals', authAdmin('sellers'), async (req, res) => {
-  try {
-    const { code, description, commissionRate, bonusAmount, status } = req.body || {};
-    if (!code || !code.trim()) {
-      return res.status(400).json({ message: 'Referral code is required' });
-    }
-
-    const cleanCode = code.trim().toUpperCase();
-    const existing = await ReferralCode.findOne({ code: cleanCode });
-    if (existing) {
-      return res.status(400).json({ message: `Referral code "${cleanCode}" already exists` });
-    }
-
-    const newCode = new ReferralCode({
-      code: cleanCode,
-      description: (description || '').trim(),
-      commissionRate: commissionRate !== undefined && commissionRate !== '' ? Number(commissionRate) : null,
-      bonusAmount: bonusAmount !== undefined && bonusAmount !== '' ? Number(bonusAmount) : 0,
-      status: status === 'inactive' ? 'inactive' : 'active',
-      createdBy: req.admin?.name || 'Admin',
-    });
-
-    await newCode.save();
-
-    audit(req, 'create', 'referral_code', newCode._id, `Created referral code: ${cleanCode}`);
-
-    res.status(201).json({
-      message: `Referral code "${cleanCode}" created successfully! 🎉`,
-      referralCode: newCode,
-    });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// DELETE /api/sellers/referrals/:id (Admin deletes a referral code)
-router.delete('/referrals/:id', authAdmin('sellers'), async (req, res) => {
-  try {
-    const rc = await ReferralCode.findById(req.params.id);
-    if (!rc) return res.status(404).json({ message: 'Referral code not found' });
-
-    await ReferralCode.findByIdAndDelete(req.params.id);
-    audit(req, 'delete', 'referral_code', req.params.id, `Deleted referral code: ${rc.code}`);
-
-    res.json({ ok: true, message: `Referral code "${rc.code}" deleted successfully.` });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// PATCH /api/sellers/referrals/:id/toggle (Admin toggles referral code active / inactive status)
-router.patch('/referrals/:id/toggle', authAdmin('sellers'), async (req, res) => {
-  try {
-    const rc = await ReferralCode.findById(req.params.id);
-    if (!rc) return res.status(404).json({ message: 'Referral code not found' });
-
-    rc.status = rc.status === 'active' ? 'inactive' : 'active';
-    await rc.save();
-
-    audit(req, 'update', 'referral_code', rc._id, `Set status to ${rc.status} for ${rc.code}`);
-
-    res.json({
-      ok: true,
-      message: `Referral code "${rc.code}" is now ${rc.status.toUpperCase()}.`,
-      referralCode: rc,
-    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
