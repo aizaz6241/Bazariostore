@@ -53,6 +53,13 @@
       "description": "Super admin control portal",
       "url": "/admin",
       "icons": [{ "src": "/icon-192.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Bazario Finance",
+      "short_name": "Finance",
+      "description": "Confidential Business Finance & Partner Ledger",
+      "url": "/business-finance",
+      "icons": [{ "src": "/icon-192.svg", "sizes": "192x192" }]
     }
   ],
   "prefer_related_applications": false

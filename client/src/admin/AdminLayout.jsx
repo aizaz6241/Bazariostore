@@ -22,6 +22,7 @@ const NAV = [
   { to: '/admin/chat', icon: 'chat', label: 'Seller Support Desk', perm: 'chat' },
   { to: '/admin/backup', icon: 'database', label: 'Database Backup', perm: 'settings' },
   { to: '/admin/staff', icon: 'user', label: 'Staff & Team', perm: 'staff' },
+  { to: '/business-finance', icon: 'shield', label: '🔒 Partner Finance', superAdminOnly: true },
 ];
 
 export default function AdminLayout() {
@@ -36,7 +37,11 @@ export default function AdminLayout() {
       return { name: 'Admin', permissions: [] };
     }
   })();
-  const can = (perm) => !perm || admin.role === 'super_admin' || (admin.permissions || []).includes(perm);
+  const can = (n) => {
+    if (typeof n === 'string') return !n || admin.role === 'super_admin' || (admin.permissions || []).includes(n);
+    if (n?.superAdminOnly) return admin.role === 'super_admin';
+    return !n?.perm || admin.role === 'super_admin' || (admin.permissions || []).includes(n.perm);
+  };
 
   const [toasts, setToasts] = useState([]);
   const [notif, setNotif] = useState({ items: [], unread: 0 });
@@ -149,7 +154,7 @@ export default function AdminLayout() {
           <small>Super Admin Control Center</small>
         </div>
         <nav>
-          {NAV.filter((n) => can(n.perm)).map((n) => (
+          {NAV.filter(can).map((n) => (
             <NavLink
               key={n.to}
               to={n.to}

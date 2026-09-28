@@ -41,6 +41,7 @@ import chatRoutes, { handleAutoReply } from './routes/chat.js';
 import sellerRoutes from './routes/sellers.js';
 import treasuryRoutes from './routes/treasury.js';
 import backupRoutes from './routes/backup.js';
+import businessFinanceRoutes from './routes/businessFinance.js';
 import { createBackup, getBackupSettings, updateBackupSettings } from './services/backup.service.js';
 
 import { Conversation, Message } from './models/Chat.js';
@@ -114,6 +115,7 @@ app.use(['/api/chat', '/chat'], chatRoutes);
 app.use(['/api/sellers', '/sellers'], sellerRoutes);
 app.use(['/api/treasury', '/treasury'], treasuryRoutes);
 app.use(['/api/backup', '/backup'], backupRoutes);
+app.use(['/api/business-finance', '/business-finance'], businessFinanceRoutes);
 
 // Static uploads serving (both server/uploads and root/uploads)
 const serverUploadsDir = path.resolve(__dirname, '../uploads');
