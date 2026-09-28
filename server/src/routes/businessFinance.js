@@ -330,7 +330,19 @@ router.post('/p2p-convert', authPartner, async (req, res) => {
 // POST /api/business-finance/allocate-reserve — Quick Action: Adjust Reinvestment Reserve
 router.post('/allocate-reserve', authPartner, async (req, res) => {
   try {
-    const { action = 'allocate', usdtAmount, notes } = req.body || {}; // action: 'allocate' | 'release'
+    const { action = 'allocate', usdtAmount, targetReserve, notes } = req.body || {}; // action: 'allocate' | 'release' | 'set_target'
+
+    // Direct target reserve update (e.g. set to $200 USDT)
+    if (targetReserve !== undefined && targetReserve !== null && !isNaN(targetReserve)) {
+      const tgt = Math.max(0, Number(targetReserve));
+      await updateFinanceSettings({ reinvestmentReserveUsdt: tgt });
+      return res.status(200).json({
+        ok: true,
+        message: `Seller Reserve successfully set to $${tgt.toFixed(2)} USDT`,
+        targetReserve: tgt,
+      });
+    }
+
     const amt = Number(usdtAmount);
     if (!amt || amt <= 0) return res.status(400).json({ ok: false, message: 'Valid USDT amount is required' });
 

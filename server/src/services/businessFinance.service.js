@@ -419,7 +419,9 @@ export async function calculateFinanceOverview(filterDate = {}) {
 
   // Dynamic Reinvestment Reserve calculation:
   // Initial target or allocated reserve minus seller payouts funded
-  const baselineReserve = Number(settings.reinvestmentReserveUsdt) || 500;
+  const baselineReserve = (settings.reinvestmentReserveUsdt !== undefined && settings.reinvestmentReserveUsdt !== null && !isNaN(settings.reinvestmentReserveUsdt))
+    ? Number(settings.reinvestmentReserveUsdt)
+    : 200;
   const currentReinvestmentReserveUsdt = Math.min(
     currentBinanceUsdt,
     Math.max(0, baselineReserve + binanceReserveAllocated - binanceReserveReleased)

@@ -453,8 +453,11 @@ io.on('connection', (socket) => {
   });
 });
 
-process.on('unhandledRejection', (err) => console.error('unhandledRejection:', err?.message || err));
-process.on('uncaughtException', (err) => console.error('uncaughtException:', err?.message || err));
+process.on('unhandledRejection', (err) => console.error('unhandledRejection:', err?.stack || err?.message || err));
+process.on('uncaughtException', (err) => console.error('uncaughtException:', err?.stack || err?.message || err));
+process.on('exit', (code) => console.log(`[Server Process] Exited with code: ${code}`));
+process.on('SIGTERM', () => { console.log('[Server Process] Received SIGTERM'); process.exit(0); });
+process.on('SIGINT', () => { console.log('[Server Process] Received SIGINT'); process.exit(0); });
 
 const PORT = process.env.PORT || 5000;
 
