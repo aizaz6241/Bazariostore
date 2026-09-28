@@ -169,6 +169,7 @@ router.post('/transactions', authPartner, async (req, res) => {
       walletSource,
       walletDestination,
       partnerName,
+      paidBy = 'both_50_50',
       description,
       date,
       notes,
@@ -216,6 +217,7 @@ router.post('/transactions', authPartner, async (req, res) => {
       walletSource: finalWalletSource,
       walletDestination: finalWalletDest,
       partnerName: partnerName || '',
+      paidBy: paidBy || 'both_50_50',
       description: description.trim(),
       date: date ? new Date(date) : new Date(),
       notes: notes || '',
@@ -245,6 +247,7 @@ router.put('/transactions/:id', authPartner, async (req, res) => {
       walletSource,
       walletDestination,
       partnerName,
+      paidBy,
       description,
       date,
       notes,
@@ -257,6 +260,7 @@ router.put('/transactions/:id', authPartner, async (req, res) => {
     if (date) tx.date = new Date(date);
     if (notes !== undefined) tx.notes = notes;
     if (partnerName !== undefined) tx.partnerName = partnerName;
+    if (paidBy !== undefined) tx.paidBy = paidBy;
     if (walletSource) tx.walletSource = walletSource;
     if (walletDestination) tx.walletDestination = walletDestination;
 

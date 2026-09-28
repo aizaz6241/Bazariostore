@@ -9,22 +9,22 @@ export const DEFAULT_FINANCE_SETTINGS = {
   securityPin: '7860',
   defaultUsdtRate: 278.5,
   autoSyncBazario: true,
-  reinvestmentReserveUsdt: 500, // Initial USDT reserve pool target
+  reinvestmentReserveUsdt: 200, // Reinvestment pool kept in Binance for sellers
   partner1: {
     id: 'p1',
-    name: 'Aizaz (You)',
+    name: 'Aizaz',
     sharePercent: 50,
     initialCapital: 0,
     phone: '',
-    role: 'Managing Partner',
+    role: 'Partner',
   },
   partner2: {
     id: 'p2',
-    name: 'Business Partner',
+    name: 'Abdullah',
     sharePercent: 50,
     initialCapital: 0,
     phone: '',
-    role: 'Investment Partner',
+    role: 'Partner',
   },
 };
 
@@ -35,7 +35,15 @@ export async function getFinanceSettings() {
       await setSetting(SETTINGS_KEY, DEFAULT_FINANCE_SETTINGS);
       return DEFAULT_FINANCE_SETTINGS;
     }
-    return { ...DEFAULT_FINANCE_SETTINGS, ...saved };
+    const settings = { ...DEFAULT_FINANCE_SETTINGS, ...saved };
+    // Auto-normalize partner names for Aizaz & Abdullah
+    if (!settings.partner2?.name || settings.partner2.name === 'Business Partner') {
+      settings.partner2.name = 'Abdullah';
+    }
+    if (!settings.partner1?.name || settings.partner1.name === 'Aizaz (You)') {
+      settings.partner1.name = 'Aizaz';
+    }
+    return settings;
   } catch (err) {
     console.error('[FinanceSettings Error]', err.message);
     return DEFAULT_FINANCE_SETTINGS;
@@ -242,6 +250,13 @@ export async function calculateFinanceOverview(filterDate = {}) {
   let partner2InvestedPKR = settings.partner2?.initialCapital || 0;
   let partner1DrawingsPKR = 0;
   let partner2DrawingsPKR = 0;
+  let partner1DrawingsUSDT = 0;
+  let partner2DrawingsUSDT = 0;
+
+  // ─── OFFICE EXPENSES (FOOD, CHAI, SUPPLIES/TABLE, BILLS) ───
+  let totalOfficeExpensesPKR = 0;
+  let aizazPaidExpensesPKR = 0;
+  let abdullahPaidExpensesPKR = 0;
 
   // ─── 4. PERIOD REVENUE & EXPENSES (P&L) ───
   let periodRevenuePKR = 0;
@@ -297,8 +312,10 @@ export async function calculateFinanceOverview(filterDate = {}) {
       const isP1 = tx.partnerName?.toLowerCase().includes('aizaz') || tx.partnerName === settings.partner1?.name;
       if (isP1) {
         partner1DrawingsPKR += pkrAmt;
+        partner1DrawingsUSDT += usdtAmt;
       } else {
         partner2DrawingsPKR += pkrAmt;
+        partner2DrawingsUSDT += usdtAmt;
       }
 
       if (tx.walletSource === 'binance_usdt' || tx.walletSource === 'binance_reserve') {
@@ -340,6 +357,21 @@ export async function calculateFinanceOverview(filterDate = {}) {
         binanceUsdtOtherOutflows += usdtAmt;
       } else if (tx.walletSource !== 'partner_pocket') {
         pkrExpenses += pkrAmt;
+      }
+
+      // Track Office Expenses (Food, Chai, Office Table/Supplies, Bills)
+      if (tx.category !== 'seller_withdrawal' && tx.category !== 'reinvestment') {
+        totalOfficeExpensesPKR += pkrAmt;
+        const pb = (tx.paidBy || '').toLowerCase();
+        if (pb.includes('aizaz')) {
+          aizazPaidExpensesPKR += pkrAmt;
+        } else if (pb.includes('abdullah')) {
+          abdullahPaidExpensesPKR += pkrAmt;
+        } else {
+          // Default: split evenly 50/50
+          aizazPaidExpensesPKR += pkrAmt * 0.5;
+          abdullahPaidExpensesPKR += pkrAmt * 0.5;
+        }
       }
     }
   }
@@ -415,6 +447,43 @@ export async function calculateFinanceOverview(filterDate = {}) {
   const p1Share = (Number(settings.partner1?.sharePercent) || 50) / 100;
   const p2Share = (Number(settings.partner2?.sharePercent) || 50) / 100;
 
+  // Distributable Profit Pool (Binance USDT minus Reinvestment Reserve)
+  const profitPoolUSDT = Math.max(0, currentBinanceUsdt - currentReinvestmentReserveUsdt);
+  const profitPoolPKR = Math.round(profitPoolUSDT * currentRate);
+
+  // 50/50 Split of Distributable Profit Pool
+  const partner1ProfitShareUSDT = Number((profitPoolUSDT * p1Share).toFixed(2));
+  const partner2ProfitShareUSDT = Number((profitPoolUSDT * p2Share).toFixed(2));
+
+  // Remaining USDT sitting in Binance Wallet for each partner
+  const partner1RemainingUSDT = Math.max(0, Number((partner1ProfitShareUSDT - partner1DrawingsUSDT).toFixed(2)));
+  const partner2RemainingUSDT = Math.max(0, Number((partner2ProfitShareUSDT - partner2DrawingsUSDT).toFixed(2)));
+
+  // Office Expenses (food, tea, table/furniture, bills) 50/50 breakdown
+  const aizazOfficeExpenseSharePKR = Math.round(totalOfficeExpensesPKR * 0.5);
+  const abdullahOfficeExpenseSharePKR = Math.round(totalOfficeExpensesPKR * 0.5);
+
+  let officeExpenseSettlement = {
+    status: 'settled',
+    message: 'Hisaab Barabar: All expenses split evenly 50/50',
+    differencePKR: 0,
+  };
+
+  const expDiff = Math.abs(aizazPaidExpensesPKR - abdullahPaidExpensesPKR) / 2;
+  if (aizazPaidExpensesPKR > abdullahPaidExpensesPKR) {
+    officeExpenseSettlement = {
+      status: 'abdullah_owes',
+      message: `Abdullah owes Aizaz ₨ ${Math.round(expDiff).toLocaleString('en-US')}`,
+      differencePKR: Math.round(expDiff),
+    };
+  } else if (abdullahPaidExpensesPKR > aizazPaidExpensesPKR) {
+    officeExpenseSettlement = {
+      status: 'aizaz_owes',
+      message: `Aizaz owes Abdullah ₨ ${Math.round(expDiff).toLocaleString('en-US')}`,
+      differencePKR: Math.round(expDiff),
+    };
+  }
+
   const partner1ProfitSharePKR = Math.round(allTimeNetProfitPKR * p1Share);
   const partner2ProfitSharePKR = Math.round(allTimeNetProfitPKR * p2Share);
 
@@ -449,6 +518,8 @@ export async function calculateFinanceOverview(filterDate = {}) {
       binance: {
         totalUSDT: Number(currentBinanceUsdt.toFixed(2)),
         reinvestmentReserveUSDT: Number(currentReinvestmentReserveUsdt.toFixed(2)),
+        profitPoolUSDT: Number(profitPoolUSDT.toFixed(2)),
+        profitPoolPKR,
         availableUSDT: Number(availableSurplusUsdt.toFixed(2)),
         totalPKREquivalent: Math.round(currentBinanceUsdt * currentRate),
         reservePKREquivalent: Math.round(currentReinvestmentReserveUsdt * currentRate),
@@ -484,22 +555,42 @@ export async function calculateFinanceOverview(filterDate = {}) {
       sellerPayoutsTotal: periodSellerPayoutsPKR,
       miscTotal: periodMiscExpensePKR,
     },
+    officeExpenses: {
+      totalPKR: Math.round(totalOfficeExpensesPKR),
+      aizazSharePKR: aizazOfficeExpenseSharePKR,
+      abdullahSharePKR: abdullahOfficeExpenseSharePKR,
+      aizazPaidPKR: Math.round(aizazPaidExpensesPKR),
+      abdullahPaidPKR: Math.round(abdullahPaidExpensesPKR),
+      settlement: officeExpenseSettlement,
+    },
     partners: {
       partner1: {
         name: settings.partner1?.name || 'Aizaz',
         sharePercent: settings.partner1?.sharePercent || 50,
+        profitShareUSDT: partner1ProfitShareUSDT,
+        profitSharePKR: Math.round(partner1ProfitShareUSDT * currentRate),
+        withdrawnUSDT: Number(partner1DrawingsUSDT.toFixed(2)),
+        withdrawnPKR: Math.round(partner1DrawingsPKR),
+        remainingInBinanceUSDT: partner1RemainingUSDT,
+        remainingInBinancePKR: Math.round(partner1RemainingUSDT * currentRate),
+        officeExpenseSharePKR: aizazOfficeExpenseSharePKR,
+        officeExpensesPaidPKR: Math.round(aizazPaidExpensesPKR),
         investedPKR: Math.round(partner1InvestedPKR),
-        profitSharePKR: Math.round(partner1ProfitSharePKR),
-        drawingsPKR: Math.round(partner1DrawingsPKR),
         netBalancePKR: Math.round(partner1BalancePKR),
         netBalanceUSDT: Number((partner1BalancePKR / currentRate).toFixed(2)),
       },
       partner2: {
-        name: settings.partner2?.name || 'Partner',
+        name: settings.partner2?.name || 'Abdullah',
         sharePercent: settings.partner2?.sharePercent || 50,
+        profitShareUSDT: partner2ProfitShareUSDT,
+        profitSharePKR: Math.round(partner2ProfitShareUSDT * currentRate),
+        withdrawnUSDT: Number(partner2DrawingsUSDT.toFixed(2)),
+        withdrawnPKR: Math.round(partner2DrawingsPKR),
+        remainingInBinanceUSDT: partner2RemainingUSDT,
+        remainingInBinancePKR: Math.round(partner2RemainingUSDT * currentRate),
+        officeExpenseSharePKR: abdullahOfficeExpenseSharePKR,
+        officeExpensesPaidPKR: Math.round(abdullahPaidExpensesPKR),
         investedPKR: Math.round(partner2InvestedPKR),
-        profitSharePKR: Math.round(partner2ProfitSharePKR),
-        drawingsPKR: Math.round(partner2DrawingsPKR),
         netBalancePKR: Math.round(partner2BalancePKR),
         netBalanceUSDT: Number((partner2BalancePKR / currentRate).toFixed(2)),
       },

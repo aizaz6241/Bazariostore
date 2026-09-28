@@ -248,18 +248,50 @@ export default function BusinessFinance() {
   const binance = wallets.binance || {};
   const pkrWallet = wallets.pkr || {};
   const performance = overview?.performance || {};
+  const officeExpenses = overview?.officeExpenses || {
+    totalPKR: 0,
+    aizazSharePKR: 0,
+    abdullahSharePKR: 0,
+    settlement: { status: 'settled', message: 'Hisaab Barabar: All expenses split evenly 50/50' },
+  };
   const partners = overview?.partners || {};
-  const p1 = partners.partner1 || { name: 'Aizaz', sharePercent: 50, investedPKR: 0, netBalancePKR: 0, drawingsPKR: 0 };
-  const p2 = partners.partner2 || { name: 'Partner', sharePercent: 50, investedPKR: 0, netBalancePKR: 0, drawingsPKR: 0 };
+  const p1 = partners.partner1 || {
+    name: 'Aizaz',
+    sharePercent: 50,
+    profitShareUSDT: 0,
+    profitSharePKR: 0,
+    withdrawnUSDT: 0,
+    withdrawnPKR: 0,
+    remainingInBinanceUSDT: 0,
+    remainingInBinancePKR: 0,
+    officeExpenseSharePKR: 0,
+  };
+  const p2 = partners.partner2 || {
+    name: 'Abdullah',
+    sharePercent: 50,
+    profitShareUSDT: 0,
+    profitSharePKR: 0,
+    withdrawnUSDT: 0,
+    withdrawnPKR: 0,
+    remainingInBinanceUSDT: 0,
+    remainingInBinancePKR: 0,
+    officeExpenseSharePKR: 0,
+  };
   const currentRate = overview?.exchangeRate || settings?.defaultUsdtRate || 278.5;
 
-  // Filter transactions for table
+  // Filter office expense transactions
+  const officeExpenseTxs = transactions.filter(
+    (tx) => tx.type === 'expense' && tx.category !== 'seller_withdrawal' && tx.category !== 'reinvestment'
+  );
+
+  // Filter transactions for full ledger table
   const filteredTxs = transactions.filter((tx) => {
     if (txTypeFilter !== 'all') {
-      if (txTypeFilter === 'expense' && tx.type !== 'expense') return false;
+      if (txTypeFilter === 'office_expense' && (tx.type !== 'expense' || tx.category === 'seller_withdrawal' || tx.category === 'reinvestment')) return false;
       if (txTypeFilter === 'income' && tx.type !== 'income') return false;
+      if (txTypeFilter === 'drawing' && tx.type !== 'drawing') return false;
+      if (txTypeFilter === 'seller_payout' && tx.category !== 'seller_withdrawal' && tx.type !== 'reserve_transfer') return false;
       if (txTypeFilter === 'conversion' && tx.type !== 'conversion') return false;
-      if (txTypeFilter === 'partner' && !['investment', 'drawing'].includes(tx.type)) return false;
       if (txTypeFilter === 'synced' && !tx.isAutoSynced) return false;
     }
     if (searchQuery.trim()) {
@@ -305,7 +337,7 @@ export default function BusinessFinance() {
             <div className="bf-brand-icon">💎</div>
             <div>
               <h1 className="bf-brand-title">Bazario Finance</h1>
-              <p className="bf-brand-subtitle">Executive Partner Hub</p>
+              <p className="bf-brand-subtitle">Aizaz & Abdullah • 50/50 Partnership</p>
             </div>
           </div>
 
@@ -388,384 +420,449 @@ export default function BusinessFinance() {
                 Add Bazario Finance to Mobile Home Screen
               </div>
               <div style={{ fontSize: 11, color: 'var(--bf-text-muted)' }}>
-                Opens directly like a private finance app with PIN lock.
+                Opens directly like a private finance app with confidential PIN lock.
               </div>
             </div>
           </div>
           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--bf-blue)' }}>Install →</span>
         </div>
 
-        {/* Date Filter Bar */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 20 }}>
-          <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
-            {[
-              { id: 'today', label: 'Today' },
-              { id: 'week', label: 'This Week' },
-              { id: 'month', label: 'This Month' },
-              { id: 'all', label: 'All Time' },
-              { id: 'custom', label: 'Custom' },
-            ].map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className={`bf-filter-chip ${dateFilter === p.id ? 'active' : ''}`}
-                onClick={() => setDateFilter(p.id)}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-
-          {dateFilter === 'custom' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="date"
-                className="bf-input"
-                style={{ padding: '6px 10px', fontSize: 12, width: 140 }}
-                value={customRange.from}
-                onChange={(e) => setCustomRange({ ...customRange, from: e.target.value })}
-              />
-              <span style={{ color: 'var(--bf-text-dim)' }}>→</span>
-              <input
-                type="date"
-                className="bf-input"
-                style={{ padding: '6px 10px', fontSize: 12, width: 140 }}
-                value={customRange.to}
-                onChange={(e) => setCustomRange({ ...customRange, to: e.target.value })}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* ─── 1. PRIMARY ASSET & LIQUIDITY KPI GRID ───────────────── */}
-        <div className="bf-kpi-grid">
-          {/* Card 1: Binance USDT Wallet */}
-          <div className="bf-card gold-accent">
+        {/* ─── 1. THE BIG PICTURE: BINANCE & 50/50 PROFIT FORMULA ──── */}
+        <div className="bf-formula-row">
+          {/* Card A: Total in Binance */}
+          <div className="bf-card gold-accent" style={{ padding: 18 }}>
             <div className="bf-card-header">
               <span className="bf-card-label">
                 <span style={{ color: 'var(--bf-gold)' }}>💎</span>
-                Binance USDT Wallet
+                Total in Binance USDT
               </span>
-              <span className="bf-card-pill gold">Crypto Reserve</span>
+              <span className="bf-card-pill gold">Crypto Wallet</span>
             </div>
-
-            <div className="bf-card-value">
-              ${(binance.totalUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} <small style={{ fontSize: 16, color: 'var(--bf-gold)' }}>USDT</small>
+            <div className="bf-card-value" style={{ fontSize: 26, margin: '8px 0 2px' }}>
+              ${(binance.totalUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              <small style={{ fontSize: 14, color: 'var(--bf-gold)', marginLeft: 4 }}>USDT</small>
             </div>
-            <div className="bf-card-sub">
+            <div className="bf-card-sub" style={{ fontSize: 12 }}>
               <span>≈ ₨ {(binance.totalPKREquivalent || 0).toLocaleString('en-US')} PKR</span>
             </div>
-
-            {/* Reinvestment Reserve Progress Bar */}
-            <div style={{ marginTop: 14 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 700 }}>
-                <span style={{ color: 'var(--bf-gold)' }}>🛡️ Reinvestment Reserve:</span>
-                <span style={{ color: '#fff' }}>${binance.reinvestmentReserveUSDT || 0} USDT</span>
-              </div>
-              <div className="bf-progress-bar">
-                <div
-                  className="bf-progress-fill gold"
-                  style={{
-                    width: `${Math.min(
-                      100,
-                      ((binance.reinvestmentReserveUSDT || 0) / Math.max(1, binance.totalUSDT || 1)) * 100
-                    )}%`,
-                  }}
-                />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--bf-text-dim)' }}>
-                <span>Free Surplus: ${(binance.availableUSDT || 0).toFixed(2)}</span>
-                <span>For Seller Payouts</span>
-              </div>
-            </div>
-
-            <div className="bf-card-actions">
+            <div style={{ marginTop: 12 }}>
               <button
                 type="button"
                 className="bf-btn-sm gold"
-                onClick={() => setP2pModalOpen(true)}
+                onClick={() => {
+                  setTxModalData({ type: 'income', currency: 'USDT', category: 'seller_deposit' });
+                  setTxModalOpen(true);
+                }}
               >
-                <span>🔄 Cashout to PKR</span>
+                <span>+ Add USDT / Income</span>
               </button>
+            </div>
+          </div>
+
+          {/* Minus Operator */}
+          <div className="bf-formula-operator">➖</div>
+
+          {/* Card B: Seller Reinvestment Reserve */}
+          <div className="bf-card" style={{ padding: 18, border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+            <div className="bf-card-header">
+              <span className="bf-card-label">
+                <span style={{ color: 'var(--bf-gold)' }}>🛡️</span>
+                Seller Reserve (Reinvestment)
+              </span>
+              <span className="bf-card-pill" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fcd34d' }}>
+                For Sellers
+              </span>
+            </div>
+            <div className="bf-card-value" style={{ fontSize: 26, margin: '8px 0 2px', color: '#fcd34d' }}>
+              ${(binance.reinvestmentReserveUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              <small style={{ fontSize: 14, color: 'var(--bf-text-dim)', marginLeft: 4 }}>USDT</small>
+            </div>
+            <div className="bf-card-sub" style={{ fontSize: 12 }}>
+              <span>≈ ₨ {(binance.reservePKREquivalent || 0).toLocaleString('en-US')} PKR</span>
+            </div>
+            <div style={{ marginTop: 12 }}>
               <button
                 type="button"
                 className="bf-btn-sm"
                 onClick={() => setReserveModalOpen(true)}
               >
-                <span>🛡️ Adjust Reserve</span>
+                <span>⚙️ Adjust Reserve</span>
               </button>
             </div>
           </div>
 
-          {/* Card 2: Liquid PKR Cash & Bank */}
-          <div className="bf-card green-accent">
+          {/* Equals Operator */}
+          <div className="bf-formula-operator">🟰</div>
+
+          {/* Card C: Distributable Profit Pool */}
+          <div className="bf-card green-accent" style={{ padding: 18 }}>
             <div className="bf-card-header">
               <span className="bf-card-label">
-                <span style={{ color: 'var(--bf-green)' }}>💵</span>
-                PKR Liquid Funds
+                <span style={{ color: 'var(--bf-green)' }}>💰</span>
+                Net Profit Pool (50/50 Split)
               </span>
-              <span className="bf-card-pill green">Office Cash & Bank</span>
+              <span className="bf-card-pill green">Distributable</span>
             </div>
-
-            <div className="bf-card-value">
-              ₨ {(pkrWallet.balancePKR || 0).toLocaleString('en-US')}
+            <div className="bf-card-value" style={{ fontSize: 26, margin: '8px 0 2px', color: '#34d399' }}>
+              ${(binance.profitPoolUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              <small style={{ fontSize: 14, color: '#34d399', marginLeft: 4 }}>USDT</small>
             </div>
-            <div className="bf-card-sub">
-              <span>≈ ${(Number(pkrWallet.balancePKR || 0) / currentRate).toFixed(2)} USDT</span>
+            <div className="bf-card-sub" style={{ fontSize: 12 }}>
+              <span>≈ ₨ {(binance.profitPoolPKR || 0).toLocaleString('en-US')} PKR</span>
             </div>
-
-            <div style={{ marginTop: 14, fontSize: 12, color: 'var(--bf-text-muted)', lineHeight: 1.6 }}>
-              <div>• Funded via Binance P2P cashouts & capital</div>
-              <div>• Ready for office food, chai, rent & daily bills</div>
-            </div>
-
-            <div className="bf-card-actions">
-              <button
-                type="button"
-                className="bf-btn-sm green"
-                onClick={() => {
-                  setTxModalData({ type: 'expense', currency: 'PKR', category: 'office_food' });
-                  setTxModalOpen(true);
-                }}
-              >
-                <span>🍔 Log Office Expense</span>
-              </button>
-              <button
-                type="button"
-                className="bf-btn-sm"
-                onClick={() => {
-                  setTxModalData({ type: 'income', currency: 'PKR' });
-                  setTxModalOpen(true);
-                }}
-              >
-                <span>+ Add Revenue</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Card 3: Business Net Profit / Performance */}
-          <div className="bf-card purple-accent">
-            <div className="bf-card-header">
-              <span className="bf-card-label">
-                <span style={{ color: 'var(--bf-purple)' }}>📈</span>
-                Net Business Profit
-              </span>
-              <span className="bf-card-pill purple">
-                {dateFilter === 'all' ? 'All Time' : 'Selected Period'}
-              </span>
-            </div>
-
-            <div
-              className="bf-card-value"
-              style={{
-                color: (performance.periodNetProfitPKR || 0) >= 0 ? '#34d399' : '#f87171',
-              }}
-            >
-              ₨ {(performance.periodNetProfitPKR || 0).toLocaleString('en-US')}
-            </div>
-            <div className="bf-card-sub">
-              <span>
-                ≈ ${(performance.periodNetProfitUSDT || 0).toLocaleString('en-US')} USDT (Margin:{' '}
-                <b>{performance.profitMarginPercent || 0}%</b>)
-              </span>
-            </div>
-
-            <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, background: 'rgba(0,0,0,0.2)', padding: 10, borderRadius: 10 }}>
-              <div>
-                <span style={{ fontSize: 11, color: 'var(--bf-text-dim)', textTransform: 'uppercase' }}>Inflow / Revenue</span>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#34d399' }}>
-                  ₨ {(performance.periodRevenuePKR || 0).toLocaleString('en-US')}
-                </div>
-              </div>
-              <div>
-                <span style={{ fontSize: 11, color: 'var(--bf-text-dim)', textTransform: 'uppercase' }}>Expenses</span>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#f87171' }}>
-                  ₨ {(performance.periodExpensePKR || 0).toLocaleString('en-US')}
-                </div>
-              </div>
-            </div>
-
-            <div className="bf-card-actions">
-              <button
-                type="button"
-                className="bf-btn-sm"
-                onClick={() => setActiveTab('analytics')}
-              >
-                <span>📊 View Breakdown</span>
-              </button>
+            <div style={{ marginTop: 12, fontSize: 11, color: 'var(--bf-text-dim)', fontWeight: 600 }}>
+              Split: 50% Aizaz (${(p1.profitShareUSDT || 0).toFixed(2)}) • 50% Abdullah (${(p2.profitShareUSDT || 0).toFixed(2)})
             </div>
           </div>
         </div>
 
-        {/* ─── 2. PARTNER EQUITY & BALANCE SECTION ────────────────── */}
+        {/* ─── 2. PARTNERS 50/50 SPLIT (AIZAZ & ABDULLAH) ──────────── */}
         <div className="bf-section-title">
-          <span>👥 Partners Capital & Profit Balance</span>
-          <span style={{ fontSize: 13, color: 'var(--bf-text-dim)', fontWeight: 600 }}>
-            Total Capital: ₨ {(partners.totalCapitalInvestedPKR || 0).toLocaleString('en-US')}
+          <span>👥 Partners 50/50 Share & Wallet Balances</span>
+          <span style={{ fontSize: 12, color: 'var(--bf-text-dim)', fontWeight: 600 }}>
+            Profit Split: 50% Aizaz • 50% Abdullah
           </span>
         </div>
 
-        <div className="bf-partners-grid">
-          {/* Partner 1 Card (You / Aizaz) */}
+        <div className="bf-partners-grid" style={{ marginBottom: 28 }}>
+          {/* Partner 1 Card (Aizaz) */}
           <div className="bf-partner-card">
             <div className="bf-partner-header">
               <div className="bf-partner-avatar p1">
                 {(p1.name || 'A')[0].toUpperCase()}
               </div>
               <div>
-                <h3 className="bf-partner-name">{p1.name || 'Aizaz (You)'}</h3>
+                <h3 className="bf-partner-name">{p1.name || 'Aizaz'} (You)</h3>
                 <p className="bf-partner-role">
-                  Managing Partner • <b>{p1.sharePercent || 50}% Profit Share</b>
+                  Managing Partner • <b>50% Profit Share</b>
                 </p>
               </div>
             </div>
 
             <div className="bf-partner-stats-grid">
               <div>
-                <div className="bf-pstat-label">Capital Invested</div>
-                <div className="bf-pstat-val">₨ {(p1.investedPKR || 0).toLocaleString('en-US')}</div>
-              </div>
-              <div>
-                <div className="bf-pstat-label">Profit Earned ({p1.sharePercent}%)</div>
+                <div className="bf-pstat-label">50% Profit Share</div>
                 <div className="bf-pstat-val" style={{ color: '#34d399' }}>
-                  ₨ {(p1.profitSharePKR || 0).toLocaleString('en-US')}
+                  ${(p1.profitShareUSDT || 0).toLocaleString('en-US')} <small style={{ fontSize: 11, color: 'var(--bf-text-dim)' }}>USDT</small>
                 </div>
+                <div style={{ fontSize: 11, color: 'var(--bf-text-dim)' }}>₨ {(p1.profitSharePKR || 0).toLocaleString('en-US')}</div>
               </div>
+
               <div>
-                <div className="bf-pstat-label">Personal Drawings</div>
+                <div className="bf-pstat-label">Withdrawn to Cash</div>
                 <div className="bf-pstat-val" style={{ color: '#f87171' }}>
-                  ₨ {(p1.drawingsPKR || 0).toLocaleString('en-US')}
+                  -${(p1.withdrawnUSDT || 0).toLocaleString('en-US')} <small style={{ fontSize: 11, color: 'var(--bf-text-dim)' }}>USDT</small>
                 </div>
+                <div style={{ fontSize: 11, color: 'var(--bf-text-dim)' }}>₨ {(p1.withdrawnPKR || 0).toLocaleString('en-US')}</div>
               </div>
+
               <div>
-                <div className="bf-pstat-label">USDT Equivalent</div>
-                <div className="bf-pstat-val" style={{ color: 'var(--bf-gold)' }}>
-                  ${(p1.netBalanceUSDT || 0).toLocaleString('en-US')}
+                <div className="bf-pstat-label">50% Office Expense</div>
+                <div className="bf-pstat-val" style={{ color: '#fb923c' }}>
+                  -₨ {(p1.officeExpenseSharePKR || 0).toLocaleString('en-US')}
                 </div>
+                <div style={{ fontSize: 11, color: 'var(--bf-text-dim)' }}>From cash</div>
+              </div>
+
+              <div>
+                <div className="bf-pstat-label">Capital Invested</div>
+                <div className="bf-pstat-val">
+                  ₨ {(p1.investedPKR || 0).toLocaleString('en-US')}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--bf-text-dim)' }}>Initial funds</div>
               </div>
             </div>
 
-            {/* Current Available Partner Balance */}
-            <div className="bf-partner-balance-box">
+            {/* Current Available in Binance Wallet for Aizaz */}
+            <div className="bf-glow-box">
               <div>
-                <div className="bf-pbal-title">CURRENT AVAILABLE BALANCE:</div>
-                <div className="bf-pbal-amount">
-                  ₨ {(p1.netBalancePKR || 0).toLocaleString('en-US')}
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--bf-gold)', letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                  ⚡ STILL IN BINANCE WALLET:
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: '#fff', marginTop: 2 }}>
+                  ${(p1.remainingInBinanceUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} <small style={{ fontSize: 14, color: 'var(--bf-gold)' }}>USDT</small>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--bf-text-dim)', marginTop: 2 }}>
+                  ≈ ₨ {(p1.remainingInBinancePKR || 0).toLocaleString('en-US')} PKR
                 </div>
               </div>
-              <div className="bf-pbal-usdt">
-                ${(p1.netBalanceUSDT || 0).toLocaleString('en-US')} USDT
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
               <button
                 type="button"
-                className="bf-btn-sm"
+                className="bf-btn-sm gold"
+                style={{ padding: '10px 16px', fontSize: 13 }}
                 onClick={() => {
-                  setTxModalData({ type: 'investment', partnerName: p1.name, currency: 'PKR' });
+                  setTxModalData({ type: 'drawing', partnerName: p1.name, currency: 'USDT', walletSource: 'binance_usdt' });
                   setTxModalOpen(true);
                 }}
               >
-                <span>+ Invest Capital</span>
-              </button>
-              <button
-                type="button"
-                className="bf-btn-sm"
-                onClick={() => {
-                  setTxModalData({ type: 'drawing', partnerName: p1.name, currency: 'PKR' });
-                  setTxModalOpen(true);
-                }}
-              >
-                <span>💸 Draw Profit</span>
+                <span>💸 Withdraw Share</span>
               </button>
             </div>
           </div>
 
-          {/* Partner 2 Card */}
+          {/* Partner 2 Card (Abdullah) */}
           <div className="bf-partner-card">
             <div className="bf-partner-header">
               <div className="bf-partner-avatar p2">
-                {(p2.name || 'P')[0].toUpperCase()}
+                {(p2.name || 'A')[0].toUpperCase()}
               </div>
               <div>
-                <h3 className="bf-partner-name">{p2.name || 'Business Partner'}</h3>
+                <h3 className="bf-partner-name">{p2.name || 'Abdullah'}</h3>
                 <p className="bf-partner-role">
-                  Investment Partner • <b>{p2.sharePercent || 50}% Profit Share</b>
+                  Partner • <b>50% Profit Share</b>
                 </p>
               </div>
             </div>
 
             <div className="bf-partner-stats-grid">
               <div>
-                <div className="bf-pstat-label">Capital Invested</div>
-                <div className="bf-pstat-val">₨ {(p2.investedPKR || 0).toLocaleString('en-US')}</div>
-              </div>
-              <div>
-                <div className="bf-pstat-label">Profit Earned ({p2.sharePercent}%)</div>
+                <div className="bf-pstat-label">50% Profit Share</div>
                 <div className="bf-pstat-val" style={{ color: '#34d399' }}>
-                  ₨ {(p2.profitSharePKR || 0).toLocaleString('en-US')}
+                  ${(p2.profitShareUSDT || 0).toLocaleString('en-US')} <small style={{ fontSize: 11, color: 'var(--bf-text-dim)' }}>USDT</small>
                 </div>
+                <div style={{ fontSize: 11, color: 'var(--bf-text-dim)' }}>₨ {(p2.profitSharePKR || 0).toLocaleString('en-US')}</div>
               </div>
+
               <div>
-                <div className="bf-pstat-label">Personal Drawings</div>
+                <div className="bf-pstat-label">Withdrawn to Cash</div>
                 <div className="bf-pstat-val" style={{ color: '#f87171' }}>
-                  ₨ {(p2.drawingsPKR || 0).toLocaleString('en-US')}
+                  -${(p2.withdrawnUSDT || 0).toLocaleString('en-US')} <small style={{ fontSize: 11, color: 'var(--bf-text-dim)' }}>USDT</small>
                 </div>
+                <div style={{ fontSize: 11, color: 'var(--bf-text-dim)' }}>₨ {(p2.withdrawnPKR || 0).toLocaleString('en-US')}</div>
               </div>
+
               <div>
-                <div className="bf-pstat-label">USDT Equivalent</div>
-                <div className="bf-pstat-val" style={{ color: 'var(--bf-gold)' }}>
-                  ${(p2.netBalanceUSDT || 0).toLocaleString('en-US')}
+                <div className="bf-pstat-label">50% Office Expense</div>
+                <div className="bf-pstat-val" style={{ color: '#fb923c' }}>
+                  -₨ {(p2.officeExpenseSharePKR || 0).toLocaleString('en-US')}
                 </div>
+                <div style={{ fontSize: 11, color: 'var(--bf-text-dim)' }}>From cash</div>
+              </div>
+
+              <div>
+                <div className="bf-pstat-label">Capital Invested</div>
+                <div className="bf-pstat-val">
+                  ₨ {(p2.investedPKR || 0).toLocaleString('en-US')}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--bf-text-dim)' }}>Initial funds</div>
               </div>
             </div>
 
-            {/* Current Available Partner Balance */}
-            <div className="bf-partner-balance-box">
+            {/* Current Available in Binance Wallet for Abdullah */}
+            <div className="bf-glow-box">
               <div>
-                <div className="bf-pbal-title">CURRENT AVAILABLE BALANCE:</div>
-                <div className="bf-pbal-amount">
-                  ₨ {(p2.netBalancePKR || 0).toLocaleString('en-US')}
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--bf-gold)', letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                  ⚡ STILL IN BINANCE WALLET:
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: '#fff', marginTop: 2 }}>
+                  ${(p2.remainingInBinanceUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} <small style={{ fontSize: 14, color: 'var(--bf-gold)' }}>USDT</small>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--bf-text-dim)', marginTop: 2 }}>
+                  ≈ ₨ {(p2.remainingInBinancePKR || 0).toLocaleString('en-US')} PKR
                 </div>
               </div>
-              <div className="bf-pbal-usdt">
-                ${(p2.netBalanceUSDT || 0).toLocaleString('en-US')} USDT
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
               <button
                 type="button"
-                className="bf-btn-sm"
+                className="bf-btn-sm gold"
+                style={{ padding: '10px 16px', fontSize: 13 }}
                 onClick={() => {
-                  setTxModalData({ type: 'investment', partnerName: p2.name, currency: 'PKR' });
+                  setTxModalData({ type: 'drawing', partnerName: p2.name, currency: 'USDT', walletSource: 'binance_usdt' });
                   setTxModalOpen(true);
                 }}
               >
-                <span>+ Invest Capital</span>
-              </button>
-              <button
-                type="button"
-                className="bf-btn-sm"
-                onClick={() => {
-                  setTxModalData({ type: 'drawing', partnerName: p2.name, currency: 'PKR' });
-                  setTxModalOpen(true);
-                }}
-              >
-                <span>💸 Draw Profit</span>
+                <span>💸 Withdraw Share</span>
               </button>
             </div>
           </div>
         </div>
 
-        {/* ─── 3. QUICK 1-CLICK ACTION HUB ────────────────────────── */}
+        {/* ─── 3. OFFICE EXPENSES (SPLIT 50/50) ─────────────────────── */}
+        <div className="bf-card" style={{ marginBottom: 28, padding: 20 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+            <div>
+              <h3 style={{ fontSize: 18, fontWeight: 800, color: '#fff', margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>🍔</span>
+                <span>Office Expenses (Split 50/50)</span>
+              </h3>
+              <p style={{ fontSize: 12, color: 'var(--bf-text-dim)', margin: 0 }}>
+                Table, chai, biryani, internet, electricity & bills paid from cash.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              className="bf-btn-sm green"
+              style={{ padding: '10px 18px', fontSize: 13 }}
+              onClick={() => {
+                setTxModalData({ type: 'expense', category: 'office_food', currency: 'PKR', walletSource: 'pkr_cash', paidBy: 'both_50_50' });
+                setTxModalOpen(true);
+              }}
+            >
+              <span>🍔 + Add Office Expense (Split 50/50)</span>
+            </button>
+          </div>
+
+          {/* 3 Summary Chips */}
+          <div className="bf-stats-strip">
+            <div className="bf-stat-chip">
+              <span style={{ fontSize: 11, color: 'var(--bf-text-dim)', textTransform: 'uppercase', fontWeight: 600 }}>Total Spent</span>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#fff', marginTop: 4 }}>
+                ₨ {(officeExpenses.totalPKR || 0).toLocaleString('en-US')}
+              </div>
+            </div>
+            <div className="bf-stat-chip">
+              <span style={{ fontSize: 11, color: '#93c5fd', textTransform: 'uppercase', fontWeight: 600 }}>{p1.name} (50% Share)</span>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#93c5fd', marginTop: 4 }}>
+                ₨ {(officeExpenses.aizazSharePKR || 0).toLocaleString('en-US')}
+              </div>
+            </div>
+            <div className="bf-stat-chip">
+              <span style={{ fontSize: 11, color: '#c084fc', textTransform: 'uppercase', fontWeight: 600 }}>{p2.name} (50% Share)</span>
+              <div style={{ fontSize: 20, fontWeight: 800, color: '#c084fc', marginTop: 4 }}>
+                ₨ {(officeExpenses.abdullahSharePKR || 0).toLocaleString('en-US')}
+              </div>
+            </div>
+          </div>
+
+          {/* Settlement Status Banner */}
+          <div className={`bf-settlement-banner ${officeExpenses.settlement?.status === 'settled' ? 'settled' : 'owes'}`}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 18 }}>
+                {officeExpenses.settlement?.status === 'settled' ? '✅' : '🤝'}
+              </span>
+              <span>{officeExpenses.settlement?.message}</span>
+            </div>
+            {officeExpenses.settlement?.status !== 'settled' && (
+              <span style={{ fontSize: 11, opacity: 0.8 }}>(Adjust in next cash withdrawal)</span>
+            )}
+          </div>
+
+          {/* Recent Office Expenses Compact List */}
+          <div className="bf-table-responsive" style={{ maxHeight: 280, overflowY: 'auto' }}>
+            <table className="bf-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Expense Item</th>
+                  <th>Total PKR</th>
+                  <th>{p1.name} (50%)</th>
+                  <th>{p2.name} (50%)</th>
+                  <th>Paid By</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {officeExpenseTxs.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ textAlign: 'center', padding: '24px', color: 'var(--bf-text-dim)' }}>
+                      No office expenses logged yet. Click "+ Add Office Expense" to log table, chai, food or bills!
+                    </td>
+                  </tr>
+                ) : (
+                  officeExpenseTxs.slice(0, 10).map((tx) => {
+                    const pkr = tx.amountPKR || tx.amount;
+                    const half = Math.round(pkr * 0.5);
+                    return (
+                      <tr key={tx._id}>
+                        <td style={{ fontSize: 12, color: 'var(--bf-text-muted)' }}>
+                          {new Date(tx.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 700, color: '#fff' }}>{tx.description}</div>
+                          {tx.notes && <div style={{ fontSize: 11, color: 'var(--bf-text-dim)' }}>{tx.notes}</div>}
+                        </td>
+                        <td style={{ fontWeight: 800, color: '#f87171' }}>
+                          ₨ {Number(pkr).toLocaleString('en-US')}
+                        </td>
+                        <td style={{ color: '#93c5fd', fontWeight: 600 }}>₨ {half.toLocaleString('en-US')}</td>
+                        <td style={{ color: '#c084fc', fontWeight: 600 }}>₨ {half.toLocaleString('en-US')}</td>
+                        <td>
+                          <span style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.06)', color: 'var(--bf-gold)', fontWeight: 600 }}>
+                            {tx.paidBy === 'both_50_50' ? 'Both 50/50' : tx.paidBy ? `Paid by ${tx.paidBy}` : 'Both 50/50'}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button
+                              type="button"
+                              className="bf-icon-btn"
+                              style={{ width: 28, height: 28 }}
+                              title="Edit expense"
+                              onClick={() => {
+                                setTxModalData(tx);
+                                setTxModalOpen(true);
+                              }}
+                            >
+                              <span style={{ fontSize: 12 }}>✏️</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="bf-icon-btn danger"
+                              style={{ width: 28, height: 28 }}
+                              title="Delete expense"
+                              onClick={() => {
+                                if (window.confirm(`Delete expense "${tx.description}"?`)) {
+                                  handleDeleteTransaction(tx._id);
+                                }
+                              }}
+                            >
+                              <span style={{ fontSize: 12 }}>🗑️</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* ─── 4. REINVESTMENT / SELLER RESERVE BOX ─────────────────── */}
+        <div className="bf-card" style={{ marginBottom: 28, padding: 18, border: '1px solid rgba(245, 158, 11, 0.25)' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(245, 158, 11, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>
+                🛡️
+              </div>
+              <div>
+                <h4 style={{ fontSize: 15, fontWeight: 800, color: '#fff', margin: '0 0 4px' }}>
+                  Bazario Seller Reserve Pool: ${(binance.reinvestmentReserveUSDT || 0).toFixed(2)} USDT
+                </h4>
+                <p style={{ fontSize: 12, color: 'var(--bf-text-dim)', margin: 0 }}>
+                  Yeh USDT Binance mein mehfooz hain taake Bazario par jab bhi seller withdrawal request kare, usko foran Binance se payout diya ja sake.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                className="bf-btn-sm gold"
+                onClick={() => setReserveModalOpen(true)}
+              >
+                <span>⚙️ Adjust Reserve Amount</span>
+              </button>
+              <button
+                type="button"
+                className="bf-btn-sm"
+                onClick={handleSyncBazario}
+                disabled={syncing}
+              >
+                <span>🔗 {syncing ? 'Syncing...' : 'Sync Bazario'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ─── 5. QUICK 1-CLICK ACTION HUB ────────────────────────── */}
         <div className="bf-actions-row">
           <button
             type="button"
             className="bf-action-btn red"
             onClick={() => {
-              setTxModalData({ type: 'expense', category: 'office_food', currency: 'PKR' });
+              setTxModalData({ type: 'expense', category: 'office_food', currency: 'PKR', paidBy: 'both_50_50' });
               setTxModalOpen(true);
             }}
           >
@@ -777,12 +874,12 @@ export default function BusinessFinance() {
             type="button"
             className="bf-action-btn green"
             onClick={() => {
-              setTxModalData({ type: 'income', currency: 'USDT' });
+              setTxModalData({ type: 'income', currency: 'USDT', category: 'seller_deposit' });
               setTxModalOpen(true);
             }}
           >
             <span>💰</span>
-            <span>+ Add Profit</span>
+            <span>+ Add Profit (USDT)</span>
           </button>
 
           <button
@@ -798,12 +895,12 @@ export default function BusinessFinance() {
             type="button"
             className="bf-action-btn blue"
             onClick={() => {
-              setTxModalData({ type: 'investment', currency: 'PKR' });
+              setTxModalData({ type: 'drawing', partnerName: p1.name, currency: 'USDT' });
               setTxModalOpen(true);
             }}
           >
-            <span>💼</span>
-            <span>+ Partner Capital</span>
+            <span>💸</span>
+            <span>Record Withdrawal</span>
           </button>
 
           <button
@@ -812,7 +909,7 @@ export default function BusinessFinance() {
             onClick={() => setReserveModalOpen(true)}
           >
             <span>🛡️</span>
-            <span>Reinvestment Reserve</span>
+            <span>Adjust Reserve</span>
           </button>
 
           <button
@@ -850,11 +947,12 @@ export default function BusinessFinance() {
               <div className="bf-filter-chips">
                 {[
                   { id: 'all', label: 'All' },
-                  { id: 'expense', label: 'Expenses' },
-                  { id: 'income', label: 'Incomes' },
-                  { id: 'partner', label: 'Partners' },
-                  { id: 'conversion', label: 'P2P' },
-                  { id: 'synced', label: 'Bazario Synced' },
+                  { id: 'office_expense', label: '🍔 Office Expenses' },
+                  { id: 'income', label: '💰 Profit / Inflow' },
+                  { id: 'drawing', label: '💸 Partner Withdrawals' },
+                  { id: 'seller_payout', label: '🛡️ Seller Payouts' },
+                  { id: 'conversion', label: '🔄 P2P' },
+                  { id: 'synced', label: '🔗 Bazario Synced' },
                 ].map((f) => (
                   <button
                     key={f.id}

@@ -117,6 +117,12 @@ const businessTransactionSchema = new mongoose.Schema(
       default: '',
     },
 
+    // Who paid for this transaction (for office expenses: 'both_50_50', partner name, etc.)
+    paidBy: {
+      type: String,
+      default: 'both_50_50',
+    },
+
     // Title / Description
     description: {
       type: String,

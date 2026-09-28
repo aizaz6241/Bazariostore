@@ -31,7 +31,7 @@ export default function TransactionModal({
   onDelete,
   initialData = null,
   currentRate = 278.5,
-  partnerNames = { p1: 'Aizaz', p2: 'Partner' },
+  partnerNames = { p1: 'Aizaz', p2: 'Abdullah' },
 }) {
   const [type, setType] = useState('expense');
   const [category, setCategory] = useState('office_food');
@@ -41,6 +41,7 @@ export default function TransactionModal({
   const [walletSource, setWalletSource] = useState('pkr_cash');
   const [walletDestination, setWalletDestination] = useState('external');
   const [partnerName, setPartnerName] = useState(partnerNames.p1 || 'Aizaz');
+  const [paidBy, setPaidBy] = useState('both_50_50');
   const [description, setDescription] = useState('');
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState('');
@@ -59,6 +60,7 @@ export default function TransactionModal({
       setWalletSource(initialData.walletSource || 'pkr_cash');
       setWalletDestination(initialData.walletDestination || 'external');
       setPartnerName(initialData.partnerName || partnerNames.p1 || 'Aizaz');
+      setPaidBy(initialData.paidBy || 'both_50_50');
       setDescription(initialData.description || '');
       setDate(
         initialData.date
@@ -139,6 +141,7 @@ export default function TransactionModal({
       walletSource,
       walletDestination,
       partnerName: ['investment', 'drawing'].includes(type) ? partnerName : partnerName || '',
+      paidBy: type === 'expense' ? paidBy : 'both_50_50',
       description: description.trim(),
       date,
       notes,
@@ -312,7 +315,60 @@ export default function TransactionModal({
             </select>
           </div>
 
-          {/* Partner Selector (if investment, drawing, or paid by partner) */}
+          {/* 50/50 Split Preview & Who Paid (for Expenses) */}
+          {type === 'expense' && (
+            <div style={{ background: 'rgba(255, 255, 255, 0.04)', borderRadius: 12, padding: 12, border: '1px solid var(--bf-border)', marginBottom: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--bf-green)' }}>
+                  🤝 50/50 Split (Office Expense)
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--bf-text-dim)' }}>
+                  Total: ₨ {equivalentPKR.toLocaleString('en-US')}
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                <div style={{ background: 'rgba(59, 130, 246, 0.1)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                  <div style={{ fontSize: 11, color: '#93c5fd', fontWeight: 600 }}>{partnerNames.p1 || 'Aizaz'} (50%)</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>₨ {Math.round(equivalentPKR * 0.5).toLocaleString('en-US')}</div>
+                </div>
+                <div style={{ background: 'rgba(168, 85, 247, 0.1)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(168, 85, 247, 0.2)' }}>
+                  <div style={{ fontSize: 11, color: '#c084fc', fontWeight: 600 }}>{partnerNames.p2 || 'Abdullah'} (50%)</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>₨ {Math.round(equivalentPKR * 0.5).toLocaleString('en-US')}</div>
+                </div>
+              </div>
+
+              <label className="bf-form-label" style={{ marginBottom: 6 }}>Who Paid Cash For This Expense?</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+                {[
+                  { id: 'both_50_50', label: 'Both 50/50 Cash' },
+                  { id: partnerNames.p1 || 'Aizaz', label: `Paid by ${partnerNames.p1 || 'Aizaz'}` },
+                  { id: partnerNames.p2 || 'Abdullah', label: `Paid by ${partnerNames.p2 || 'Abdullah'}` },
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setPaidBy(opt.id)}
+                    style={{
+                      padding: '8px 4px',
+                      borderRadius: 8,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      border: '1px solid',
+                      borderColor: paidBy === opt.id ? 'var(--bf-gold)' : 'var(--bf-border)',
+                      background: paidBy === opt.id ? 'rgba(245, 158, 11, 0.2)' : 'rgba(255,255,255,0.02)',
+                      color: paidBy === opt.id ? '#fcd34d' : 'var(--bf-text-muted)',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Partner Selector (if investment or drawing) */}
           {(['investment', 'drawing'].includes(type) || walletSource === 'partner_pocket') && (
             <div className="bf-form-group">
               <label className="bf-form-label">Associated Partner</label>

@@ -10,7 +10,7 @@ export default function SettingsModal({
 }) {
   const [partner1Name, setPartner1Name] = useState('Aizaz');
   const [partner1Share, setPartner1Share] = useState(50);
-  const [partner2Name, setPartner2Name] = useState('Partner');
+  const [partner2Name, setPartner2Name] = useState('Abdullah');
   const [partner2Share, setPartner2Share] = useState(50);
   const [defaultRate, setDefaultRate] = useState(278.5);
   const [autoSync, setAutoSync] = useState(true);
@@ -29,7 +29,11 @@ export default function SettingsModal({
     if (settings) {
       setPartner1Name(settings.partner1?.name || 'Aizaz');
       setPartner1Share(settings.partner1?.sharePercent !== undefined ? settings.partner1.sharePercent : 50);
-      setPartner2Name(settings.partner2?.name || 'Partner');
+      setPartner2Name(
+        settings.partner2?.name && settings.partner2.name !== 'Business Partner'
+          ? settings.partner2.name
+          : 'Abdullah'
+      );
       setPartner2Share(settings.partner2?.sharePercent !== undefined ? settings.partner2.sharePercent : 50);
       setDefaultRate(settings.defaultUsdtRate || 278.5);
       setAutoSync(settings.autoSyncBazario !== undefined ? settings.autoSyncBazario : true);
