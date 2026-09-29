@@ -13,6 +13,7 @@ const businessTransactionSchema = new mongoose.Schema(
         'drawing',           // Personal withdrawal / drawing by a partner
         'conversion',        // Binance USDT sold / converted to PKR
         'reserve_transfer',  // Fund allocation into / out of Reinvestment Reserve
+        'settlement',        // Internal cash settlement between partners (debt adjustment)
       ],
       required: true,
       default: 'expense',
@@ -46,6 +47,7 @@ const businessTransactionSchema = new mongoose.Schema(
         // Partner capital & equity
         'partner_capital',    // Fresh capital injection
         'partner_drawing',    // Profit drawing by partner
+        'partner_settlement', // Internal settlement between partners for office expenses
 
         // Wallets
         'binance_p2p_cashout',// Sold USDT on Binance P2P for PKR

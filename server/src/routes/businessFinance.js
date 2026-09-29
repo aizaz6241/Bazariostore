@@ -148,7 +148,7 @@ router.get('/transactions', authPartner, async (req, res) => {
     }
 
     const transactions = await BusinessTransaction.find(filter)
-      .sort({ date: -1, createdAt: -1 })
+      .sort({ createdAt: -1, date: -1 })
       .limit(Number(limit));
 
     res.json({ ok: true, count: transactions.length, transactions });
@@ -197,18 +197,37 @@ router.post('/transactions', authPartner, async (req, res) => {
       else if (type === 'expense') finalWalletSource = isUsdt ? 'binance_reserve' : 'pkr_cash';
       else if (type === 'investment') finalWalletSource = isUsdt ? 'binance_usdt' : 'pkr_bank';
       else if (type === 'drawing') finalWalletSource = isUsdt ? 'binance_usdt' : 'pkr_cash';
+      else if (type === 'settlement') finalWalletSource = 'partner_pocket';
       else if (type === 'conversion') finalWalletSource = 'binance_usdt';
       else finalWalletSource = 'pkr_cash';
     }
 
-    let finalWalletDest = walletDestination || 'external';
+    let finalWalletDest = walletDestination || (type === 'settlement' ? 'partner_pocket' : 'external');
     if (type === 'conversion' && (!walletDestination || walletDestination === 'external')) {
       finalWalletDest = 'pkr_cash';
     }
 
+    // Preserve exact timestamp if created today
+    let txDate = new Date();
+    if (date) {
+      const parsed = new Date(date);
+      const now = new Date();
+      const isToday =
+        parsed.getFullYear() === now.getFullYear() &&
+        parsed.getMonth() === now.getMonth() &&
+        parsed.getDate() === now.getDate();
+
+      if (isToday) {
+        txDate = now;
+      } else {
+        parsed.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+        txDate = parsed;
+      }
+    }
+
     const tx = new BusinessTransaction({
       type: type || 'expense',
-      category: category || 'misc_expense',
+      category: category || (type === 'settlement' ? 'partner_settlement' : 'misc_expense'),
       amount: amt,
       currency: isUsdt ? 'USDT' : 'PKR',
       exchangeRate: rate,
@@ -219,7 +238,7 @@ router.post('/transactions', authPartner, async (req, res) => {
       partnerName: partnerName || '',
       paidBy: paidBy || 'both_50_50',
       description: description.trim(),
-      date: date ? new Date(date) : new Date(),
+      date: txDate,
       notes: notes || '',
       isAutoSynced: false,
       createdBy: req.partnerAuthenticated ? 'Partner' : 'Admin',
@@ -327,10 +346,10 @@ router.post('/p2p-convert', authPartner, async (req, res) => {
   }
 });
 
-// POST /api/business-finance/allocate-reserve — Quick Action: Adjust Reinvestment Reserve
+// POST /api/business-finance/allocate-reserve — Quick Action: Adjust or Reinvest Reserve
 router.post('/allocate-reserve', authPartner, async (req, res) => {
   try {
-    const { action = 'allocate', usdtAmount, targetReserve, notes } = req.body || {}; // action: 'allocate' | 'release' | 'set_target'
+    const { action = 'allocate', usdtAmount, targetReserve, description, notes } = req.body || {}; // action: 'allocate' | 'release' | 'reinvest' | 'set_target'
 
     // Direct target reserve update (e.g. set to $200 USDT)
     if (targetReserve !== undefined && targetReserve !== null && !isNaN(targetReserve)) {
@@ -349,6 +368,33 @@ router.post('/allocate-reserve', authPartner, async (req, res) => {
     const settings = await getFinanceSettings();
     const rate = Number(settings.defaultUsdtRate) || 278.5;
 
+    // REINVEST ACTION: Spends USDT directly from Seller Reserve pool
+    if (action === 'reinvest') {
+      const tx = new BusinessTransaction({
+        type: 'expense',
+        category: 'reinvestment',
+        amount: amt,
+        currency: 'USDT',
+        exchangeRate: rate,
+        amountPKR: Math.round(amt * rate),
+        amountUSDT: amt,
+        walletSource: 'binance_reserve',
+        walletDestination: 'external',
+        description: description?.trim() || `Reinvestment: Deployed $${amt} USDT from Seller Reserve`,
+        date: new Date(),
+        notes: notes || 'Reserve funds deployed for inventory / business growth',
+        isAutoSynced: false,
+        createdBy: 'Partner',
+      });
+
+      await tx.save();
+      return res.status(201).json({
+        ok: true,
+        message: `Successfully reinvested $${amt} USDT from Seller Reserve`,
+        transaction: tx,
+      });
+    }
+
     const isAllocate = action === 'allocate';
     const tx = new BusinessTransaction({
       type: 'reserve_transfer',
@@ -363,6 +409,7 @@ router.post('/allocate-reserve', authPartner, async (req, res) => {
       description: isAllocate
         ? `Allocated $${amt} USDT to Reinvestment Reserve Pool`
         : `Released $${amt} USDT from Reinvestment Reserve Pool`,
+      date: new Date(),
       notes: notes || '',
       isAutoSynced: false,
       createdBy: 'Partner',

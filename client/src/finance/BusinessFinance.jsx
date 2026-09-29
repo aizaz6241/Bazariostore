@@ -5,6 +5,7 @@ import TransactionModal from './TransactionModal.jsx';
 import ReserveModal from './ReserveModal.jsx';
 import SettingsModal from './SettingsModal.jsx';
 import InstallShortcutModal from './InstallShortcutModal.jsx';
+import SettlementModal from './SettlementModal.jsx';
 import '../styles/businessFinance.css';
 
 const SESSION_TOKEN_KEY = 'bf_partner_session_token';
@@ -42,6 +43,8 @@ export default function BusinessFinance() {
   const [txModalOpen, setTxModalOpen] = useState(false);
   const [txModalData, setTxModalData] = useState(null);
   const [reserveModalOpen, setReserveModalOpen] = useState(false);
+  const [reserveModalAction, setReserveModalAction] = useState('allocate');
+  const [settlementModalOpen, setSettlementModalOpen] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [installModalOpen, setInstallModalOpen] = useState(false);
 
@@ -164,7 +167,7 @@ export default function BusinessFinance() {
     loadData();
   };
 
-  // Adjust Reinvestment Reserve
+  // Adjust or Reinvest Reserve
   const handleAdjustReserve = async (payload) => {
     await apiFetch('/allocate-reserve', {
       method: 'POST',
@@ -175,8 +178,21 @@ export default function BusinessFinance() {
         ? `Seller reserve set to $${payload.targetReserve} USDT`
         : payload.action === 'allocate'
         ? 'USDT locked into Seller Reserve'
+        : payload.action === 'reinvest'
+        ? `Successfully reinvested $${payload.usdtAmount} USDT from Reserve`
         : 'USDT released to Main Wallet (Profit Pool)'
     );
+    setTimeout(() => setStatusMsg(''), 4000);
+    loadData();
+  };
+
+  // Handle Office Debt Settlement (Adjust Amount)
+  const handleSettleDebt = async (settlePayload) => {
+    await apiFetch('/transactions', {
+      method: 'POST',
+      body: JSON.stringify(settlePayload),
+    });
+    setStatusMsg('Settlement recorded! Office debt cleared to ₨ 0 (Hisaab Barabar).');
     setTimeout(() => setStatusMsg(''), 4000);
     loadData();
   };
@@ -229,7 +245,8 @@ export default function BusinessFinance() {
     if (txTypeFilter === 'income' && tx.type !== 'income') return false;
     if (txTypeFilter === 'expense' && (tx.type !== 'expense' || tx.category === 'seller_withdrawal' || tx.category === 'reinvestment')) return false;
     if (txTypeFilter === 'drawing' && tx.type !== 'drawing') return false;
-    if (txTypeFilter === 'reserve' && tx.type !== 'reserve_transfer' && tx.category !== 'seller_withdrawal') return false;
+    if (txTypeFilter === 'reserve' && tx.type !== 'reserve_transfer' && tx.category !== 'seller_withdrawal' && tx.category !== 'reinvestment') return false;
+    if (txTypeFilter === 'settlement' && tx.type !== 'settlement') return false;
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -240,6 +257,13 @@ export default function BusinessFinance() {
       return desc.includes(q) || notes.includes(q) || pName.includes(q) || store.includes(q);
     }
     return true;
+  });
+
+  // Strict chronological sorting: newest entries (by creation or action time) ALWAYS on top
+  const sortedTxs = [...filteredTxs].sort((a, b) => {
+    const timeA = new Date(a.createdAt || a.date).getTime();
+    const timeB = new Date(b.createdAt || b.date).getTime();
+    return timeB - timeA;
   });
 
   return (
@@ -349,22 +373,50 @@ export default function BusinessFinance() {
                     <span>🛡️</span>
                     <span>Seller Reserve</span>
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setReserveModalOpen(true)}
-                    style={{
-                      background: 'rgba(245, 158, 11, 0.18)',
-                      border: '1px solid rgba(245, 158, 11, 0.4)',
-                      borderRadius: 6,
-                      color: '#fcd34d',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      padding: '3px 10px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    🛡️ + Add / Adjust
-                  </button>
+                  <div style={{ display: 'flex', gap: 5 }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReserveModalAction('reinvest');
+                        setReserveModalOpen(true);
+                      }}
+                      style={{
+                        background: 'rgba(168, 85, 247, 0.22)',
+                        border: '1px solid rgba(168, 85, 247, 0.5)',
+                        borderRadius: 6,
+                        color: '#c084fc',
+                        fontSize: 11,
+                        fontWeight: 800,
+                        padding: '3px 8px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 3,
+                      }}
+                      title="Reinvest funds kept in Seller Reserve"
+                    >
+                      🚀 Reinvest
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReserveModalAction('allocate');
+                        setReserveModalOpen(true);
+                      }}
+                      style={{
+                        background: 'rgba(245, 158, 11, 0.18)',
+                        border: '1px solid rgba(245, 158, 11, 0.4)',
+                        borderRadius: 6,
+                        color: '#fcd34d',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      🛡️ Manage
+                    </button>
+                  </div>
                 </div>
                 <div className="bf-capsule-amount reserve-color">
                   ${(binance.reinvestmentReserveUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
@@ -401,7 +453,7 @@ export default function BusinessFinance() {
             </div>
           </div>
 
-          {/* Quick Action Buttons: Only Add Profit & Add Kharcha */}
+          {/* Quick Action Buttons: Only Add Profit & Add Office Expenditure */}
           <div className="bf-hero-actions" style={{ gridTemplateColumns: '1fr 1fr' }}>
             <button
               type="button"
@@ -426,7 +478,7 @@ export default function BusinessFinance() {
               }}
             >
               <span>🍔</span>
-              <span>+ Add Office Kharcha</span>
+              <span>+ Add Office Expenditure</span>
             </button>
           </div>
         </section>
@@ -587,13 +639,13 @@ export default function BusinessFinance() {
           </div>
         </div>
 
-        {/* ─── 3. OFFICE EXPENSES (KHARCHA 50/50) ────────────────── */}
+        {/* ─── 3. OFFICE EXPENDITURE (SPLIT 50/50) ────────────────── */}
         <section className="bf-expense-card">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <div>
               <h3 style={{ fontSize: 17, fontWeight: 800, color: '#fff', margin: '0 0 3px', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span>🍔</span>
-                <span>Office Kharcha (Split 50/50)</span>
+                <span>Office Expenditure (Split 50/50)</span>
               </h3>
               <p style={{ fontSize: 12, color: 'var(--bf-text-dim)', margin: 0 }}>
                 Chai, biryani, office table, bills & daily expenses split equally.
@@ -609,27 +661,57 @@ export default function BusinessFinance() {
                 setTxModalOpen(true);
               }}
             >
-              <span>🍔 + Add Kharcha</span>
+              <span>🍔 + Add Expenditure</span>
             </button>
           </div>
 
           {/* Settlement Status Banner */}
-          <div className={`bf-settlement-bar ${officeExpenses.settlement?.status === 'settled' ? 'settled' : 'owes'}`}>
+          <div
+            className={`bf-settlement-bar ${officeExpenses.settlement?.status === 'settled' ? 'settled' : 'owes'}`}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 10,
+            }}
+          >
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 18 }}>
                 {officeExpenses.settlement?.status === 'settled' ? '✅' : '🤝'}
               </span>
-              <span>{officeExpenses.settlement?.message || 'All expenses split evenly 50/50'}</span>
+              <span style={{ fontWeight: 700 }}>
+                {officeExpenses.settlement?.message || 'All expenses split evenly 50/50'}
+              </span>
             </div>
             {officeExpenses.settlement?.status !== 'settled' && (
-              <span style={{ fontSize: 11, opacity: 0.85 }}>(Cash se adjust karein)</span>
+              <button
+                type="button"
+                onClick={() => setSettlementModalOpen(true)}
+                style={{
+                  background: 'linear-gradient(135deg, #10b981, #059669)',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '7px 14px',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.35)',
+                }}
+              >
+                <span>🤝 Adjust Amount</span>
+              </button>
             )}
           </div>
 
           {/* 3 Summary Chips */}
           <div className="bf-expense-chips">
             <div className="bf-expense-chip">
-              <span className="bf-echip-label">Total Kharcha</span>
+              <span className="bf-echip-label">Total Expenditure</span>
               <div className="bf-echip-val" style={{ color: '#fb7185' }}>
                 ₨ {(officeExpenses.totalPKR || 0).toLocaleString('en-US')}
               </div>
@@ -652,7 +734,7 @@ export default function BusinessFinance() {
           {officeExpenseTxs.length > 0 && (
             <div style={{ borderTop: '1px solid var(--bf-border-subtle)', paddingTop: 10 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--bf-text-muted)', marginBottom: 8 }}>
-                Recent Kharcha List:
+                Recent Expenditure List:
               </div>
               <div className="bf-tx-list">
                 {officeExpenseTxs.slice(0, 5).map((tx) => {
@@ -718,13 +800,13 @@ export default function BusinessFinance() {
           )}
         </section>
 
-        {/* ─── 4. TRANSACTIONS & HISAAB AUDIT FEED ────────────────── */}
+        {/* ─── 4. TRANSACTION HISTORY ─────────────────────────────── */}
         <section className="bf-ledger-card">
           <div className="bf-ledger-toolbar">
             <div className="bf-toolbar-top">
               <div>
                 <h3 style={{ fontSize: 16, fontWeight: 800, color: '#fff', margin: '0 0 2px' }}>
-                  Transactions & Hisaab History
+                  Transaction History
                 </h3>
                 <p style={{ fontSize: 11, color: 'var(--bf-text-dim)', margin: 0 }}>
                   Live records, deposits, payouts & withdrawals.
@@ -744,9 +826,10 @@ export default function BusinessFinance() {
               {[
                 { id: 'all', label: 'All' },
                 { id: 'income', label: '💰 Profits (USDT)' },
-                { id: 'expense', label: '🍔 Office Kharcha' },
+                { id: 'expense', label: '🍔 Office Expenditure' },
                 { id: 'drawing', label: '💸 Withdrawals' },
                 { id: 'reserve', label: '🛡️ Seller Reserve' },
+                { id: 'settlement', label: '🤝 Debt Settlements' },
               ].map((f) => (
                 <button
                   key={f.id}
@@ -762,33 +845,42 @@ export default function BusinessFinance() {
 
           {/* Transactions List */}
           <div className="bf-tx-list">
-            {filteredTxs.length === 0 ? (
+            {sortedTxs.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--bf-text-dim)' }}>
                 <span style={{ fontSize: 32, display: 'block', marginBottom: 8 }}>📝</span>
                 <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>No records found</div>
                 <div style={{ fontSize: 12, marginTop: 4 }}>
-                  Click "+ Add Profit" or "+ Add Kharcha" to log your first business entry.
+                  Click "+ Add Profit" or "+ Add Office Expenditure" to log your first business entry.
                 </div>
               </div>
             ) : (
-              filteredTxs.map((tx) => {
+              sortedTxs.map((tx) => {
                 const isIncome = tx.type === 'income';
                 const isExpense = tx.type === 'expense';
                 const isDrawing = tx.type === 'drawing';
+                const isSettlement = tx.type === 'settlement' || tx.category === 'partner_settlement';
                 const isUsdt = tx.currency === 'USDT' || tx.currency === 'USD';
 
                 return (
                   <div key={tx._id} className="bf-tx-item">
                     <div className="bf-tx-left">
                       <div className={`bf-tx-icon ${tx.type}`}>
-                        {isIncome ? '💰' : isExpense ? '🍔' : isDrawing ? '💸' : '🛡️'}
+                        {isIncome ? '💰' : isExpense ? '🍔' : isDrawing ? '💸' : isSettlement ? '🤝' : '🛡️'}
                       </div>
                       <div>
                         <div className="bf-tx-desc">{tx.description}</div>
                         <div className="bf-tx-meta">
                           <span>{new Date(tx.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
                           <span>•</span>
-                          <span>{tx.walletSource === 'binance_usdt' ? 'Binance USDT' : tx.walletSource === 'binance_reserve' ? 'Seller Reserve' : 'Cash Drawer'}</span>
+                          <span>
+                            {tx.walletSource === 'binance_usdt'
+                              ? 'Binance USDT'
+                              : tx.walletSource === 'binance_reserve'
+                              ? 'Seller Reserve'
+                              : isSettlement
+                              ? 'Cash Adjusted'
+                              : 'Cash Drawer'}
+                          </span>
                           {tx.partnerName && (
                             <>
                               <span>•</span>
@@ -801,12 +893,16 @@ export default function BusinessFinance() {
 
                     <div className="bf-tx-right">
                       <div className="bf-tx-amount-box">
-                        <div className={`bf-tx-amount ${isIncome ? 'green' : isExpense || isDrawing ? 'red' : 'white'}`}>
-                          {isIncome ? '+' : isExpense || isDrawing ? '-' : ''}
+                        <div className={`bf-tx-amount ${isIncome ? 'green' : isExpense || isDrawing ? 'red' : isSettlement ? 'profit-color' : 'white'}`}>
+                          {isIncome ? '+' : isExpense || isDrawing ? '-' : isSettlement ? '🤝 ' : ''}
                           {isUsdt ? `$${Number(tx.amount).toFixed(2)} USDT` : `₨ ${Number(tx.amount).toLocaleString('en-US')}`}
                         </div>
                         <div className="bf-tx-sub">
-                          ≈ {isUsdt ? `₨ ${(tx.amountPKR || 0).toLocaleString('en-US')}` : `$${(tx.amountUSDT || 0).toFixed(2)} USDT`}
+                          {isSettlement
+                            ? 'Debt Cleared'
+                            : isUsdt
+                            ? `≈ ₨ ${(tx.amountPKR || 0).toLocaleString('en-US')}`
+                            : `$${(tx.amountUSDT || 0).toFixed(2)} USDT`}
                         </div>
                       </div>
 
@@ -881,13 +977,16 @@ export default function BusinessFinance() {
           }}
         >
           <span style={{ fontSize: 18 }}>🍔</span>
-          <span>+ Kharcha</span>
+          <span>+ Expenditure</span>
         </button>
 
         <button
           type="button"
           className="bf-nav-item"
-          onClick={() => setReserveModalOpen(true)}
+          onClick={() => {
+            setReserveModalAction('allocate');
+            setReserveModalOpen(true);
+          }}
         >
           <span style={{ fontSize: 18 }}>🛡️</span>
           <span>Reserve</span>
@@ -920,6 +1019,14 @@ export default function BusinessFinance() {
         onAdjust={handleAdjustReserve}
         currentReserve={binance.reinvestmentReserveUSDT || 0}
         totalUsdt={binance.totalUSDT || 0}
+        initialAction={reserveModalAction}
+      />
+
+      <SettlementModal
+        isOpen={settlementModalOpen}
+        onClose={() => setSettlementModalOpen(false)}
+        onSettle={handleSettleDebt}
+        settlement={officeExpenses.settlement || {}}
       />
 
       <SettingsModal

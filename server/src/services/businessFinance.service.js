@@ -257,6 +257,8 @@ export async function calculateFinanceOverview(filterDate = {}) {
   let totalOfficeExpensesPKR = 0;
   let aizazPaidExpensesPKR = 0;
   let abdullahPaidExpensesPKR = 0;
+  let aizazSettlementPaidPKR = 0;
+  let abdullahSettlementPaidPKR = 0;
 
   // ─── 4. PERIOD REVENUE & EXPENSES (P&L) ───
   let periodRevenuePKR = 0;
@@ -340,6 +342,16 @@ export async function calculateFinanceOverview(filterDate = {}) {
       }
     }
 
+    // Partner Debt / Expense Settlement (Aizaz paying Abdullah or vice-versa)
+    else if (tx.type === 'settlement' || tx.category === 'partner_settlement') {
+      const pb = (tx.paidBy || '').toLowerCase();
+      if (pb.includes('aizaz')) {
+        aizazSettlementPaidPKR += pkrAmt;
+      } else if (pb.includes('abdullah')) {
+        abdullahSettlementPaidPKR += pkrAmt;
+      }
+    }
+
     // General Business Incomes
     else if (tx.type === 'income') {
       if (tx.walletSource === 'binance_usdt' || tx.currency === 'USDT' || tx.currency === 'USD') {
@@ -418,11 +430,12 @@ export async function calculateFinanceOverview(filterDate = {}) {
   );
 
   // Dynamic Reinvestment Reserve calculation:
-  // Initial target or allocated reserve minus seller payouts funded
+  // Initial target or allocated reserve minus outflows/seller payouts/reinvestments
   const baselineReserve = Number(settings.reinvestmentReserveUsdt || 0);
+  const netReserveAllocatedUsdt = Math.max(0, baselineReserve + binanceReserveAllocated - binanceReserveReleased);
   const currentReinvestmentReserveUsdt = Math.min(
     currentBinanceUsdt,
-    Math.max(0, baselineReserve + binanceReserveAllocated - binanceReserveReleased)
+    Math.max(0, netReserveAllocatedUsdt - binanceUsdtSellerPayouts)
   );
   const availableSurplusUsdt = Math.max(0, currentBinanceUsdt - currentReinvestmentReserveUsdt);
 
@@ -447,10 +460,10 @@ export async function calculateFinanceOverview(filterDate = {}) {
   const p1Share = (Number(settings.partner1?.sharePercent) || 50) / 100;
   const p2Share = (Number(settings.partner2?.sharePercent) || 50) / 100;
 
-  // Total Distributable Profit Pool generated in Binance (Inflow minus Reserve minus Seller Payouts)
+  // Total Distributable Profit Pool generated in Binance (Inflow minus Net Reserve Allocated)
   const totalLifetimeProfitPoolUSDT = Math.max(
     0,
-    binanceUsdtTotalInflow - currentReinvestmentReserveUsdt - binanceUsdtSellerPayouts
+    binanceUsdtTotalInflow - netReserveAllocatedUsdt
   );
 
   // 50/50 Share of Total Distributable Profit Pool
@@ -473,24 +486,37 @@ export async function calculateFinanceOverview(filterDate = {}) {
   const aizazOfficeExpenseSharePKR = Math.round(totalOfficeExpensesPKR * 0.5);
   const abdullahOfficeExpenseSharePKR = Math.round(totalOfficeExpensesPKR * 0.5);
 
+  // Effective net payments towards office expenses (including partner settlements)
+  const aizazEffectivePaidPKR = aizazPaidExpensesPKR + aizazSettlementPaidPKR - abdullahSettlementPaidPKR;
+  const abdullahEffectivePaidPKR = abdullahPaidExpensesPKR + abdullahSettlementPaidPKR - aizazSettlementPaidPKR;
+
   let officeExpenseSettlement = {
     status: 'settled',
     message: 'Hisaab Barabar: All expenses split evenly 50/50',
     differencePKR: 0,
+    owesPartner: null,
+    receiverPartner: null,
   };
 
-  const expDiff = Math.abs(aizazPaidExpensesPKR - abdullahPaidExpensesPKR) / 2;
-  if (aizazPaidExpensesPKR > abdullahPaidExpensesPKR) {
+  const expDiff = Math.abs(aizazEffectivePaidPKR - abdullahEffectivePaidPKR) / 2;
+  const partner1Name = settings.partner1?.name || 'Aizaz';
+  const partner2Name = settings.partner2?.name || 'Abdullah';
+
+  if (aizazEffectivePaidPKR > abdullahEffectivePaidPKR && Math.round(expDiff) > 0) {
     officeExpenseSettlement = {
       status: 'abdullah_owes',
-      message: `Abdullah owes Aizaz ₨ ${Math.round(expDiff).toLocaleString('en-US')}`,
+      message: `${partner2Name} owes ${partner1Name} ₨ ${Math.round(expDiff).toLocaleString('en-US')}`,
       differencePKR: Math.round(expDiff),
+      owesPartner: partner2Name,
+      receiverPartner: partner1Name,
     };
-  } else if (abdullahPaidExpensesPKR > aizazPaidExpensesPKR) {
+  } else if (abdullahEffectivePaidPKR > aizazEffectivePaidPKR && Math.round(expDiff) > 0) {
     officeExpenseSettlement = {
       status: 'aizaz_owes',
-      message: `Aizaz owes Abdullah ₨ ${Math.round(expDiff).toLocaleString('en-US')}`,
+      message: `${partner1Name} owes ${partner2Name} ₨ ${Math.round(expDiff).toLocaleString('en-US')}`,
       differencePKR: Math.round(expDiff),
+      owesPartner: partner1Name,
+      receiverPartner: partner2Name,
     };
   }
 
@@ -568,6 +594,8 @@ export async function calculateFinanceOverview(filterDate = {}) {
       abdullahSharePKR: abdullahOfficeExpenseSharePKR,
       aizazPaidPKR: Math.round(aizazPaidExpensesPKR),
       abdullahPaidPKR: Math.round(abdullahPaidExpensesPKR),
+      aizazSettlementPaidPKR: Math.round(aizazSettlementPaidPKR),
+      abdullahSettlementPaidPKR: Math.round(abdullahSettlementPaidPKR),
       settlement: officeExpenseSettlement,
     },
     partners: {

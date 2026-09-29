@@ -11,7 +11,7 @@ const EXPENSE_CATEGORIES = [
   { id: 'staff_salary', label: 'Staff Salaries & Stipends 👥', emoji: '👥' },
   { id: 'marketing', label: 'Marketing & Ads 📣', emoji: '📣' },
   { id: 'logistics', label: 'Logistics & Courier 🚚', emoji: '🚚' },
-  { id: 'misc_expense', label: 'Miscellaneous Kharcha 📦', emoji: '📦' },
+  { id: 'misc_expense', label: 'Miscellaneous Expenditure 📦', emoji: '📦' },
 ];
 
 const INCOME_CATEGORIES = [
@@ -157,7 +157,7 @@ export default function TransactionModal({
               {isEditing
                 ? 'Edit Record'
                 : type === 'expense'
-                ? 'Office Kharcha (Split 50/50)'
+                ? 'Office Expenditure (Split 50/50)'
                 : type === 'income'
                 ? '+ Add Profit (Binance USDT)'
                 : '💸 Withdraw Partner Share'}
@@ -193,7 +193,7 @@ export default function TransactionModal({
                   transition: 'all 0.15s',
                 }}
               >
-                🍔 Office Kharcha
+                🍔 Office Expenditure
               </button>
               <button
                 type="button"
@@ -235,7 +235,7 @@ export default function TransactionModal({
           {/* Amount Field */}
           <div className="bf-form-group">
             <label className="bf-form-label">
-              {type === 'expense' ? 'Kharcha Amount (PKR ₨)' : 'Amount (USDT $)'}
+              {type === 'expense' ? 'Expenditure Amount (PKR ₨)' : 'Amount (USDT $)'}
             </label>
             <div style={{ position: 'relative' }}>
               <input
@@ -272,7 +272,7 @@ export default function TransactionModal({
             <div>
               {/* Category */}
               <div className="bf-form-group">
-                <label className="bf-form-label">Kharcha Category</label>
+                <label className="bf-form-label">Expenditure Category</label>
                 <select
                   className="bf-select"
                   value={category}
@@ -533,7 +533,7 @@ export default function TransactionModal({
                 : isEditing
                 ? 'Save Changes'
                 : type === 'expense'
-                ? `Log Kharcha (₨ ${numAmt ? numAmt.toLocaleString('en-US') : 0})`
+                ? `Log Expenditure (₨ ${numAmt ? numAmt.toLocaleString('en-US') : 0})`
                 : type === 'income'
                 ? `Add Profit ($${numAmt ? numAmt.toFixed(2) : 0} USDT)`
                 : `Confirm Withdrawal ($${numAmt ? numAmt.toFixed(2) : 0} USDT)`}

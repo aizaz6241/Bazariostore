@@ -7,9 +7,11 @@ export default function ReserveModal({
   onAdjust,
   currentReserve = 0,
   totalUsdt = 0,
+  initialAction = 'allocate',
 }) {
-  const [action, setAction] = useState('allocate'); // 'allocate' | 'release'
+  const [action, setAction] = useState('allocate'); // 'allocate' | 'release' | 'reinvest'
   const [usdtAmount, setUsdtAmount] = useState('');
+  const [description, setDescription] = useState('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -17,11 +19,12 @@ export default function ReserveModal({
   useEffect(() => {
     if (isOpen) {
       setUsdtAmount('');
+      setDescription('');
       setNotes('');
       setError('');
-      setAction('allocate');
+      setAction(initialAction || 'allocate');
     }
-  }, [isOpen]);
+  }, [isOpen, initialAction]);
 
   if (!isOpen) return null;
 
@@ -41,13 +44,25 @@ export default function ReserveModal({
       return;
     }
 
+    if (action === 'reinvest' && numAmt > (currentReserve || 0)) {
+      setError(`Cannot reinvest more than available reserve ($${Number(currentReserve || 0).toFixed(2)} USDT)`);
+      return;
+    }
+
     setSubmitting(true);
 
     try {
       await onAdjust({
         action,
         usdtAmount: numAmt,
-        notes: notes || (action === 'allocate' ? 'Locked into seller reserve pool' : 'Released from reserve to main profit pool'),
+        description: description.trim() || (action === 'reinvest' ? 'Reinvestment: Inventory / Supplier sourcing' : undefined),
+        notes: notes || (
+          action === 'allocate'
+            ? 'Locked into seller reserve pool'
+            : action === 'release'
+            ? 'Released from reserve to main profit pool'
+            : 'Reinvested funds deployed from seller reserve'
+        ),
       });
       onClose();
     } catch (err) {
@@ -97,18 +112,18 @@ export default function ReserveModal({
             </div>
           )}
 
-          {/* Action Tabs: Lock vs Release */}
+          {/* Action Tabs: Lock vs Release vs Reinvest */}
           <div className="bf-form-group">
             <label className="bf-form-label">Action</label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
               <button
                 type="button"
                 onClick={() => setAction('allocate')}
                 style={{
-                  padding: '12px 10px',
+                  padding: '10px 6px',
                   borderRadius: 10,
                   fontWeight: 800,
-                  fontSize: 13,
+                  fontSize: 12,
                   cursor: 'pointer',
                   border: '1px solid',
                   borderColor: action === 'allocate' ? 'var(--bf-gold)' : 'var(--bf-border)',
@@ -118,20 +133,20 @@ export default function ReserveModal({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: 6,
+                  gap: 4,
                 }}
               >
                 <span>🔒</span>
-                <span>+ Lock into Reserve</span>
+                <span>Lock</span>
               </button>
               <button
                 type="button"
                 onClick={() => setAction('release')}
                 style={{
-                  padding: '12px 10px',
+                  padding: '10px 6px',
                   borderRadius: 10,
                   fontWeight: 800,
-                  fontSize: 13,
+                  fontSize: 12,
                   cursor: 'pointer',
                   border: '1px solid',
                   borderColor: action === 'release' ? '#10b981' : 'var(--bf-border)',
@@ -141,11 +156,34 @@ export default function ReserveModal({
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  gap: 6,
+                  gap: 4,
                 }}
               >
                 <span>🔓</span>
-                <span>Release to Profit Pool</span>
+                <span>Release</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAction('reinvest')}
+                style={{
+                  padding: '10px 6px',
+                  borderRadius: 10,
+                  fontWeight: 800,
+                  fontSize: 12,
+                  cursor: 'pointer',
+                  border: '1px solid',
+                  borderColor: action === 'reinvest' ? '#a855f7' : 'var(--bf-border)',
+                  background: action === 'reinvest' ? 'rgba(168, 85, 247, 0.25)' : 'rgba(255,255,255,0.03)',
+                  color: action === 'reinvest' ? '#c084fc' : 'var(--bf-text-muted)',
+                  transition: 'all 0.15s',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 4,
+                }}
+              >
+                <span>🚀</span>
+                <span>Reinvest</span>
               </button>
             </div>
           </div>
@@ -154,15 +192,17 @@ export default function ReserveModal({
           <div style={{ fontSize: 12, color: 'var(--bf-text-dim)', background: 'rgba(255,255,255,0.03)', padding: 10, borderRadius: 8, marginBottom: 16 }}>
             {action === 'allocate' ? (
               <span>🔒 Main Binance Wallet se USDT nikaal kar Reserve pool mein lock ho jayegi.</span>
-            ) : (
+            ) : action === 'release' ? (
               <span>🔓 Reserve pool se USDT nikaal kar wapas 50/50 profit pool (Main Wallet) mein shamil ho jayegi.</span>
+            ) : (
+              <span>🚀 Reserve mein rakhi USDT business reinvestment (stock, supplier, ads) ke liye kharch hogi. Dono partners ka 50/50 profit pool mehfooz rahega.</span>
             )}
           </div>
 
           {/* Amount Input */}
           <div className="bf-form-group">
             <label className="bf-form-label">
-              {action === 'allocate' ? 'Lock USDT Amount' : 'Release USDT Amount'}
+              {action === 'allocate' ? 'Lock USDT Amount' : action === 'release' ? 'Release USDT Amount' : 'Reinvest USDT Amount'}
             </label>
             <div style={{ position: 'relative' }}>
               <input
@@ -182,13 +222,33 @@ export default function ReserveModal({
             </div>
           </div>
 
+          {/* Reinvestment Purpose / Description */}
+          {action === 'reinvest' && (
+            <div className="bf-form-group">
+              <label className="bf-form-label">Reinvestment Purpose / Description</label>
+              <input
+                type="text"
+                className="bf-input"
+                placeholder="e.g. New Inventory Stock / Supplier Batch Order"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
+          )}
+
           {/* Memo / Notes */}
           <div className="bf-form-group">
-            <label className="bf-form-label">Memo / Reason (Optional)</label>
+            <label className="bf-form-label">Memo / Notes (Optional)</label>
             <input
               type="text"
               className="bf-input"
-              placeholder={action === 'allocate' ? 'e.g. Kept for upcoming seller batch payouts' : 'e.g. Releasing surplus back to profit'}
+              placeholder={
+                action === 'allocate'
+                  ? 'e.g. Kept for upcoming seller batch payouts'
+                  : action === 'release'
+                  ? 'e.g. Releasing surplus back to profit'
+                  : 'e.g. Sourced from wholesale manufacturer'
+              }
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />
@@ -200,7 +260,12 @@ export default function ReserveModal({
             disabled={submitting}
             style={{
               marginTop: 10,
-              background: action === 'allocate' ? 'linear-gradient(135deg, #f59e0b, #d97706)' : 'linear-gradient(135deg, #10b981, #059669)',
+              background:
+                action === 'allocate'
+                  ? 'linear-gradient(135deg, #f59e0b, #d97706)'
+                  : action === 'release'
+                  ? 'linear-gradient(135deg, #10b981, #059669)'
+                  : 'linear-gradient(135deg, #a855f7, #7c3aed)',
               color: action === 'allocate' ? '#000' : '#fff',
             }}
           >
@@ -208,7 +273,9 @@ export default function ReserveModal({
               ? 'Processing...'
               : action === 'allocate'
               ? `Lock $${numAmt ? numAmt.toFixed(2) : 0} USDT into Reserve`
-              : `Release $${numAmt ? numAmt.toFixed(2) : 0} USDT to Profit Pool`}
+              : action === 'release'
+              ? `Release $${numAmt ? numAmt.toFixed(2) : 0} USDT to Profit Pool`
+              : `🚀 Reinvest $${numAmt ? numAmt.toFixed(2) : 0} USDT from Reserve`}
           </button>
         </form>
       </div>
