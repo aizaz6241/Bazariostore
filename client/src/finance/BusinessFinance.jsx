@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Ic from '../components/Icons.jsx';
 import PinLockScreen from './PinLockScreen.jsx';
 import TransactionModal from './TransactionModal.jsx';
@@ -6,6 +6,7 @@ import ReserveModal from './ReserveModal.jsx';
 import SettingsModal from './SettingsModal.jsx';
 import InstallShortcutModal from './InstallShortcutModal.jsx';
 import SettlementModal from './SettlementModal.jsx';
+import AnalyticsView from './AnalyticsView.jsx';
 import '../styles/businessFinance.css';
 
 const SESSION_TOKEN_KEY = 'bf_partner_session_token';
@@ -20,10 +21,22 @@ export default function BusinessFinance() {
     return sessionStorage.getItem(SESSION_TOKEN_KEY) || localStorage.getItem(SESSION_TOKEN_KEY) || '';
   });
   const [savedPin, setSavedPin] = useState(() => {
-    return sessionStorage.getItem(SESSION_PIN_KEY) || localStorage.getItem(SESSION_PIN_KEY) || '7860';
+    return sessionStorage.getItem(SESSION_PIN_KEY) || localStorage.getItem(SESSION_PIN_KEY) || '6241';
   });
 
-  // Active Bottom Nav Tab for mobile (scroll trigger)
+  const savedPinRef = useRef(savedPin);
+  const tokenRef = useRef(token);
+
+  useEffect(() => {
+    savedPinRef.current = savedPin;
+  }, [savedPin]);
+
+  useEffect(() => {
+    tokenRef.current = token;
+  }, [token]);
+
+  // View Navigation: 'dashboard' | 'analytics'
+  const [currentView, setCurrentView] = useState('dashboard');
   const [activeTab, setActiveTab] = useState('overview');
 
   // Dashboard Data State
@@ -35,8 +48,9 @@ export default function BusinessFinance() {
   const [statusMsg, setStatusMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Filters
+  // Filters (Category & Date Period)
   const [txTypeFilter, setTxTypeFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('all'); // 'all' | 'today' | 'week' | 'month'
   const [searchQuery, setSearchQuery] = useState('');
 
   // Modals State
@@ -51,11 +65,13 @@ export default function BusinessFinance() {
   // Authenticated API request helper
   const apiFetch = useCallback(
     async (path, options = {}) => {
+      const activePin = savedPinRef.current || savedPin;
+      const activeToken = tokenRef.current || token;
       const headers = {
         'Content-Type': 'application/json',
         ...(options.headers || {}),
-        'X-Partner-Pin': savedPin,
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        'X-Partner-Pin': activePin,
+        ...(activeToken ? { Authorization: `Bearer ${activeToken}` } : {}),
       };
 
       const res = await fetch(`/api/business-finance${path}`, {
@@ -80,6 +96,8 @@ export default function BusinessFinance() {
     setIsAuthenticated(true);
     setToken(sessionToken);
     setSavedPin(enteredPin);
+    savedPinRef.current = enteredPin;
+    tokenRef.current = sessionToken;
     sessionStorage.setItem(SESSION_TOKEN_KEY, sessionToken);
     sessionStorage.setItem(SESSION_PIN_KEY, enteredPin);
     if (initialSettings) setSettings(initialSettings);
@@ -89,6 +107,7 @@ export default function BusinessFinance() {
   const handleLock = () => {
     setIsAuthenticated(false);
     setToken('');
+    tokenRef.current = '';
     sessionStorage.removeItem(SESSION_TOKEN_KEY);
     localStorage.removeItem(SESSION_TOKEN_KEY);
   };
@@ -211,19 +230,27 @@ export default function BusinessFinance() {
 
   // Change PIN
   const handleChangePin = async (currentPin, newPin) => {
-    await apiFetch('/update-pin', {
+    const res = await apiFetch('/update-pin', {
       method: 'POST',
       body: JSON.stringify({ currentPin, newPin }),
     });
-    setSavedPin(newPin);
-    sessionStorage.setItem(SESSION_PIN_KEY, newPin);
+    const freshPin = String(newPin).trim();
+    setSavedPin(freshPin);
+    savedPinRef.current = freshPin;
+    sessionStorage.setItem(SESSION_PIN_KEY, freshPin);
+    if (res.token) {
+      setToken(res.token);
+      tokenRef.current = res.token;
+      sessionStorage.setItem(SESSION_TOKEN_KEY, res.token);
+    }
     setStatusMsg('Security PIN changed successfully');
     setTimeout(() => setStatusMsg(''), 3000);
+    return res;
   };
 
   // If locked, render PIN Gate
   if (!isAuthenticated) {
-    return <PinLockScreen onUnlock={handleUnlock} defaultPin="7860" />;
+    return <PinLockScreen onUnlock={handleUnlock} />;
   }
 
   // Shorthands from overview
@@ -240,13 +267,48 @@ export default function BusinessFinance() {
     (tx) => tx.type === 'expense' && tx.category !== 'seller_withdrawal' && tx.category !== 'reinvestment'
   );
 
+  // Period Match Helper
+  const isWithinPeriod = (dateVal, filter) => {
+    if (filter === 'all' || !filter) return true;
+    if (!dateVal) return false;
+    const d = new Date(dateVal);
+    const now = new Date();
+
+    if (filter === 'today') {
+      return (
+        d.getFullYear() === now.getFullYear() &&
+        d.getMonth() === now.getMonth() &&
+        d.getDate() === now.getDate()
+      );
+    }
+
+    if (filter === 'week') {
+      const diffTime = now.getTime() - d.getTime();
+      const diffDays = diffTime / (1000 * 3600 * 24);
+      return diffDays >= 0 && diffDays <= 7;
+    }
+
+    if (filter === 'month') {
+      return (
+        d.getFullYear() === now.getFullYear() &&
+        d.getMonth() === now.getMonth()
+      );
+    }
+
+    return true;
+  };
+
   // Filtered transactions for audit feed
   const filteredTxs = transactions.filter((tx) => {
     if (txTypeFilter === 'income' && tx.type !== 'income') return false;
     if (txTypeFilter === 'expense' && (tx.type !== 'expense' || tx.category === 'seller_withdrawal' || tx.category === 'reinvestment')) return false;
     if (txTypeFilter === 'drawing' && tx.type !== 'drawing') return false;
     if (txTypeFilter === 'reserve' && tx.type !== 'reserve_transfer' && tx.category !== 'seller_withdrawal' && tx.category !== 'reinvestment') return false;
-    if (txTypeFilter === 'settlement' && tx.type !== 'settlement') return false;
+    if (txTypeFilter === 'settlement' && tx.type !== 'settlement' && tx.category !== 'partner_settlement') return false;
+
+    // Period Filter (Daily, Weekly, Monthly, All)
+    const txTime = tx.createdAt || tx.date;
+    if (!isWithinPeriod(txTime, dateFilter)) return false;
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -343,9 +405,36 @@ export default function BusinessFinance() {
           </div>
         )}
 
-        {/* ─── 1. MASTER BINANCE WALLET HERO CARD ───────────────── */}
-        <section className="bf-hero-wallet">
-          <div className="bf-hero-top">
+        {/* View Switcher: Live Dashboard vs Analytics */}
+        <div className="bf-view-switcher">
+          <button
+            type="button"
+            className={`bf-view-tab ${currentView === 'dashboard' ? 'active' : ''}`}
+            onClick={() => setCurrentView('dashboard')}
+          >
+            <span>⚡</span>
+            <span>Live Dashboard</span>
+          </button>
+          <button
+            type="button"
+            className={`bf-view-tab ${currentView === 'analytics' ? 'active' : ''}`}
+            onClick={() => setCurrentView('analytics')}
+          >
+            <span>📊</span>
+            <span>Analytics & Reports</span>
+          </button>
+        </div>
+
+        {currentView === 'analytics' ? (
+          <AnalyticsView
+            overview={overview}
+            onBackToDashboard={() => setCurrentView('dashboard')}
+          />
+        ) : (
+          <>
+            {/* ─── 1. MASTER BINANCE WALLET HERO CARD ───────────────── */}
+            <section className="bf-hero-wallet">
+              <div className="bf-hero-top">
             <span className="bf-hero-badge">
               💎 Binance USDT Wallet
             </span>
@@ -822,6 +911,33 @@ export default function BusinessFinance() {
               />
             </div>
 
+            {/* Date / Period Filters (Daily, Weekly, Monthly, All) */}
+            <div className="bf-period-filters">
+              {[
+                { id: 'all', label: 'All Time', icon: '🌐' },
+                { id: 'today', label: 'Daily (Today)', icon: '📅' },
+                { id: 'week', label: 'Weekly (Last 7 Days)', icon: '📆' },
+                { id: 'month', label: 'Monthly (This Month)', icon: '🗓️' },
+              ].map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className={`bf-period-btn ${dateFilter === p.id ? 'active' : ''}`}
+                  onClick={() => setDateFilter(p.id)}
+                >
+                  <span>{p.icon}</span>
+                  <span>{p.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {dateFilter !== 'all' && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: 8, fontSize: 12, color: '#93c5fd', marginBottom: 10 }}>
+                <span>Showing <strong>{sortedTxs.length}</strong> transactions for <strong>{dateFilter === 'today' ? 'Today' : dateFilter === 'week' ? 'Past 7 Days' : 'This Month'}</strong></span>
+                <button type="button" onClick={() => setDateFilter('all')} style={{ background: 'none', border: 'none', color: '#93c5fd', cursor: 'pointer', fontWeight: 700, fontSize: 11 }}>✕ Show All</button>
+              </div>
+            )}
+
             <div className="bf-filter-chips">
               {[
                 { id: 'all', label: 'All' },
@@ -940,20 +1056,34 @@ export default function BusinessFinance() {
             )}
           </div>
         </section>
+        </>
+      )}
       </main>
 
       {/* ─── MOBILE BOTTOM BAR ─────────────────────────────────── */}
       <nav className="bf-bottom-nav">
         <button
           type="button"
-          className={`bf-nav-item ${activeTab === 'overview' ? 'active' : ''}`}
+          className={`bf-nav-item ${currentView === 'dashboard' ? 'active' : ''}`}
           onClick={() => {
-            setActiveTab('overview');
+            setCurrentView('dashboard');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+        >
+          <span style={{ fontSize: 18 }}>⚡</span>
+          <span>Dashboard</span>
+        </button>
+
+        <button
+          type="button"
+          className={`bf-nav-item ${currentView === 'analytics' ? 'active' : ''}`}
+          onClick={() => {
+            setCurrentView('analytics');
             window.scrollTo({ top: 0, behavior: 'smooth' });
           }}
         >
           <span style={{ fontSize: 18 }}>📊</span>
-          <span>Overview</span>
+          <span>Analytics</span>
         </button>
 
         <button
@@ -977,19 +1107,7 @@ export default function BusinessFinance() {
           }}
         >
           <span style={{ fontSize: 18 }}>🍔</span>
-          <span>+ Expenditure</span>
-        </button>
-
-        <button
-          type="button"
-          className="bf-nav-item"
-          onClick={() => {
-            setReserveModalAction('allocate');
-            setReserveModalOpen(true);
-          }}
-        >
-          <span style={{ fontSize: 18 }}>🛡️</span>
-          <span>Reserve</span>
+          <span>+ Exp</span>
         </button>
 
         <button

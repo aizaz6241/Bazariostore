@@ -50,6 +50,32 @@ export default function SettingsModal({
     setPartner2Share(100 - p1);
   };
 
+  const handlePinOnlyUpdate = async () => {
+    if (!newPin || newPin.trim().length < 4) {
+      setError('New PIN must be at least 4 digits');
+      return;
+    }
+    if (newPin !== confirmPin) {
+      setError('New PIN and Confirm PIN do not match');
+      return;
+    }
+    setSubmitting(true);
+    setError('');
+    setMsg('');
+    try {
+      await onChangePin(currentPin, newPin);
+      setMsg(`Partner Security PIN successfully changed!`);
+      setCurrentPin('');
+      setNewPin('');
+      setConfirmPin('');
+      setShowPinChange(false);
+    } catch (err) {
+      setError(err.message || 'Failed to update PIN');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -59,7 +85,7 @@ export default function SettingsModal({
     try {
       // If user filled PIN change form
       if (showPinChange && newPin) {
-        if (newPin.length < 4) {
+        if (newPin.trim().length < 4) {
           throw new Error('New PIN must be at least 4 digits');
         }
         if (newPin !== confirmPin) {
@@ -227,6 +253,30 @@ export default function SettingsModal({
                   value={confirmPin}
                   onChange={(e) => setConfirmPin(e.target.value)}
                 />
+                <button
+                  type="button"
+                  disabled={submitting || !newPin}
+                  onClick={handlePinOnlyUpdate}
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 10,
+                    padding: '10px 16px',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    boxShadow: '0 2px 10px rgba(16, 185, 129, 0.3)',
+                    marginTop: 4,
+                  }}
+                >
+                  <Ic name="lock" size={14} />
+                  <span>{submitting ? 'Updating PIN...' : 'Update PIN Now'}</span>
+                </button>
               </div>
             )}
           </div>

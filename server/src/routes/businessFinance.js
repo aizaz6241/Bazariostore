@@ -89,17 +89,33 @@ router.post('/verify-pin', async (req, res) => {
 router.post('/update-pin', authPartner, async (req, res) => {
   try {
     const { currentPin, newPin } = req.body || {};
-    if (!newPin || String(newPin).trim().length < 4) {
+    const cleanNewPin = String(newPin || '').trim();
+    if (!cleanNewPin || cleanNewPin.length < 4) {
       return res.status(400).json({ ok: false, message: 'New PIN must be at least 4 digits' });
     }
 
     const settings = await getFinanceSettings();
-    if (currentPin && String(currentPin).trim() !== String(settings.securityPin).trim()) {
+    const activePin = String(settings.securityPin || '7860').trim();
+
+    if (currentPin && String(currentPin).trim() !== activePin) {
       return res.status(400).json({ ok: false, message: 'Current PIN is incorrect' });
     }
 
-    const updated = await updateFinanceSettings({ securityPin: String(newPin).trim() });
-    res.json({ ok: true, message: 'Partner Security PIN successfully updated!' });
+    await updateFinanceSettings({ securityPin: cleanNewPin });
+
+    // Generate fresh session token
+    const token = jwt.sign(
+      { t: 'partner_finance', verifiedAt: Date.now() },
+      process.env.JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    res.json({
+      ok: true,
+      message: 'Partner Security PIN successfully updated!',
+      token,
+      newPin: cleanNewPin,
+    });
   } catch (err) {
     res.status(500).json({ ok: false, message: err.message });
   }
