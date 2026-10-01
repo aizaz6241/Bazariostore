@@ -39,17 +39,21 @@ export async function POST(req) {
     member.plainPassword = newPassword;
     await member.save();
 
-    // If user is Admin, also sync the new password in main ecommerce 'admins' collection
+    // If user is an Admin, sync new password to the specific admin record in the main ecommerce 'admins' collection
     if (member.role === 'admin') {
       try {
         const db = mongoose.connection.db;
-        await db.collection('admins').updateMany(
-          {
-            $or: [
-              { email: `${member.username}@bazario.com` },
-              { name: member.name },
-            ],
-          },
+        const query = member.ecommerceAdminId
+          ? { _id: member.ecommerceAdminId }
+          : {
+              $or: [
+                { email: member.email || `${member.username}@bazario.com` },
+                { name: member.name },
+              ],
+            };
+
+        await db.collection('admins').updateOne(
+          query,
           { $set: { passwordHash: newHash, updatedAt: new Date() } }
         );
       } catch (adminSyncErr) {

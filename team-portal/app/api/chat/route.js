@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAuthSession } from '@/lib/auth';
 import ChatMessage from '@/lib/models/ChatMessage';
 import Member from '@/lib/models/Member';
+import { syncEcommerceAdmins } from '@/lib/adminSync';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,23 +16,26 @@ export async function GET(req) {
 
     const { searchParams } = new URL(req.url);
     const chatType = searchParams.get('chatType') || 'group'; // 'group' or 'personal'
-    const targetMemberId = searchParams.get('targetMemberId'); // Used when opening personal chat
+    let targetMemberId = searchParams.get('targetMemberId'); // Used when opening personal chat
 
     let conversationId = 'main_group';
 
     if (chatType === 'personal') {
-      if (session.role === 'member') {
-        // A member is only allowed to chat with Admin
-        // Find default admin or target admin
-        const adminUser = await Member.findOne({ role: 'admin' });
-        const adminId = adminUser ? adminUser._id.toString() : 'admin';
-        const parts = [session._id.toString(), adminId].sort();
-        conversationId = `personal_${parts.join('_')}`;
-      } else {
-        // Admin chatting with a specific member
-        if (!targetMemberId) {
-          return NextResponse.json({ message: 'targetMemberId required for personal chat' }, { status: 400 });
+      if (!targetMemberId) {
+        // Fallback default target if none provided in query
+        if (session.role === 'member') {
+          // Member default target: first active admin
+          await syncEcommerceAdmins();
+          const firstAdmin = await Member.findOne({ role: 'admin', active: true });
+          if (firstAdmin) targetMemberId = firstAdmin._id.toString();
+        } else {
+          // Admin default target: first active member
+          const firstMember = await Member.findOne({ role: 'member', active: true });
+          if (firstMember) targetMemberId = firstMember._id.toString();
         }
+      }
+
+      if (targetMemberId) {
         const parts = [session._id.toString(), targetMemberId.toString()].sort();
         conversationId = `personal_${parts.join('_')}`;
       }
@@ -39,7 +43,21 @@ export async function GET(req) {
 
     const messages = await ChatMessage.find({ conversationId })
       .sort({ createdAt: 1 })
-      .limit(200);
+      .limit(300);
+
+    // Mark unread messages in this conversation as read by the current user
+    try {
+      await ChatMessage.updateMany(
+        {
+          conversationId,
+          senderId: { $ne: session._id },
+          readBy: { $ne: session._id },
+        },
+        { $addToSet: { readBy: session._id } }
+      );
+    } catch (readErr) {
+      console.error('Mark read error:', readErr);
+    }
 
     return NextResponse.json({
       conversationId,
@@ -65,22 +83,18 @@ export async function POST(req) {
     let target = null;
 
     if (chatType === 'personal') {
-      if (session.role === 'member') {
-        // Member can only send to Admin
-        const adminUser = await Member.findOne({ role: 'admin' });
-        if (!adminUser) return NextResponse.json({ message: 'Admin not found' }, { status: 404 });
-        const parts = [session._id.toString(), adminUser._id.toString()].sort();
-        conversationId = `personal_${parts.join('_')}`;
-        target = adminUser._id;
-      } else {
-        // Admin sending to Member
-        if (!targetMemberId) {
-          return NextResponse.json({ message: 'targetMemberId required' }, { status: 400 });
-        }
-        const parts = [session._id.toString(), targetMemberId.toString()].sort();
-        conversationId = `personal_${parts.join('_')}`;
-        target = targetMemberId;
+      if (!targetMemberId) {
+        return NextResponse.json({ message: 'Target user ID is required for personal chat' }, { status: 400 });
       }
+
+      const targetMember = await Member.findById(targetMemberId);
+      if (!targetMember) {
+        return NextResponse.json({ message: 'Recipient user not found' }, { status: 404 });
+      }
+
+      const parts = [session._id.toString(), targetMemberId.toString()].sort();
+      conversationId = `personal_${parts.join('_')}`;
+      target = targetMember._id;
     }
 
     const newMsg = await ChatMessage.create({
@@ -97,10 +111,13 @@ export async function POST(req) {
       readBy: [session._id],
     });
 
-    return NextResponse.json({
-      message: 'Message sent',
-      chatMessage: newMsg,
-    }, { status: 201 });
+    return NextResponse.json(
+      {
+        message: 'Message sent',
+        chatMessage: newMsg,
+      },
+      { status: 201 }
+    );
   } catch (err) {
     console.error('Send chat message error:', err);
     return NextResponse.json({ message: err.message }, { status: 500 });

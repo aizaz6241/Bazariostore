@@ -4,6 +4,7 @@ import Member from '@/lib/models/Member';
 import SellerAssignment from '@/lib/models/SellerAssignment';
 import { Seller, Order } from '@/lib/models/SharedModels';
 import RewardClaim from '@/lib/models/RewardClaim';
+import { syncEcommerceAdmins } from '@/lib/adminSync';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +16,10 @@ export async function GET(req) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
 
-    const members = await Member.find().select('-passwordHash').sort({ createdAt: -1 });
+    // Keep all ecommerce admins synchronized
+    await syncEcommerceAdmins();
+
+    const members = await Member.find().select('-passwordHash').sort({ role: 1, createdAt: -1 });
 
     // Aggregate statistics for each member
     const memberStats = await Promise.all(

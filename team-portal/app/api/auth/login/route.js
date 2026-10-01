@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import Member from '@/lib/models/Member';
-import { comparePassword, hashPassword, signToken } from '@/lib/auth';
+import { comparePassword, signToken } from '@/lib/auth';
 import mongoose from 'mongoose';
 
 export const dynamic = 'force-dynamic';
@@ -19,8 +19,8 @@ export async function POST(req) {
     const db = mongoose.connection.db;
 
     // ─── 1. Check Main Ecommerce Platform 'admins' Collection First ───
-    // Allows any admin from the main website (e.g. admin@bazario.com, abdullah@bazario.com, etc.)
-    // to login directly with their existing credentials without creating an account
+    // Allows any admin (e.g. admin@bazario.com, abdullah@bazario.com, steve123@gmail.com)
+    // to login directly with their own separate credentials and maintain their own distinct profile & communications.
     const ecommerceAdmin = await db.collection('admins').findOne({
       $or: [
         { email: cleanInput },
@@ -32,26 +32,39 @@ export async function POST(req) {
     if (ecommerceAdmin) {
       const isMatch = await comparePassword(password, ecommerceAdmin.passwordHash);
       if (isMatch) {
-        // Ensure synchronized PortalMember record exists for foreign keys and chat
-        let portalMember = await Member.findOne({
-          $or: [
-            { username: cleanInput },
-            { username: ecommerceAdmin.email.split('@')[0] },
-            { name: ecommerceAdmin.name },
-          ],
-        });
+        const cleanEmail = (ecommerceAdmin.email || '').toLowerCase().trim();
+        const baseUsername = cleanEmail.split('@')[0].toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+        const adminName = ecommerceAdmin.name || baseUsername;
+
+        // Ensure distinct synchronized PortalMember record exists for this specific admin
+        let portalMember = await Member.findOne({ ecommerceAdminId: ecommerceAdmin._id });
+
+        if (!portalMember) {
+          portalMember = await Member.findOne({
+            $or: [
+              { email: cleanEmail },
+              { username: baseUsername },
+            ],
+          });
+        }
 
         if (!portalMember) {
           portalMember = await Member.create({
-            name: ecommerceAdmin.name || 'Ecommerce Admin',
-            username: ecommerceAdmin.email.split('@')[0],
+            name: adminName,
+            username: baseUsername,
+            email: cleanEmail,
+            ecommerceAdminId: ecommerceAdmin._id,
             passwordHash: ecommerceAdmin.passwordHash,
             role: 'admin',
             phone: ecommerceAdmin.phone || '',
+            active: ecommerceAdmin.active !== false,
             wallet: { balancePKR: 0, totalDepositsPKR: 0, totalWithdrawalsPKR: 0, totalBonusesPKR: 0 },
             lastLoginAt: new Date(),
           });
         } else {
+          portalMember.ecommerceAdminId = ecommerceAdmin._id;
+          portalMember.name = adminName;
+          portalMember.email = cleanEmail;
           portalMember.passwordHash = ecommerceAdmin.passwordHash;
           portalMember.role = 'admin';
           portalMember.lastLoginAt = new Date();
@@ -63,6 +76,7 @@ export async function POST(req) {
           name: portalMember.name,
           username: portalMember.username,
           role: 'admin',
+          email: portalMember.email,
           ecommerceAdminId: ecommerceAdmin._id,
         });
 
@@ -70,7 +84,7 @@ export async function POST(req) {
         delete safeMember.passwordHash;
 
         const response = NextResponse.json({
-          message: 'Welcome Administrator! Logged in with Ecommerce Admin credentials.',
+          message: `Welcome ${portalMember.name}! Logged in as Administrator.`,
           token,
           member: safeMember,
         });
@@ -86,10 +100,11 @@ export async function POST(req) {
       }
     }
 
-    // ─── 2. Check Portal Members Collection (For Agents / Members created by Admin) ───
+    // ─── 2. Check Portal Members Collection (For Agents / Members created by Admins) ───
     const member = await Member.findOne({
       $or: [
         { username: cleanInput },
+        { email: cleanInput },
         { name: new RegExp(`^${cleanInput}$`, 'i') },
       ],
     });
@@ -115,6 +130,7 @@ export async function POST(req) {
       name: member.name,
       username: member.username,
       role: member.role,
+      email: member.email || '',
     });
 
     const safeMember = member.toObject();

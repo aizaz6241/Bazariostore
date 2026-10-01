@@ -14,6 +14,17 @@ const memberSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
     },
+    email: {
+      type: String,
+      default: '',
+      lowercase: true,
+      trim: true,
+    },
+    ecommerceAdminId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+      index: true,
+    },
     passwordHash: {
       type: String,
       required: true,
@@ -39,7 +50,7 @@ const memberSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
-    // Wallet tracking in PKR
+    // Wallet tracking in PKR (For members)
     wallet: {
       balancePKR: { type: Number, default: 0 },
       totalDepositsPKR: { type: Number, default: 0 },

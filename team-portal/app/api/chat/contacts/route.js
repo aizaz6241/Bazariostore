@@ -1,0 +1,85 @@
+import { NextResponse } from 'next/server';
+import { getAuthSession } from '@/lib/auth';
+import Member from '@/lib/models/Member';
+import ChatMessage from '@/lib/models/ChatMessage';
+import { syncEcommerceAdmins } from '@/lib/adminSync';
+
+export const dynamic = 'force-dynamic';
+
+export async function GET(req) {
+  try {
+    const session = await getAuthSession(req);
+    if (!session) {
+      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Keep all admins synchronized from ecommerce database
+    await syncEcommerceAdmins();
+
+    // Determine eligible contacts based on session role
+    let contactsQuery = {};
+    if (session.role === 'member') {
+      // Members can 1-on-1 chat with all platform administrators
+      contactsQuery = { role: 'admin', active: true };
+    } else {
+      // Admins can 1-on-1 chat with all team members and fellow administrators
+      contactsQuery = { _id: { $ne: session._id }, active: true };
+    }
+
+    const contacts = await Member.find(contactsQuery)
+      .select('name username role phone avatar active')
+      .sort({ role: 1, name: 1 });
+
+    // Fetch conversation preview and unread counts for each contact
+    const enrichedContacts = await Promise.all(
+      contacts.map(async (contact) => {
+        const parts = [session._id.toString(), contact._id.toString()].sort();
+        const conversationId = `personal_${parts.join('_')}`;
+
+        const lastMsg = await ChatMessage.findOne({ conversationId })
+          .sort({ createdAt: -1 })
+          .select('messageType text mediaUrl createdAt senderId senderName');
+
+        const unreadCount = await ChatMessage.countDocuments({
+          conversationId,
+          senderId: contact._id,
+          readBy: { $ne: session._id },
+        });
+
+        return {
+          _id: contact._id,
+          name: contact.name,
+          username: contact.username,
+          role: contact.role,
+          phone: contact.phone,
+          avatar: contact.avatar,
+          conversationId,
+          lastMessage: lastMsg,
+          unreadCount,
+        };
+      })
+    );
+
+    // Group chat metadata
+    const groupLastMsg = await ChatMessage.findOne({ conversationId: 'main_group' })
+      .sort({ createdAt: -1 })
+      .select('messageType text mediaUrl createdAt senderId senderName');
+
+    const groupUnreadCount = await ChatMessage.countDocuments({
+      conversationId: 'main_group',
+      senderId: { $ne: session._id },
+      readBy: { $ne: session._id },
+    });
+
+    return NextResponse.json({
+      contacts: enrichedContacts,
+      group: {
+        lastMessage: groupLastMsg,
+        unreadCount: groupUnreadCount,
+      },
+    });
+  } catch (err) {
+    console.error('Fetch chat contacts error:', err);
+    return NextResponse.json({ message: err.message }, { status: 500 });
+  }
+}
