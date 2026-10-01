@@ -41,16 +41,11 @@ export async function GET(req) {
       }
     }
 
-    const messages = await ChatMessage.find({ conversationId })
-      .sort({ createdAt: 1 })
-      .limit(300);
-
     // Mark unread messages in this conversation as read by the current user
     try {
       await ChatMessage.updateMany(
         {
           conversationId,
-          senderId: { $ne: session._id },
           readBy: { $ne: session._id },
         },
         { $addToSet: { readBy: session._id } }
@@ -58,6 +53,11 @@ export async function GET(req) {
     } catch (readErr) {
       console.error('Mark read error:', readErr);
     }
+
+    const messages = await ChatMessage.find({ conversationId })
+      .populate('readBy', 'name username avatar role')
+      .sort({ createdAt: 1 })
+      .limit(300);
 
     return NextResponse.json({
       conversationId,
@@ -110,6 +110,8 @@ export async function POST(req) {
       audioDuration: audioDuration || 0,
       readBy: [session._id],
     });
+
+    await newMsg.populate('readBy', 'name username avatar role');
 
     return NextResponse.json(
       {

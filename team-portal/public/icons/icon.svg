@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090d16" />
+      <stop offset="50%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+
+    <!-- Emerald / Teal Glow Gradient -->
+    <linearGradient id="emblemGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="50%" stop-color="#059669" />
+      <stop offset="100%" stop-color="#0d9488" />
+    </linearGradient>
+
+    <!-- Accent Border Gradient -->
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="50%" stop-color="#059669" />
+      <stop offset="100%" stop-color="#047857" />
+    </linearGradient>
+
+    <!-- Glow Filter -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background Base with Squircle / iOS Curve -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+
+  <!-- Outer Ring Accent -->
+  <rect x="24" y="24" width="464" height="464" rx="96" fill="none" stroke="url(#borderGrad)" stroke-width="4" stroke-opacity="0.35" />
+
+  <!-- Glowing Emblem Background -->
+  <rect x="96" y="96" width="320" height="320" rx="64" fill="url(#emblemGrad)" filter="url(#glow)" opacity="0.3" />
+  
+  <!-- Central Emblem Plate -->
+  <rect x="106" y="106" width="300" height="300" rx="56" fill="url(#emblemGrad)" />
+
+  <!-- Inner Soft Highlight -->
+  <rect x="108" y="108" width="296" height="150" rx="54" fill="white" opacity="0.12" />
+
+  <!-- Monogram BZ / Team Logo Text -->
+  <g fill="#ffffff" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-weight="900">
+    <text x="256" y="278" font-size="145" text-anchor="middle" letter-spacing="-4" filter="drop-shadow(0px 8px 16px rgba(0,0,0,0.35))">
+      BZ
+    </text>
+  </g>
+
+  <!-- Subtitle Pill: TEAM -->
+  <g transform="translate(196, 318)">
+    <rect width="120" height="34" rx="17" fill="#090d16" opacity="0.85" />
+    <text x="60" y="23" fill="#34d399" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16" font-weight="800" text-anchor="middle" letter-spacing="3">
+      TEAM
+    </text>
+  </g>
+
+  <!-- Live Pulse Dot -->
+  <circle cx="256" cy="445" r="7" fill="#34d399" filter="url(#glow)" />
+</svg>

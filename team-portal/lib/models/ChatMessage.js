@@ -55,6 +55,28 @@ const chatMessageSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // Edit & Delete Tracking (WhatsApp Style)
+    isEdited: {
+      type: Boolean,
+      default: false,
+    },
+    editedAt: {
+      type: Date,
+      default: null,
+    },
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
+    deletedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'PortalMember',
+      default: null,
+    },
     // System bonus metadata
     bonusMetadata: {
       amountPKR: { type: Number, default: 0 },
@@ -62,6 +84,7 @@ const chatMessageSchema = new mongoose.Schema(
       recipientMemberName: { type: String, default: '' },
       recipientMemberId: { type: mongoose.Schema.Types.ObjectId, ref: 'PortalMember', default: null },
     },
+    // Seen / Read By list (populated with member info for Messenger-style floating bubbles)
     readBy: [
       {
         type: mongoose.Schema.Types.ObjectId,
