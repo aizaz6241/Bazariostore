@@ -19,13 +19,15 @@ export default function MobileBottomNav() {
 
   if (!user || pathname === '/login') return null;
 
+  const isAdmin = user.role === 'admin';
+
   const navItems = [
     { href: '/dashboard', label: 'Home', icon: LayoutDashboard },
     { href: '/chat', label: 'Chats', icon: MessageSquare },
     { href: '/sellers', label: 'Sellers', icon: Users },
     { href: '/models', label: 'Models', icon: ImageIcon },
     { href: '/rewards', label: 'Rewards', icon: Award },
-    { href: '/members', label: 'Members', icon: UserCheck },
+    ...(isAdmin ? [{ href: '/members', label: 'Members', icon: UserCheck }] : []),
   ];
 
   return (

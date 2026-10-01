@@ -42,7 +42,7 @@ export default function AppNavbar() {
     { href: '/sellers', label: 'Sellers', icon: Users },
     { href: '/models', label: 'Models', icon: ImageIcon },
     { href: '/rewards', label: 'Rewards', icon: Award },
-    { href: '/members', label: 'Members', icon: UserCheck },
+    ...(isAdmin ? [{ href: '/members', label: 'Members', icon: UserCheck }] : []),
   ];
 
   const handlePasswordSubmit = async (e) => {

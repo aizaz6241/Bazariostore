@@ -8,12 +8,12 @@ import { syncEcommerceAdmins } from '@/lib/adminSync';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/members — list all members with detailed performance metrics
+// GET /api/members — list all members with detailed performance metrics (Admin only)
 export async function GET(req) {
   try {
     const session = await getAuthSession(req);
-    if (!session) {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+    if (!session || session.role !== 'admin') {
+      return NextResponse.json({ message: 'Forbidden. Admin access required.' }, { status: 403 });
     }
 
     // Keep all ecommerce admins synchronized

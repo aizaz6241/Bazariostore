@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import confetti from 'canvas-confetti';
 import {
@@ -61,7 +62,14 @@ export default function MembersPage() {
   const [deleteConfirmMember, setDeleteConfirmMember] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
+  const router = useRouter();
   const isAdmin = user?.role === 'admin';
+
+  useEffect(() => {
+    if (user && user.role !== 'admin') {
+      router.replace('/dashboard');
+    }
+  }, [user, router]);
 
   const fetchData = async () => {
     try {
@@ -91,8 +99,10 @@ export default function MembersPage() {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (isAdmin) {
+      fetchData();
+    }
+  }, [isAdmin]);
 
   const handleCreateMember = async (e) => {
     e?.preventDefault();
@@ -243,6 +253,20 @@ export default function MembersPage() {
     }
   };
 
+  if (!user || user.role !== 'admin') {
+    return (
+      <div className="py-24 text-center">
+        <div className="w-16 h-16 rounded-3xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-3">
+          <ShieldCheck className="w-8 h-8" />
+        </div>
+        <h2 className="text-lg font-bold text-slate-900">Admin Only Access</h2>
+        <p className="text-xs text-slate-500 mt-1">
+          The Members management section is restricted exclusively to administrators. Redirecting to dashboard...
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Top Header */}
@@ -250,16 +274,14 @@ export default function MembersPage() {
         <div>
           <div className="flex items-center space-x-2">
             <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-              {isAdmin ? 'Team Members Supervision' : 'Team Directory'}
+              Team Members Management & Supervision
             </h1>
             <span className="text-xs px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-700 font-semibold">
               {members.length} Total Users
             </span>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            {isAdmin
-              ? 'Manage member credentials, passwords, accounts, and review their assigned stores and performance.'
-              : 'Browse active team members, managers and operators across the platform.'}
+            Manage member credentials, passwords, accounts, and review their assigned stores and performance.
           </p>
         </div>
 
