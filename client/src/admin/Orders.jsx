@@ -5,6 +5,7 @@ import { STATUS_LABELS, ALL_STATUSES, PAYMENT_LABELS } from '../data.js';
 import { ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
 import { getSocket } from '../socket.js';
+import { MOCK_CUSTOMERS, getRandomCustomer } from './mockCustomers.js';
 
 export default function Orders() {
   const [params, setParams] = useSearchParams();
@@ -21,20 +22,46 @@ export default function Orders() {
   const [selectedSellerId, setSelectedSellerId] = useState('');
   const [sellerProds, setSellerProds] = useState([]);
   const [loadingProds, setLoadingProds] = useState(false);
-  const [orderForm, setOrderForm] = useState({
-    productId: '',
-    qty: 1,
-    customerName: 'Alex Miller',
-    customerPhone: '+1 (555) 234-5678',
-    customerEmail: 'customer@gmail.com',
-    street: '42 Main Street, Suite 500',
-    city: 'New York',
-    state: 'NY',
-    paymentMethod: 'cod',
-    shippingCost: 0,
-    adminNotes: 'Manually placed by Platform Admin',
+  const [randomNotice, setRandomNotice] = useState('');
+  const [selectedMockId, setSelectedMockId] = useState('');
+  const [orderForm, setOrderForm] = useState(() => {
+    const initCust = getRandomCustomer();
+    return {
+      productId: '',
+      qty: 1,
+      customerName: initCust.name,
+      customerPhone: initCust.phone,
+      customerEmail: initCust.email,
+      street: initCust.street,
+      city: initCust.city,
+      state: initCust.state,
+      paymentMethod: 'cod',
+      shippingCost: 0,
+      adminNotes: 'Manually placed by Platform Admin',
+    };
   });
   const [placingOrder, setPlacingOrder] = useState(false);
+
+  const applyCustomer = (cust) => {
+    if (!cust) return;
+    setSelectedMockId(String(cust.id));
+    setOrderForm((prev) => ({
+      ...prev,
+      customerName: cust.name,
+      customerPhone: cust.phone,
+      customerEmail: cust.email,
+      street: cust.street,
+      city: cust.city,
+      state: cust.state,
+    }));
+    setRandomNotice(`Loaded: #${cust.id} ${cust.name} (${cust.city}, ${cust.state})`);
+    setTimeout(() => setRandomNotice(''), 4000);
+  };
+
+  const applyRandomCustomer = () => {
+    const cust = getRandomCustomer();
+    applyCustomer(cust);
+  };
 
   // Quick Order View Modal
   const [inspectOrder, setInspectOrder] = useState(null);
@@ -179,6 +206,7 @@ export default function Orders() {
   const handleOpenPlaceOrder = (preselectSellerId = '') => {
     const sId = preselectSellerId || (sellers[0]?._id || '');
     setPlaceOrderOpen(true);
+    applyRandomCustomer();
     if (sId) {
       handleSellerChangeForOrder(sId);
     }
@@ -593,11 +621,82 @@ export default function Orders() {
               </div>
 
               {/* Customer Details */}
-              <div style={{ background: '#f8fafc', padding: '12px 14px', borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 14 }}>
-                <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: '#64748b', display: 'block', marginBottom: 8 }}>
-                  3. Customer Delivery Information
-                </span>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+              <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: '#64748b' }}>
+                      3. Customer Delivery Information
+                    </span>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, background: '#dbeafe', color: '#1d4ed8', padding: '2px 8px', borderRadius: 12, border: '1px solid #bfdbfe' }}>
+                      500 Real Profiles
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={applyRandomCustomer}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 6,
+                      padding: '6px 14px',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      boxShadow: '0 2px 4px rgba(37, 99, 235, 0.25)',
+                    }}
+                    title="Pick a random customer from 500 realistic profiles"
+                  >
+                    🎲 Fill Random Customer
+                  </button>
+                </div>
+
+                {/* Quick Customer Picker Dropdown */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, background: '#fff', padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap' }}>
+                    Or Pick Profile:
+                  </label>
+                  <select
+                    value={selectedMockId}
+                    onChange={(e) => {
+                      const id = Number(e.target.value);
+                      const found = MOCK_CUSTOMERS.find((c) => c.id === id);
+                      if (found) applyCustomer(found);
+                    }}
+                    style={{ flex: 1, padding: '5px 8px', borderRadius: 4, border: '1px solid #cbd5e1', fontSize: 11.5, color: '#1e293b', background: '#fff' }}
+                  >
+                    <option value="" disabled>-- Select from 500 Realistic Profiles ({MOCK_CUSTOMERS.length} total) --</option>
+                    {MOCK_CUSTOMERS.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        #{c.id}: {c.name} — {c.city}, {c.state} ({c.phone})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {randomNotice && (
+                  <div style={{
+                    marginBottom: 10,
+                    padding: '6px 10px',
+                    borderRadius: 6,
+                    background: '#f0fdf4',
+                    border: '1px solid #bbf7d0',
+                    color: '#166534',
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6
+                  }}>
+                    <span>✨</span>
+                    <span>{randomNotice}</span>
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
                   <div>
                     <label style={{ fontSize: 11.5, fontWeight: 700, display: 'block', marginBottom: 3 }}>Full Name *</label>
                     <input
@@ -616,6 +715,15 @@ export default function Orders() {
                       onChange={(e) => setOrderForm({ ...orderForm, customerPhone: e.target.value })}
                       style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
                       required
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11.5, fontWeight: 700, display: 'block', marginBottom: 3 }}>Customer Email</label>
+                    <input
+                      type="email"
+                      value={orderForm.customerEmail}
+                      onChange={(e) => setOrderForm({ ...orderForm, customerEmail: e.target.value })}
+                      style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
                     />
                   </div>
                 </div>
