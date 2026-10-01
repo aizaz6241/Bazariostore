@@ -48,6 +48,7 @@ export default function ChatPage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [pendingImagePreview, setPendingImagePreview] = useState(null); // { file, previewUrl, caption: '' }
   const [fullscreenImage, setFullscreenImage] = useState(null); // Image URL for lightbox viewer
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Scroll to Bottom & Unread Highlights
@@ -176,6 +177,67 @@ export default function ChatPage() {
     setUnreadWhileScrolled(0);
   };
 
+  // ─── Global Clipboard Paste & Keyboard Shortcuts ───
+  useEffect(() => {
+    const handleGlobalPaste = (e) => {
+      // Check if clipboard contains image files or image items
+      const clipboardFiles = e.clipboardData?.files;
+      const items = e.clipboardData?.items;
+      let hasImage = false;
+
+      if (clipboardFiles && clipboardFiles.length > 0) {
+        for (let i = 0; i < clipboardFiles.length; i++) {
+          const f = clipboardFiles[i];
+          if (f.type?.startsWith('image/') || f.name?.match(/\.(png|jpe?g|webp|gif|bmp|svg)$/i)) {
+            hasImage = true;
+            break;
+          }
+        }
+      }
+
+      if (!hasImage && items && items.length > 0) {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.type?.indexOf('image') !== -1 || (item.kind === 'file' && item.type?.startsWith('image/'))) {
+            hasImage = true;
+            break;
+          }
+        }
+      }
+
+      if (!hasImage) {
+        const text = e.clipboardData?.getData('text') || '';
+        if (
+          text.trim().startsWith('data:image/') ||
+          /^https?:\/\/.*\.(png|jpe?g|webp|gif|bmp|svg)(\?.*)?$/i.test(text.trim())
+        ) {
+          hasImage = true;
+        }
+      }
+
+      if (hasImage) {
+        handlePasteEvent(e);
+      }
+    };
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (fullscreenImage) setFullscreenImage(null);
+        if (pendingImagePreview && !uploadingImage) setPendingImagePreview(null);
+        if (editingMessage) setEditingMessage(null);
+        if (deleteConfirmMsg) setDeleteConfirmMsg(null);
+      }
+    };
+
+    window.addEventListener('paste', handleGlobalPaste);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('paste', handleGlobalPaste);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [fullscreenImage, pendingImagePreview, uploadingImage, editingMessage, deleteConfirmMsg]);
+
   // ─── 3. Send Message ───
   const handleSendMessage = async (payload) => {
     try {
@@ -280,6 +342,36 @@ export default function ChatPage() {
     });
   };
 
+  // ─── Image Helpers (Popup Preview & Safe Send) ───
+  const openImagePreview = (file, previewUrl = null) => {
+    if (!file && !previewUrl) return;
+
+    if (previewUrl) {
+      setPendingImagePreview({
+        file: file || null,
+        previewUrl,
+        caption: '',
+      });
+      return;
+    }
+
+    if (file) {
+      if (file.size > 25 * 1024 * 1024) {
+        alert('Image exceeds 25MB limit. Please choose a smaller image.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setPendingImagePreview({
+          file,
+          previewUrl: event.target.result,
+          caption: '',
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   // Image Selection Handler (Opens WhatsApp-style preview & caption dialog)
   const handleImageFileSelect = (e) => {
     const file = e.target.files?.[0];
@@ -290,35 +382,26 @@ export default function ChatPage() {
       return;
     }
 
-    if (file.size > 20 * 1024 * 1024) {
-      alert('Image exceeds 20MB limit');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setPendingImagePreview({
-        file,
-        previewUrl: event.target.result,
-        caption: '',
-      });
-    };
-    reader.readAsDataURL(file);
+    openImagePreview(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // Confirm and Send Image from Preview Modal
+  // Confirm and Send Image from Preview Modal ONLY
   const handleConfirmSendImage = async (e) => {
     e?.preventDefault();
     if (!pendingImagePreview) return;
 
     try {
       setUploadingImage(true);
-      const compressedBase64 = await compressImage(pendingImagePreview.file);
+      let mediaBase64 = pendingImagePreview.previewUrl;
+
+      if (pendingImagePreview.file) {
+        mediaBase64 = await compressImage(pendingImagePreview.file);
+      }
 
       await handleSendMessage({
         messageType: 'image',
-        mediaUrl: compressedBase64,
+        mediaUrl: mediaBase64,
         text: pendingImagePreview.caption.trim(),
       });
 
@@ -331,26 +414,80 @@ export default function ChatPage() {
     }
   };
 
-  // Clipboard Paste Support (Ctrl+V screenshot / photo)
-  const handlePaste = (e) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.indexOf('image') !== -1) {
-        const file = items[i].getAsFile();
-        if (file) {
-          const reader = new FileReader();
-          reader.onload = (event) => {
-            setPendingImagePreview({
-              file,
-              previewUrl: event.target.result,
-              caption: '',
-            });
-          };
-          reader.readAsDataURL(file);
+  // Unified Clipboard Paste Support (Ctrl+V screenshot / photo)
+  const handlePasteEvent = (e) => {
+    // 1. Check if files in clipboard (e.g. Snipping tool, copied image file in explorer)
+    const clipboardFiles = e.clipboardData?.files;
+    if (clipboardFiles && clipboardFiles.length > 0) {
+      for (let i = 0; i < clipboardFiles.length; i++) {
+        const file = clipboardFiles[i];
+        if (file.type?.startsWith('image/') || file.name?.match(/\.(png|jpe?g|webp|gif|bmp|svg)$/i)) {
           e.preventDefault();
-          break;
+          e.stopPropagation();
+          openImagePreview(file);
+          return;
+        }
+      }
+    }
+
+    // 2. Check clipboard items
+    const items = e.clipboardData?.items;
+    if (items && items.length > 0) {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type?.indexOf('image') !== -1 || (item.kind === 'file' && item.type?.startsWith('image/'))) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            e.stopPropagation();
+            openImagePreview(file);
+            return;
+          }
+        }
+      }
+    }
+
+    // 3. Check if plain text contains a direct base64 data URL or image link
+    const pastedText = e.clipboardData?.getData('text');
+    if (pastedText) {
+      const trimmed = pastedText.trim();
+      if (
+        trimmed.startsWith('data:image/') ||
+        /^https?:\/\/.*\.(png|jpe?g|webp|gif|bmp|svg)(\?.*)?$/i.test(trimmed)
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        openImagePreview(null, trimmed);
+        return;
+      }
+    }
+  };
+
+  // Drag and Drop handlers for chat window
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (file.type?.startsWith('image/') || file.name?.match(/\.(png|jpe?g|webp|gif|bmp|svg)$/i)) {
+          openImagePreview(file);
+          return;
         }
       }
     }
@@ -663,7 +800,19 @@ export default function ChatPage() {
         className={`flex-1 flex flex-col bg-slate-50/60 min-w-0 relative ${
           mobileView === 'list' ? 'hidden md:flex' : 'flex'
         }`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
+        {/* Drag-and-Drop Picture Overlay */}
+        {isDraggingOver && (
+          <div className="absolute inset-0 z-40 bg-emerald-600/90 backdrop-blur-xs flex flex-col items-center justify-center text-white border-4 border-dashed border-white rounded-3xl m-4 pointer-events-none animate-fade-in shadow-2xl">
+            <ImageIcon className="w-16 h-16 mb-2 animate-bounce" />
+            <h3 className="text-xl font-bold">Drop Picture to Preview</h3>
+            <p className="text-xs sm:text-sm opacity-90">Preview dialog will open so you can confirm before sending</p>
+          </div>
+        )}
+
         {/* Chat Room Top Bar */}
         <div className="bg-slate-900 text-white px-4 py-3 sm:px-6 flex items-center justify-between shrink-0 z-20">
           <div className="flex items-center space-x-3 min-w-0">
@@ -944,20 +1093,20 @@ export default function ChatPage() {
                               {msg.messageType === 'image' && (
                                 <div className="space-y-1.5 my-1">
                                   <div
-                                    className="relative rounded-2xl overflow-hidden cursor-pointer group/img max-w-xs sm:max-w-sm"
+                                    className="relative rounded-2xl overflow-hidden cursor-pointer group/img max-w-xs sm:max-w-sm bg-black/5"
                                     onClick={() => setFullscreenImage(msg.mediaUrl)}
                                     title="Click to view full photo"
                                   >
                                     <img
                                       src={msg.mediaUrl}
                                       alt="Shared photo"
-                                      className="max-h-72 w-full object-cover rounded-2xl border border-black/10 group-hover/img:scale-[1.02] transition duration-200"
+                                      className="max-h-72 w-auto object-contain rounded-2xl border border-black/10 group-hover/img:scale-[1.01] transition duration-200 mx-auto"
                                       loading="lazy"
                                     />
-                                    <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/25 transition flex items-center justify-center opacity-0 group-hover/img:opacity-100">
-                                      <span className="px-2.5 py-1 rounded-xl bg-black/70 text-white text-[11px] font-semibold flex items-center space-x-1 shadow-sm">
-                                        <ZoomIn className="w-3.5 h-3.5" />
-                                        <span>View</span>
+                                    <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/30 transition flex items-center justify-center opacity-0 group-hover/img:opacity-100">
+                                      <span className="px-3 py-1.5 rounded-xl bg-black/75 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-md backdrop-blur-xs">
+                                        <ZoomIn className="w-4 h-4" />
+                                        <span>Click to View</span>
                                       </span>
                                     </div>
                                   </div>
@@ -1086,14 +1235,14 @@ export default function ChatPage() {
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                onPaste={handlePaste}
+                onPaste={handlePasteEvent}
                 disabled={uploadingImage}
                 placeholder={
                   uploadingImage
                     ? 'Processing picture...'
                     : activeChat.type === 'group'
-                    ? 'Message the team group...'
-                    : `Message ${activeChat.contact?.name || 'privately'}...`
+                    ? 'Message team (Ctrl+V screenshot anywhere)...'
+                    : `Message ${activeChat.contact?.name || 'privately'} (Ctrl+V screenshot)...`
                 }
                 className="flex-1 min-w-0 px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-2xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
               />
@@ -1196,33 +1345,44 @@ export default function ChatPage() {
 
       {/* ─── MODAL: Send Image Preview & Caption (WhatsApp-grade) ─── */}
       {pendingImagePreview && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 text-white rounded-3xl p-5 w-full max-w-lg shadow-2xl border border-slate-700 animate-scale-up flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-[999] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 text-white rounded-3xl p-5 w-full max-w-lg shadow-2xl border border-slate-700 animate-scale-up flex flex-col max-h-[92vh]">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center space-x-2">
-                <ImageIcon className="w-5 h-5 text-emerald-400" />
-                <h3 className="font-bold text-sm sm:text-base">Send Picture</h3>
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                  <ImageIcon className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm sm:text-base leading-tight">Send Picture</h3>
+                  <p className="text-[11px] text-slate-400">
+                    {activeChat.type === 'group'
+                      ? 'Sending to Team General'
+                      : `Sending to ${activeChat.contact?.name || 'Contact'}`}
+                  </p>
+                </div>
               </div>
               <button
+                type="button"
                 onClick={() => setPendingImagePreview(null)}
                 disabled={uploadingImage}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+                className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition disabled:opacity-50"
+                title="Cancel (Esc)"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Image Preview */}
-            <div className="my-4 flex-1 flex items-center justify-center bg-black/40 rounded-2xl p-2 overflow-hidden max-h-[50vh]">
+            {/* Image Preview Box */}
+            <div className="my-4 flex-1 flex items-center justify-center bg-black/50 rounded-2xl p-2 overflow-hidden max-h-[52vh] border border-slate-800">
               <img
                 src={pendingImagePreview.previewUrl}
                 alt="Preview"
-                className="max-h-full max-w-full object-contain rounded-xl"
+                className="max-h-full max-w-full object-contain rounded-xl shadow-lg"
               />
             </div>
 
             {/* Caption Input & Action Buttons */}
-            <form onSubmit={handleConfirmSendImage} className="space-y-3 pt-2">
+            <form onSubmit={handleConfirmSendImage} className="space-y-3 pt-1">
               <input
                 type="text"
                 value={pendingImagePreview.caption}
@@ -1232,44 +1392,36 @@ export default function ChatPage() {
                 placeholder="Add a caption (optional)..."
                 autoFocus
                 disabled={uploadingImage}
-                className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-2xl text-xs sm:text-sm text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-2xl text-xs sm:text-sm text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
               />
 
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-slate-400 truncate max-w-[200px]">
-                  {activeChat.type === 'group'
-                    ? 'To: Team General'
-                    : `To: ${activeChat.contact?.name}`}
-                </span>
+              <div className="flex items-center justify-end space-x-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setPendingImagePreview(null)}
+                  disabled={uploadingImage}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 transition disabled:opacity-50"
+                >
+                  Cancel
+                </button>
 
-                <div className="flex items-center space-x-2">
-                  <button
-                    type="button"
-                    onClick={() => setPendingImagePreview(null)}
-                    disabled={uploadingImage}
-                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 transition"
-                  >
-                    Cancel
-                  </button>
-
-                  <button
-                    type="submit"
-                    disabled={uploadingImage}
-                    className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center space-x-1.5 transition active:scale-95 disabled:opacity-50 shadow-md shadow-emerald-600/30"
-                  >
-                    {uploadingImage ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>Sending...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Send className="w-4 h-4" />
-                        <span>Send Photo</span>
-                      </>
-                    )}
-                  </button>
-                </div>
+                <button
+                  type="submit"
+                  disabled={uploadingImage}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center space-x-2 transition active:scale-95 disabled:opacity-50 shadow-md shadow-emerald-600/30"
+                >
+                  {uploadingImage ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Sending...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>Send Photo</span>
+                    </>
+                  )}
+                </button>
               </div>
             </form>
           </div>
@@ -1279,29 +1431,34 @@ export default function ChatPage() {
       {/* ─── MODAL: Fullscreen Image Viewer / Lightbox ─── */}
       {fullscreenImage && (
         <div
-          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col justify-between p-4 animate-fade-in"
+          className="fixed inset-0 z-[999] bg-black/95 backdrop-blur-md flex flex-col justify-between p-4 animate-fade-in select-none"
           onClick={() => setFullscreenImage(null)}
         >
           {/* Top Controls */}
           <div
-            className="flex items-center justify-between text-white max-w-5xl mx-auto w-full py-2 z-10"
+            className="flex items-center justify-between text-white max-w-6xl mx-auto w-full py-2 z-10"
             onClick={(e) => e.stopPropagation()}
           >
-            <span className="text-xs font-medium text-slate-300">Photo Viewer</span>
             <div className="flex items-center space-x-2">
+              <ImageIcon className="w-5 h-5 text-emerald-400" />
+              <span className="text-sm font-semibold tracking-wide">Photo Viewer</span>
+            </div>
+            <div className="flex items-center space-x-3">
               <a
                 href={fullscreenImage}
-                download="chat-photo.jpg"
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition flex items-center space-x-1 text-xs font-semibold"
-                title="Download Photo"
+                download={`chat-photo-${Date.now()}.jpg`}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition flex items-center space-x-1.5 text-xs font-semibold shadow-sm"
+                title="Download / Save Photo"
               >
                 <Download className="w-4 h-4" />
-                <span className="hidden sm:inline">Save</span>
+                <span>Save</span>
               </a>
               <button
                 onClick={() => setFullscreenImage(null)}
                 className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
-                title="Close"
+                title="Close (Esc)"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1309,17 +1466,20 @@ export default function ChatPage() {
           </div>
 
           {/* Centered Image */}
-          <div className="flex-1 flex items-center justify-center p-2 max-w-5xl mx-auto w-full overflow-hidden">
+          <div 
+            className="flex-1 flex items-center justify-center p-2 max-w-6xl mx-auto w-full overflow-hidden"
+            onClick={() => setFullscreenImage(null)}
+          >
             <img
               src={fullscreenImage}
               alt="Fullscreen"
-              className="max-h-[82vh] max-w-full object-contain rounded-2xl shadow-2xl"
+              className="max-h-[82vh] max-w-full object-contain rounded-2xl shadow-2xl cursor-default"
               onClick={(e) => e.stopPropagation()}
             />
           </div>
 
-          <div className="text-center text-[11px] text-slate-400 py-1">
-            Tap outside or click close to return to chat
+          <div className="text-center text-xs text-slate-400 py-1">
+            Click outside or press <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white text-[10px]">Esc</kbd> to return to chat
           </div>
         </div>
       )}
