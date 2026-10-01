@@ -15,7 +15,7 @@ Agar aap isi existing repository (`Abd Call Center` / `Bazariostore`) ko Vercel 
    - **Framework Preset**: Automatically `Next.js` detect ho jayega.
 4. **Environment Variables**:
    Neeche diye gaye do variables add karein:
-   - `MONGO_URI`: `mongodb+srv://kavyapatelbazario_db_user:SYqfjUY6p37zXX5f@cluster0.rq3kd4p.mongodb.net/bazario?retryWrites=true&w=majority&appName=Cluster0`
+   - `MONGO_URI`: `mongodb+srv://aizazkhan6241_db_user:98av24298@cluster0.ijpphlb.mongodb.net/bazario?retryWrites=true&w=majority&appName=Cluster0`
    - `JWT_SECRET`: `bazario_ultra_secure_jwt_2026_production_key_x9q2m`
 5. **Deploy** button dabayein!
    1-2 minute mein aapki live Vercel URL taiyar ho jayegi.
