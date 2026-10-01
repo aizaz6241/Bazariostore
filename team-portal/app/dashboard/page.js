@@ -18,6 +18,8 @@ import {
   AlertTriangle,
   Gift,
   HelpCircle,
+  Trophy,
+  BarChart3,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -249,6 +251,215 @@ export default function DashboardPage() {
           </>
         )}
       </div>
+
+      {/* ─── ADMIN: Staff Analytics & Performance Hub ─── */}
+      {isAdmin && stats?.staffAnalytics && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 flex items-center space-x-2">
+                <BarChart3 className="w-5 h-5 text-brand-600" />
+                <span>Staff Analytics & Performance Hub</span>
+              </h2>
+              <p className="text-xs text-slate-500">
+                Comparative ranking across deposits, withdrawals, earned wallet balance, and active seller clients.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <span className="text-xs px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold flex items-center gap-1">
+                <Wallet className="w-3.5 h-3.5" />
+                <span>Total Staff Wallets: Rs. {(stats.staffAnalytics.totalStaffEarningsPKR || 0).toLocaleString()} PKR</span>
+              </span>
+            </div>
+          </div>
+
+          {/* 4 Champion Pillar Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            {/* 1. Most Deposits Champion */}
+            <div className="bg-gradient-to-br from-emerald-50 to-teal-50/50 rounded-2xl p-4 border border-emerald-200/80 shadow-xs relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 flex items-center gap-1">
+                  <Trophy className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Most Deposits</span>
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-600 text-white font-bold">
+                  Top Volume
+                </span>
+              </div>
+              <p className="text-base font-extrabold text-slate-900 mt-2 truncate">
+                {stats.staffAnalytics.topDepositor?.name || 'No members yet'}
+              </p>
+              <p className="text-lg font-black text-emerald-600">
+                ₹{(stats.staffAnalytics.topDepositor?.totalDepositsINR || 0).toLocaleString()} INR
+              </p>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                {stats.staffAnalytics.topDepositor?.assignedSellersCount || 0} stores assigned
+              </p>
+            </div>
+
+            {/* 2. Most Withdrawals Champion */}
+            <div className="bg-gradient-to-br from-slate-50 to-blue-50/50 rounded-2xl p-4 border border-slate-200/80 shadow-xs relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1">
+                  <TrendingDown className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Most Withdrawals</span>
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-white font-bold">
+                  High Payout
+                </span>
+              </div>
+              <p className="text-base font-extrabold text-slate-900 mt-2 truncate">
+                {stats.staffAnalytics.topWithdrawer?.name || 'No members yet'}
+              </p>
+              <p className="text-lg font-black text-slate-700">
+                ₹{(stats.staffAnalytics.topWithdrawer?.totalWithdrawalsINR || 0).toLocaleString()} INR
+              </p>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Processed client payouts
+              </p>
+            </div>
+
+            {/* 3. Highest Amount Earned Champion */}
+            <div className="bg-gradient-to-br from-amber-50 to-yellow-50/50 rounded-2xl p-4 border border-amber-200/80 shadow-xs relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 flex items-center gap-1">
+                  <Wallet className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Highest Earned</span>
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500 text-white font-bold">
+                  Top Wallet
+                </span>
+              </div>
+              <p className="text-base font-extrabold text-slate-900 mt-2 truncate">
+                {stats.staffAnalytics.topEarner?.name || 'No members yet'}
+              </p>
+              <p className="text-lg font-black text-amber-600">
+                Rs. {(stats.staffAnalytics.topEarner?.walletBalancePKR || 0).toLocaleString()} PKR
+              </p>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Includes Rs. {(stats.staffAnalytics.topEarner?.totalBonusesPKR || 0).toLocaleString()} bonus
+              </p>
+            </div>
+
+            {/* 4. Most Sellers Managed */}
+            <div className="bg-gradient-to-br from-purple-50 to-indigo-50/50 rounded-2xl p-4 border border-purple-200/80 shadow-xs relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 flex items-center gap-1">
+                  <Users className="w-3.5 h-3.5 text-purple-600" />
+                  <span>Most Sellers</span>
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-600 text-white font-bold">
+                  Portfolio Lead
+                </span>
+              </div>
+              <p className="text-base font-extrabold text-slate-900 mt-2 truncate">
+                {stats.staffAnalytics.topSellerManager?.name || 'No members yet'}
+              </p>
+              <p className="text-lg font-black text-purple-700">
+                {stats.staffAnalytics.topSellerManager?.assignedSellersCount || 0} Stores
+              </p>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Active client accounts
+              </p>
+            </div>
+          </div>
+
+          {/* Comparative Staff Table */}
+          {stats.staffAnalytics.staffList?.length > 0 && (
+            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
+              <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Staff Performance & Member Wallet Overview
+                </h3>
+                <Link
+                  href="/members"
+                  className="text-xs font-semibold text-brand-600 hover:text-brand-700 flex items-center gap-1"
+                >
+                  <span>Manage All Members</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50/50 border-b border-slate-200 text-slate-500 uppercase font-bold text-[10px] tracking-wider">
+                    <tr>
+                      <th className="py-3 px-4">Member Name</th>
+                      <th className="py-3 px-4 text-center">Stores</th>
+                      <th className="py-3 px-4 text-right">Deposited</th>
+                      <th className="py-3 px-4 text-right">Withdrawn</th>
+                      <th className="py-3 px-4 text-right">Net Volume</th>
+                      <th className="py-3 px-4 text-right">Bonuses</th>
+                      <th className="py-3 px-4 text-right">Member Wallet (Earned PKR)</th>
+                      <th className="py-3 px-4 text-center">Orders</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {stats.staffAnalytics.staffList.map((staff, idx) => (
+                      <tr key={staff._id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="flex items-center space-x-2">
+                            <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 font-bold text-[10px] flex items-center justify-center shrink-0">
+                              #{idx + 1}
+                            </span>
+                            <div>
+                              <div className="font-bold text-slate-900 text-xs sm:text-sm">
+                                {staff.name}
+                              </div>
+                              <div className="text-[10px] text-slate-400">
+                                @{staff.username}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="py-3 px-4 text-center font-bold text-slate-800">
+                          {staff.assignedSellersCount}
+                        </td>
+
+                        <td className="py-3 px-4 text-right font-bold text-emerald-600">
+                          ₹{(staff.totalDepositsINR || 0).toLocaleString()}
+                        </td>
+
+                        <td className="py-3 px-4 text-right text-slate-600">
+                          ₹{(staff.totalWithdrawalsINR || 0).toLocaleString()}
+                        </td>
+
+                        <td className="py-3 px-4 text-right font-semibold text-slate-800">
+                          ₹{(staff.netVolumeINR || 0).toLocaleString()}
+                        </td>
+
+                        <td className="py-3 px-4 text-right font-semibold text-amber-600">
+                          Rs. {(staff.totalBonusesPKR || 0).toLocaleString()}
+                        </td>
+
+                        <td className="py-3 px-4 text-right">
+                          <span className="inline-block px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 font-extrabold text-xs">
+                            Rs. {(staff.walletBalancePKR || 0).toLocaleString()} PKR
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-4 text-center">
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              staff.pendingOrdersCount > 0
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-slate-100 text-slate-500'
+                            }`}
+                          >
+                            {staff.pendingOrdersCount}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Weekly Sprint Progress Card (For Members) */}
       {!isAdmin && weeklyProgress && (

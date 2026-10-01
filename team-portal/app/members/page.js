@@ -332,7 +332,7 @@ export default function MembersPage() {
                   </div>
 
                   {/* Financial & Client Metrics Bar */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4 bg-slate-50 p-3 sm:p-4 rounded-2xl border border-slate-100 text-center">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3 bg-slate-50 p-3 sm:p-4 rounded-2xl border border-slate-100 text-center">
                     <div>
                       <span className="text-[10px] uppercase font-bold text-slate-400 block">
                         Clients
@@ -358,6 +358,21 @@ export default function MembersPage() {
                       <span className="text-sm font-extrabold text-slate-600">
                         ₹{(member.totalWithdrawalsINR || 0).toLocaleString()}
                       </span>
+                    </div>
+
+                    <div className="bg-emerald-50/90 rounded-xl p-1.5 border border-emerald-200/80">
+                      <span className="text-[10px] uppercase font-bold text-emerald-800 flex items-center justify-center gap-1">
+                        <Wallet className="w-3 h-3 text-emerald-600" />
+                        <span>Wallet Earned</span>
+                      </span>
+                      <span className="text-sm font-extrabold text-emerald-700 block">
+                        Rs. {(member.netBalancePKR ?? ((member.totalDepositsINR || 0) - (member.totalWithdrawalsINR || 0) + (member.totalBonusesPKR || 0))).toLocaleString()}
+                      </span>
+                      {member.totalBonusesPKR > 0 && (
+                        <span className="text-[9px] text-amber-700 block font-semibold">
+                          +{member.totalBonusesPKR.toLocaleString()} bonus
+                        </span>
+                      )}
                     </div>
 
                     <div>

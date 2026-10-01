@@ -168,9 +168,9 @@ export default function RewardsPage() {
   const pastClaims = claims.filter((c) => c.status !== 'pending');
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="flex flex-col space-y-6 animate-fade-in">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="order-1 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center space-x-2">
             <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
@@ -202,7 +202,7 @@ export default function RewardsPage() {
 
       {/* Weekly Sprint Progress Card (For Member) */}
       {!isAdmin && weeklyProgress && (
-        <div className="bg-gradient-to-br from-amber-500 via-amber-600 to-yellow-600 rounded-3xl p-6 text-white shadow-xl shadow-amber-600/20">
+        <div className="order-2 bg-gradient-to-br from-amber-500 via-amber-600 to-yellow-600 rounded-3xl p-6 text-white shadow-xl shadow-amber-600/20">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <div className="flex items-center space-x-2">
@@ -244,8 +244,8 @@ export default function RewardsPage() {
         </div>
       )}
 
-      {/* Pre-set Rules Explainer Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Pre-set Rules Explainer Cards (Positioned below claims on mobile) */}
+      <div className="order-5 sm:order-3 grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200/80 shadow-sm">
           <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs mb-2">
             1
@@ -282,7 +282,7 @@ export default function RewardsPage() {
       </div>
 
       {/* ─── PENDING ADMIN APPROVAL QUEUE ─── */}
-      <div className="space-y-3">
+      <div className="order-3 sm:order-4 space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-slate-900 text-base flex items-center space-x-2">
             <span>Pending Reward Claims</span>
@@ -371,7 +371,7 @@ export default function RewardsPage() {
       </div>
 
       {/* ─── PAST PROCESSED REWARDS HISTORY ─── */}
-      <div className="space-y-3 pt-4">
+      <div className="order-4 sm:order-5 space-y-3 pt-4">
         <h3 className="font-bold text-slate-900 text-base">Processed Rewards History</h3>
 
         {pastClaims.length === 0 ? (

@@ -353,7 +353,7 @@ export default function ChatPage() {
   );
 
   return (
-    <div className="h-[calc(100vh-130px)] sm:h-[calc(100vh-115px)] flex bg-white rounded-3xl border border-slate-200 shadow-md overflow-hidden relative">
+    <div className="-mx-4 -my-4 sm:mx-0 sm:my-0 h-[calc(100dvh-64px-64px)] sm:h-[calc(100vh-115px)] flex bg-white rounded-none sm:rounded-3xl border-0 sm:border border-slate-200 shadow-none sm:shadow-md overflow-hidden relative">
       {/* ───────────────────────────────────────────────────────────
           LEFT SIDEBAR: Full WhatsApp-Style Chats List
           (Shown for both Admins & Members on Desktop, and as Screen 1 on Mobile)

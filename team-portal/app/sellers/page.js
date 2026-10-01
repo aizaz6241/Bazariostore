@@ -21,6 +21,9 @@ import {
   X,
   FileText,
   Camera,
+  LayoutGrid,
+  List,
+  Wallet,
 } from 'lucide-react';
 
 export default function SellersPage() {
@@ -29,6 +32,7 @@ export default function SellersPage() {
   const [members, setMembers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [viewMode, setViewMode] = useState('compact');
   const [loading, setLoading] = useState(true);
 
   // Assignment Modal State (Admin only)
@@ -173,7 +177,12 @@ export default function SellersPage() {
 
     if (statusFilter === 'assigned') return Boolean(s.assignment);
     if (statusFilter === 'unassigned') return !s.assignment;
-    return true;
+  });
+
+  const memberWalletMap = new Map();
+  members.forEach((m) => {
+    const earned = m.netBalancePKR ?? ((m.totalDepositsINR || 0) - (m.totalWithdrawalsINR || 0) + (m.totalBonusesPKR || 0));
+    memberWalletMap.set(m._id?.toString(), earned);
   });
 
   return (
@@ -191,8 +200,8 @@ export default function SellersPage() {
           </p>
         </div>
 
-        {/* Search & Filter Bar */}
-        <div className="flex items-center gap-2">
+        {/* Search, Filter & View Controls */}
+        <div className="flex items-center flex-wrap gap-2">
           <div className="relative flex-1 sm:w-64">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
@@ -215,10 +224,38 @@ export default function SellersPage() {
               <option value="unassigned">Unassigned (New)</option>
             </select>
           )}
+
+          {/* View Mode Toggle */}
+          <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+            <button
+              onClick={() => setViewMode('compact')}
+              className={`p-2 rounded-lg text-xs font-semibold flex items-center gap-1 transition ${
+                viewMode === 'compact'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+              title="Compact Quick-Scan View"
+            >
+              <List className="w-4 h-4" />
+              <span className="hidden sm:inline">Compact</span>
+            </button>
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-2 rounded-lg text-xs font-semibold flex items-center gap-1 transition ${
+                viewMode === 'grid'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+              title="Card Grid View"
+            >
+              <LayoutGrid className="w-4 h-4" />
+              <span className="hidden sm:inline">Cards</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Sellers Grid */}
+      {/* Sellers Listing */}
       {loading ? (
         <div className="py-20 text-center text-slate-400 text-sm">
           Loading client stores and live analytics...
@@ -235,12 +272,226 @@ export default function SellersPage() {
               : 'You have not been assigned any sellers yet. Admin will assign new seller applications to you soon.'}
           </p>
         </div>
+      ) : viewMode === 'compact' ? (
+        /* ── COMPACT LIST / TABLE VIEW (Fast Scanning, Zero Endless Scroll) ── */
+        <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
+          {/* Desktop & Tablet Table */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase font-bold text-[10px] tracking-wider">
+                <tr>
+                  <th className="py-3 px-4">Store & Owner</th>
+                  <th className="py-3 px-4">Health</th>
+                  {isAdmin && <th className="py-3 px-4">Assigned Member (Wallet)</th>}
+                  <th className="py-3 px-4 text-right">Deposited</th>
+                  <th className="py-3 px-4 text-right">Withdrawn</th>
+                  <th className="py-3 px-4 text-right">Remaining</th>
+                  <th className="py-3 px-4 text-center">Orders</th>
+                  <th className="py-3 px-4 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {filteredSellers.map((seller) => {
+                  const privateNote = seller.assignment?.privateNotes || {};
+                  const healthScore = seller.accountHealth?.score ?? 100;
+                  const assignedMemberId = seller.assignment?.member?._id?.toString();
+                  const memberWallet = assignedMemberId ? memberWalletMap.get(assignedMemberId) : null;
+
+                  return (
+                    <tr key={seller._id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-4">
+                        <div className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                          <span>{privateNote.customName || seller.storeName}</span>
+                          {privateNote.customName && privateNote.customName !== seller.storeName && (
+                            <span className="text-[10px] text-slate-400 font-normal">
+                              ({seller.storeName})
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-500 flex items-center gap-2">
+                          <span>{seller.ownerName}</span>
+                          {privateNote.location && (
+                            <span className="text-[10px] text-slate-400 font-normal">
+                              • 📍 {privateNote.location}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-4">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            healthScore >= 80
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : healthScore >= 50
+                              ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                              : 'bg-red-50 text-red-700 border border-red-200'
+                          }`}
+                        >
+                          <HeartPulse className="w-3 h-3" />
+                          {healthScore}%
+                        </span>
+                      </td>
+
+                      {isAdmin && (
+                        <td className="py-3 px-4">
+                          {seller.assignment?.member ? (
+                            <div>
+                              <span className="font-bold text-slate-800 text-xs block">
+                                {seller.assignment.member.name}
+                              </span>
+                              {memberWallet !== undefined && memberWallet !== null && (
+                                <span className="text-[10px] font-semibold text-emerald-600 flex items-center gap-0.5">
+                                  <Wallet className="w-2.5 h-2.5" />
+                                  <span>Rs. {memberWallet.toLocaleString()} earned</span>
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-[11px] font-bold text-red-500 bg-red-50 px-2 py-0.5 rounded-md border border-red-100">
+                              Unassigned
+                            </span>
+                          )}
+                        </td>
+                      )}
+
+                      <td className="py-3 px-4 text-right font-bold text-emerald-600">
+                        ₹{(seller.wallet?.totalDeposited || 0).toLocaleString()}
+                      </td>
+
+                      <td className="py-3 px-4 text-right text-slate-600">
+                        ₹{(seller.wallet?.totalWithdrawn || 0).toLocaleString()}
+                      </td>
+
+                      <td className="py-3 px-4 text-right font-bold text-brand-700">
+                        ₹{(seller.wallet?.netRemaining || 0).toLocaleString()}
+                      </td>
+
+                      <td className="py-3 px-4 text-center">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            seller.pendingOrdersCount > 0
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-slate-100 text-slate-500'
+                          }`}
+                        >
+                          {seller.pendingOrdersCount}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => openNoteModal(seller)}
+                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+                            title="Memory Note"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          {isAdmin && (
+                            <button
+                              onClick={() => {
+                                setAssignModalSeller(seller);
+                                setSelectedMemberId(seller.assignment?.member?._id || '');
+                              }}
+                              className="p-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 transition"
+                              title="Reassign Store"
+                            >
+                              <UserPlus className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile Condensed Cards (80% less vertical space!) */}
+          <div className="block md:hidden divide-y divide-slate-100">
+            {filteredSellers.map((seller) => {
+              const privateNote = seller.assignment?.privateNotes || {};
+              const healthScore = seller.accountHealth?.score ?? 100;
+              const assignedMemberId = seller.assignment?.member?._id?.toString();
+              const memberWallet = assignedMemberId ? memberWalletMap.get(assignedMemberId) : null;
+
+              return (
+                <div key={seller._id} className="p-3 hover:bg-slate-50/80 transition flex flex-col gap-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-bold text-slate-900 text-xs sm:text-sm truncate">
+                        {privateNote.customName || seller.storeName}
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        {seller.ownerName}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span
+                        className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          healthScore >= 80
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-amber-50 text-amber-700'
+                        }`}
+                      >
+                        {healthScore}%
+                      </span>
+                      <button
+                        onClick={() => openNoteModal(seller)}
+                        className="p-1.5 rounded-lg bg-slate-100 text-slate-600"
+                        title="Memory Note"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                      {isAdmin && (
+                        <button
+                          onClick={() => {
+                            setAssignModalSeller(seller);
+                            setSelectedMemberId(seller.assignment?.member?._id || '');
+                          }}
+                          className="p-1.5 rounded-lg bg-purple-50 text-purple-700"
+                          title="Assign"
+                        >
+                          <UserPlus className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-100">
+                    <span className="text-slate-500">
+                      Rem: <strong className="text-brand-700">₹{(seller.wallet?.netRemaining || 0).toLocaleString()}</strong>
+                    </span>
+                    <span className="text-slate-500">
+                      Orders: <strong className="text-amber-600">{seller.pendingOrdersCount}</strong>
+                    </span>
+                    {isAdmin && (
+                      <span className="text-slate-500 truncate max-w-[120px]">
+                        Staff: <strong className="text-slate-800">{seller.assignment?.member?.name?.split(' ')[0] || 'None'}</strong>
+                        {memberWallet !== undefined && memberWallet !== null && (
+                          <span className="text-[9px] text-emerald-600 block">
+                            Rs. {memberWallet.toLocaleString()}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       ) : (
+        /* ── GRID CARDS VIEW (Full Details) ── */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
           {filteredSellers.map((seller) => {
             const privateNote = seller.assignment?.privateNotes || {};
             const healthScore = seller.accountHealth?.score ?? 100;
-            const healthStatus = seller.accountHealth?.status || 'healthy';
+            const assignedMemberId = seller.assignment?.member?._id?.toString();
+            const memberWallet = assignedMemberId ? memberWalletMap.get(assignedMemberId) : null;
 
             return (
               <div
@@ -338,11 +589,19 @@ export default function SellersPage() {
                     {isAdmin && (
                       <div className="flex items-center justify-between pt-1">
                         <span className="text-slate-400">Assigned Member:</span>
-                        <span className="font-semibold text-slate-800">
-                          {seller.assignment?.member?.name || (
-                            <span className="text-red-500 font-bold">Unassigned</span>
+                        <div className="text-right">
+                          <span className="font-semibold text-slate-800 block">
+                            {seller.assignment?.member?.name || (
+                              <span className="text-red-500 font-bold">Unassigned</span>
+                            )}
+                          </span>
+                          {memberWallet !== undefined && memberWallet !== null && (
+                            <span className="text-[10px] text-emerald-600 font-semibold flex items-center justify-end gap-1">
+                              <Wallet className="w-2.5 h-2.5" />
+                              <span>Rs. {memberWallet.toLocaleString()} earned</span>
+                            </span>
                           )}
-                        </span>
+                        </div>
                       </div>
                     )}
                   </div>
