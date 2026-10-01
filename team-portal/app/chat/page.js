@@ -23,6 +23,9 @@ import {
   Ban,
   Clock,
   ChevronDown,
+  Loader2,
+  Download,
+  ZoomIn,
 } from 'lucide-react';
 
 export default function ChatPage() {
@@ -43,6 +46,8 @@ export default function ChatPage() {
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [pendingImagePreview, setPendingImagePreview] = useState(null); // { file, previewUrl, caption: '' }
+  const [fullscreenImage, setFullscreenImage] = useState(null); // Image URL for lightbox viewer
   const [searchQuery, setSearchQuery] = useState('');
 
   // Scroll to Bottom & Unread Highlights
@@ -195,9 +200,13 @@ export default function ChatPage() {
         setMessages((prev) => [...prev, data.chatMessage]);
         fetchContacts();
         scrollToBottom();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        alert(errData.message || 'Failed to send message');
       }
     } catch (err) {
       console.error('Send message failed:', err);
+      alert('Network error while sending message. Please try again.');
     }
   };
 
@@ -221,27 +230,130 @@ export default function ChatPage() {
     setIsRecordingVoice(false);
   };
 
-  const handleImageUpload = (e) => {
+  // Compress & optimize image for lightning-fast delivery (WhatsApp-grade)
+  const compressImage = (file) => {
+    return new Promise((resolve, reject) => {
+      if (file.type === 'image/gif') {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const MAX_WIDTH = 1280;
+          const MAX_HEIGHT = 1280;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height = Math.round((height * MAX_WIDTH) / width);
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width = Math.round((width * MAX_HEIGHT) / height);
+              height = MAX_HEIGHT;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Convert to compact high-clarity JPEG
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          resolve(compressedDataUrl);
+        };
+        img.onerror = () => resolve(e.target.result);
+        img.src = e.target.result;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Image Selection Handler (Opens WhatsApp-style preview & caption dialog)
+  const handleImageFileSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 8 * 1024 * 1024) {
-      alert('Image size exceeds 8MB limit');
+    if (!file.type.startsWith('image/')) {
+      alert('Please select a valid image file (JPG, PNG, WEBP, GIF)');
       return;
     }
 
-    setUploadingImage(true);
+    if (file.size > 20 * 1024 * 1024) {
+      alert('Image exceeds 20MB limit');
+      return;
+    }
+
     const reader = new FileReader();
-    reader.onloadend = () => {
-      handleSendMessage({
-        messageType: 'image',
-        mediaUrl: reader.result,
-        text: file.name,
+    reader.onload = (event) => {
+      setPendingImagePreview({
+        file,
+        previewUrl: event.target.result,
+        caption: '',
       });
-      setUploadingImage(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     };
     reader.readAsDataURL(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Confirm and Send Image from Preview Modal
+  const handleConfirmSendImage = async (e) => {
+    e?.preventDefault();
+    if (!pendingImagePreview) return;
+
+    try {
+      setUploadingImage(true);
+      const compressedBase64 = await compressImage(pendingImagePreview.file);
+
+      await handleSendMessage({
+        messageType: 'image',
+        mediaUrl: compressedBase64,
+        text: pendingImagePreview.caption.trim(),
+      });
+
+      setPendingImagePreview(null);
+    } catch (err) {
+      console.error('Error sending picture:', err);
+      alert('Failed to process and send picture. Please try again.');
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  // Clipboard Paste Support (Ctrl+V screenshot / photo)
+  const handlePaste = (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const file = items[i].getAsFile();
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            setPendingImagePreview({
+              file,
+              previewUrl: event.target.result,
+              caption: '',
+            });
+          };
+          reader.readAsDataURL(file);
+          e.preventDefault();
+          break;
+        }
+      }
+    }
   };
 
   // ─── 4. Message Edit & Delete ───
@@ -830,15 +942,27 @@ export default function ChatPage() {
 
                               {/* Image Attachment */}
                               {msg.messageType === 'image' && (
-                                <div className="space-y-1">
-                                  <img
-                                    src={msg.mediaUrl}
-                                    alt="Shared image"
-                                    className="max-h-72 w-auto rounded-2xl object-cover border border-black/10 cursor-pointer hover:opacity-95 transition"
-                                    onClick={() => window.open(msg.mediaUrl, '_blank')}
-                                  />
+                                <div className="space-y-1.5 my-1">
+                                  <div
+                                    className="relative rounded-2xl overflow-hidden cursor-pointer group/img max-w-xs sm:max-w-sm"
+                                    onClick={() => setFullscreenImage(msg.mediaUrl)}
+                                    title="Click to view full photo"
+                                  >
+                                    <img
+                                      src={msg.mediaUrl}
+                                      alt="Shared photo"
+                                      className="max-h-72 w-full object-cover rounded-2xl border border-black/10 group-hover/img:scale-[1.02] transition duration-200"
+                                      loading="lazy"
+                                    />
+                                    <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/25 transition flex items-center justify-center opacity-0 group-hover/img:opacity-100">
+                                      <span className="px-2.5 py-1 rounded-xl bg-black/70 text-white text-[11px] font-semibold flex items-center space-x-1 shadow-sm">
+                                        <ZoomIn className="w-3.5 h-3.5" />
+                                        <span>View</span>
+                                      </span>
+                                    </div>
+                                  </div>
                                   {msg.text && (
-                                    <p className="text-xs mt-1 opacity-90 break-words">
+                                    <p className="text-xs sm:text-sm whitespace-pre-wrap leading-relaxed break-words px-1">
                                       {msg.text}
                                     </p>
                                   )}
@@ -928,7 +1052,7 @@ export default function ChatPage() {
                 type="file"
                 accept="image/*"
                 className="hidden"
-                onChange={handleImageUpload}
+                onChange={handleImageFileSelect}
               />
 
               {/* Photo Button */}
@@ -936,17 +1060,22 @@ export default function ChatPage() {
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploadingImage}
-                className="p-2.5 rounded-2xl text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition active:scale-95 shrink-0"
+                className="p-2.5 rounded-2xl text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition active:scale-95 shrink-0 disabled:opacity-50"
                 title="Attach Picture"
               >
-                <ImageIcon className="w-5 h-5" />
+                {uploadingImage ? (
+                  <Loader2 className="w-5 h-5 animate-spin text-emerald-600" />
+                ) : (
+                  <ImageIcon className="w-5 h-5" />
+                )}
               </button>
 
               {/* Voice Button */}
               <button
                 type="button"
                 onClick={() => setIsRecordingVoice(true)}
-                className="p-2.5 rounded-2xl text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition active:scale-95 shrink-0"
+                disabled={uploadingImage}
+                className="p-2.5 rounded-2xl text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition active:scale-95 shrink-0 disabled:opacity-50"
                 title="Record Voice Note"
               >
                 <Mic className="w-5 h-5" />
@@ -957,8 +1086,12 @@ export default function ChatPage() {
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
+                onPaste={handlePaste}
+                disabled={uploadingImage}
                 placeholder={
-                  activeChat.type === 'group'
+                  uploadingImage
+                    ? 'Processing picture...'
+                    : activeChat.type === 'group'
                     ? 'Message the team group...'
                     : `Message ${activeChat.contact?.name || 'privately'}...`
                 }
@@ -968,7 +1101,7 @@ export default function ChatPage() {
               {/* Send Button */}
               <button
                 type="submit"
-                disabled={!inputText.trim()}
+                disabled={!inputText.trim() || uploadingImage}
                 className="p-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white transition active:scale-95 shadow-md shadow-emerald-500/20 shrink-0"
                 title="Send Message"
               >
@@ -1057,6 +1190,136 @@ export default function ChatPage() {
                 {deleteLoading ? 'Deleting...' : 'Delete for Everyone'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: Send Image Preview & Caption (WhatsApp-grade) ─── */}
+      {pendingImagePreview && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 text-white rounded-3xl p-5 w-full max-w-lg shadow-2xl border border-slate-700 animate-scale-up flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center space-x-2">
+                <ImageIcon className="w-5 h-5 text-emerald-400" />
+                <h3 className="font-bold text-sm sm:text-base">Send Picture</h3>
+              </div>
+              <button
+                onClick={() => setPendingImagePreview(null)}
+                disabled={uploadingImage}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Image Preview */}
+            <div className="my-4 flex-1 flex items-center justify-center bg-black/40 rounded-2xl p-2 overflow-hidden max-h-[50vh]">
+              <img
+                src={pendingImagePreview.previewUrl}
+                alt="Preview"
+                className="max-h-full max-w-full object-contain rounded-xl"
+              />
+            </div>
+
+            {/* Caption Input & Action Buttons */}
+            <form onSubmit={handleConfirmSendImage} className="space-y-3 pt-2">
+              <input
+                type="text"
+                value={pendingImagePreview.caption}
+                onChange={(e) =>
+                  setPendingImagePreview((prev) => ({ ...prev, caption: e.target.value }))
+                }
+                placeholder="Add a caption (optional)..."
+                autoFocus
+                disabled={uploadingImage}
+                className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-2xl text-xs sm:text-sm text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-slate-400 truncate max-w-[200px]">
+                  {activeChat.type === 'group'
+                    ? 'To: Team General'
+                    : `To: ${activeChat.contact?.name}`}
+                </span>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setPendingImagePreview(null)}
+                    disabled={uploadingImage}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:bg-slate-800 transition"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={uploadingImage}
+                    className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center space-x-1.5 transition active:scale-95 disabled:opacity-50 shadow-md shadow-emerald-600/30"
+                  >
+                    {uploadingImage ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Sending...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        <span>Send Photo</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: Fullscreen Image Viewer / Lightbox ─── */}
+      {fullscreenImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col justify-between p-4 animate-fade-in"
+          onClick={() => setFullscreenImage(null)}
+        >
+          {/* Top Controls */}
+          <div
+            className="flex items-center justify-between text-white max-w-5xl mx-auto w-full py-2 z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="text-xs font-medium text-slate-300">Photo Viewer</span>
+            <div className="flex items-center space-x-2">
+              <a
+                href={fullscreenImage}
+                download="chat-photo.jpg"
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition flex items-center space-x-1 text-xs font-semibold"
+                title="Download Photo"
+              >
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">Save</span>
+              </a>
+              <button
+                onClick={() => setFullscreenImage(null)}
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Centered Image */}
+          <div className="flex-1 flex items-center justify-center p-2 max-w-5xl mx-auto w-full overflow-hidden">
+            <img
+              src={fullscreenImage}
+              alt="Fullscreen"
+              className="max-h-[82vh] max-w-full object-contain rounded-2xl shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+
+          <div className="text-center text-[11px] text-slate-400 py-1">
+            Tap outside or click close to return to chat
           </div>
         </div>
       )}

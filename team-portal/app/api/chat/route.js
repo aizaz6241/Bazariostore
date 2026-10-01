@@ -84,6 +84,14 @@ export async function POST(req) {
       target = targetMember._id;
     }
 
+    if (messageType === 'image' && (!mediaUrl || !mediaUrl.trim())) {
+      return NextResponse.json({ message: 'Image data is required' }, { status: 400 });
+    }
+
+    if (messageType === 'text' && (!text || !text.trim())) {
+      return NextResponse.json({ message: 'Message text cannot be empty' }, { status: 400 });
+    }
+
     const newMsg = await ChatMessage.create({
       chatType: chatType || 'group',
       conversationId,
@@ -92,7 +100,7 @@ export async function POST(req) {
       senderRole: session.role,
       targetMemberId: target,
       messageType: messageType || 'text',
-      text: text || '',
+      text: text ? text.trim() : '',
       mediaUrl: mediaUrl || '',
       audioDuration: audioDuration || 0,
       readBy: [session._id],
