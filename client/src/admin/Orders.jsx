@@ -622,13 +622,13 @@ export default function Orders() {
 
               {/* Customer Details */}
               <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: '#64748b' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 800, textTransform: 'uppercase', color: '#475569', letterSpacing: '0.03em' }}>
                       3. Customer Delivery Information
                     </span>
-                    <span style={{ fontSize: 10.5, fontWeight: 700, background: '#dbeafe', color: '#1d4ed8', padding: '2px 8px', borderRadius: 12, border: '1px solid #bfdbfe' }}>
-                      500 Real Profiles
+                    <span style={{ fontSize: 10, fontWeight: 700, background: '#dbeafe', color: '#1d4ed8', padding: '2px 8px', borderRadius: 999 }}>
+                      500 Profiles
                     </span>
                   </div>
                   <button
@@ -637,27 +637,29 @@ export default function Orders() {
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
-                      gap: 6,
+                      gap: 5,
                       background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
                       color: '#fff',
                       border: 'none',
                       borderRadius: 6,
-                      padding: '6px 14px',
-                      fontSize: 12,
+                      padding: '5px 12px',
+                      fontSize: 11.5,
                       fontWeight: 700,
                       cursor: 'pointer',
-                      boxShadow: '0 2px 4px rgba(37, 99, 235, 0.25)',
+                      boxShadow: '0 1px 2px rgba(37, 99, 235, 0.25)',
+                      whiteSpace: 'nowrap'
                     }}
-                    title="Pick a random customer from 500 realistic profiles"
+                    title="Pick another random customer from 500 profiles"
                   >
-                    🎲 Fill Random Customer
+                    🎲 Random Customer
                   </button>
                 </div>
 
-                {/* Quick Customer Picker Dropdown */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, background: '#fff', padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0' }}>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap' }}>
-                    Or Pick Profile:
+                {/* Quick Customer Picker Dropdown - Responsive & Clean */}
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span>Or Select Specific Profile:</span>
+                    <span style={{ fontSize: 10.5, fontWeight: 600, color: '#2563eb' }}>{MOCK_CUSTOMERS.length} Available</span>
                   </label>
                   <select
                     value={selectedMockId}
@@ -666,9 +668,20 @@ export default function Orders() {
                       const found = MOCK_CUSTOMERS.find((c) => c.id === id);
                       if (found) applyCustomer(found);
                     }}
-                    style={{ flex: 1, padding: '5px 8px', borderRadius: 4, border: '1px solid #cbd5e1', fontSize: 11.5, color: '#1e293b', background: '#fff' }}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      borderRadius: 6,
+                      border: '1px solid #cbd5e1',
+                      fontSize: 12,
+                      color: selectedMockId ? '#0f172a' : '#475569',
+                      background: '#fff',
+                      boxSizing: 'border-box',
+                      cursor: 'pointer',
+                      height: 36
+                    }}
                   >
-                    <option value="" disabled>-- Select from 500 Realistic Profiles ({MOCK_CUSTOMERS.length} total) --</option>
+                    <option value="" disabled>-- Choose from 500 preloaded customers --</option>
                     {MOCK_CUSTOMERS.map((c) => (
                       <option key={c.id} value={c.id}>
                         #{c.id}: {c.name} — {c.city}, {c.state} ({c.phone})
@@ -679,7 +692,7 @@ export default function Orders() {
 
                 {randomNotice && (
                   <div style={{
-                    marginBottom: 10,
+                    marginBottom: 12,
                     padding: '6px 10px',
                     borderRadius: 6,
                     background: '#f0fdf4',
@@ -696,14 +709,14 @@ export default function Orders() {
                   </div>
                 )}
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                   <div>
                     <label style={{ fontSize: 11.5, fontWeight: 700, display: 'block', marginBottom: 3 }}>Full Name *</label>
                     <input
                       type="text"
                       value={orderForm.customerName}
                       onChange={(e) => setOrderForm({ ...orderForm, customerName: e.target.value })}
-                      style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
+                      style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5, boxSizing: 'border-box' }}
                       required
                     />
                   </div>
@@ -713,19 +726,21 @@ export default function Orders() {
                       type="text"
                       value={orderForm.customerPhone}
                       onChange={(e) => setOrderForm({ ...orderForm, customerPhone: e.target.value })}
-                      style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
+                      style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5, boxSizing: 'border-box' }}
                       required
                     />
                   </div>
-                  <div>
-                    <label style={{ fontSize: 11.5, fontWeight: 700, display: 'block', marginBottom: 3 }}>Customer Email</label>
-                    <input
-                      type="email"
-                      value={orderForm.customerEmail}
-                      onChange={(e) => setOrderForm({ ...orderForm, customerEmail: e.target.value })}
-                      style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
-                    />
-                  </div>
+                </div>
+
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ fontSize: 11.5, fontWeight: 700, display: 'block', marginBottom: 3 }}>Customer Email</label>
+                  <input
+                    type="email"
+                    value={orderForm.customerEmail}
+                    onChange={(e) => setOrderForm({ ...orderForm, customerEmail: e.target.value })}
+                    placeholder="customer@example.com"
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5, boxSizing: 'border-box' }}
+                  />
                 </div>
 
                 <div style={{ marginBottom: 10 }}>
@@ -734,19 +749,19 @@ export default function Orders() {
                     type="text"
                     value={orderForm.street}
                     onChange={(e) => setOrderForm({ ...orderForm, street: e.target.value })}
-                    style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5, boxSizing: 'border-box' }}
                     required
                   />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 75px 1.2fr', gap: 10 }}>
                   <div>
                     <label style={{ fontSize: 11.5, fontWeight: 700, display: 'block', marginBottom: 3 }}>City *</label>
                     <input
                       type="text"
                       value={orderForm.city}
                       onChange={(e) => setOrderForm({ ...orderForm, city: e.target.value })}
-                      style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
+                      style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5, boxSizing: 'border-box' }}
                       required
                     />
                   </div>
@@ -756,16 +771,16 @@ export default function Orders() {
                       type="text"
                       value={orderForm.state}
                       onChange={(e) => setOrderForm({ ...orderForm, state: e.target.value })}
-                      style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
+                      style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5, boxSizing: 'border-box', textAlign: 'center' }}
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: 11.5, fontWeight: 700, display: 'block', marginBottom: 3 }}>Delivery Fee ($)</label>
+                    <label style={{ fontSize: 11.5, fontWeight: 700, display: 'block', marginBottom: 3, whiteSpace: 'nowrap' }}>Delivery ($)</label>
                     <input
                       type="number"
                       value={orderForm.shippingCost}
                       onChange={(e) => setOrderForm({ ...orderForm, shippingCost: e.target.value })}
-                      style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5 }}
+                      style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5, boxSizing: 'border-box' }}
                     />
                   </div>
                 </div>
