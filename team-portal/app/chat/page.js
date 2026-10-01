@@ -766,16 +766,27 @@ export default function ChatPage() {
                         : `Tap to message @${contact.username}`}
                     </p>
 
-                    <div className="flex items-center space-x-1.5 mt-1">
+                    <div className="flex items-center space-x-1.5 mt-1 flex-wrap gap-y-1">
                       <span
                         className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold uppercase ${
                           isContactAdmin
                             ? 'bg-purple-100 text-purple-800'
-                            : 'bg-emerald-100 text-emerald-800'
+                            : 'bg-slate-100 text-slate-700'
                         }`}
                       >
                         {isContactAdmin ? 'Admin' : 'Member'}
                       </span>
+                      {!isContactAdmin && (
+                        <span
+                          className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold ${
+                            contact.commissionLabel === 'inr_50'
+                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                              : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          }`}
+                        >
+                          {contact.commissionLabel === 'inr_50' ? '50% INR' : '1:1 PKR'}
+                        </span>
+                      )}
                       <span className="text-[10px] text-slate-400">@{contact.username}</span>
 
                       {contact.unreadCount > 0 && (
@@ -860,7 +871,7 @@ export default function ChatPage() {
                       ? 'bg-emerald-500/20 text-emerald-300'
                       : activeChat.contact?.role === 'admin'
                       ? 'bg-purple-500/20 text-purple-300'
-                      : 'bg-emerald-500/20 text-emerald-300'
+                      : 'bg-slate-500/20 text-slate-300'
                   }`}
                 >
                   {activeChat.type === 'group'
@@ -869,6 +880,17 @@ export default function ChatPage() {
                     ? 'Admin'
                     : 'Member'}
                 </span>
+                {activeChat.type === 'personal' && activeChat.contact?.role !== 'admin' && (
+                  <span
+                    className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${
+                      activeChat.contact.commissionLabel === 'inr_50'
+                        ? 'bg-amber-500/25 text-amber-300 border border-amber-500/30'
+                        : 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/30'
+                    }`}
+                  >
+                    {activeChat.contact.commissionLabel === 'inr_50' ? '🇮🇳 50% INR Deal' : '🇵🇰 1:1 PKR Deal'}
+                  </span>
+                )}
               </div>
               <p className="text-[10px] text-slate-400 truncate">
                 {activeChat.type === 'group'

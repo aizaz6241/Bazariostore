@@ -21,7 +21,7 @@ export async function GET(req) {
       _id: { $ne: session._id },
       active: true,
     })
-      .select('name username role phone avatar active')
+      .select('name username role phone avatar active commissionLabel')
       .sort({ role: 1, name: 1 });
 
     // Fetch conversation preview and unread counts for each contact
@@ -47,6 +47,7 @@ export async function GET(req) {
           role: contact.role,
           phone: contact.phone,
           avatar: contact.avatar,
+          commissionLabel: contact.commissionLabel || 'pkr_1to1',
           conversationId,
           lastMessage: lastMsg,
           unreadCount,

@@ -71,10 +71,14 @@ export function getPeriodDateRange(period, customStart, customEnd) {
 export async function getWalletData({ userId, period = 'all', startDate = null, endDate = null }) {
   await connectDB();
 
+  if (!userId || userId === 'undefined' || userId === 'null' || !mongoose.Types.ObjectId.isValid(userId)) {
+    throw new Error('Valid User ID is required');
+  }
+
   const user = await Member.findById(userId).select('-passwordHash');
   if (!user) throw new Error('User not found');
 
-  // Find all active admins to calculate admin distribution shares (e.g. 50-50 across 2 admins)
+  // Find all active admins to calculate admin distribution shares (e.g. 50-50 across active admins)
   const activeAdmins = await Member.find({ role: 'admin', active: true });
   const numAdmins = Math.max(1, activeAdmins.length);
 
@@ -84,68 +88,67 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
 
   if (user.role === 'member') {
     // ─── MEMBER COMMISSION & EARNINGS ───
+    // Agreement is strictly between Admin and this Member:
+    // 'inr_50' (50% INR to Member) or 'pkr_1to1' (1:1 PKR Fixed Rate)
+    const memberCommissionLabel = user.commissionLabel || 'pkr_1to1';
+    const is50PercentINR = memberCommissionLabel === 'inr_50';
+
     const assignments = await SellerAssignment.find({
       memberId: user._id,
       status: 'active',
     });
 
     const sellerIds = assignments.map((a) => a.sellerId);
-    const assignmentMap = new Map();
-    assignments.forEach((a) => assignmentMap.set(a.sellerId.toString(), a));
-
     const sellers = await Seller.find({ _id: { $in: sellerIds } });
+    const sellerMap = new Map();
+    sellers.forEach((s) => sellerMap.set(s._id.toString(), s));
 
-    for (const seller of sellers) {
-      const assignment = assignmentMap.get(seller._id.toString());
-      // Check seller commission label (default is 'pkr_1to1')
-      const commissionLabel = seller.commissionLabel || assignment?.commissionLabel || 'pkr_1to1';
-      const is50PercentINR = commissionLabel === 'inr_50';
+    // Batch fetch approved deposits for all assigned sellers
+    const deposits = await Withdrawal.find({
+      seller: { $in: sellerIds },
+      type: 'deposit',
+      status: { $in: ['approved', 'completed'] },
+    }).sort({ createdAt: 1 });
 
-      // Fetch approved deposits for this seller
-      const deposits = await Withdrawal.find({
-        seller: seller._id,
-        type: 'deposit',
-        status: { $in: ['approved', 'completed'] },
-      }).sort({ createdAt: 1 });
+    for (const dep of deposits) {
+      const seller = sellerMap.get(dep.seller?.toString());
+      const storeName = seller?.storeName || dep.storeName || 'Client Store';
+      const depDate = dep.processedAt || dep.createdAt;
+      const grossAmount = Number(dep.approvedAmount || dep.amount || 0);
+      if (grossAmount <= 0) continue;
 
-      for (const dep of deposits) {
-        const depDate = dep.processedAt || dep.createdAt;
-        const grossAmount = Number(dep.approvedAmount || dep.amount || 0);
-        if (grossAmount <= 0) continue;
-
-        if (is50PercentINR) {
-          // Rule: 50% INR to Member
-          const creditAmount = grossAmount * 0.5;
-          rawTransactions.push({
-            id: `dep_${dep._id}_mem`,
-            type: 'credit',
-            category: 'commission_inr_50',
-            amount: creditAmount,
-            currency: 'INR',
-            sellerId: seller._id,
-            storeName: seller.storeName,
-            sourceRef: dep.depositRef || dep.transactionRef || dep._id.toString(),
-            description: `50% INR Commission from ${seller.storeName}`,
-            details: `50% share of ₹${grossAmount.toLocaleString()} INR deposit`,
-            date: new Date(depDate),
-          });
-        } else {
-          // Rule: 1 INR = 1 PKR to Member
-          const creditAmount = grossAmount; // 1:1 in PKR
-          rawTransactions.push({
-            id: `dep_${dep._id}_mem`,
-            type: 'credit',
-            category: 'commission_pkr_1to1',
-            amount: creditAmount,
-            currency: 'PKR',
-            sellerId: seller._id,
-            storeName: seller.storeName,
-            sourceRef: dep.depositRef || dep.transactionRef || dep._id.toString(),
-            description: `1:1 PKR Earning from ${seller.storeName}`,
-            details: `1 PKR per 1 INR of ₹${grossAmount.toLocaleString()} INR deposit`,
-            date: new Date(depDate),
-          });
-        }
+      if (is50PercentINR) {
+        // Rule: 50% INR directly to Member
+        const creditAmount = grossAmount * 0.5;
+        rawTransactions.push({
+          id: `dep_${dep._id}_mem`,
+          type: 'credit',
+          category: 'commission_inr_50',
+          amount: creditAmount,
+          currency: 'INR',
+          sellerId: dep.seller,
+          storeName,
+          sourceRef: dep.depositRef || dep.transactionRef || dep._id.toString(),
+          description: `50% INR Commission from ${storeName}`,
+          details: `50% share of ₹${grossAmount.toLocaleString()} INR deposit (Member 50% INR Deal)`,
+          date: new Date(depDate),
+        });
+      } else {
+        // Rule: 1 INR = 1 PKR to Member (1:1 PKR Fixed Rate)
+        const creditAmount = grossAmount; // 1:1 in PKR
+        rawTransactions.push({
+          id: `dep_${dep._id}_mem`,
+          type: 'credit',
+          category: 'commission_pkr_1to1',
+          amount: creditAmount,
+          currency: 'PKR',
+          sellerId: dep.seller,
+          storeName,
+          sourceRef: dep.depositRef || dep.transactionRef || dep._id.toString(),
+          description: `1:1 PKR Earning from ${storeName}`,
+          details: `1 PKR per 1 INR of ₹${grossAmount.toLocaleString()} INR deposit (Member 1:1 PKR Deal)`,
+          date: new Date(depDate),
+        });
       }
     }
 
@@ -177,62 +180,74 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
   } else if (user.role === 'admin') {
     // ─── ADMIN WALLET & PROFIT DISTRIBUTION ───
     const allSellers = await Seller.find();
+    const sellerMap = new Map();
+    allSellers.forEach((s) => sellerMap.set(s._id.toString(), s));
+
     const allAssignments = await SellerAssignment.find({ status: 'active' });
     const assignmentMap = new Map();
     allAssignments.forEach((a) => assignmentMap.set(a.sellerId.toString(), a));
 
-    for (const seller of allSellers) {
-      const assignment = assignmentMap.get(seller._id.toString());
-      const commissionLabel = seller.commissionLabel || assignment?.commissionLabel || 'pkr_1to1';
-      const is50PercentINR = commissionLabel === 'inr_50';
+    const assignedMemberIds = allAssignments.map((a) => a.memberId);
+    const assignedMembers = await Member.find({ _id: { $in: assignedMemberIds } }).select('name username commissionLabel');
+    const memberMap = new Map();
+    assignedMembers.forEach((m) => memberMap.set(m._id.toString(), m));
 
-      const deposits = await Withdrawal.find({
-        seller: seller._id,
-        type: 'deposit',
-        status: { $in: ['approved', 'completed'] },
-      }).sort({ createdAt: 1 });
+    // Batch fetch all approved deposits across all stores
+    const deposits = await Withdrawal.find({
+      type: 'deposit',
+      status: { $in: ['approved', 'completed'] },
+    }).sort({ createdAt: 1 });
 
-      for (const dep of deposits) {
-        const depDate = dep.processedAt || dep.createdAt;
-        const grossAmount = Number(dep.approvedAmount || dep.amount || 0);
-        if (grossAmount <= 0) continue;
+    for (const dep of deposits) {
+      const sellerIdStr = dep.seller?.toString();
+      const seller = sellerMap.get(sellerIdStr);
+      const storeName = seller?.storeName || dep.storeName || 'Client Store';
+      const assignment = assignmentMap.get(sellerIdStr);
+      const member = assignment ? memberMap.get(assignment.memberId?.toString()) : null;
 
-        if (is50PercentINR) {
-          // Rule: Remaining 50% INR is split equally among active admins
-          const adminPool = grossAmount * 0.5;
-          const myShare = adminPool / numAdmins;
+      // The commission deal is on the member!
+      const memberCommissionLabel = member?.commissionLabel || 'pkr_1to1';
+      const is50PercentINR = memberCommissionLabel === 'inr_50';
 
-          rawTransactions.push({
-            id: `dep_${dep._id}_adm`,
-            type: 'credit',
-            category: 'admin_share_inr_50',
-            amount: myShare,
-            currency: 'INR',
-            sellerId: seller._id,
-            storeName: seller.storeName,
-            sourceRef: dep.depositRef || dep.transactionRef || dep._id.toString(),
-            description: `Admin Pool Share (50-50 Split) from ${seller.storeName}`,
-            details: `1/${numAdmins} split of ₹${adminPool.toLocaleString()} INR (50% store deposit pool)`,
-            date: new Date(depDate),
-          });
-        } else {
-          // Rule: 1:1 PKR store — deposit INR profit split equally among active admins
-          const myShare = grossAmount / numAdmins;
+      const depDate = dep.processedAt || dep.createdAt;
+      const grossAmount = Number(dep.approvedAmount || dep.amount || 0);
+      if (grossAmount <= 0) continue;
 
-          rawTransactions.push({
-            id: `dep_${dep._id}_adm`,
-            type: 'credit',
-            category: 'admin_share_pkr_1to1',
-            amount: myShare,
-            currency: 'INR',
-            sellerId: seller._id,
-            storeName: seller.storeName,
-            sourceRef: dep.depositRef || dep.transactionRef || dep._id.toString(),
-            description: `Admin Profit Share from ${seller.storeName}`,
-            details: `1/${numAdmins} split of ₹${grossAmount.toLocaleString()} INR store deposit`,
-            date: new Date(depDate),
-          });
-        }
+      if (is50PercentINR) {
+        // Rule: Member took 50% INR, remaining 50% INR is split equally among active admins
+        const adminPool = grossAmount * 0.5;
+        const myShare = adminPool / numAdmins;
+
+        rawTransactions.push({
+          id: `dep_${dep._id}_adm`,
+          type: 'credit',
+          category: 'admin_share_inr_50',
+          amount: myShare,
+          currency: 'INR',
+          sellerId: dep.seller,
+          storeName,
+          sourceRef: dep.depositRef || dep.transactionRef || dep._id.toString(),
+          description: `Admin Pool Share (50% INR Split) from ${storeName}`,
+          details: `1/${numAdmins} split of ₹${adminPool.toLocaleString()} INR (50% store deposit pool • Member: ${member?.name || 'Agent'})`,
+          date: new Date(depDate),
+        });
+      } else {
+        // Rule: 1:1 PKR store — Member took 1:1 PKR, full gross deposit INR profit split equally among active admins
+        const myShare = grossAmount / numAdmins;
+
+        rawTransactions.push({
+          id: `dep_${dep._id}_adm`,
+          type: 'credit',
+          category: 'admin_share_pkr_1to1',
+          amount: myShare,
+          currency: 'INR',
+          sellerId: dep.seller,
+          storeName,
+          sourceRef: dep.depositRef || dep.transactionRef || dep._id.toString(),
+          description: `Admin Profit Share from ${storeName}`,
+          details: `1/${numAdmins} split of ₹${grossAmount.toLocaleString()} INR store deposit (Member: ${member?.name || 'Agent'} 1:1 PKR deal)`,
+          date: new Date(depDate),
+        });
       }
     }
   }
@@ -274,16 +289,21 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
   const balanceINR = Math.max(0, totalEarnedINR - totalWithdrawnINR);
   const balancePKR = Math.max(0, totalEarnedPKR - totalWithdrawnPKR);
 
-  // Sync to User Document in MongoDB
+  // Safely sync to User Document in MongoDB without triggering passwordHash validation errors
   try {
-    user.wallet = user.wallet || {};
-    user.wallet.balanceINR = balanceINR;
-    user.wallet.balancePKR = balancePKR;
-    user.wallet.totalEarnedINR = totalEarnedINR;
-    user.wallet.totalWithdrawnINR = totalWithdrawnINR;
-    user.wallet.totalEarnedPKR = totalEarnedPKR;
-    user.wallet.totalWithdrawnPKR = totalWithdrawnPKR;
-    await user.save();
+    await Member.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          'wallet.balanceINR': balanceINR,
+          'wallet.balancePKR': balancePKR,
+          'wallet.totalEarnedINR': totalEarnedINR,
+          'wallet.totalWithdrawnINR': totalWithdrawnINR,
+          'wallet.totalEarnedPKR': totalEarnedPKR,
+          'wallet.totalWithdrawnPKR': totalWithdrawnPKR,
+        },
+      }
+    );
   } catch (syncErr) {
     console.error('Wallet sync error:', syncErr);
   }
@@ -322,6 +342,7 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
       name: user.name,
       username: user.username,
       role: user.role,
+      commissionLabel: user.commissionLabel || 'pkr_1to1',
     },
     period,
     dateRange: {

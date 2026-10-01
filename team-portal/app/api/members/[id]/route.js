@@ -16,7 +16,7 @@ export async function PATCH(req, { params }) {
 
     const { id } = params;
     const body = await req.json();
-    const { password, name, phone, active } = body;
+    const { password, name, phone, active, commissionLabel } = body;
 
     const member = await Member.findById(id);
     if (!member) {
@@ -67,6 +67,16 @@ export async function PATCH(req, { params }) {
     // 4. Status toggle
     if (active !== undefined) {
       member.active = Boolean(active);
+    }
+
+    // 5. Commission Agreement Label (Deal between Admin and Member: 'pkr_1to1' or 'inr_50')
+    if (commissionLabel && ['inr_50', 'pkr_1to1'].includes(commissionLabel)) {
+      member.commissionLabel = commissionLabel;
+      // Sync active assignments for this member
+      await SellerAssignment.updateMany(
+        { memberId: member._id, status: 'active' },
+        { $set: { commissionLabel } }
+      );
     }
 
     await member.save();

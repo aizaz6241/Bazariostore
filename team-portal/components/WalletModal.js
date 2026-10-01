@@ -24,6 +24,7 @@ import {
 export default function WalletModal({ isOpen, onClose, memberId = null, title = null }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState('');
   const [period, setPeriod] = useState('all'); // 'today', 'yesterday', 'week', 'month', 'custom', 'all'
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
@@ -41,9 +42,12 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
   const fetchWallet = async (selectedPeriod = period, start = customStart, end = customEnd) => {
     try {
       setLoading(true);
+      setErrorMsg('');
       const token = localStorage.getItem('portal_token');
       let url = `/api/wallet?period=${selectedPeriod}`;
-      if (memberId) url += `&memberId=${memberId}`;
+      if (memberId && memberId !== 'undefined' && memberId !== 'null') {
+        url += `&memberId=${memberId}`;
+      }
       if (selectedPeriod === 'custom') {
         if (start) url += `&startDate=${start}`;
         if (end) url += `&endDate=${end}`;
@@ -57,9 +61,12 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
         const json = await res.json();
         setData(json);
       } else {
-        console.error('Failed to load wallet data');
+        const errJson = await res.json().catch(() => ({}));
+        setErrorMsg(errJson.message || 'Failed to load wallet transaction history');
+        console.error('Failed to load wallet data:', errJson);
       }
     } catch (err) {
+      setErrorMsg('Network error connecting to financial service');
       console.error('Fetch wallet statement error:', err);
     } finally {
       setLoading(false);
@@ -136,8 +143,31 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
   if (!isOpen) return null;
 
   const isAdmin = data?.user?.role === 'admin';
-  const balances = data?.balances || { balanceINR: 0, balancePKR: 0, totalEarnedINR: 0, totalEarnedPKR: 0 };
-  const periodTotals = data?.periodTotals || { earnedINR: 0, earnedPKR: 0, withdrawnINR: 0, withdrawnPKR: 0, netINR: 0, netPKR: 0 };
+  const formatMoney = (val, maxDec = 2) => {
+    return Number(val || 0).toLocaleString(undefined, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: maxDec,
+    });
+  };
+
+  const balances = data?.balances || {
+    balanceINR: 0,
+    balancePKR: 0,
+    totalEarnedINR: 0,
+    totalWithdrawnINR: 0,
+    totalEarnedPKR: 0,
+    totalWithdrawnPKR: 0,
+  };
+  const periodTotals = data?.periodTotals || {
+    earnedINR: 0,
+    earnedPKR: 0,
+    withdrawnINR: 0,
+    withdrawnPKR: 0,
+    netINR: 0,
+    netPKR: 0,
+    count: 0,
+  };
+
   const transactions = (data?.transactions || []).filter((tx) => {
     if (currencyFilter !== 'all' && tx.currency !== currencyFilter) return false;
     if (!searchTx.trim()) return true;
@@ -160,13 +190,26 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
               <Wallet className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="font-extrabold text-base sm:text-lg leading-tight">
-                {title || (isAdmin ? 'Admin Profit & Operations Wallet' : `${data?.user?.name || 'Member'} Wallet Statement`)}
-              </h2>
-              <p className="text-xs text-slate-300">
+              <div className="flex items-center space-x-2 flex-wrap">
+                <h2 className="font-extrabold text-base sm:text-lg leading-tight">
+                  {title || (isAdmin ? 'Admin Profit & Operations Wallet' : `${data?.user?.name || 'Member'} Wallet Statement`)}
+                </h2>
+                {data?.user?.commissionLabel && !isAdmin && (
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                    data.user.commissionLabel === 'inr_50'
+                      ? 'bg-purple-500/30 text-purple-200 border border-purple-400/30'
+                      : 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/30'
+                  }`}>
+                    {data.user.commissionLabel === 'inr_50' ? '🇮🇳 50% INR Deal' : '🇵🇰 1:1 PKR Deal'}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
                 {isAdmin
                   ? `Live Admin Pool • Shared 50-50 across ${data?.activeAdminsCount || 2} active Admins`
-                  : 'Client Store Commissions, 50% INR Splits & Approved Milestone Bonuses'}
+                  : data?.user?.commissionLabel === 'inr_50'
+                  ? 'Active Agreement: 50% Indian Rupees from all client store deposits'
+                  : 'Active Agreement: 1 PKR per 1 INR of client deposits + platform bonuses'}
               </p>
             </div>
           </div>
@@ -192,6 +235,19 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
 
         {/* ── Scrollable Body ── */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-5 bg-slate-50/50">
+          {/* Error Banner */}
+          {errorMsg && (
+            <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl flex items-center justify-between text-xs text-red-700 animate-fade-in">
+              <span className="font-semibold">{errorMsg}</span>
+              <button
+                onClick={() => fetchWallet()}
+                className="px-3 py-1 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
           {/* ── 1. Top Balance Showcase Cards ── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
             {/* INR Wallet Card (Indian Rupees) */}
@@ -208,14 +264,14 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
 
               <div className="mt-2.5">
                 <h3 className="text-2xl sm:text-3xl font-black tracking-tight">
-                  ₹{balances.balanceINR.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                  ₹{formatMoney(balances.balanceINR)}
                   <span className="text-xs sm:text-sm font-normal text-purple-200 ml-1.5">INR</span>
                 </h3>
               </div>
 
               <div className="flex items-center justify-between text-[11px] text-purple-200/90 mt-3 pt-3 border-t border-white/15">
-                <span>Earned: <strong>₹{balances.totalEarnedINR.toLocaleString()}</strong></span>
-                <span>Withdrawn: <strong>₹{balances.totalWithdrawnINR.toLocaleString()}</strong></span>
+                <span>Earned: <strong>₹{formatMoney(balances.totalEarnedINR, 0)}</strong></span>
+                <span>Withdrawn: <strong>₹{formatMoney(balances.totalWithdrawnINR, 0)}</strong></span>
               </div>
             </div>
 
@@ -233,14 +289,14 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
 
               <div className="mt-2.5">
                 <h3 className="text-2xl sm:text-3xl font-black tracking-tight">
-                  Rs {balances.balancePKR.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                  Rs {formatMoney(balances.balancePKR)}
                   <span className="text-xs sm:text-sm font-normal text-emerald-200 ml-1.5">PKR</span>
                 </h3>
               </div>
 
               <div className="flex items-center justify-between text-[11px] text-emerald-200/90 mt-3 pt-3 border-t border-white/15">
-                <span>Earned: <strong>Rs {balances.totalEarnedPKR.toLocaleString()}</strong></span>
-                <span>Withdrawn: <strong>Rs {balances.totalWithdrawnPKR.toLocaleString()}</strong></span>
+                <span>Earned: <strong>Rs {formatMoney(balances.totalEarnedPKR, 0)}</strong></span>
+                <span>Withdrawn: <strong>Rs {formatMoney(balances.totalWithdrawnPKR, 0)}</strong></span>
               </div>
             </div>
           </div>
@@ -390,22 +446,22 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
             <div className="bg-white p-3 rounded-2xl border border-slate-200">
               <span className="text-[10px] uppercase font-bold text-slate-400 block">Period Inflow (INR)</span>
               <p className="text-base sm:text-lg font-black text-purple-700 mt-0.5">
-                +₹{periodTotals.earnedINR.toLocaleString()}
+                +₹{formatMoney(periodTotals.earnedINR)}
               </p>
             </div>
 
             <div className="bg-white p-3 rounded-2xl border border-slate-200">
               <span className="text-[10px] uppercase font-bold text-slate-400 block">Period Inflow (PKR)</span>
               <p className="text-base sm:text-lg font-black text-emerald-600 mt-0.5">
-                +Rs {periodTotals.earnedPKR.toLocaleString()}
+                +Rs {formatMoney(periodTotals.earnedPKR)}
               </p>
             </div>
 
             <div className="bg-white p-3 rounded-2xl border border-slate-200">
               <span className="text-[10px] uppercase font-bold text-slate-400 block">Payouts Withdrawn</span>
               <p className="text-base sm:text-lg font-black text-red-600 mt-0.5">
-                {periodTotals.withdrawnINR > 0 ? `-₹${periodTotals.withdrawnINR.toLocaleString()} ` : ''}
-                {periodTotals.withdrawnPKR > 0 ? `-Rs ${periodTotals.withdrawnPKR.toLocaleString()}` : ''}
+                {periodTotals.withdrawnINR > 0 ? `-₹${formatMoney(periodTotals.withdrawnINR)} ` : ''}
+                {periodTotals.withdrawnPKR > 0 ? `-Rs ${formatMoney(periodTotals.withdrawnPKR)}` : ''}
                 {periodTotals.withdrawnINR === 0 && periodTotals.withdrawnPKR === 0 ? '0' : ''}
               </p>
             </div>
@@ -557,7 +613,7 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
                         >
                           {isCredit ? '+' : '-'}
                           {isINR ? '₹' : 'Rs '}
-                          {tx.amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}{' '}
+                          {formatMoney(tx.amount)}{' '}
                           <span className="text-[10px] font-bold text-slate-400 uppercase">
                             {tx.currency}
                           </span>

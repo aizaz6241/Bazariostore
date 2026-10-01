@@ -38,7 +38,6 @@ export default function SellersPage() {
   // Assignment Modal State (Admin only)
   const [assignModalSeller, setAssignModalSeller] = useState(null);
   const [selectedMemberId, setSelectedMemberId] = useState('');
-  const [selectedCommissionLabel, setSelectedCommissionLabel] = useState('pkr_1to1');
   const [assignLoading, setAssignLoading] = useState(false);
 
   // Private Note Modal State (Member & Admin)
@@ -87,7 +86,7 @@ export default function SellersPage() {
     fetchData();
   }, [isAdmin]);
 
-  // Handle Admin Assigning Seller to a Member
+  // Handle Admin Assigning Seller to a Member (Deal agreement is inherited from Member)
   const handleAssignSeller = async () => {
     if (!assignModalSeller || !selectedMemberId) return;
 
@@ -103,7 +102,6 @@ export default function SellersPage() {
         body: JSON.stringify({
           sellerId: assignModalSeller._id,
           memberId: selectedMemberId,
-          commissionLabel: selectedCommissionLabel,
         }),
       });
 
@@ -119,32 +117,6 @@ export default function SellersPage() {
       console.error('Assign error:', err);
     } finally {
       setAssignLoading(false);
-    }
-  };
-
-  // Quick switch of commission label for Admin
-  const handleUpdateCommissionLabel = async (sellerId, newLabel) => {
-    try {
-      const token = localStorage.getItem('portal_token');
-      const res = await fetch(`/api/sellers/${sellerId}/commission-label`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ commissionLabel: newLabel }),
-      });
-
-      if (res.ok) {
-        setSellers((prev) =>
-          prev.map((s) => (s._id === sellerId ? { ...s, commissionLabel: newLabel } : s))
-        );
-      } else {
-        const data = await res.json();
-        alert(data.message || 'Failed to update commission model');
-      }
-    } catch (err) {
-      console.error('Update commission label error:', err);
     }
   };
 
@@ -315,7 +287,7 @@ export default function SellersPage() {
                 <tr>
                   <th className="py-3 px-4">Store & Owner</th>
                   <th className="py-3 px-4">Health</th>
-                  <th className="py-3 px-4 text-center">Commission Rule</th>
+                  <th className="py-3 px-4 text-center">Active Deal</th>
                   {isAdmin && <th className="py-3 px-4">Assigned Member (Wallet)</th>}
                   <th className="py-3 px-4 text-right">Deposited</th>
                   <th className="py-3 px-4 text-right">Withdrawn</th>
@@ -330,6 +302,7 @@ export default function SellersPage() {
                   const healthScore = seller.accountHealth?.score ?? 100;
                   const assignedMemberId = seller.assignment?.member?._id?.toString();
                   const memberWallet = assignedMemberId ? memberWalletMap.get(assignedMemberId) : null;
+                  const activeDealLabel = seller.assignment?.commissionLabel || seller.assignment?.member?.commissionLabel;
 
                   return (
                     <tr key={seller._id} className="hover:bg-slate-50/80 transition-colors">
@@ -367,30 +340,22 @@ export default function SellersPage() {
                         </span>
                       </td>
 
-                      {/* Commission Rule */}
+                      {/* Active Deal inherited from assigned Member */}
                       <td className="py-3 px-4 text-center">
-                        {isAdmin ? (
-                          <select
-                            value={seller.commissionLabel || 'pkr_1to1'}
-                            onChange={(e) => handleUpdateCommissionLabel(seller._id, e.target.value)}
-                            className={`text-[10px] font-bold px-2 py-1 rounded-xl border cursor-pointer focus:outline-none transition-all ${
-                              seller.commissionLabel === 'inr_50'
-                                ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
-                                : 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
-                            }`}
-                          >
-                            <option value="pkr_1to1">🇵🇰 1:1 PKR Earning</option>
-                            <option value="inr_50">🇮🇳 50% INR Split</option>
-                          </select>
-                        ) : (
+                        {seller.assignment?.member ? (
                           <span
                             className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                              seller.commissionLabel === 'inr_50'
+                              activeDealLabel === 'inr_50'
                                 ? 'bg-amber-50 text-amber-800 border border-amber-200'
                                 : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                             }`}
+                            title={`Deal set on staff: ${seller.assignment.member.name}`}
                           >
-                            {seller.commissionLabel === 'inr_50' ? '🇮🇳 50% INR' : '🇵🇰 1:1 PKR'}
+                            {activeDealLabel === 'inr_50' ? '🇮🇳 50% INR Deal' : '🇵🇰 1:1 PKR Deal'}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                            🏛️ Platform Treasury
                           </span>
                         )}
                       </td>
@@ -513,7 +478,6 @@ export default function SellersPage() {
                           onClick={() => {
                             setAssignModalSeller(seller);
                             setSelectedMemberId(seller.assignment?.member?._id || '');
-                            setSelectedCommissionLabel(seller.commissionLabel || seller.assignment?.commissionLabel || 'pkr_1to1');
                           }}
                           className="p-1.5 rounded-lg bg-purple-50 text-purple-700"
                           title="Assign"
@@ -533,12 +497,12 @@ export default function SellersPage() {
                     </span>
                     <span
                       className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${
-                        seller.commissionLabel === 'inr_50'
+                        (seller.assignment?.commissionLabel || seller.assignment?.member?.commissionLabel) === 'inr_50'
                           ? 'bg-amber-100 text-amber-800 border border-amber-200'
                           : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                       }`}
                     >
-                      {seller.commissionLabel === 'inr_50' ? '🇮🇳 50%' : '🇵🇰 1:1'}
+                      {(seller.assignment?.commissionLabel || seller.assignment?.member?.commissionLabel) === 'inr_50' ? '🇮🇳 50%' : '🇵🇰 1:1'}
                     </span>
                     {isAdmin && (
                       <span className="text-slate-500 truncate max-w-[100px]">
@@ -677,31 +641,24 @@ export default function SellersPage() {
                       </div>
                     )}
 
-                    {/* Commission Rule */}
+                    {/* Active Deal inherited from assigned Member */}
                     <div className="flex items-center justify-between pt-1">
                       <span className="text-slate-400">Commission Rule:</span>
-                      {isAdmin ? (
-                        <select
-                          value={seller.commissionLabel || 'pkr_1to1'}
-                          onChange={(e) => handleUpdateCommissionLabel(seller._id, e.target.value)}
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border cursor-pointer focus:outline-none transition-all ${
-                            seller.commissionLabel === 'inr_50'
-                              ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
-                              : 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
-                          }`}
-                        >
-                          <option value="pkr_1to1">🇵🇰 1:1 PKR Earning</option>
-                          <option value="inr_50">🇮🇳 50% INR Split</option>
-                        </select>
-                      ) : (
+                      {seller.assignment?.member ? (
                         <span
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                            seller.commissionLabel === 'inr_50'
+                            (seller.assignment?.commissionLabel || seller.assignment?.member?.commissionLabel) === 'inr_50'
                               ? 'bg-amber-50 text-amber-800 border border-amber-200'
                               : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                           }`}
                         >
-                          {seller.commissionLabel === 'inr_50' ? '🇮🇳 50% INR Split' : '🇵🇰 1:1 PKR'}
+                          {(seller.assignment?.commissionLabel || seller.assignment?.member?.commissionLabel) === 'inr_50'
+                            ? '🇮🇳 50% INR (Staff Deal)'
+                            : '🇵🇰 1:1 PKR (Staff Deal)'}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200">
+                          🏛️ Platform Treasury Pool
                         </span>
                       )}
                     </div>
@@ -735,7 +692,6 @@ export default function SellersPage() {
                       onClick={() => {
                         setAssignModalSeller(seller);
                         setSelectedMemberId(seller.assignment?.member?._id || '');
-                        setSelectedCommissionLabel(seller.commissionLabel || seller.assignment?.commissionLabel || 'pkr_1to1');
                       }}
                       className="py-2 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-semibold text-xs flex items-center space-x-1 transition"
                     >
@@ -784,30 +740,43 @@ export default function SellersPage() {
                 <option value="">-- Choose Member --</option>
                 {members.map((m) => (
                   <option key={m._id} value={m._id}>
-                    {m.name} (@{m.username}) — {m.role}
+                    {m.name} (@{m.username}) — {m.commissionLabel === 'inr_50' ? '🇮🇳 50% INR Split Deal' : '🇵🇰 1:1 PKR Fixed Deal'}
                   </option>
                 ))}
               </select>
             </div>
 
-            <div className="space-y-1.5 mt-4">
-              <label className="block text-xs font-semibold text-slate-700 uppercase">
-                Commission & Profit Model
-              </label>
-              <select
-                value={selectedCommissionLabel}
-                onChange={(e) => setSelectedCommissionLabel(e.target.value)}
-                className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
-              >
-                <option value="pkr_1to1">🇵🇰 1:1 INR → PKR (Default Standard Earning)</option>
-                <option value="inr_50">🇮🇳 50% INR Split (50% Member INR + 50% Admin Pool Split)</option>
-              </select>
-              <p className="text-[11px] text-slate-500">
-                {selectedCommissionLabel === 'inr_50'
-                  ? 'Member receives 50% in INR directly. The other 50% in INR is distributed 50-50 to active admins.'
-                  : 'Member receives 1 PKR for every 1 INR deposited. Admin pool earns the deposit INR profit.'}
-              </p>
-            </div>
+            {selectedMemberId && (() => {
+              const targetMember = members.find((m) => m._id === selectedMemberId);
+              if (!targetMember) return null;
+              const is50Inr = targetMember.commissionLabel === 'inr_50';
+              return (
+                <div className="mt-4 p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
+                    Inherited Commission Agreement for {targetMember.name}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-xs font-extrabold px-2.5 py-1 rounded-xl border ${
+                        is50Inr
+                          ? 'bg-amber-100 text-amber-900 border-amber-300'
+                          : 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                      }`}
+                    >
+                      {is50Inr ? '🇮🇳 50% INR Split Deal' : '🇵🇰 1:1 PKR Fixed Deal'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-snug">
+                    {is50Inr
+                      ? '50% in Indian Rupees from all store deposits directly credits to this member. The other 50% INR goes to the Admin pool.'
+                      : 'Member earns 1 Pakistani Rupee for every 1 Indian Rupee deposited. 100% of the deposit INR flows to Admin pool.'}
+                  </p>
+                  <p className="text-[10px] text-slate-400 italic">
+                    * Note: Deal agreements are configured on the Member account under &quot;Team Members&quot;.
+                  </p>
+                </div>
+              );
+            })()}
 
             <div className="flex justify-end space-x-2 mt-6">
               <button

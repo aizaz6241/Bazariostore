@@ -127,6 +127,13 @@ export default function WalletPage() {
   };
 
   const isAdmin = user?.role === 'admin';
+  const formatMoney = (val, maxDec = 2) => {
+    return Number(val || 0).toLocaleString(undefined, {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: maxDec,
+    });
+  };
+
   const balances = data?.balances || { balanceINR: 0, balancePKR: 0, totalEarnedINR: 0, totalEarnedPKR: 0, totalWithdrawnINR: 0, totalWithdrawnPKR: 0 };
   const periodTotals = data?.periodTotals || { earnedINR: 0, earnedPKR: 0, withdrawnINR: 0, withdrawnPKR: 0, netINR: 0, netPKR: 0, count: 0 };
   const transactions = (data?.transactions || []).filter((tx) => {
@@ -146,16 +153,29 @@ export default function WalletPage() {
       {/* ── Page Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center space-x-2.5">
-            <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-white flex items-center justify-center font-bold shadow-md shadow-emerald-500/20">
-              <Wallet className="w-5 h-5" />
-            </div>
-            <span>{isAdmin ? 'Admin Profit & Operations Wallet' : 'My Wallet & Financial Statement'}</span>
-          </h1>
+          <div className="flex items-center space-x-2.5 flex-wrap">
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center space-x-2.5">
+              <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-white flex items-center justify-center font-bold shadow-md shadow-emerald-500/20">
+                <Wallet className="w-5 h-5" />
+              </div>
+              <span>{isAdmin ? 'Admin Profit & Operations Wallet' : 'My Wallet & Financial Statement'}</span>
+            </h1>
+            {data?.user?.commissionLabel && !isAdmin && (
+              <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                data.user.commissionLabel === 'inr_50'
+                  ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                  : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+              }`}>
+                {data.user.commissionLabel === 'inr_50' ? '🇮🇳 50% INR Deal' : '🇵🇰 1:1 PKR Deal'}
+              </span>
+            )}
+          </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
             {isAdmin
               ? `Live Admin Treasury Pool • Shared 50-50 across ${data?.activeAdminsCount || 2} active Admins`
-              : 'Track your client commissions (50% INR & 1:1 PKR), milestone rewards, and payout history.'}
+              : data?.user?.commissionLabel === 'inr_50'
+              ? 'Active Agreement: 50% Indian Rupees from all client store deposits'
+              : 'Active Agreement: 1 PKR per 1 INR of client deposits + platform bonuses'}
           </p>
         </div>
 
@@ -196,14 +216,14 @@ export default function WalletPage() {
 
           <div className="mt-3">
             <h2 className="text-3xl sm:text-4xl font-black tracking-tight">
-              ₹{balances.balanceINR.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+              ₹{formatMoney(balances.balanceINR)}
               <span className="text-sm sm:text-base font-normal text-purple-200 ml-2">INR</span>
             </h2>
           </div>
 
           <div className="flex items-center justify-between text-xs text-purple-200/90 mt-4 pt-4 border-t border-white/15">
-            <span>Total Earned: <strong>₹{balances.totalEarnedINR.toLocaleString()}</strong></span>
-            <span>Withdrawn / Payouts: <strong>₹{balances.totalWithdrawnINR.toLocaleString()}</strong></span>
+            <span>Total Earned: <strong>₹{formatMoney(balances.totalEarnedINR, 0)}</strong></span>
+            <span>Withdrawn / Payouts: <strong>₹{formatMoney(balances.totalWithdrawnINR, 0)}</strong></span>
           </div>
         </div>
 
@@ -221,14 +241,14 @@ export default function WalletPage() {
 
           <div className="mt-3">
             <h2 className="text-3xl sm:text-4xl font-black tracking-tight">
-              Rs {balances.balancePKR.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+              Rs {formatMoney(balances.balancePKR)}
               <span className="text-sm sm:text-base font-normal text-emerald-200 ml-2">PKR</span>
             </h2>
           </div>
 
           <div className="flex items-center justify-between text-xs text-emerald-200/90 mt-4 pt-4 border-t border-white/15">
-            <span>Total Earned: <strong>Rs {balances.totalEarnedPKR.toLocaleString()}</strong></span>
-            <span>Withdrawn / Payouts: <strong>Rs {balances.totalWithdrawnPKR.toLocaleString()}</strong></span>
+            <span>Total Earned: <strong>Rs {formatMoney(balances.totalEarnedPKR, 0)}</strong></span>
+            <span>Withdrawn / Payouts: <strong>Rs {formatMoney(balances.totalWithdrawnPKR, 0)}</strong></span>
           </div>
         </div>
       </div>
@@ -382,22 +402,22 @@ export default function WalletPage() {
         <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
           <span className="text-[10px] uppercase font-bold text-slate-400 block">Period Inflow (INR)</span>
           <p className="text-xl sm:text-2xl font-black text-purple-700 mt-1">
-            +₹{periodTotals.earnedINR.toLocaleString()}
+            +₹{formatMoney(periodTotals.earnedINR)}
           </p>
         </div>
 
         <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
           <span className="text-[10px] uppercase font-bold text-slate-400 block">Period Inflow (PKR)</span>
           <p className="text-xl sm:text-2xl font-black text-emerald-600 mt-1">
-            +Rs {periodTotals.earnedPKR.toLocaleString()}
+            +Rs {formatMoney(periodTotals.earnedPKR)}
           </p>
         </div>
 
         <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
           <span className="text-[10px] uppercase font-bold text-slate-400 block">Payouts Withdrawn</span>
           <p className="text-xl sm:text-2xl font-black text-red-600 mt-1">
-            {periodTotals.withdrawnINR > 0 ? `-₹${periodTotals.withdrawnINR.toLocaleString()} ` : ''}
-            {periodTotals.withdrawnPKR > 0 ? `-Rs ${periodTotals.withdrawnPKR.toLocaleString()}` : ''}
+            {periodTotals.withdrawnINR > 0 ? `-₹${formatMoney(periodTotals.withdrawnINR)} ` : ''}
+            {periodTotals.withdrawnPKR > 0 ? `-Rs ${formatMoney(periodTotals.withdrawnPKR)}` : ''}
             {periodTotals.withdrawnINR === 0 && periodTotals.withdrawnPKR === 0 ? '0' : ''}
           </p>
         </div>
@@ -537,7 +557,7 @@ export default function WalletPage() {
                     >
                       {isCredit ? '+' : '-'}
                       {isINR ? '₹' : 'Rs '}
-                      {tx.amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}{' '}
+                      {formatMoney(tx.amount)}{' '}
                       <span className="text-[10px] font-bold text-slate-400 uppercase">
                         {tx.currency}
                       </span>

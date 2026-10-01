@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { NextResponse } from 'next/server';
 import { getAuthSession } from '@/lib/auth';
 import { getWalletData } from '@/lib/utils/wallet';
@@ -19,8 +20,14 @@ export async function GET(req) {
 
     let targetUserId = session._id;
 
-    // If admin requests another member's statement
-    if (targetMemberId && session.role === 'admin') {
+    // If admin requests another member's statement, validate it is a valid ObjectId
+    if (
+      targetMemberId &&
+      targetMemberId !== 'undefined' &&
+      targetMemberId !== 'null' &&
+      mongoose.Types.ObjectId.isValid(targetMemberId) &&
+      session.role === 'admin'
+    ) {
       targetUserId = targetMemberId;
     }
 

@@ -97,7 +97,7 @@ export async function POST(req) {
       return NextResponse.json({ message: 'Forbidden. Admin access required.' }, { status: 403 });
     }
 
-    const { name, username, password, phone, role } = await req.json();
+    const { name, username, password, phone, role, commissionLabel } = await req.json();
 
     if (!name || !name.trim()) {
       return NextResponse.json({ message: 'Member name is required' }, { status: 400 });
@@ -107,6 +107,7 @@ export async function POST(req) {
     const cleanName = name.trim();
     const cleanUsername = (username || cleanName.toLowerCase().replace(/[^a-z0-9]/g, '') + Math.floor(100 + Math.random() * 900)).trim();
     const cleanPassword = password || 'member123';
+    const cleanCommissionLabel = ['inr_50', 'pkr_1to1'].includes(commissionLabel) ? commissionLabel : 'pkr_1to1';
 
     const existing = await Member.findOne({ username: cleanUsername });
     if (existing) {
@@ -122,6 +123,7 @@ export async function POST(req) {
       plainPassword: cleanPassword,
       phone: phone || '',
       role: role || 'member',
+      commissionLabel: cleanCommissionLabel,
       wallet: {
         balancePKR: 0,
         totalDepositsPKR: 0,

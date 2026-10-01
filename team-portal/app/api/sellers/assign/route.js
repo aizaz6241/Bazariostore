@@ -26,7 +26,9 @@ export async function POST(req) {
     if (!seller) return NextResponse.json({ message: 'Seller not found' }, { status: 404 });
     if (!targetMember) return NextResponse.json({ message: 'Target member not found' }, { status: 404 });
 
-    const chosenLabel = commissionLabel === 'inr_50' ? 'inr_50' : (commissionLabel || seller.commissionLabel || 'pkr_1to1');
+    // The deal agreement is strictly configured on the Member (not the seller).
+    // The assigned store automatically inherits the member's commission agreement.
+    const chosenLabel = targetMember.commissionLabel || 'pkr_1to1';
     seller.commissionLabel = chosenLabel;
     await seller.save();
 

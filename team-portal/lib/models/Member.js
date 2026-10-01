@@ -50,6 +50,13 @@ const memberSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // Commission deal agreed between Admin and Member:
+    // 'inr_50' (50% INR directly to Member) or 'pkr_1to1' (1:1 PKR fixed rate)
+    commissionLabel: {
+      type: String,
+      enum: ['pkr_1to1', 'inr_50'],
+      default: 'pkr_1to1',
+    },
     // Dual-currency wallet tracking (For Members & Admins: INR & PKR)
     wallet: {
       balancePKR: { type: Number, default: 0 },
