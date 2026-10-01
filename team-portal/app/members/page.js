@@ -77,10 +77,8 @@ export default function MembersPage() {
   };
 
   useEffect(() => {
-    if (isAdmin) {
-      fetchData();
-    }
-  }, [isAdmin]);
+    fetchData();
+  }, []);
 
   const handleCreateMember = async (e) => {
     e?.preventDefault();
@@ -154,14 +152,6 @@ export default function MembersPage() {
     }
   };
 
-  if (!isAdmin) {
-    return (
-      <div className="py-20 text-center text-slate-500 text-sm">
-        Admin permission is required to access team oversight.
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Top Header */}
@@ -169,24 +159,28 @@ export default function MembersPage() {
         <div>
           <div className="flex items-center space-x-2">
             <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-              Team Members Supervision
+              {isAdmin ? 'Team Members Supervision' : 'Team Directory'}
             </h1>
             <span className="text-xs px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-700 font-semibold">
               {members.length} Total Users
             </span>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Supervise each member’s clients, pending orders, total deposits, withdrawals and issue bonuses.
+            {isAdmin
+              ? 'Supervise each member’s clients, pending orders, total deposits, withdrawals and issue bonuses.'
+              : 'Browse active team members, managers and operators across the platform.'}
           </p>
         </div>
 
-        <button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs sm:text-sm flex items-center space-x-1.5 transition shadow-md shadow-emerald-600/20 active:scale-95 self-start sm:self-auto"
-        >
-          <UserPlus className="w-4 h-4" />
-          <span>Add New Member</span>
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs sm:text-sm flex items-center space-x-1.5 transition shadow-md shadow-emerald-600/20 active:scale-95 self-start sm:self-auto"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>Add New Member</span>
+          </button>
+        )}
       </div>
 
       {/* Members Directory */}
@@ -273,29 +267,37 @@ export default function MembersPage() {
                   </div>
 
                   {/* Actions (Bonus + Expand Details) */}
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={() => setBonusMember(member)}
-                      className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-xs flex items-center space-x-1.5 transition border border-amber-200"
-                    >
-                      <Gift className="w-3.5 h-3.5 text-amber-600" />
-                      <span>Award Bonus</span>
-                    </button>
+                  {isAdmin ? (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => setBonusMember(member)}
+                        className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-xs flex items-center space-x-1.5 transition border border-amber-200"
+                      >
+                        <Gift className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Award Bonus</span>
+                      </button>
 
-                    <button
-                      onClick={() =>
-                        setExpandedMemberId(isExpanded ? null : member._id)
-                      }
-                      className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center space-x-1 transition"
-                    >
-                      <span>{isExpanded ? 'Hide Stores' : 'Drill Down'}</span>
-                      {isExpanded ? (
-                        <ChevronUp className="w-3.5 h-3.5" />
-                      ) : (
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                  </div>
+                      <button
+                        onClick={() =>
+                          setExpandedMemberId(isExpanded ? null : member._id)
+                        }
+                        className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center space-x-1 transition"
+                      >
+                        <span>{isExpanded ? 'Hide Stores' : 'Drill Down'}</span>
+                        {isExpanded ? (
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        ) : (
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <span className="text-xs px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">
+                        Active Team Member
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* ─── EXPANDED CLIENT STORES DRILL-DOWN ─── */}

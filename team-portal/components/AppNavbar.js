@@ -31,7 +31,7 @@ export default function AppNavbar() {
     { href: '/sellers', label: 'Sellers', icon: Users },
     { href: '/models', label: 'Models', icon: ImageIcon },
     { href: '/rewards', label: 'Rewards', icon: Award },
-    ...(isAdmin ? [{ href: '/members', label: 'Members', icon: UserCheck }] : []),
+    { href: '/members', label: 'Members', icon: UserCheck },
   ];
 
   return (
