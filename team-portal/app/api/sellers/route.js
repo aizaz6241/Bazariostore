@@ -31,7 +31,7 @@ export async function GET(req) {
       );
     }
 
-    const sellers = await Seller.find(sellersQuery).sort({ createdAt: -1 }).limit(100);
+    const sellers = await Seller.find(sellersQuery).sort({ createdAt: -1 }).limit(500);
 
     // Fetch active assignments for these sellers
     const sellerIds = sellers.map((s) => s._id);

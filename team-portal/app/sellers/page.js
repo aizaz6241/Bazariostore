@@ -168,15 +168,20 @@ export default function SellersPage() {
 
   // Filter sellers
   const filteredSellers = sellers.filter((s) => {
+    const term = searchTerm.trim().toLowerCase();
     const matchesSearch =
-      s.storeName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.ownerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.assignment?.privateNotes?.customName?.toLowerCase().includes(searchTerm.toLowerCase());
+      !term ||
+      s.storeName?.toLowerCase().includes(term) ||
+      s.ownerName?.toLowerCase().includes(term) ||
+      s.email?.toLowerCase().includes(term) ||
+      s.phone?.toLowerCase().includes(term) ||
+      s.assignment?.privateNotes?.customName?.toLowerCase().includes(term);
 
     if (!matchesSearch) return false;
 
     if (statusFilter === 'assigned') return Boolean(s.assignment);
     if (statusFilter === 'unassigned') return !s.assignment;
+    return true;
   });
 
   const memberWalletMap = new Map();
