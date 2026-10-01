@@ -24,3 +24,6 @@ yarn-error.log*
 uploads/
 server/backups/
 scratch/
+database_backup_full/
+.next/
+*/.next/
