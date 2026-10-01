@@ -4,6 +4,7 @@ import Member from '@/lib/models/Member';
 import SellerAssignment from '@/lib/models/SellerAssignment';
 import { Seller } from '@/lib/models/SharedModels';
 import RewardClaim from '@/lib/models/RewardClaim';
+import mongoose from 'mongoose';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +20,25 @@ export async function GET(req) {
       return NextResponse.json({ message: 'User not found' }, { status: 404 });
     }
 
-    // Recalculate live financial balances based on assigned sellers
+    // ─── Live Sync for Ecommerce Admins (Name Change & Deletion Detection) ───
+    if (member.role === 'admin' && member.ecommerceAdminId) {
+      const db = mongoose.connection.db;
+      const eAdmin = await db.collection('admins').findOne({ _id: member.ecommerceAdminId });
+
+      if (!eAdmin) {
+        // Admin was deleted from ecommerce website! Automatically remove from portal
+        await Member.deleteOne({ _id: member._id });
+        return NextResponse.json({ message: 'Administrator account was deleted from platform.' }, { status: 401 });
+      }
+
+      // If name was changed on the ecommerce website, immediately update here
+      if (eAdmin.name && eAdmin.name !== member.name) {
+        member.name = eAdmin.name;
+        await member.save();
+      }
+    }
+
+    // Recalculate live financial balances based on assigned sellers (for members)
     if (member.role === 'member') {
       const assignments = await SellerAssignment.find({ memberId: member._id, status: 'active' });
       const sellerIds = assignments.map((a) => a.sellerId);

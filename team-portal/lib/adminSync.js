@@ -4,7 +4,13 @@ import Member from '@/lib/models/Member';
 /**
  * Synchronizes all administrators from the ecommerce platform's `admins` collection
  * into `PortalMember` documents.
- * Ensures each admin has their own distinct profile, name, credentials, and conversation threads.
+ * 
+ * Features:
+ * 1. LIVE NAME & PROFILE UPDATES: Any name or detail change made on the ecommerce admin panel
+ *    is instantly synced and updated here.
+ * 2. AUTOMATIC DELETION: If an admin is deleted from the ecommerce platform, their account
+ *    is automatically removed from the team management system.
+ * 3. NEW ADMIN ONBOARDING: Any new admin added to ecommerce platform is automatically created here.
  */
 export async function syncEcommerceAdmins() {
   try {
@@ -12,6 +18,31 @@ export async function syncEcommerceAdmins() {
     if (!db) return [];
 
     const ecommerceAdmins = await db.collection('admins').find({}).toArray();
+
+    // ─── 1. Identify Valid Active Ecommerce Admins ───
+    const validEcommerceAdminIds = ecommerceAdmins.map((a) => a._id.toString());
+    const validEcommerceEmails = ecommerceAdmins.map((a) => (a.email || '').toLowerCase().trim());
+
+    // ─── 2. Auto-Delete Portal Admins that were deleted from Ecommerce Website ───
+    const existingPortalAdmins = await Member.find({ role: 'admin' });
+
+    for (const pAdmin of existingPortalAdmins) {
+      const hasValidId =
+        pAdmin.ecommerceAdminId &&
+        validEcommerceAdminIds.includes(pAdmin.ecommerceAdminId.toString());
+
+      const hasValidEmail =
+        pAdmin.email &&
+        validEcommerceEmails.includes(pAdmin.email.toLowerCase().trim());
+
+      // If this admin no longer exists in the main ecommerce database, remove them!
+      if (!hasValidId && !hasValidEmail) {
+        console.log(`[adminSync] Deleting removed ecommerce admin from portal: ${pAdmin.name} (${pAdmin.username})`);
+        await Member.deleteOne({ _id: pAdmin._id });
+      }
+    }
+
+    // ─── 3. Sync & Update Active Ecommerce Admins ───
     const syncedAdmins = [];
 
     for (const eAdmin of ecommerceAdmins) {
@@ -20,7 +51,7 @@ export async function syncEcommerceAdmins() {
       const cleanUsername = cleanEmail.split('@')[0].toLowerCase().trim().replace(/[^a-z0-9]/g, '');
       const adminName = eAdmin.name || cleanUsername;
 
-      // 1. Match by ecommerceAdminId first, then by email or username
+      // Match by ecommerceAdminId first, then by email or username
       let portalAdmin = await Member.findOne({ ecommerceAdminId: eAdmin._id });
 
       if (!portalAdmin) {
@@ -33,16 +64,18 @@ export async function syncEcommerceAdmins() {
       }
 
       if (portalAdmin) {
+        // ALWAYS update name, email, and password to reflect any changes on ecommerce website!
         portalAdmin.ecommerceAdminId = eAdmin._id;
         portalAdmin.email = cleanEmail;
-        portalAdmin.name = adminName;
+        portalAdmin.name = adminName; // Updates name instantly if changed on ecom site!
         portalAdmin.role = 'admin';
         portalAdmin.passwordHash = eAdmin.passwordHash;
-        if (eAdmin.phone) portalAdmin.phone = eAdmin.phone;
+        if (eAdmin.phone !== undefined) portalAdmin.phone = eAdmin.phone || '';
+        if (eAdmin.active !== undefined) portalAdmin.active = eAdmin.active;
         await portalAdmin.save();
         syncedAdmins.push(portalAdmin);
       } else {
-        // Ensure unique username
+        // Create new synced admin
         let finalUsername = cleanUsername;
         const exists = await Member.findOne({ username: finalUsername });
         if (exists) {
