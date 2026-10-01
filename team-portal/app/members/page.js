@@ -19,6 +19,10 @@ import {
   Phone,
   Mail,
   User,
+  KeyRound,
+  Trash2,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 
 export default function MembersPage() {
@@ -46,6 +50,16 @@ export default function MembersPage() {
   const [bonusAmount, setBonusAmount] = useState('');
   const [bonusReason, setBonusReason] = useState('');
   const [bonusLoading, setBonusLoading] = useState(false);
+
+  // Edit Password Modal
+  const [editPasswordMember, setEditPasswordMember] = useState(null);
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [editPasswordLoading, setEditPasswordLoading] = useState(false);
+  const [editPasswordMsg, setEditPasswordMsg] = useState({ text: '', type: '' });
+
+  // Delete Member Confirmation Modal
+  const [deleteConfirmMember, setDeleteConfirmMember] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const isAdmin = user?.role === 'admin';
 
@@ -152,6 +166,83 @@ export default function MembersPage() {
     }
   };
 
+  // ─── ADMIN: Change Member Password ───
+  const handleEditPasswordSubmit = async (e) => {
+    e?.preventDefault();
+    if (!editPasswordMember || !newPasswordInput) return;
+
+    if (newPasswordInput.length < 6) {
+      setEditPasswordMsg({ text: 'Password must be at least 6 characters', type: 'error' });
+      return;
+    }
+
+    try {
+      setEditPasswordLoading(true);
+      setEditPasswordMsg({ text: '', type: '' });
+      const token = localStorage.getItem('portal_token');
+
+      const res = await fetch(`/api/members/${editPasswordMember._id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ password: newPasswordInput }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setEditPasswordMsg({
+          text: `Password updated successfully for ${editPasswordMember.name}!`,
+          type: 'success',
+        });
+        setTimeout(() => {
+          setEditPasswordMember(null);
+          setNewPasswordInput('');
+          setEditPasswordMsg({ text: '', type: '' });
+          fetchData();
+        }, 1200);
+      } else {
+        setEditPasswordMsg({ text: data.message || 'Failed to update password', type: 'error' });
+      }
+    } catch (err) {
+      console.error('Edit password error:', err);
+      setEditPasswordMsg({ text: 'Network error occurred', type: 'error' });
+    } finally {
+      setEditPasswordLoading(false);
+    }
+  };
+
+  // ─── ADMIN: Delete Member ───
+  const handleDeleteMember = async () => {
+    if (!deleteConfirmMember) return;
+
+    try {
+      setDeleteLoading(true);
+      const token = localStorage.getItem('portal_token');
+
+      const res = await fetch(`/api/members/${deleteConfirmMember._id}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        setDeleteConfirmMember(null);
+        fetchData();
+      } else {
+        alert(data.message || 'Failed to delete member');
+      }
+    } catch (err) {
+      console.error('Delete member error:', err);
+      alert('Network error occurred while deleting member');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Top Header */}
@@ -167,7 +258,7 @@ export default function MembersPage() {
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
             {isAdmin
-              ? 'Supervise each member’s clients, pending orders, total deposits, withdrawals and issue bonuses.'
+              ? 'Manage member credentials, passwords, accounts, and review their assigned stores and performance.'
               : 'Browse active team members, managers and operators across the platform.'}
           </p>
         </div>
@@ -195,6 +286,8 @@ export default function MembersPage() {
             const assignedSellers = sellers.filter(
               (s) => s.assignment?.member?._id === member._id
             );
+            const isSelf = user?._id === member._id;
+            const isPrimaryAdmin = member.role === 'admin' && member.ecommerceAdminId;
 
             return (
               <div
@@ -205,7 +298,13 @@ export default function MembersPage() {
                 <div className="p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                   {/* Member identity */}
                   <div className="flex items-start space-x-4">
-                    <div className="w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200 text-slate-800 font-bold flex items-center justify-center text-lg shrink-0">
+                    <div
+                      className={`w-12 h-12 rounded-2xl border text-white font-bold flex items-center justify-center text-lg shrink-0 shadow-sm ${
+                        member.role === 'admin'
+                          ? 'bg-gradient-to-tr from-purple-600 to-indigo-600 border-purple-300'
+                          : 'bg-gradient-to-tr from-slate-700 to-slate-800 border-slate-600'
+                      }`}
+                    >
                       {member.name.charAt(0).toUpperCase()}
                     </div>
                     <div>
@@ -214,12 +313,17 @@ export default function MembersPage() {
                         <span
                           className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
                             member.role === 'admin'
-                              ? 'bg-purple-100 text-purple-700'
-                              : 'bg-emerald-100 text-emerald-700'
+                              ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                              : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
                           }`}
                         >
                           {member.role}
                         </span>
+                        {isSelf && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">
+                            You
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs text-slate-400 mt-0.5">
                         @{member.username} {member.phone && `• ${member.phone}`}
@@ -266,24 +370,53 @@ export default function MembersPage() {
                     </div>
                   </div>
 
-                  {/* Actions (Bonus + Expand Details) */}
+                  {/* Actions (Bonus, Edit Password, Delete, Expand Details) */}
                   {isAdmin ? (
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                      {/* Award Bonus */}
                       <button
                         onClick={() => setBonusMember(member)}
-                        className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-xs flex items-center space-x-1.5 transition border border-amber-200"
+                        className="px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-xs flex items-center space-x-1.5 transition border border-amber-200"
+                        title="Award Bonus"
                       >
                         <Gift className="w-3.5 h-3.5 text-amber-600" />
-                        <span>Award Bonus</span>
+                        <span className="hidden sm:inline">Bonus</span>
                       </button>
 
+                      {/* Edit Password Button */}
+                      <button
+                        onClick={() => {
+                          setEditPasswordMember(member);
+                          setNewPasswordInput('');
+                          setEditPasswordMsg({ text: '', type: '' });
+                        }}
+                        className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+                        title="Edit Password"
+                      >
+                        <KeyRound className="w-4 h-4 text-slate-600" />
+                      </button>
+
+                      {/* Delete Member Button (Disabled for primary platform admins / self) */}
+                      {!isPrimaryAdmin && !isSelf && (
+                        <button
+                          onClick={() => setDeleteConfirmMember(member)}
+                          className="p-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 transition"
+                          title="Delete Member"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+
+                      {/* Drill Down */}
                       <button
                         onClick={() =>
                           setExpandedMemberId(isExpanded ? null : member._id)
                         }
-                        className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center space-x-1 transition"
+                        className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center space-x-1 transition"
                       >
-                        <span>{isExpanded ? 'Hide Stores' : 'Drill Down'}</span>
+                        <span className="hidden sm:inline">
+                          {isExpanded ? 'Hide' : 'Stores'}
+                        </span>
                         {isExpanded ? (
                           <ChevronUp className="w-3.5 h-3.5" />
                         ) : (
@@ -381,6 +514,141 @@ export default function MembersPage() {
         </div>
       )}
 
+      {/* ─── MODAL: Admin Edit Member Password ─── */}
+      {editPasswordMember && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-slate-200 animate-scale-up">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-2">
+                <div className="w-9 h-9 rounded-2xl bg-purple-50 text-purple-700 flex items-center justify-center">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Edit Member Password</h3>
+                  <p className="text-xs text-slate-400">
+                    For {editPasswordMember.name} (@{editPasswordMember.username})
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditPasswordMember(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {editPasswordMsg.text && (
+              <div
+                className={`mb-4 p-3 rounded-2xl text-xs flex items-center space-x-2 ${
+                  editPasswordMsg.type === 'success'
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : 'bg-red-50 text-red-700 border border-red-200'
+                }`}
+              >
+                <CheckCircle className="w-4 h-4 shrink-0" />
+                <span>{editPasswordMsg.text}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleEditPasswordSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  New Password (min 6 characters) *
+                </label>
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    required
+                    minLength={6}
+                    value={newPasswordInput}
+                    onChange={(e) => setNewPasswordInput(e.target.value)}
+                    placeholder="Enter new password"
+                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const randomPass =
+                        editPasswordMember.username.slice(0, 3) +
+                        Math.floor(1000 + Math.random() * 9000);
+                      setNewPasswordInput(randomPass);
+                    }}
+                    className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition"
+                    title="Generate Random Password"
+                  >
+                    Generate
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditPasswordMember(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editPasswordLoading || !newPasswordInput}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white shadow-sm"
+                >
+                  {editPasswordLoading ? 'Saving...' : 'Save New Password'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: Admin Delete Member Confirmation ─── */}
+      {deleteConfirmMember && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-slate-200 animate-scale-up">
+            <div className="flex items-center space-x-3 mb-4 text-red-600">
+              <div className="w-10 h-10 rounded-2xl bg-red-50 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Delete Team Member</h3>
+                <p className="text-xs text-slate-400">This action cannot be undone.</p>
+              </div>
+            </div>
+
+            <p className="text-xs sm:text-sm text-slate-600 mb-4 leading-relaxed">
+              Are you sure you want to permanently delete{' '}
+              <strong className="text-slate-900">{deleteConfirmMember.name}</strong> (@
+              {deleteConfirmMember.username})?
+              <br />
+              <br />
+              Any client stores assigned to this member will be safely unassigned so that another
+              agent can be assigned to them.
+            </p>
+
+            <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmMember(null)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteMember}
+                disabled={deleteLoading}
+                className="px-4 py-2 rounded-xl text-xs font-semibold bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white shadow-sm flex items-center space-x-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{deleteLoading ? 'Deleting...' : 'Confirm Delete'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ─── MODAL: Admin Create Member ─── */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
@@ -411,7 +679,9 @@ export default function MembersPage() {
                   value={createForm.name}
                   onChange={(e) => {
                     const val = e.target.value;
-                    const autoUser = val.toLowerCase().replace(/[^a-z0-9]/g, '') + Math.floor(10 + Math.random() * 90);
+                    const autoUser =
+                      val.toLowerCase().replace(/[^a-z0-9]/g, '') +
+                      Math.floor(10 + Math.random() * 90);
                     setCreateForm({
                       ...createForm,
                       name: val,
@@ -431,7 +701,9 @@ export default function MembersPage() {
                   type="text"
                   required
                   value={createForm.username}
-                  onChange={(e) => setCreateForm({ ...createForm, username: e.target.value })}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, username: e.target.value })
+                  }
                   placeholder="e.g. member1"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
@@ -445,7 +717,9 @@ export default function MembersPage() {
                   type="text"
                   required
                   value={createForm.password}
-                  onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, password: e.target.value })
+                  }
                   placeholder="e.g. member123"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
                 />
