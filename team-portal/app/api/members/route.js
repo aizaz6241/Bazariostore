@@ -21,7 +21,9 @@ export async function GET(req) {
 
     const members = await Member.find().select('-passwordHash').sort({ role: 1, createdAt: -1 });
 
-    // Aggregate statistics for each member
+    // Aggregate statistics and live multi-currency wallet for each member
+    const { getWalletData } = await import('@/lib/utils/wallet');
+
     const memberStats = await Promise.all(
       members.map(async (m) => {
         const assignments = await SellerAssignment.find({ memberId: m._id, status: 'active' });
@@ -50,7 +52,22 @@ export async function GET(req) {
         ]);
         const totalBonusesPKR = bonusAgg[0]?.total || 0;
 
-        const netBalancePKR = totalDepositsINR - totalWithdrawalsINR + totalBonusesPKR;
+        // Get exact calculated wallet (INR + PKR) including 50% split rules and payouts
+        let walletBalances = {
+          balanceINR: 0,
+          balancePKR: 0,
+          totalEarnedINR: 0,
+          totalEarnedPKR: 0,
+          totalWithdrawnINR: 0,
+          totalWithdrawnPKR: 0,
+        };
+
+        try {
+          const wData = await getWalletData({ userId: m._id });
+          walletBalances = wData.balances;
+        } catch (wErr) {
+          console.error(`Error computing wallet for member ${m._id}:`, wErr);
+        }
 
         return {
           ...m.toObject(),
@@ -58,7 +75,8 @@ export async function GET(req) {
           totalDepositsINR,
           totalWithdrawalsINR,
           totalBonusesPKR,
-          netBalancePKR,
+          netBalancePKR: walletBalances.balancePKR,
+          wallet: walletBalances,
           pendingOrdersCount,
         };
       })

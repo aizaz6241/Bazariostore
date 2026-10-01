@@ -38,39 +38,13 @@ export async function GET(req) {
       }
     }
 
-    // Recalculate live financial balances based on assigned sellers (for members)
-    if (member.role === 'member') {
-      const assignments = await SellerAssignment.find({ memberId: member._id, status: 'active' });
-      const sellerIds = assignments.map((a) => a.sellerId);
-
-      const sellers = await Seller.find({ _id: { $in: sellerIds } });
-
-      let totalDepositsPKR = 0;
-      let totalWithdrawalsPKR = 0;
-
-      for (const s of sellers) {
-        // 1 INR deposit = 1 PKR credited
-        totalDepositsPKR += Number(s.wallet?.totalDeposited || 0);
-        // 1 INR withdraw = 1 PKR deducted
-        totalWithdrawalsPKR += Number(s.wallet?.totalWithdrawn || 0);
-      }
-
-      // Sum approved bonuses
-      const approvedBonuses = await RewardClaim.aggregate([
-        { $match: { memberId: member._id, status: 'approved' } },
-        { $group: { _id: null, total: { $sum: '$amountPKR' } } },
-      ]);
-      const totalBonusesPKR = approvedBonuses[0]?.total || 0;
-
-      const netBalancePKR = totalDepositsPKR - totalWithdrawalsPKR + totalBonusesPKR;
-
-      member.wallet = {
-        balancePKR: Math.max(0, netBalancePKR),
-        totalDepositsPKR,
-        totalWithdrawalsPKR,
-        totalBonusesPKR,
-      };
-      await member.save();
+    // Recalculate live financial balances based on commission rules and pool shares (Admins & Members)
+    try {
+      const { getWalletData } = await import('@/lib/utils/wallet');
+      const walletData = await getWalletData({ userId: member._id });
+      member.wallet = walletData.balances;
+    } catch (wErr) {
+      console.error('Wallet refresh error in auth/me:', wErr);
     }
 
     return NextResponse.json({ member });

@@ -68,6 +68,7 @@ export async function GET(req) {
           phone: s.phone || '',
           status: s.status,
           createdAt: s.createdAt,
+          commissionLabel: s.commissionLabel || assignment?.commissionLabel || 'pkr_1to1',
           wallet: {
             balance: s.wallet?.balance || 0,
             totalDeposited,
@@ -86,6 +87,7 @@ export async function GET(req) {
                 _id: assignment._id,
                 member: assignment.memberId,
                 assignedAt: assignment.createdAt,
+                commissionLabel: assignment.commissionLabel || s.commissionLabel || 'pkr_1to1',
                 privateNotes: assignment.privateNotes || {},
               }
             : null,

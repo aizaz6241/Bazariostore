@@ -24,6 +24,12 @@ const sellerAssignmentSchema = new mongoose.Schema(
       enum: ['active', 'transferred', 'archived'],
       default: 'active',
     },
+    // Commission model label: 'inr_50' (50% INR Split) or 'pkr_1to1' (1:1 PKR Earning)
+    commissionLabel: {
+      type: String,
+      enum: ['inr_50', 'pkr_1to1'],
+      default: 'pkr_1to1',
+    },
     // Private CRM memory notes for the member
     privateNotes: {
       customName: { type: String, default: '' },      // Member's custom alias / nickname for the seller

@@ -12,7 +12,7 @@ export async function POST(req) {
       return NextResponse.json({ message: 'Forbidden. Admin access required.' }, { status: 403 });
     }
 
-    const { sellerId, memberId } = await req.json();
+    const { sellerId, memberId, commissionLabel } = await req.json();
 
     if (!sellerId || !memberId) {
       return NextResponse.json({ message: 'Seller ID and Member ID are required' }, { status: 400 });
@@ -26,6 +26,10 @@ export async function POST(req) {
     if (!seller) return NextResponse.json({ message: 'Seller not found' }, { status: 404 });
     if (!targetMember) return NextResponse.json({ message: 'Target member not found' }, { status: 404 });
 
+    const chosenLabel = commissionLabel === 'inr_50' ? 'inr_50' : (commissionLabel || seller.commissionLabel || 'pkr_1to1');
+    seller.commissionLabel = chosenLabel;
+    await seller.save();
+
     // Mark any previous active assignment for this seller as transferred
     await SellerAssignment.updateMany(
       { sellerId: seller._id, status: 'active' },
@@ -38,6 +42,7 @@ export async function POST(req) {
       memberId: targetMember._id,
       assignedBy: session._id,
       status: 'active',
+      commissionLabel: chosenLabel,
       privateNotes: {
         customName: seller.storeName,
         age: '',
@@ -51,6 +56,7 @@ export async function POST(req) {
 
     // Notify the member via 1-on-1 personal chat system message
     const personalConvId = [targetMember._id.toString(), session._id.toString()].sort().join('_');
+    const labelDesc = chosenLabel === 'inr_50' ? '🇮🇳 50% INR Commission' : '🇵🇰 1:1 INR to PKR Commission';
     await ChatMessage.create({
       chatType: 'personal',
       conversationId: `personal_${personalConvId}`,
@@ -58,8 +64,9 @@ export async function POST(req) {
       senderName: session.name,
       senderRole: 'admin',
       targetMemberId: targetMember._id,
-      messageType: 'system_alert',
-      text: `💼 Store Assigned: You have been assigned client "${seller.storeName}" (${seller.ownerName}). All their future deposits, withdrawals, and orders will track in your portal.`,
+      messageType: 'text',
+      text: `💼 Store "${seller.storeName}" (${seller.ownerName}) has been officially assigned to you!\nCommission Model: ${labelDesc}.\nDeposits and performance will reflect in your live wallet.`,
+      readBy: [session._id],
     });
 
     return NextResponse.json({

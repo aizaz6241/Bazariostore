@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from './AuthProvider';
+import WalletModal from './WalletModal';
 import {
   LayoutDashboard,
   MessageSquare,
@@ -32,6 +33,9 @@ export default function AppNavbar() {
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordMsg, setPasswordMsg] = useState({ text: '', type: '' });
 
+  // Wallet Statement Modal State
+  const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
+
   if (!user || pathname === '/login') return null;
 
   const isAdmin = user.role === 'admin';
@@ -42,6 +46,7 @@ export default function AppNavbar() {
     { href: '/sellers', label: 'Sellers', icon: Users },
     { href: '/models', label: 'Models', icon: ImageIcon },
     { href: '/rewards', label: 'Rewards', icon: Award },
+    { href: '/wallet', label: 'Wallet', icon: Wallet },
     ...(isAdmin ? [{ href: '/members', label: 'Members', icon: UserCheck }] : []),
   ];
 
@@ -145,17 +150,44 @@ export default function AppNavbar() {
 
           {/* Wallet Pill & User Menu */}
           <div className="flex items-center space-x-2 sm:space-x-3">
-            {/* Member Wallet Pill */}
-            {!isAdmin && (
-              <div className="hidden sm:flex items-center space-x-2 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-full">
-                <Wallet className="w-4 h-4 text-emerald-600" />
+            {/* Interactive Wallet Pill (Admin & Member) */}
+            {isAdmin ? (
+              <button
+                type="button"
+                onClick={() => setIsWalletModalOpen(true)}
+                className="hidden sm:flex items-center space-x-2 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 px-3 py-1.5 rounded-full hover:border-amber-300 hover:shadow-sm transition-all text-left group"
+                title="Click to view Admin Wallet & Transaction History"
+              >
+                <div className="w-5 h-5 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-700 group-hover:scale-110 transition-transform">
+                  <Wallet className="w-3.5 h-3.5" />
+                </div>
                 <div className="text-xs">
-                  <span className="text-slate-500">Wallet: </span>
-                  <span className="font-bold text-emerald-700">
-                    Rs {(user.wallet?.balancePKR || 0).toLocaleString()} PKR
+                  <span className="text-[10px] uppercase font-bold text-amber-600 block leading-none">Admin Share</span>
+                  <span className="font-bold text-slate-900 leading-tight">
+                    ₹{(user.wallet?.balanceINR || 0).toLocaleString()} <span className="text-[10px] text-slate-500 font-normal">INR</span>
                   </span>
                 </div>
-              </div>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsWalletModalOpen(true)}
+                className="hidden sm:flex items-center space-x-2 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-full hover:border-emerald-300 hover:shadow-sm transition-all text-left group"
+                title="Click to view Wallet Statement & Transaction History"
+              >
+                <div className="w-5 h-5 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-700 group-hover:scale-110 transition-transform">
+                  <Wallet className="w-3.5 h-3.5" />
+                </div>
+                <div className="text-xs">
+                  <span className="text-[10px] uppercase font-bold text-emerald-600 block leading-none">Wallet</span>
+                  <div className="flex items-center space-x-1.5 font-bold text-slate-900 leading-tight">
+                    <span>Rs {(user.wallet?.balancePKR || 0).toLocaleString()} PKR</span>
+                    {(user.wallet?.balanceINR || 0) > 0 && (
+                      <span className="text-emerald-700 text-[11px] font-semibold">| ₹{(user.wallet?.balanceINR || 0).toLocaleString()} INR</span>
+                    )}
+                  </div>
+                </div>
+              </button>
             )}
 
             {/* User Info */}
@@ -293,6 +325,14 @@ export default function AppNavbar() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* ─── MODAL: Wallet Statement & Transaction History ─── */}
+      {isWalletModalOpen && (
+        <WalletModal
+          isOpen={isWalletModalOpen}
+          onClose={() => setIsWalletModalOpen(false)}
+        />
       )}
     </>
   );

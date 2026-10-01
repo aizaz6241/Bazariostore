@@ -20,13 +20,16 @@ import {
   HelpCircle,
   Trophy,
   BarChart3,
+  Calendar,
 } from 'lucide-react';
+import WalletModal from '@/components/WalletModal';
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
   const [weeklyProgress, setWeeklyProgress] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [walletModalConfig, setWalletModalConfig] = useState(null);
 
   const isAdmin = user?.role === 'admin';
 
@@ -117,6 +120,74 @@ export default function DashboardPage() {
         <div className="absolute left-1/2 bottom-0 -mb-12 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
       </div>
 
+      {/* ─── ADMIN: Operational Wallet & Profit Share Card ─── */}
+      {isAdmin && (
+        <div className="bg-gradient-to-br from-amber-600 via-amber-700 to-orange-800 rounded-3xl p-5 sm:p-7 text-white shadow-xl shadow-amber-700/20 relative overflow-hidden">
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-5">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-white/20 text-white flex items-center gap-1.5 uppercase tracking-wider">
+                  <Wallet className="w-3.5 h-3.5" />
+                  <span>Admin Profit Pool & Personal Share</span>
+                </span>
+                <span className="text-xs bg-amber-950/40 border border-amber-300/30 text-amber-200 px-2 py-0.5 rounded-full">
+                  50-50 Active Admins Split Active
+                </span>
+              </div>
+
+              <div className="mt-3 flex items-baseline gap-2">
+                <h2 className="text-3xl sm:text-4xl font-black tracking-tight">
+                  ₹{(stats?.adminWallet?.balanceINR ?? user?.wallet?.balanceINR ?? 0).toLocaleString()}
+                </h2>
+                <span className="text-lg font-bold text-amber-200">INR</span>
+                <span className="text-xs text-amber-100/80 ml-2">(Your Current Net Balance)</span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-white/20 text-xs">
+                <div>
+                  <p className="text-amber-100/80 text-[10px] uppercase font-bold">Total Earned (Gross)</p>
+                  <p className="text-base font-extrabold text-white">
+                    ₹{(stats?.adminWallet?.totalEarnedINR ?? user?.wallet?.totalEarnedINR ?? 0).toLocaleString()} INR
+                  </p>
+                </div>
+                <div>
+                  <p className="text-amber-100/80 text-[10px] uppercase font-bold">Total Payouts / Withdrawn</p>
+                  <p className="text-base font-extrabold text-white">
+                    ₹{(stats?.adminWallet?.totalWithdrawnINR ?? user?.wallet?.totalWithdrawnINR ?? 0).toLocaleString()} INR
+                  </p>
+                </div>
+                <div>
+                  <p className="text-amber-100/80 text-[10px] uppercase font-bold">Platform Total Deposits</p>
+                  <p className="text-base font-extrabold text-white">
+                    ₹{(stats?.totalDepositsINR || 0).toLocaleString()} INR
+                  </p>
+                </div>
+                <div>
+                  <p className="text-amber-100/80 text-[10px] uppercase font-bold">Commission Rules</p>
+                  <p className="text-xs font-semibold text-amber-100">
+                    50% Split + 1:1 Margin Share
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 self-start md:self-auto shrink-0">
+              <button
+                type="button"
+                onClick={() => setWalletModalConfig({ isOpen: true, title: 'My Admin Profit Wallet' })}
+                className="px-4 py-2.5 rounded-2xl bg-white text-slate-900 hover:bg-amber-50 font-bold text-xs sm:text-sm flex items-center justify-center space-x-2 transition shadow-md active:scale-95"
+              >
+                <Wallet className="w-4 h-4 text-amber-600" />
+                <span>View Statement & Filters</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Background decoration */}
+          <div className="absolute right-0 bottom-0 -mb-10 -mr-10 w-48 h-48 bg-white/10 rounded-full blur-2xl pointer-events-none" />
+        </div>
+      )}
+
       {/* Main KPI Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
         {isAdmin ? (
@@ -168,45 +239,64 @@ export default function DashboardPage() {
         ) : (
           <>
             {/* Member Primary Wallet Card */}
-            <div className="col-span-2 bg-gradient-to-br from-emerald-600 to-brand-700 rounded-3xl p-5 sm:p-6 text-white shadow-lg shadow-emerald-600/20 relative overflow-hidden">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold uppercase tracking-wider text-emerald-100 flex items-center space-x-1.5">
-                  <Wallet className="w-4 h-4 text-emerald-200" />
-                  <span>My Wallet Balance</span>
-                </span>
-                <span className="text-[11px] bg-white/20 px-2 py-0.5 rounded-full text-white font-medium">
-                  1 INR = 1 PKR
-                </span>
+            <div className="col-span-2 bg-gradient-to-br from-emerald-600 to-brand-700 rounded-3xl p-5 sm:p-6 text-white shadow-lg shadow-emerald-600/20 relative overflow-hidden flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-emerald-100 flex items-center space-x-1.5">
+                    <Wallet className="w-4 h-4 text-emerald-200" />
+                    <span>My Wallet Balance</span>
+                  </span>
+                  <span className="text-[11px] bg-white/20 px-2 py-0.5 rounded-full text-white font-medium">
+                    1 INR = 1 PKR / 50% Split
+                  </span>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-baseline gap-2 sm:gap-3">
+                  <h2 className="text-3xl sm:text-4xl font-black tracking-tight">
+                    Rs {(stats?.walletBalancePKR || user?.wallet?.balancePKR || 0).toLocaleString()}
+                    <span className="text-base sm:text-lg font-normal opacity-90 ml-1.5">PKR</span>
+                  </h2>
+                  {(stats?.walletBalanceINR || user?.wallet?.balanceINR || 0) > 0 && (
+                    <div className="bg-white/20 border border-white/25 rounded-2xl px-3 py-1 flex items-baseline gap-1 text-white">
+                      <span className="text-xs opacity-80 uppercase font-semibold">INR Pool:</span>
+                      <span className="text-lg font-extrabold">₹{(stats?.walletBalanceINR || user?.wallet?.balanceINR || 0).toLocaleString()}</span>
+                      <span className="text-xs font-bold">INR</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Sub-breakdown */}
+                <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-white/20 text-xs">
+                  <div>
+                    <p className="text-emerald-100/80 text-[10px]">Deposits (+)</p>
+                    <p className="font-bold text-white text-xs sm:text-sm">
+                      Rs {(stats?.totalDepositsINR || 0).toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-emerald-100/80 text-[10px]">Withdrawals (-)</p>
+                    <p className="font-bold text-white text-xs sm:text-sm">
+                      Rs {(stats?.totalWithdrawalsINR || 0).toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-emerald-100/80 text-[10px]">Bonuses (+)</p>
+                    <p className="font-bold text-amber-200 text-xs sm:text-sm">
+                      Rs {(stats?.totalBonusesPKR || 0).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
               </div>
 
-              <div className="mt-3">
-                <h2 className="text-3xl sm:text-4xl font-black tracking-tight">
-                  Rs {(stats?.walletBalancePKR || user?.wallet?.balancePKR || 0).toLocaleString()}
-                  <span className="text-base sm:text-lg font-normal opacity-90 ml-1.5">PKR</span>
-                </h2>
-              </div>
-
-              {/* Sub-breakdown */}
-              <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-white/20 text-xs">
-                <div>
-                  <p className="text-emerald-100/80 text-[10px]">Deposits (+)</p>
-                  <p className="font-bold text-white text-xs sm:text-sm">
-                    Rs {(stats?.totalDepositsINR || 0).toLocaleString()}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-emerald-100/80 text-[10px]">Withdrawals (-)</p>
-                  <p className="font-bold text-white text-xs sm:text-sm">
-                    Rs {(stats?.totalWithdrawalsINR || 0).toLocaleString()}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-emerald-100/80 text-[10px]">Bonuses (+)</p>
-                  <p className="font-bold text-amber-200 text-xs sm:text-sm">
-                    Rs {(stats?.totalBonusesPKR || 0).toLocaleString()}
-                  </p>
-                </div>
-              </div>
+              {/* View Statement Action */}
+              <button
+                type="button"
+                onClick={() => setWalletModalConfig({ isOpen: true, title: 'My Wallet Statement' })}
+                className="mt-4 w-full py-2.5 px-3 rounded-2xl bg-white/15 hover:bg-white/25 text-white font-semibold text-xs flex items-center justify-center space-x-1.5 transition border border-white/20 active:scale-95 shadow-sm"
+              >
+                <Wallet className="w-3.5 h-3.5" />
+                <span>View Full Statement & Transaction History</span>
+              </button>
             </div>
 
             <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm flex flex-col justify-between">
@@ -435,9 +525,25 @@ export default function DashboardPage() {
                         </td>
 
                         <td className="py-3 px-4 text-right">
-                          <span className="inline-block px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 font-extrabold text-xs">
-                            Rs. {(staff.walletBalancePKR || 0).toLocaleString()} PKR
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setWalletModalConfig({
+                                isOpen: true,
+                                memberId: staff._id,
+                                title: `${staff.name}'s Financial Statement`,
+                              })
+                            }
+                            className="inline-flex flex-col items-end px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-extrabold text-xs transition group cursor-pointer"
+                            title="Click to view full financial statement & transactions"
+                          >
+                            <span>Rs. {(staff.walletBalancePKR || 0).toLocaleString()} PKR</span>
+                            {(staff.walletBalanceINR || 0) > 0 && (
+                              <span className="text-[10px] text-emerald-700 font-bold">
+                                + ₹{(staff.walletBalanceINR || 0).toLocaleString()} INR (50% Split)
+                              </span>
+                            )}
+                          </button>
                         </td>
 
                         <td className="py-3 px-4 text-center">
@@ -569,11 +675,21 @@ export default function DashboardPage() {
           <p className="font-semibold text-slate-800">Operational Currency Rule:</p>
           <p>
             Whenever a client seller deposits funds in Indian Rupees (INR), the identical numerical value is
-            credited to the agent's account in Pakistani Rupees (PKR). Payout withdrawals reduce the balance by the
-            same 1:1 amount. All milestone bonuses require administrator approval before entering your live wallet.
+            credited to the agent's account in Pakistani Rupees (PKR) for 1:1 stores. For stores labeled with 50% INR Split,
+            the member earns 50% in INR directly, and the remaining 50% is shared equally among active admins.
           </p>
         </div>
       </div>
+
+      {/* ─── MODAL: Wallet Statement & Transaction History ─── */}
+      {walletModalConfig && (
+        <WalletModal
+          isOpen={!!walletModalConfig}
+          onClose={() => setWalletModalConfig(null)}
+          memberId={walletModalConfig.memberId || null}
+          title={walletModalConfig.title || null}
+        />
+      )}
     </div>
   );
 }

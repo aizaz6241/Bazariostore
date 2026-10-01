@@ -50,9 +50,14 @@ const memberSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
-    // Wallet tracking in PKR (For members)
+    // Dual-currency wallet tracking (For Members & Admins: INR & PKR)
     wallet: {
       balancePKR: { type: Number, default: 0 },
+      balanceINR: { type: Number, default: 0 },
+      totalEarnedPKR: { type: Number, default: 0 },
+      totalEarnedINR: { type: Number, default: 0 },
+      totalWithdrawnPKR: { type: Number, default: 0 },
+      totalWithdrawnINR: { type: Number, default: 0 },
       totalDepositsPKR: { type: Number, default: 0 },
       totalWithdrawalsPKR: { type: Number, default: 0 },
       totalBonusesPKR: { type: Number, default: 0 },

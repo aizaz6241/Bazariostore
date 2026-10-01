@@ -11,6 +11,7 @@ import {
   Image as ImageIcon,
   Award,
   UserCheck,
+  Wallet,
 } from 'lucide-react';
 
 export default function MobileBottomNav() {
@@ -25,7 +26,7 @@ export default function MobileBottomNav() {
     { href: '/dashboard', label: 'Home', icon: LayoutDashboard },
     { href: '/chat', label: 'Chats', icon: MessageSquare },
     { href: '/sellers', label: 'Sellers', icon: Users },
-    { href: '/models', label: 'Models', icon: ImageIcon },
+    { href: '/wallet', label: 'Wallet', icon: Wallet },
     { href: '/rewards', label: 'Rewards', icon: Award },
     ...(isAdmin ? [{ href: '/members', label: 'Members', icon: UserCheck }] : []),
   ];

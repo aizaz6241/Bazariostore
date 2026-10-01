@@ -23,6 +23,8 @@ const sellerSchema = new mongoose.Schema(
     totalSales: { type: Number, default: 0 },
     totalOrders: { type: Number, default: 0 },
     verified: { type: Boolean, default: false },
+    // Commission model label: 'inr_50' (50% INR Split) or 'pkr_1to1' (1:1 PKR Earning)
+    commissionLabel: { type: String, enum: ['inr_50', 'pkr_1to1'], default: 'pkr_1to1' },
   },
   { timestamps: true, strict: false }
 );

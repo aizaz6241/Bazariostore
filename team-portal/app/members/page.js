@@ -25,12 +25,16 @@ import {
   AlertTriangle,
   RefreshCw,
 } from 'lucide-react';
+import WalletModal from '@/components/WalletModal';
 
 export default function MembersPage() {
   const { user } = useAuth();
   const [members, setMembers] = useState([]);
   const [sellers, setSellers] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Financial Wallet Statement Modal
+  const [walletModalMember, setWalletModalMember] = useState(null);
 
   // Expanded member ID for client drill-down
   const [expandedMemberId, setExpandedMemberId] = useState(null);
@@ -382,20 +386,30 @@ export default function MembersPage() {
                       </span>
                     </div>
 
-                    <div className="bg-emerald-50/90 rounded-xl p-1.5 border border-emerald-200/80">
-                      <span className="text-[10px] uppercase font-bold text-emerald-800 flex items-center justify-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setWalletModalMember(member)}
+                      className="bg-emerald-50/90 hover:bg-emerald-100 rounded-xl p-1.5 border border-emerald-200/80 transition text-center cursor-pointer group shadow-xs"
+                      title="Click to view full financial statement & record payouts"
+                    >
+                      <span className="text-[10px] uppercase font-bold text-emerald-800 flex items-center justify-center gap-1 group-hover:text-emerald-950">
                         <Wallet className="w-3 h-3 text-emerald-600" />
                         <span>Wallet Earned</span>
                       </span>
                       <span className="text-sm font-extrabold text-emerald-700 block">
-                        Rs. {(member.netBalancePKR ?? ((member.totalDepositsINR || 0) - (member.totalWithdrawalsINR || 0) + (member.totalBonusesPKR || 0))).toLocaleString()}
+                        Rs. {(member.wallet?.balancePKR ?? member.netBalancePKR ?? 0).toLocaleString()}
                       </span>
+                      {(member.wallet?.balanceINR || 0) > 0 && (
+                        <span className="text-[10px] text-emerald-800 font-bold block">
+                          + ₹{(member.wallet.balanceINR).toLocaleString()} INR (50%)
+                        </span>
+                      )}
                       {member.totalBonusesPKR > 0 && (
                         <span className="text-[9px] text-amber-700 block font-semibold">
                           +{member.totalBonusesPKR.toLocaleString()} bonus
                         </span>
                       )}
-                    </div>
+                    </button>
 
                     <div>
                       <span className="text-[10px] uppercase font-bold text-slate-400 block">
@@ -407,9 +421,20 @@ export default function MembersPage() {
                     </div>
                   </div>
 
-                  {/* Actions (Bonus, Edit Password, Delete, Expand Details) */}
+                  {/* Actions (Wallet & Payout, Bonus, Edit Password, Delete, Expand Details) */}
                   {isAdmin ? (
                     <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                      {/* Wallet Statement & Payouts */}
+                      <button
+                        type="button"
+                        onClick={() => setWalletModalMember(member)}
+                        className="px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-semibold text-xs flex items-center space-x-1.5 transition border border-emerald-200 shadow-xs"
+                        title="View Statement & Record Payouts"
+                      >
+                        <Wallet className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="hidden sm:inline">Statement</span>
+                      </button>
+
                       {/* Award Bonus */}
                       <button
                         onClick={() => setBonusMember(member)}
@@ -867,6 +892,16 @@ export default function MembersPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* ─── MODAL: Member Financial Statement & Payouts ─── */}
+      {walletModalMember && (
+        <WalletModal
+          isOpen={!!walletModalMember}
+          onClose={() => setWalletModalMember(null)}
+          memberId={walletModalMember._id}
+          title={`${walletModalMember.name}'s Financial Statement & Transactions`}
+        />
       )}
     </div>
   );

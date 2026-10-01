@@ -70,8 +70,21 @@ export async function GET(req) {
             status: { $in: ['pending', 'processing', 'unfulfilled'] },
           });
 
-          // 1 INR deposit = 1 PKR credited, 1 INR withdraw = 1 PKR deducted + approved bonuses
-          const walletBalancePKR = memberDepositsINR - memberWithdrawalsINR + totalBonusesPKR;
+          // Compute exact dual-currency balances using wallet engine
+          let mWallet = {
+            balanceINR: 0,
+            balancePKR: Math.max(0, memberDepositsINR - memberWithdrawalsINR + totalBonusesPKR),
+            totalEarnedINR: 0,
+            totalEarnedPKR: Math.max(0, memberDepositsINR + totalBonusesPKR),
+          };
+
+          try {
+            const { getWalletData } = await import('@/lib/utils/wallet');
+            const wData = await getWalletData({ userId: m._id });
+            mWallet = wData.balances;
+          } catch (wErr) {
+            // fallback to default
+          }
 
           return {
             _id: m._id,
@@ -84,7 +97,9 @@ export async function GET(req) {
             totalWithdrawalsINR: memberWithdrawalsINR,
             netVolumeINR: memberDepositsINR - memberWithdrawalsINR,
             totalBonusesPKR,
-            walletBalancePKR: Math.max(0, walletBalancePKR),
+            walletBalancePKR: mWallet.balancePKR,
+            walletBalanceINR: mWallet.balanceINR,
+            wallet: mWallet,
             pendingOrdersCount: pendingOrders,
           };
         })
@@ -96,18 +111,30 @@ export async function GET(req) {
       let topEarner = null;
       let topSellerManager = null;
       let totalStaffEarningsPKR = 0;
+      let totalStaffEarningsINR = 0;
       let totalStaffBonusesPKR = 0;
 
       if (staffList.length > 0) {
         topDepositor = [...staffList].sort((a, b) => b.totalDepositsINR - a.totalDepositsINR)[0];
         topWithdrawer = [...staffList].sort((a, b) => b.totalWithdrawalsINR - a.totalWithdrawalsINR)[0];
-        topEarner = [...staffList].sort((a, b) => b.walletBalancePKR - a.walletBalancePKR)[0];
+        topEarner = [...staffList].sort((a, b) => (b.walletBalancePKR + b.walletBalanceINR) - (a.walletBalancePKR + a.walletBalanceINR))[0];
         topSellerManager = [...staffList].sort((a, b) => b.assignedSellersCount - a.assignedSellersCount)[0];
 
         staffList.forEach((s) => {
           totalStaffEarningsPKR += s.walletBalancePKR;
+          totalStaffEarningsINR += (s.walletBalanceINR || 0);
           totalStaffBonusesPKR += s.totalBonusesPKR;
         });
+      }
+
+      // Fetch live admin wallet share
+      let adminWallet = null;
+      try {
+        const { getWalletData } = await import('@/lib/utils/wallet');
+        const wData = await getWalletData({ userId: session._id });
+        adminWallet = wData.balances;
+      } catch (wErr) {
+        console.error('Error fetching admin wallet:', wErr);
       }
 
       return NextResponse.json({
@@ -118,6 +145,7 @@ export async function GET(req) {
         netFundsINR,
         pendingClaimsCount,
         pendingOrdersCount,
+        adminWallet,
         staffAnalytics: {
           staffList: staffList.sort((a, b) => b.totalDepositsINR - a.totalDepositsINR),
           topDepositor,
@@ -125,6 +153,7 @@ export async function GET(req) {
           topEarner,
           topSellerManager,
           totalStaffEarningsPKR,
+          totalStaffEarningsINR,
           totalStaffBonusesPKR,
         },
       });
@@ -158,13 +187,25 @@ export async function GET(req) {
         status: 'pending',
       });
 
-      const walletBalancePKR = totalDepositsINR - totalWithdrawalsINR + totalBonusesPKR;
+      let memberWallet = null;
+      try {
+        const { getWalletData } = await import('@/lib/utils/wallet');
+        const wData = await getWalletData({ userId: session._id });
+        memberWallet = wData.balances;
+      } catch (wErr) {
+        console.error('Error fetching member wallet in stats:', wErr);
+      }
+
+      const walletBalancePKR = memberWallet?.balancePKR ?? Math.max(0, totalDepositsINR - totalWithdrawalsINR + totalBonusesPKR);
+      const walletBalanceINR = memberWallet?.balanceINR ?? 0;
 
       return NextResponse.json({
         totalAssignedSellers: mySellers.length,
         totalDepositsINR,
         totalWithdrawalsINR,
-        walletBalancePKR: Math.max(0, walletBalancePKR),
+        walletBalancePKR,
+        walletBalanceINR,
+        memberWallet,
         totalBonusesPKR,
         pendingOrdersCount,
         pendingClaimsCount,
