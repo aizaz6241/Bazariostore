@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { getAuthSession } from '@/lib/auth';
 import ChatMessage from '@/lib/models/ChatMessage';
 import Member from '@/lib/models/Member';
-import { syncEcommerceAdmins } from '@/lib/adminSync';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,29 +15,17 @@ export async function GET(req) {
 
     const { searchParams } = new URL(req.url);
     const chatType = searchParams.get('chatType') || 'group'; // 'group' or 'personal'
-    let targetMemberId = searchParams.get('targetMemberId'); // Used when opening personal chat
+    const targetMemberId = searchParams.get('targetMemberId'); // Target user ID
 
     let conversationId = 'main_group';
 
     if (chatType === 'personal') {
       if (!targetMemberId) {
-        // Fallback default target if none provided in query
-        if (session.role === 'member') {
-          // Member default target: first active admin
-          await syncEcommerceAdmins();
-          const firstAdmin = await Member.findOne({ role: 'admin', active: true });
-          if (firstAdmin) targetMemberId = firstAdmin._id.toString();
-        } else {
-          // Admin default target: first active member
-          const firstMember = await Member.findOne({ role: 'member', active: true });
-          if (firstMember) targetMemberId = firstMember._id.toString();
-        }
+        return NextResponse.json({ message: 'targetMemberId is required for personal chat' }, { status: 400 });
       }
 
-      if (targetMemberId) {
-        const parts = [session._id.toString(), targetMemberId.toString()].sort();
-        conversationId = `personal_${parts.join('_')}`;
-      }
+      const parts = [session._id.toString(), targetMemberId.toString()].sort();
+      conversationId = `personal_${parts.join('_')}`;
     }
 
     // Mark unread messages in this conversation as read by the current user

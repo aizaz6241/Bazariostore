@@ -16,17 +16,11 @@ export async function GET(req) {
     // Keep all admins synchronized from ecommerce database
     await syncEcommerceAdmins();
 
-    // Determine eligible contacts based on session role
-    let contactsQuery = {};
-    if (session.role === 'member') {
-      // Members can 1-on-1 chat with all platform administrators
-      contactsQuery = { role: 'admin', active: true };
-    } else {
-      // Admins can 1-on-1 chat with all team members and fellow administrators
-      contactsQuery = { _id: { $ne: session._id }, active: true };
-    }
-
-    const contacts = await Member.find(contactsQuery)
+    // Universal Contact Access: Everyone (Admins & Members) can message all other active users
+    const contacts = await Member.find({
+      _id: { $ne: session._id },
+      active: true,
+    })
       .select('name username role phone avatar active')
       .sort({ role: 1, name: 1 });
 
@@ -38,7 +32,7 @@ export async function GET(req) {
 
         const lastMsg = await ChatMessage.findOne({ conversationId })
           .sort({ createdAt: -1 })
-          .select('messageType text mediaUrl createdAt senderId senderName');
+          .select('messageType text mediaUrl createdAt senderId senderName isDeleted isEdited');
 
         const unreadCount = await ChatMessage.countDocuments({
           conversationId,
@@ -63,7 +57,7 @@ export async function GET(req) {
     // Group chat metadata
     const groupLastMsg = await ChatMessage.findOne({ conversationId: 'main_group' })
       .sort({ createdAt: -1 })
-      .select('messageType text mediaUrl createdAt senderId senderName');
+      .select('messageType text mediaUrl createdAt senderId senderName isDeleted isEdited');
 
     const groupUnreadCount = await ChatMessage.countDocuments({
       conversationId: 'main_group',
