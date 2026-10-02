@@ -79,6 +79,8 @@ const sellerSchema = new mongoose.Schema(
     // Account Classification: Client (Real Merchant) vs Test (Internal QA & Feature Testing)
     isTestAccount: { type: Boolean, default: false },
     accountType: { type: String, enum: ['client', 'test'], default: 'client' },
+    // Previous Store Seller Flag (Amounts in wallet must NOT be converted to USDT / added to Admin USDT Wallet)
+    isPreviousStoreSeller: { type: Boolean, default: false },
     freezeReason: { type: String, default: '' },
     frozenAt: Date,
     frozenBy: String,

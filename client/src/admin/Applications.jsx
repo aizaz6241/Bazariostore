@@ -56,6 +56,7 @@ export default function Applications() {
           commissionRate: Number(pendingApproveModal.commissionRate || 10),
           isTestAccount: Boolean(pendingApproveModal.isTestAccount),
           accountType: pendingApproveModal.isTestAccount ? 'test' : 'client',
+          isPreviousStoreSeller: Boolean(pendingApproveModal.isPreviousStoreSeller),
         },
       });
       alert(`🎉 Store "${pendingApproveModal.seller.storeName}" has been successfully approved! Notification sent.`);

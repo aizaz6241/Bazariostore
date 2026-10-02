@@ -62,7 +62,7 @@ router.get('/', authAdmin('sellers'), async (req, res) => {
 // POST /api/sellers (Admin creates a new seller credentials)
 router.post('/', authAdmin('sellers'), async (req, res) => {
   try {
-    const { storeName, ownerName, email, password, phone, commissionRate, city, isTestAccount, accountType } = req.body;
+    const { storeName, ownerName, email, password, phone, commissionRate, city, isTestAccount, accountType, isPreviousStoreSeller } = req.body;
     if (!storeName || !ownerName || !email || !password) {
       return res.status(400).json({ message: 'Store name, owner name, email, and password are required' });
     }
@@ -78,6 +78,7 @@ router.post('/', authAdmin('sellers'), async (req, res) => {
     }
 
     const isTest = Boolean(isTestAccount || accountType === 'test');
+    const isPrev = Boolean(isPreviousStoreSeller);
     const passwordHash = await bcrypt.hash(password, 10);
     const seller = new Seller({
       storeName,
@@ -91,6 +92,7 @@ router.post('/', authAdmin('sellers'), async (req, res) => {
       address: { city: city || 'New York' },
       isTestAccount: isTest,
       accountType: isTest ? 'test' : 'client',
+      isPreviousStoreSeller: isPrev,
       status: 'active',
       verified: true,
     });
@@ -648,6 +650,7 @@ router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
       note,
       isTestAccount,
       accountType,
+      isPreviousStoreSeller,
     } = req.body;
 
     if (storeName) seller.storeName = storeName;
@@ -664,6 +667,10 @@ router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
     } else if (accountType !== undefined) {
       seller.accountType = accountType === 'test' ? 'test' : 'client';
       seller.isTestAccount = seller.accountType === 'test';
+    }
+
+    if (isPreviousStoreSeller !== undefined) {
+      seller.isPreviousStoreSeller = Boolean(isPreviousStoreSeller);
     }
 
     if (securityDepositAmount !== undefined || securityDepositPaid !== undefined || referralCode !== undefined) {
@@ -771,7 +778,7 @@ router.post('/:id/withdrawal-limit', authAdmin(), async (req, res) => {
 // POST /api/sellers/:id/approve (Admin approves a pending seller registration)
 router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
   try {
-    const { securityDepositPaid, securityDepositAmount, referralCode, assignedReferralCode, commissionRate, note, isTestAccount, accountType } = req.body || {};
+    const { securityDepositPaid, securityDepositAmount, referralCode, assignedReferralCode, commissionRate, note, isTestAccount, accountType, isPreviousStoreSeller } = req.body || {};
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
@@ -789,6 +796,10 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
     } else if (accountType !== undefined) {
       seller.accountType = accountType === 'test' ? 'test' : 'client';
       seller.isTestAccount = seller.accountType === 'test';
+    }
+
+    if (isPreviousStoreSeller !== undefined) {
+      seller.isPreviousStoreSeller = Boolean(isPreviousStoreSeller);
     }
 
     seller.securityDeposit = {
@@ -954,6 +965,35 @@ router.patch('/:id/toggle-test', authAdmin('sellers'), async (req, res) => {
     res.json({
       ok: true,
       message: `Store "${seller.storeName}" is now set to ${seller.isTestAccount ? '🧪 TEST ACCOUNT' : '👤 CLIENT ACCOUNT'}.`,
+      seller: safe,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PATCH /api/sellers/:id/toggle-previous-store (Quick toggle Previous Store Seller)
+router.patch('/:id/toggle-previous-store', authAdmin('sellers'), async (req, res) => {
+  try {
+    const seller = await Seller.findById(req.params.id);
+    if (!seller) return res.status(404).json({ message: 'Seller not found' });
+
+    seller.isPreviousStoreSeller = !seller.isPreviousStoreSeller;
+    await seller.save();
+
+    audit(req, 'update', 'seller', seller._id, `Toggled previous store seller status to ${seller.isPreviousStoreSeller} for ${seller.storeName}`);
+
+    const safe = seller.toObject();
+    delete safe.passwordHash;
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to('admins').emit('seller:status_update', { seller: safe });
+    }
+
+    res.json({
+      ok: true,
+      message: `Store "${seller.storeName}" is now ${seller.isPreviousStoreSeller ? 'labeled as 🏛️ PREVIOUS STORE SELLER' : 'set to ✨ CURRENT STORE SELLER'}.`,
       seller: safe,
     });
   } catch (err) {

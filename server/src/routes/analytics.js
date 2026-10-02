@@ -81,10 +81,11 @@ router.get('/dashboard', authAdmin(), async (req, res) => {
 
   const recent = await Order.find().sort({ createdAt: -1 }).limit(8);
 
-  // ─── USDT WALLET (REAL CLIENT SELLERS ONLY - EXCLUDES TEST ACCOUNTS) ───
+  // ─── USDT WALLET (REAL CLIENT SELLERS ONLY - EXCLUDES TEST ACCOUNTS & PREVIOUS STORE SELLERS) ───
   const clientSellers = await Seller.find({
     isTestAccount: { $ne: true },
     accountType: { $ne: 'test' },
+    isPreviousStoreSeller: { $ne: true },
   }).select('_id storeName');
   const clientSellerIds = clientSellers.map((s) => s._id);
 

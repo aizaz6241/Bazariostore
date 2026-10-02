@@ -148,7 +148,7 @@ export default function Dashboard() {
               gap: 5,
             }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }}></span>
-              Real Client Accounts Only (Testing Excluded)
+              Real Client Accounts Only (Tests & Previous Stores Excluded)
             </span>
             {w.helpingAmount > 0 && (
               <span style={{

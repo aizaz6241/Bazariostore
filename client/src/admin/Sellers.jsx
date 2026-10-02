@@ -21,6 +21,7 @@ export default function Sellers() {
     commissionRate: 10,
     city: 'New York',
     isTestAccount: false,
+    isPreviousStoreSeller: false,
   });
   const [creating, setCreating] = useState(false);
   const [createErr, setCreateErr] = useState('');
@@ -45,6 +46,7 @@ export default function Sellers() {
     city: '',
     street: '',
     isTestAccount: false,
+    isPreviousStoreSeller: false,
   });
   const [showAccPassword, setShowAccPassword] = useState(true);
   const [savingAccount, setSavingAccount] = useState(false);
@@ -133,6 +135,7 @@ export default function Sellers() {
       city: seller.address?.city || '',
       street: seller.address?.street || '',
       isTestAccount: Boolean(seller.isTestAccount),
+      isPreviousStoreSeller: Boolean(seller.isPreviousStoreSeller),
     });
 
     // Initialize Upgrades Form fields
@@ -229,6 +232,7 @@ export default function Sellers() {
         },
         isTestAccount: Boolean(accForm.isTestAccount),
         accountType: accForm.isTestAccount ? 'test' : 'client',
+        isPreviousStoreSeller: Boolean(accForm.isPreviousStoreSeller),
       };
 
       if (accForm.plainPassword) {
@@ -467,6 +471,7 @@ export default function Sellers() {
         commissionRate: 10,
         city: 'New York',
         isTestAccount: false,
+        isPreviousStoreSeller: false,
       });
       loadSellers();
     } catch (err) {
@@ -494,14 +499,39 @@ export default function Sellers() {
     }
   };
 
+  // ─── TOGGLE PREVIOUS STORE SELLER HANDLER ───
+  const handleTogglePreviousStore = async (sellerId) => {
+    try {
+      const res = await api(`/sellers/${sellerId}/toggle-previous-store`, { method: 'PATCH' });
+      setSellers((prev) =>
+        prev.map((s) => (s._id === sellerId ? { ...s, isPreviousStoreSeller: res.seller?.isPreviousStoreSeller } : s))
+      );
+      if (profileSeller?._id === sellerId) {
+        setProfileSeller((prev) => ({ ...prev, isPreviousStoreSeller: res.seller?.isPreviousStoreSeller }));
+      }
+      const isNowPrev = res.seller?.isPreviousStoreSeller;
+      setToggleToast(
+        `Store "${res.seller?.storeName || 'Merchant'}" is now ${
+          isNowPrev
+            ? 'labeled as 🏛️ PREVIOUS STORE SELLER (Excluded from USDT Wallet)!'
+            : 'set to ✨ CURRENT STORE SELLER (Included in USDT Wallet)!'
+        }`
+      );
+      setTimeout(() => setToggleToast(''), 4000);
+    } catch (err) {
+      alert('Error updating previous store status: ' + err.message);
+    }
+  };
+
   const activeSellers = sellers.filter((s) => s.status !== 'pending_approval');
 
   // Filtered list
   const filtered = activeSellers.filter((s) => {
     const score = s.accountHealth?.score !== undefined ? s.accountHealth.score : 100;
     if (statusFilter === 'active' && s.status !== 'active') return false;
-    if (statusFilter === 'client' && s.isTestAccount) return false;
+    if (statusFilter === 'client' && (s.isTestAccount || s.isPreviousStoreSeller)) return false;
     if (statusFilter === 'test' && !s.isTestAccount) return false;
+    if (statusFilter === 'previous' && !s.isPreviousStoreSeller) return false;
     if (statusFilter === 'frozen' && s.status !== 'frozen') return false;
     if (statusFilter === 'suspended' && s.status !== 'suspended') return false;
     if (statusFilter === 'warned' && !s.warning?.active) return false;
@@ -516,8 +546,9 @@ export default function Sellers() {
     return match;
   });
 
-  const clientCount = activeSellers.filter((s) => !s.isTestAccount).length;
+  const clientCount = activeSellers.filter((s) => !s.isTestAccount && !s.isPreviousStoreSeller).length;
   const testCount = activeSellers.filter((s) => s.isTestAccount).length;
+  const previousCount = activeSellers.filter((s) => s.isPreviousStoreSeller).length;
   const healthyCount = activeSellers.filter((s) => s.status === 'active' && (s.accountHealth?.score ?? 100) >= 80).length;
   const warnedCount = activeSellers.filter((s) => s.warning?.active).length;
   const frozenCount = activeSellers.filter((s) => s.status === 'frozen' || s.status === 'suspended').length;
@@ -643,6 +674,22 @@ export default function Sellers() {
               }}
             >
               🧪 Test ({testCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('previous')}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 20,
+                border: statusFilter === 'previous' ? '1.5px solid #d97706' : '1px solid #cbd5e1',
+                background: statusFilter === 'previous' ? '#fffbeb' : '#ffffff',
+                color: statusFilter === 'previous' ? '#b45309' : '#64748b',
+                fontWeight: 700,
+                fontSize: 12,
+                cursor: 'pointer',
+              }}
+            >
+              🏛️ Previous Stores ({previousCount})
             </button>
             <button
               type="button"
@@ -794,6 +841,27 @@ export default function Sellers() {
                       }}
                     >
                       {s.isTestAccount ? '🧪 Test' : '👤 Client'}
+                      <span style={{ fontSize: 9, opacity: 0.7 }}>⇄</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleTogglePreviousStore(s._id)}
+                      title="Click to toggle Previous Store Seller (Excluded from Admin USDT Wallet)"
+                      style={{
+                        background: s.isPreviousStoreSeller ? '#fef3c7' : '#f8fafc',
+                        color: s.isPreviousStoreSeller ? '#92400e' : '#64748b',
+                        border: `1px solid ${s.isPreviousStoreSeller ? '#fde68a' : '#e2e8f0'}`,
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        borderRadius: 12,
+                        fontSize: 10.5,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      {s.isPreviousStoreSeller ? '🏛️ Prev Store' : '✨ Current'}
                       <span style={{ fontSize: 9, opacity: 0.7 }}>⇄</span>
                     </button>
                     <span
@@ -1054,6 +1122,27 @@ export default function Sellers() {
                             }}
                           >
                             {s.isTestAccount ? '🧪 Test Account' : '👤 Client Account'}
+                            <span style={{ fontSize: 9, opacity: 0.7 }}>⇄</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePreviousStore(s._id)}
+                            title="Click to toggle Previous Store Seller (Excluded from Admin USDT Wallet)"
+                            style={{
+                              background: s.isPreviousStoreSeller ? '#fef3c7' : '#f8fafc',
+                              color: s.isPreviousStoreSeller ? '#92400e' : '#64748b',
+                              border: `1px solid ${s.isPreviousStoreSeller ? '#fde68a' : '#e2e8f0'}`,
+                              fontWeight: 700,
+                              padding: '2px 8px',
+                              borderRadius: 10,
+                              fontSize: 10.5,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                            }}
+                          >
+                            {s.isPreviousStoreSeller ? '🏛️ Prev Store' : '✨ Current Store'}
                             <span style={{ fontSize: 9, opacity: 0.7 }}>⇄</span>
                           </button>
                           <span
@@ -1323,6 +1412,51 @@ export default function Sellers() {
                         }}
                       >
                         {accForm.isTestAccount ? '🧪 Switch to Client' : '👤 Switch to Test'}
+                      </button>
+                    </div>
+
+                    {/* Previous Store Seller Classification Toggle */}
+                    <div
+                      style={{
+                        marginBottom: 16,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        background: accForm.isPreviousStoreSeller ? '#fffbeb' : '#f8fafc',
+                        border: `1.5px solid ${accForm.isPreviousStoreSeller ? '#fde68a' : '#e2e8f0'}`,
+                        padding: '12px 16px',
+                        borderRadius: 10,
+                      }}
+                    >
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 16 }}>{accForm.isPreviousStoreSeller ? '🏛️' : '✨'}</span>
+                          <b style={{ color: accForm.isPreviousStoreSeller ? '#92400e' : '#334155', fontSize: 13.5 }}>
+                            {accForm.isPreviousStoreSeller ? 'Previous Store Seller (Labeled)' : 'Current Active Store Seller'}
+                          </b>
+                        </div>
+                        <small style={{ color: accForm.isPreviousStoreSeller ? '#b45309' : '#64748b', fontSize: 11.5, display: 'block', marginTop: 2 }}>
+                          {accForm.isPreviousStoreSeller
+                            ? 'Is seller ke wallet ka amount Admin USDT Wallet mein add/convert NAHI hoga'
+                            : 'Normal store seller - deposits & wallet balance Admin USDT Wallet mein add honge'}
+                        </small>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAccForm({ ...accForm, isPreviousStoreSeller: !accForm.isPreviousStoreSeller })}
+                        style={{
+                          padding: '6px 14px',
+                          borderRadius: 20,
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontWeight: 800,
+                          fontSize: 12,
+                          background: accForm.isPreviousStoreSeller ? '#d97706' : '#475569',
+                          color: '#fff',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+                        }}
+                      >
+                        {accForm.isPreviousStoreSeller ? '🏛️ Unmark Previous' : '✨ Mark as Previous'}
                       </button>
                     </div>
 
@@ -2878,6 +3012,51 @@ export default function Sellers() {
                   }}
                 >
                   {createForm.isTestAccount ? '🧪 Switch to Client' : '👤 Switch to Test'}
+                </button>
+              </div>
+
+              {/* Previous Store Seller Classification Toggle */}
+              <div
+                style={{
+                  marginBottom: 16,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: createForm.isPreviousStoreSeller ? '#fffbeb' : '#f8fafc',
+                  border: `1.5px solid ${createForm.isPreviousStoreSeller ? '#fde68a' : '#e2e8f0'}`,
+                  padding: '12px 16px',
+                  borderRadius: 8,
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 16 }}>{createForm.isPreviousStoreSeller ? '🏛️' : '✨'}</span>
+                    <b style={{ color: createForm.isPreviousStoreSeller ? '#92400e' : '#334155', fontSize: 13.5 }}>
+                      {createForm.isPreviousStoreSeller ? 'Previous Store Seller' : 'Current Active Store Seller'}
+                    </b>
+                  </div>
+                  <small style={{ color: createForm.isPreviousStoreSeller ? '#b45309' : '#64748b', fontSize: 11.5, display: 'block', marginTop: 2 }}>
+                    {createForm.isPreviousStoreSeller
+                      ? 'Excluded from Admin USDT Wallet calculations'
+                      : 'Normal store - included in Admin USDT Wallet calculations'}
+                  </small>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCreateForm({ ...createForm, isPreviousStoreSeller: !createForm.isPreviousStoreSeller })}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: 20,
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontWeight: 800,
+                    fontSize: 12,
+                    background: createForm.isPreviousStoreSeller ? '#d97706' : '#475569',
+                    color: '#fff',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+                  }}
+                >
+                  {createForm.isPreviousStoreSeller ? '🏛️ Previous Store' : '✨ Current Store'}
                 </button>
               </div>
 
