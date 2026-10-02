@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, Link } from 'react-router-dom';
 import { sapi } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import SellerAppModal from '../components/SellerAppModal.jsx';

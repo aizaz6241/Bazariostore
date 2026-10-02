@@ -6,6 +6,7 @@ import { CartProvider } from './cart.jsx';
 import { AuthProvider } from './auth.jsx';
 import { ContentProvider } from './content.jsx';
 import { CurrencyProvider } from './context/CurrencyContext.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import './styles/base.css';
 import './styles/components.css';
 import './styles/storefront.css';
@@ -53,7 +54,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <ContentProvider>
           <AuthProvider>
             <CartProvider>
-              <App />
+              <ErrorBoundary>
+                <App />
+              </ErrorBoundary>
             </CartProvider>
           </AuthProvider>
         </ContentProvider>

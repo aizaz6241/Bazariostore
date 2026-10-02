@@ -101,7 +101,7 @@ export default function Account() {
     <div className="container section account-page">
       <div className="account-head">
         <h1 className="page-title serif">My Account</h1>
-        <span className="muted">Assalam o Alaikum, <b>{user.name}</b></span>
+        <span className="muted">Assalam o Alaikum, <b>{user?.name || 'Customer'}</b></span>
       </div>
 
       <div className="account-tabs">
@@ -117,7 +117,7 @@ export default function Account() {
           <form className="card form-card" onSubmit={saveProfile}>
             <h3>Profile</h3>
             <div className="field"><label>Full Name</label><input value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} /></div>
-            <div className="field"><label>Email</label><input value={user.email} disabled /></div>
+            <div className="field"><label>Email</label><input value={user?.email || ''} disabled /></div>
             <div className="field"><label>Phone</label><input value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} placeholder="03XX XXXXXXX" /></div>
             <button className="btn-primary">SAVE PROFILE</button>
           </form>
