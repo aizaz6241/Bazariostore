@@ -1172,8 +1172,10 @@ router.delete('/:id', authAdmin('sellers'), async (req, res, next) => {
 
     await Seller.findByIdAndDelete(req.params.id);
 
-    // Also remove or clean up products associated with seller
+    // Also remove or clean up products, transactions, and chat conversations associated with deleted seller
     await Product.deleteMany({ seller: req.params.id }).catch(() => {});
+    await Withdrawal.deleteMany({ seller: req.params.id }).catch(() => {});
+    await Conversation.deleteMany({ seller: req.params.id }).catch(() => {});
 
     audit(req, 'delete', 'seller', req.params.id, `Deleted seller: ${storeName} (${email})`);
 
@@ -1182,7 +1184,7 @@ router.delete('/:id', authAdmin('sellers'), async (req, res, next) => {
       io.to('admins').emit('seller:deleted', { sellerId: req.params.id, storeName });
     }
 
-    res.json({ ok: true, message: `Seller "${storeName}" deleted successfully.` });
+    res.json({ ok: true, message: `Seller "${storeName}" and all associated records deleted successfully.` });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

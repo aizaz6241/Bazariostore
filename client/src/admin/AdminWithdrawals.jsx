@@ -25,12 +25,20 @@ export default function AdminWithdrawals() {
   const [splitModalDeposit, setSplitModalDeposit] = useState(null);
 
   const filteredLedger = useMemo(() => {
-    // Exclude test and demo accounts from the deposits ledger
+    // Exclude deleted sellers (orphan records) and test/demo accounts from the deposits ledger
     let list = depositsLedger.filter((d) => {
-      if (d.seller?.isTestAccount || d.seller?.accountType === 'test') return false;
-      if (d.seller?.isPreviousStoreSeller) return false;
+      // Discard if seller was deleted or missing
+      if (!d.seller) return false;
+      // Discard if marked as test account
+      if (d.seller.isTestAccount || d.seller.accountType === 'test') return false;
+      if (d.seller.isPreviousStoreSeller) return false;
+      // Discard test or demo stores, owners, or emails
       const sName = (d.storeName || '').toLowerCase().trim();
+      const oName = (d.seller.ownerName || '').toLowerCase().trim();
+      const email = (d.seller.email || '').toLowerCase().trim();
       if (sName.includes('test') || sName.includes('demo')) return false;
+      if (oName.includes('test') || oName.includes('demo')) return false;
+      if (email.includes('test') || email.includes('demo')) return false;
       return true;
     });
 

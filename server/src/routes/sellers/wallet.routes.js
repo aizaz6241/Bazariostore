@@ -657,13 +657,21 @@ router.get('/withdrawals/all', authAdmin('finance'), async (req, res) => {
       .populate('seller', 'storeName ownerName email payoutDetails isTestAccount accountType isPreviousStoreSeller')
       .sort({ createdAt: -1 });
 
-    // Exclude test/demo accounts when excludeTest=true or accountType=client
+    // Exclude test/demo accounts and deleted/missing sellers when excludeTest=true or accountType=client
     if (excludeTest === 'true' || accountType === 'client') {
       requests = requests.filter((r) => {
-        if (r.seller?.isTestAccount || r.seller?.accountType === 'test') return false;
-        if (r.seller?.isPreviousStoreSeller) return false;
+        // Discard orphan records where seller was deleted
+        if (!r.seller) return false;
+        // Discard marked test accounts
+        if (r.seller.isTestAccount || r.seller.accountType === 'test') return false;
+        if (r.seller.isPreviousStoreSeller) return false;
+        // Discard test or demo stores, owners, or emails
         const sName = (r.storeName || '').toLowerCase().trim();
+        const oName = (r.seller.ownerName || '').toLowerCase().trim();
+        const email = (r.seller.email || '').toLowerCase().trim();
         if (sName.includes('test') || sName.includes('demo')) return false;
+        if (oName.includes('test') || oName.includes('demo')) return false;
+        if (email.includes('test') || email.includes('demo')) return false;
         return true;
       });
     }
