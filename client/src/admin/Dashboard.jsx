@@ -9,10 +9,18 @@ import { STATUS_LABELS, PAYMENT_LABELS } from '../data.js';
 import { CHART_COLORS, ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
 import { getSocket } from '../socket.js';
+import UsdtWalletHistoryModal from './UsdtWalletHistoryModal.jsx';
 
 export default function Dashboard() {
   const [d, setD] = useState(null);
   const [error, setError] = useState('');
+  const [usdtHistoryModalOpen, setUsdtHistoryModalOpen] = useState(false);
+  const [usdtHistoryTab, setUsdtHistoryTab] = useState('all');
+
+  const openUsdtHistory = (tab = 'all') => {
+    setUsdtHistoryTab(tab);
+    setUsdtHistoryModalOpen(true);
+  };
 
   const loadData = () => {
     api('/analytics/dashboard').then(setD).catch((e) => setError(e.message));
@@ -80,6 +88,7 @@ export default function Dashboard() {
 
   const usdtCards = [
     {
+      tab: 'all',
       label: 'USDT Wallet',
       value: fmtUsdt(w.total),
       sub: `${w.depositCount || 0} deposits · Real Clients`,
@@ -90,6 +99,7 @@ export default function Dashboard() {
       bg: '#ecfdf5',
     },
     {
+      tab: 'today',
       label: "Today Received",
       value: fmtUsdt(w.today),
       sub: "Today's Client Inflow",
@@ -99,6 +109,7 @@ export default function Dashboard() {
       bg: '#f0f9ff',
     },
     {
+      tab: 'week',
       label: 'Weekly Received',
       value: fmtUsdt(w.week),
       sub: "This Week's Client Inflow",
@@ -108,6 +119,7 @@ export default function Dashboard() {
       bg: '#faf5ff',
     },
     {
+      tab: 'month',
       label: 'Monthly Received',
       value: fmtUsdt(w.month),
       sub: "This Month's Client Inflow",
@@ -165,6 +177,35 @@ export default function Dashboard() {
             )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => openUsdtHistory('all')}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                background: '#ecfdf5',
+                border: '1.5px solid #10b981',
+                borderRadius: 8,
+                padding: '6px 14px',
+                fontSize: 12,
+                fontWeight: 700,
+                color: '#047857',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#d1fae5';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = '#ecfdf5';
+              }}
+              title="Click to view detailed USDT transactions, sellers, amounts & dates"
+            >
+              <Ic name="wallet" size={14} />
+              <span>Click for USDT History &amp; Breakdown</span>
+            </button>
+
             <Link
               to="/admin/withdrawals"
               style={{
@@ -192,11 +233,34 @@ export default function Dashboard() {
             <div
               className="card stat-card"
               key={c.label}
-              style={c.isPrimary ? {
-                border: '1.5px solid #a7f3d0',
-                background: 'linear-gradient(180deg, #ffffff 0%, #f0fdf4 100%)',
-                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.08)',
-              } : {}}
+              onClick={() => openUsdtHistory(c.tab)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openUsdtHistory(c.tab);
+                }
+              }}
+              title={`Click to view transaction history for ${c.label}`}
+              style={{
+                cursor: 'pointer',
+                transition: 'all 0.18s ease',
+                position: 'relative',
+                ...(c.isPrimary ? {
+                  border: '1.5px solid #a7f3d0',
+                  background: 'linear-gradient(180deg, #ffffff 0%, #f0fdf4 100%)',
+                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.08)',
+                } : {}),
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = '0 6px 14px rgba(0, 0, 0, 0.08)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'none';
+                e.currentTarget.style.boxShadow = c.isPrimary ? '0 2px 8px rgba(16, 185, 129, 0.08)' : '';
+              }}
             >
               <i style={{ background: c.bg, color: c.color }}>
                 <Ic name={c.icon} size={22} />
@@ -210,12 +274,18 @@ export default function Dashboard() {
                     {c.badge}
                   </span>
                 </div>
-                <b style={{ fontSize: 18, fontWeight: 900, color: c.isPrimary ? '#047857' : '#0f172a', letterSpacing: '-0.3px' }}>
-                  {c.value}
+                <b style={{ fontSize: 18, fontWeight: 900, color: c.isPrimary ? '#047857' : '#0f172a', letterSpacing: '-0.3px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span>{c.value}</span>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: c.color, opacity: 0.85 }} title="Click to view history">↗</span>
                 </b>
-                <small style={{ color: '#64748b', fontSize: 11, marginTop: 2 }}>
-                  {c.sub}
-                </small>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 3 }}>
+                  <small style={{ color: '#64748b', fontSize: 11 }}>
+                    {c.sub}
+                  </small>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: c.color }}>
+                    History ↗
+                  </span>
+                </div>
               </div>
             </div>
           ))}
@@ -361,6 +431,13 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* ─── USDT WALLET TRANSACTIONS & HISTORY MODAL ─── */}
+      <UsdtWalletHistoryModal
+        isOpen={usdtHistoryModalOpen}
+        onClose={() => setUsdtHistoryModalOpen(false)}
+        initialTab={usdtHistoryTab}
+      />
     </>
   );
 }

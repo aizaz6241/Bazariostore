@@ -166,6 +166,148 @@ router.get('/dashboard', authAdmin(), async (req, res) => {
   });
 });
 
+// GET /api/analytics/usdt-wallet-history — Detailed USDT Wallet transactions breakdown
+router.get('/usdt-wallet-history', authAdmin(), async (req, res) => {
+  try {
+    const { period = 'all', search = '' } = req.query;
+
+    const clientSellers = await Seller.find({
+      isTestAccount: { $ne: true },
+      accountType: { $ne: 'test' },
+      isPreviousStoreSeller: { $ne: true },
+    }).select('_id storeName ownerName email phone');
+
+    const sellerMap = new Map();
+    clientSellers.forEach((s) => sellerMap.set(String(s._id), s));
+    const clientSellerIds = clientSellers.map((s) => s._id);
+
+    const clientDeposits = await Withdrawal.find({
+      seller: { $in: clientSellerIds },
+      type: 'deposit',
+      status: 'approved',
+    }).sort({ createdAt: -1 });
+
+    const getNetSellerDeposit = (r) => {
+      const gross = r.approvedAmount !== null && r.approvedAmount !== undefined ? r.approvedAmount : r.amount;
+      const helping = r.helpingAmount || 0;
+      return Math.max(0, gross - helping);
+    };
+
+    const dayStart = startOf.day();
+    const weekStart = startOf.week();
+    const monthStart = startOf.month();
+    const yearStart = startOf.year();
+
+    let allTotalNet = 0;
+    let allTodayNet = 0;
+    let allWeekNet = 0;
+    let allMonthNet = 0;
+    let allGross = 0;
+    let allHelping = 0;
+
+    const allTransactions = clientDeposits.map((d) => {
+      const seller = sellerMap.get(String(d.seller));
+      const net = getNetSellerDeposit(d);
+      const gross = d.approvedAmount !== null && d.approvedAmount !== undefined ? d.approvedAmount : d.amount;
+      const helping = d.helpingAmount || 0;
+      const date = d.processedAt || d.createdAt;
+      const dTime = new Date(date);
+
+      allTotalNet += net;
+      allGross += gross;
+      allHelping += helping;
+      if (dTime >= dayStart) allTodayNet += net;
+      if (dTime >= weekStart) allWeekNet += net;
+      if (dTime >= monthStart) allMonthNet += net;
+
+      return {
+        _id: d._id,
+        sellerId: d.seller,
+        storeName: d.storeName || seller?.storeName || 'Store',
+        ownerName: seller?.ownerName || '',
+        email: seller?.email || '',
+        phone: seller?.phone || '',
+        netUsdt: net,
+        grossAmount: gross,
+        requestedAmount: d.amount,
+        helpingAmount: helping,
+        method: d.method || 'bank',
+        network: d.network || '',
+        walletAddress: d.walletAddress || '',
+        depositRef: d.depositRef || '',
+        depositNote: d.depositNote || '',
+        adminNote: d.adminNote || '',
+        transactionRef: d.depositRef || d.transactionRef || '',
+        status: d.status,
+        processedBy: d.processedBy || '',
+        processedAt: d.processedAt,
+        createdAt: d.createdAt,
+        date,
+        isToday: dTime >= dayStart,
+        isWeek: dTime >= weekStart,
+        isMonth: dTime >= monthStart,
+        isYear: dTime >= yearStart,
+      };
+    });
+
+    let filtered = allTransactions;
+    if (period === 'today') {
+      filtered = filtered.filter((t) => t.isToday);
+    } else if (period === 'week') {
+      filtered = filtered.filter((t) => t.isWeek);
+    } else if (period === 'month') {
+      filtered = filtered.filter((t) => t.isMonth);
+    } else if (period === 'year') {
+      filtered = filtered.filter((t) => t.isYear);
+    }
+
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      filtered = filtered.filter((t) =>
+        (t.storeName && t.storeName.toLowerCase().includes(q)) ||
+        (t.ownerName && t.ownerName.toLowerCase().includes(q)) ||
+        (t.email && t.email.toLowerCase().includes(q)) ||
+        (t.depositRef && t.depositRef.toLowerCase().includes(q)) ||
+        (t.transactionRef && t.transactionRef.toLowerCase().includes(q)) ||
+        (t.method && t.method.toLowerCase().includes(q)) ||
+        (t.depositNote && t.depositNote.toLowerCase().includes(q))
+      );
+    }
+
+    const filteredTotalNet = filtered.reduce((acc, t) => acc + t.netUsdt, 0);
+    const filteredGross = filtered.reduce((acc, t) => acc + t.grossAmount, 0);
+    const filteredHelping = filtered.reduce((acc, t) => acc + t.helpingAmount, 0);
+    const uniqueSellersCount = new Set(filtered.map((t) => String(t.sellerId))).size;
+
+    res.json({
+      transactions: filtered,
+      summary: {
+        totalNet: filteredTotalNet,
+        grossAmount: filteredGross,
+        helpingAmount: filteredHelping,
+        count: filtered.length,
+        uniqueSellers: uniqueSellersCount,
+      },
+      counts: {
+        all: allTransactions.length,
+        today: allTransactions.filter((t) => t.isToday).length,
+        week: allTransactions.filter((t) => t.isWeek).length,
+        month: allTransactions.filter((t) => t.isMonth).length,
+      },
+      globalTotals: {
+        total: allTotalNet,
+        today: allTodayNet,
+        week: allWeekNet,
+        month: allMonthNet,
+        grossDeposits: allGross,
+        helpingAmount: allHelping,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // GET /api/analytics/reports — Super Admin Analytics & Visual Reports
 router.get('/reports', authAdmin(), async (req, res) => {
   try {
