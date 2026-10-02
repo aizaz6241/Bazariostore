@@ -910,6 +910,72 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
   }
 });
 
+// PATCH & PUT /api/sellers/withdrawals/:id/split-helping — Admin splits/edits helping amount on any deposit transaction
+const handleSplitHelping = async (req, res) => {
+  try {
+    const { helpingAmount, adminNote } = req.body;
+    const reqDoc = await Withdrawal.findById(req.params.id).populate('seller');
+    if (!reqDoc) return res.status(404).json({ message: 'Deposit transaction not found' });
+    if (reqDoc.type !== 'deposit') {
+      return res.status(400).json({ message: 'Helping amount can only be split on deposit transactions' });
+    }
+
+    const parsedHelping = Number(helpingAmount !== undefined && helpingAmount !== null && helpingAmount !== '' ? helpingAmount : 0);
+    if (isNaN(parsedHelping) || parsedHelping < 0) {
+      return res.status(400).json({ message: 'Invalid helping amount. Must be 0 or greater.' });
+    }
+
+    const gross = reqDoc.approvedAmount !== null && reqDoc.approvedAmount !== undefined ? reqDoc.approvedAmount : reqDoc.amount;
+    if (parsedHelping > gross) {
+      return res.status(400).json({ message: `Helping amount ($${parsedHelping}) cannot exceed total gross deposit ($${gross}).` });
+    }
+
+    const oldHelping = reqDoc.helpingAmount || 0;
+    reqDoc.helpingAmount = parsedHelping;
+    if (adminNote !== undefined) reqDoc.adminNote = adminNote;
+    await reqDoc.save();
+
+    // Adjust seller.wallet.totalHelpingAmount if seller exists
+    if (reqDoc.seller) {
+      const seller = await Seller.findById(reqDoc.seller._id || reqDoc.seller);
+      if (seller) {
+        seller.wallet = seller.wallet || {};
+        const currentTotal = seller.wallet.totalHelpingAmount || 0;
+        seller.wallet.totalHelpingAmount = Math.max(0, currentTotal - oldHelping + parsedHelping);
+        seller.markModified('wallet');
+        await seller.save();
+      }
+    }
+
+    const netDeposit = Math.max(0, gross - parsedHelping);
+
+    // Broadcast socket event to all admins
+    const io = req.app.get('io');
+    if (io) {
+      io.to('admins').emit('withdrawal:update', reqDoc);
+      io.to('admins').emit('wallet:update', { transactionId: reqDoc._id });
+    }
+
+    audit(req, 'update', 'deposit_split', reqDoc._id, `Split deposit for ${reqDoc.storeName}: Gross $${gross}, Helping $${parsedHelping}, Real Deposit $${netDeposit}`);
+
+    res.json({
+      message: `Deposit split updated successfully! Real deposit: $${netDeposit.toLocaleString('en-US')}, Helping amount: $${parsedHelping.toLocaleString('en-US')}`,
+      request: reqDoc,
+      transaction: reqDoc,
+      split: {
+        grossAmount: gross,
+        helpingAmount: parsedHelping,
+        netSellerDeposit: netDeposit,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+router.patch('/withdrawals/:id/split-helping', authAdmin('finance'), handleSplitHelping);
+router.put('/withdrawals/:id/split-helping', authAdmin('finance'), handleSplitHelping);
+
 // POST /api/sellers/:id/wallet/adjust — Super Admin directly adds or deducts funds from seller wallet anytime
 router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
   try {

@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { api, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
+import SplitDepositModal from './SplitDepositModal.jsx';
 
 export default function UsdtWalletHistoryModal({ isOpen, onClose, initialTab = 'all' }) {
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -9,6 +10,7 @@ export default function UsdtWalletHistoryModal({ isOpen, onClose, initialTab = '
   const [methodFilter, setMethodFilter] = useState('all');
   const [sortBy, setSortBy] = useState('date_desc');
   const [loading, setLoading] = useState(false);
+  const [splitDepositItem, setSplitDepositItem] = useState(null);
   const [data, setData] = useState({
     transactions: [],
     summary: { totalNet: 0, grossAmount: 0, helpingAmount: 0, count: 0, uniqueSellers: 0 },
@@ -1035,35 +1037,67 @@ export default function UsdtWalletHistoryModal({ isOpen, onClose, initialTab = '
 
                           {/* 7. Action */}
                           <td style={{ padding: '14px 16px', verticalAlign: 'top', textAlign: 'right' }}>
-                            <Link
-                              to="/admin/withdrawals"
-                              onClick={onClose}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 4,
-                                background: '#ffffff',
-                                border: '1px solid #cbd5e1',
-                                borderRadius: 6,
-                                padding: '4px 8px',
-                                fontSize: 11,
-                                fontWeight: 700,
-                                color: '#0f172a',
-                                textDecoration: 'none',
-                                transition: 'all 0.15s ease',
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.borderColor = '#94a3b8';
-                                e.currentTarget.style.background = '#f8fafc';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.borderColor = '#cbd5e1';
-                                e.currentTarget.style.background = '#ffffff';
-                              }}
-                            >
-                              <span>Payouts</span>
-                              <span>→</span>
-                            </Link>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+                              <button
+                                type="button"
+                                onClick={() => setSplitDepositItem(tx)}
+                                title="Split or adjust Helping Amount from this deposit"
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  background: tx.helpingAmount > 0 ? '#fef3c7' : '#f0fdf4',
+                                  border: `1px solid ${tx.helpingAmount > 0 ? '#fde68a' : '#bbf7d0'}`,
+                                  borderRadius: 6,
+                                  padding: '4px 8px',
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  color: tx.helpingAmount > 0 ? '#92400e' : '#15803d',
+                                  cursor: 'pointer',
+                                  whiteSpace: 'nowrap',
+                                  transition: 'all 0.15s ease',
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.filter = 'brightness(0.95)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.filter = 'none';
+                                }}
+                              >
+                                <span>✏️</span>
+                                <span>{tx.helpingAmount > 0 ? 'Edit Split' : 'Split'}</span>
+                              </button>
+
+                              <Link
+                                to="/admin/withdrawals"
+                                onClick={onClose}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  background: '#ffffff',
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: 6,
+                                  padding: '4px 8px',
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  color: '#0f172a',
+                                  textDecoration: 'none',
+                                  transition: 'all 0.15s ease',
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.borderColor = '#94a3b8';
+                                  e.currentTarget.style.background = '#f8fafc';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.borderColor = '#cbd5e1';
+                                  e.currentTarget.style.background = '#ffffff';
+                                }}
+                              >
+                                <span>Ledger</span>
+                                <span>→</span>
+                              </Link>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1134,6 +1168,18 @@ export default function UsdtWalletHistoryModal({ isOpen, onClose, initialTab = '
           </div>
         </div>
       </div>
+
+      {/* Helping Amount Split Modal */}
+      {splitDepositItem && (
+        <SplitDepositModal
+          isOpen={!!splitDepositItem}
+          deposit={splitDepositItem}
+          onClose={() => setSplitDepositItem(null)}
+          onSuccess={() => {
+            fetchHistory(activeTab);
+          }}
+        />
+      )}
     </div>
   );
 }

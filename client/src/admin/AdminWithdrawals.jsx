@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react';
-import { api, fmtDay, money } from '../api.js';
+import { useEffect, useState, useMemo } from 'react';
+import { api, fmtDay, fmtDate, money } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import CurrencyConverterWidget from '../components/CurrencyConverterWidget.jsx';
 import { getSocket } from '../socket.js';
+import SplitDepositModal from './SplitDepositModal.jsx';
 
 const STATUS_COLOR = { pending: 'chip-orange', approved: 'chip-green', rejected: 'chip-red' };
 
 export default function AdminWithdrawals() {
-  const [activeTab, setActiveTab] = useState('requests'); // 'requests' | 'limits'
+  const [activeTab, setActiveTab] = useState('requests'); // 'requests' | 'limits' | 'ledger'
   const [requests, setRequests] = useState([]);
   const [limitRequests, setLimitRequests] = useState([]);
   const [summary, setSummary] = useState({});
@@ -15,6 +16,45 @@ export default function AdminWithdrawals() {
   const [statusFilter, setStatusFilter] = useState('pending');
   const [typeFilter, setTypeFilter] = useState('all');
   const [processing, setProcessing] = useState({});
+
+  // ─── DEPOSITS LEDGER & SPLIT STATE ───
+  const [depositsLedger, setDepositsLedger] = useState([]);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  const [ledgerStatus, setLedgerStatus] = useState('all');
+  const [ledgerSearch, setLedgerSearch] = useState('');
+  const [splitModalDeposit, setSplitModalDeposit] = useState(null);
+
+  const filteredLedger = useMemo(() => {
+    let list = [...depositsLedger];
+    if (ledgerSearch.trim()) {
+      const q = ledgerSearch.trim().toLowerCase();
+      list = list.filter(
+        (d) =>
+          (d.storeName && d.storeName.toLowerCase().includes(q)) ||
+          (d.seller?.ownerName && d.seller.ownerName.toLowerCase().includes(q)) ||
+          (d.seller?.email && d.seller.email.toLowerCase().includes(q)) ||
+          (d.depositRef && d.depositRef.toLowerCase().includes(q)) ||
+          (d.transactionRef && d.transactionRef.toLowerCase().includes(q)) ||
+          (d.method && d.method.toLowerCase().includes(q)) ||
+          (d.depositNote && d.depositNote.toLowerCase().includes(q)) ||
+          (d.adminNote && d.adminNote.toLowerCase().includes(q))
+      );
+    }
+    return list;
+  }, [depositsLedger, ledgerSearch]);
+
+  const ledgerGrossTotal = useMemo(() => {
+    return filteredLedger.reduce((sum, d) => {
+      const gross = d.approvedAmount !== null && d.approvedAmount !== undefined ? d.approvedAmount : d.amount;
+      return sum + (gross || 0);
+    }, 0);
+  }, [filteredLedger]);
+
+  const ledgerHelpingTotal = useMemo(() => {
+    return filteredLedger.reduce((sum, d) => sum + (d.helpingAmount || 0), 0);
+  }, [filteredLedger]);
+
+  const ledgerRealTotal = Math.max(0, ledgerGrossTotal - ledgerHelpingTotal);
 
   // Per-request approval forms
   const [approvedAmountMap, setApprovedAmountMap] = useState({});
@@ -94,9 +134,35 @@ export default function AdminWithdrawals() {
       .catch(() => {});
   };
 
+  const loadDepositsLedger = () => {
+    setLedgerLoading(true);
+    api(`/sellers/withdrawals/all?type=deposit&status=${ledgerStatus}`)
+      .then((res) => {
+        setDepositsLedger(res.requests || []);
+      })
+      .catch(() => {})
+      .finally(() => setLedgerLoading(false));
+  };
+
   useEffect(() => {
     load();
   }, [statusFilter, typeFilter]);
+
+  useEffect(() => {
+    if (activeTab === 'ledger') {
+      loadDepositsLedger();
+    }
+  }, [activeTab, ledgerStatus]);
+
+  const handleSplitSuccess = (updatedDoc) => {
+    setRequests((prev) => prev.map((r) => (r._id === updatedDoc._id ? { ...r, ...updatedDoc } : r)));
+    setDepositsLedger((prev) => prev.map((r) => (r._id === updatedDoc._id ? { ...r, ...updatedDoc } : r)));
+    if (updatedDoc.helpingAmount !== undefined) {
+      setHelpingAmountMap((prev) => ({ ...prev, [updatedDoc._id]: updatedDoc.helpingAmount }));
+    }
+    load();
+    loadDepositsLedger();
+  };
 
   // Real-time synchronization on WebSocket events
   useEffect(() => {
@@ -115,6 +181,7 @@ export default function AdminWithdrawals() {
 
     const handleSync = () => {
       load();
+      loadDepositsLedger();
     };
 
     socket.on('withdrawal:new', handleSync);
@@ -393,6 +460,29 @@ export default function AdminWithdrawals() {
 
         <button
           type="button"
+          onClick={() => setActiveTab('ledger')}
+          style={{
+            padding: '8px 16px',
+            borderRadius: 8,
+            fontWeight: 700,
+            fontSize: 13.5,
+            border: 'none',
+            cursor: 'pointer',
+            background: activeTab === 'ledger' ? '#0f172a' : '#f1f5f9',
+            color: activeTab === 'ledger' ? '#ffffff' : '#64748b',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <span>📑 Deposits Ledger &amp; Helping Split</span>
+          <span style={{ background: '#7c3aed', color: '#fff', fontSize: 10.5, padding: '1px 6px', borderRadius: 10, fontWeight: 800 }}>
+            {depositsLedger.length > 0 ? depositsLedger.length : 'Ledger'}
+          </span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab('limits')}
           style={{
             padding: '8px 16px',
@@ -522,6 +612,34 @@ export default function AdminWithdrawals() {
                           <small><b style={{ color: '#7c3aed' }}>${Number(r.helpingAmount).toLocaleString('en-US')}</b> <span style={{ fontSize: 10, color: '#6b7280' }}>(Admin Internal)</span></small>
                         </div>
                       )}
+                      <div>
+                        <span className="muted-sm block">Admin Split:</span>
+                        <button
+                          type="button"
+                          onClick={() => setSplitModalDeposit(r)}
+                          style={{
+                            background: '#faf5ff',
+                            border: '1px solid #c4b5fd',
+                            borderRadius: 6,
+                            padding: '3px 8px',
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: '#7c3aed',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                          title="Split or edit Helping Amount for this deposit"
+                        >
+                          <span>✏️ Split Helping</span>
+                          {Number(r.helpingAmount) > 0 && (
+                            <span style={{ fontSize: 9.5, background: '#ede9fe', padding: '0 4px', borderRadius: 3 }}>
+                              ${Number(r.helpingAmount).toLocaleString('en-US')}
+                            </span>
+                          )}
+                        </button>
+                      </div>
                     </>
                   ) : (
                     <>
@@ -786,6 +904,362 @@ export default function AdminWithdrawals() {
             );
           })}
         </>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          VIEW 3: DEPOSITS LEDGER & HELPING AMOUNT SPLIT
+          ───────────────────────────────────────────────────────────── */}
+      {activeTab === 'ledger' && (
+        <div className="admin-deposits-ledger-section">
+          {/* Header & Direct Adjustment Trigger */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ display: 'inline-flex', padding: '6px 8px', borderRadius: 8, background: '#ede9fe', color: '#7c3aed' }}>
+                  🤝
+                </span>
+                Sellers Deposits Ledger &amp; Helping Split
+              </h2>
+              <p style={{ margin: '4px 0 0', fontSize: 12.5, color: '#64748b' }}>
+                Yahan par sellers ke tamam deposits ka record hai. Kisi bhi deposit par click karke Admin Helping Amount split kar sakta hai jo Admin USDT Wallet se minus ho jayegi.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                type="button"
+                onClick={loadDepositsLedger}
+                disabled={ledgerLoading}
+                style={{
+                  background: '#ffffff',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: 8,
+                  padding: '7px 12px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: '#475569',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                }}
+              >
+                <Ic name="refresh" size={13} />
+                <span>Refresh</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowAdjustModal(true)}
+                style={{
+                  background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: 8,
+                  padding: '7px 14px',
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  boxShadow: '0 2px 6px rgba(5, 150, 105, 0.25)',
+                }}
+              >
+                <span>➕ Direct Deposit Adjustment</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Ledger KPI Cards */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+              gap: 12,
+              marginBottom: 16,
+            }}
+          >
+            {/* Total Gross Deposited */}
+            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                Total Gross Deposited
+              </div>
+              <div style={{ fontSize: 19, fontWeight: 900, color: '#0f172a', marginTop: 2 }}>
+                {money(ledgerGrossTotal)}
+              </div>
+              <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 2 }}>
+                Full seller credited funds
+              </div>
+            </div>
+
+            {/* Total Helping Split */}
+            <div style={{ background: '#ffffff', border: '1.5px solid #ddd6fe', borderRadius: 12, padding: '12px 16px', boxShadow: '0 1px 3px rgba(124, 58, 237, 0.06)' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase' }}>
+                🤝 Total Helping Split
+              </div>
+              <div style={{ fontSize: 19, fontWeight: 900, color: '#7c3aed', marginTop: 2 }}>
+                -{money(ledgerHelpingTotal)}
+              </div>
+              <div style={{ fontSize: 10.5, color: '#8b5cf6', marginTop: 2 }}>
+                Excluded from Admin USDT Wallet
+              </div>
+            </div>
+
+            {/* Real Seller Inflow (USDT Wallet) */}
+            <div style={{ background: '#ffffff', border: '1.5px solid #a7f3d0', borderRadius: 12, padding: '12px 16px', boxShadow: '0 1px 3px rgba(16, 185, 129, 0.08)' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#047857', textTransform: 'uppercase' }}>
+                👤 Real Seller Inflow
+              </div>
+              <div style={{ fontSize: 19, fontWeight: 900, color: '#047857', marginTop: 2 }}>
+                +{money(ledgerRealTotal)}
+              </div>
+              <div style={{ fontSize: 10.5, color: '#059669', marginTop: 2 }}>
+                Counted in Admin USDT Wallet
+              </div>
+            </div>
+
+            {/* Filtered Count */}
+            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                Deposits Count
+              </div>
+              <div style={{ fontSize: 19, fontWeight: 900, color: '#0f172a', marginTop: 2 }}>
+                {filteredLedger.length}
+              </div>
+              <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 2 }}>
+                Recorded deposits
+              </div>
+            </div>
+          </div>
+
+          {/* Filters & Search Toolbar */}
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: 12,
+              padding: '12px 16px',
+              border: '1px solid #e2e8f0',
+              marginBottom: 16,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              flexWrap: 'wrap',
+            }}
+          >
+            {/* Status pills */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {[
+                { val: 'all', label: 'All Deposits' },
+                { val: 'approved', label: '✓ Approved' },
+                { val: 'pending', label: '⏳ Pending' },
+                { val: 'rejected', label: '✕ Rejected' },
+              ].map((s) => (
+                <button
+                  key={s.val}
+                  type="button"
+                  onClick={() => setLedgerStatus(s.val)}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 8,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: ledgerStatus === s.val ? '#0f172a' : '#f1f5f9',
+                    color: ledgerStatus === s.val ? '#ffffff' : '#64748b',
+                  }}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Search Input */}
+            <div style={{ position: 'relative', minWidth: 260, flex: 1, maxWidth: 420 }}>
+              <input
+                type="text"
+                placeholder="Search store, seller, UTR reference, note..."
+                value={ledgerSearch}
+                onChange={(e) => setLedgerSearch(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '7px 12px 7px 32px',
+                  borderRadius: 8,
+                  border: '1px solid #cbd5e1',
+                  fontSize: 12.5,
+                  outline: 'none',
+                }}
+              />
+              <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }}>
+                <Ic name="search" size={14} />
+              </span>
+              {ledgerSearch && (
+                <button
+                  type="button"
+                  onClick={() => setLedgerSearch('')}
+                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+                >
+                  <Ic name="x" size={13} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Ledger Table */}
+          {ledgerLoading ? (
+            <div className="card text-center py-5">
+              <p className="muted">Loading deposits ledger…</p>
+            </div>
+          ) : filteredLedger.length === 0 ? (
+            <div className="empty-box">
+              <Ic name="wallet" size={44} stroke={1.2} />
+              <p>Koi deposit transaction nahi mili.</p>
+              {ledgerSearch && (
+                <button
+                  type="button"
+                  onClick={() => setLedgerSearch('')}
+                  className="btn-outline btn-sm mt-2"
+                >
+                  Clear Search
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="admin-card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div className="admin-table-wrap">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Date &amp; Time</th>
+                      <th>Store &amp; Seller</th>
+                      <th>Gross Deposit</th>
+                      <th>Split (Real vs Helping)</th>
+                      <th>Method &amp; Ref (UTR)</th>
+                      <th>Status</th>
+                      <th style={{ textAlign: 'right' }}>Admin Split Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredLedger.map((d) => {
+                      const gross = d.approvedAmount !== null && d.approvedAmount !== undefined ? d.approvedAmount : d.amount;
+                      const helping = d.helpingAmount || 0;
+                      const real = Math.max(0, gross - helping);
+
+                      return (
+                        <tr key={d._id}>
+                          <td>
+                            <div style={{ fontWeight: 700, color: '#0f172a' }}>
+                              {fmtDate(d.processedAt || d.createdAt)}
+                            </div>
+                            <small className="muted-sm">ID #{String(d._id).slice(-6)}</small>
+                          </td>
+
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontWeight: 800, color: '#0f172a' }}>
+                                {d.storeName || d.seller?.storeName || 'Store'}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: 11, color: '#64748b' }}>
+                              {d.seller?.ownerName} {d.seller?.email && `• ${d.seller.email}`}
+                            </div>
+                          </td>
+
+                          <td>
+                            <b style={{ fontSize: 14, color: '#0f172a' }}>{money(gross)}</b>
+                            {d.isManualAdjustment && (
+                              <span style={{ fontSize: 10, display: 'block', color: '#059669', fontWeight: 700 }}>
+                                Manual Adjustment
+                              </span>
+                            )}
+                          </td>
+
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              <div style={{ fontSize: 12, color: '#047857', fontWeight: 800 }}>
+                                👤 Real: {money(real)}
+                              </div>
+                              {helping > 0 ? (
+                                <div style={{ fontSize: 11, color: '#7c3aed', fontWeight: 700, background: '#faf5ff', padding: '1px 6px', borderRadius: 4, display: 'inline-block' }}>
+                                  🤝 Helping: -{money(helping)}
+                                </div>
+                              ) : (
+                                <small style={{ color: '#94a3b8', fontSize: 10.5 }}>
+                                  No helping deduction
+                                </small>
+                              )}
+                            </div>
+                          </td>
+
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <span className="pay-chip" style={{ fontSize: 10 }}>
+                                {(d.method || 'bank').toUpperCase()}
+                              </span>
+                              <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#334155' }}>
+                                {d.depositRef || d.transactionRef || 'N/A'}
+                              </span>
+                            </div>
+                            {(d.depositNote || d.adminNote) && (
+                              <small style={{ color: '#64748b', display: 'block', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {d.depositNote || d.adminNote}
+                              </small>
+                            )}
+                          </td>
+
+                          <td>
+                            <span className={`status-chip ${STATUS_COLOR[d.status] || ''}`}>
+                              {d.status?.toUpperCase()}
+                            </span>
+                          </td>
+
+                          <td style={{ textAlign: 'right' }}>
+                            <button
+                              type="button"
+                              onClick={() => setSplitModalDeposit(d)}
+                              style={{
+                                background: '#faf5ff',
+                                border: '1.5px solid #c4b5fd',
+                                borderRadius: 7,
+                                padding: '5px 10px',
+                                fontSize: 11.5,
+                                fontWeight: 800,
+                                color: '#6b21a8',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                transition: 'all 0.15s ease',
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = '#ede9fe';
+                                e.currentTarget.style.borderColor = '#8b5cf6';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = '#faf5ff';
+                                e.currentTarget.style.borderColor = '#c4b5fd';
+                              }}
+                              title="Click to split or edit Helping Amount for this deposit"
+                            >
+                              <span>✏️ Split / Edit Helping</span>
+                              {helping > 0 && (
+                                <span style={{ background: '#8b5cf6', color: '#fff', fontSize: 10, padding: '1px 5px', borderRadius: 4 }}>
+                                  ${helping}
+                                </span>
+                              )}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* ─────────────────────────────────────────────────────────────
@@ -1432,6 +1906,14 @@ export default function AdminWithdrawals() {
           </div>
         );
       })()}
+
+      {/* Split Deposit Helping Amount Modal */}
+      <SplitDepositModal
+        isOpen={!!splitModalDeposit}
+        deposit={splitModalDeposit}
+        onClose={() => setSplitModalDeposit(null)}
+        onSuccess={handleSplitSuccess}
+      />
     </div>
   );
 }
