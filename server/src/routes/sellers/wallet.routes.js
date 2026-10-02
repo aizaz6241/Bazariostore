@@ -648,14 +648,25 @@ router.post('/wallet/limit-offer-response', authSellerOrAdmin, async (req, res) 
 // GET /api/sellers/withdrawals/all — admin sees ALL requests (deposit + withdrawal)
 router.get('/withdrawals/all', authAdmin('finance'), async (req, res) => {
   try {
-    const { status, type } = req.query;
+    const { status, type, excludeTest, accountType } = req.query;
     const filter = {};
     if (status && status !== 'all') filter.status = status;
     if (type && type !== 'all') filter.type = type;
 
-    const requests = await Withdrawal.find(filter)
-      .populate('seller', 'storeName ownerName email payoutDetails')
+    let requests = await Withdrawal.find(filter)
+      .populate('seller', 'storeName ownerName email payoutDetails isTestAccount accountType isPreviousStoreSeller')
       .sort({ createdAt: -1 });
+
+    // Exclude test/demo accounts when excludeTest=true or accountType=client
+    if (excludeTest === 'true' || accountType === 'client') {
+      requests = requests.filter((r) => {
+        if (r.seller?.isTestAccount || r.seller?.accountType === 'test') return false;
+        if (r.seller?.isPreviousStoreSeller) return false;
+        const sName = (r.storeName || '').toLowerCase().trim();
+        if (sName.includes('test') || sName.includes('demo')) return false;
+        return true;
+      });
+    }
 
     const pending = requests.filter((r) => r.status === 'pending');
     const pendingDeposits = pending.filter((r) => r.type === 'deposit').reduce((s, r) => s + r.amount, 0);

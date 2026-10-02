@@ -25,7 +25,15 @@ export default function AdminWithdrawals() {
   const [splitModalDeposit, setSplitModalDeposit] = useState(null);
 
   const filteredLedger = useMemo(() => {
-    let list = [...depositsLedger];
+    // Exclude test and demo accounts from the deposits ledger
+    let list = depositsLedger.filter((d) => {
+      if (d.seller?.isTestAccount || d.seller?.accountType === 'test') return false;
+      if (d.seller?.isPreviousStoreSeller) return false;
+      const sName = (d.storeName || '').toLowerCase().trim();
+      if (sName.includes('test') || sName.includes('demo')) return false;
+      return true;
+    });
+
     if (ledgerSearch.trim()) {
       const q = ledgerSearch.trim().toLowerCase();
       list = list.filter(
@@ -136,7 +144,7 @@ export default function AdminWithdrawals() {
 
   const loadDepositsLedger = () => {
     setLedgerLoading(true);
-    api(`/sellers/withdrawals/all?type=deposit&status=${ledgerStatus}`)
+    api(`/sellers/withdrawals/all?type=deposit&status=${ledgerStatus}&excludeTest=true`)
       .then((res) => {
         setDepositsLedger(res.requests || []);
       })
@@ -558,15 +566,32 @@ export default function AdminWithdrawals() {
               <div key={r._id} className={`withdrawal-card ${isPending ? 'withdrawal-pending' : ''}`}>
                 {/* Header Badge */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                  <div
-                    className="request-type-badge"
-                    style={{
-                      background: isDeposit ? '#d1fae5' : '#dbeafe',
-                      color: isDeposit ? '#065f46' : '#1d4ed8',
-                      marginBottom: 0,
-                    }}
-                  >
-                    {r.isManualAdjustment ? '⚡ DIRECT ADMIN ADJUSTMENT' : (isDeposit ? '💰 DEPOSIT REQUEST' : '💸 WITHDRAWAL REQUEST')}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <div
+                      className="request-type-badge"
+                      style={{
+                        background: isDeposit ? '#d1fae5' : '#dbeafe',
+                        color: isDeposit ? '#065f46' : '#1d4ed8',
+                        marginBottom: 0,
+                      }}
+                    >
+                      {r.isManualAdjustment ? '⚡ DIRECT ADMIN ADJUSTMENT' : (isDeposit ? '💰 DEPOSIT REQUEST' : '💸 WITHDRAWAL REQUEST')}
+                    </div>
+                    {(r.seller?.isTestAccount || r.seller?.accountType === 'test' || r.storeName?.toLowerCase().includes('test')) && (
+                      <span
+                        style={{
+                          background: '#f3e8ff',
+                          color: '#7e22ce',
+                          border: '1px solid #d8b4fe',
+                          padding: '2px 8px',
+                          borderRadius: 12,
+                          fontSize: 10.5,
+                          fontWeight: 800,
+                        }}
+                      >
+                        🧪 Test Account
+                      </span>
+                    )}
                   </div>
                   <span className={`status-chip ${STATUS_COLOR[r.status] || ''}`}>
                     {r.status?.toUpperCase()}
@@ -1048,32 +1073,55 @@ export default function AdminWithdrawals() {
               flexWrap: 'wrap',
             }}
           >
-            {/* Status pills */}
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {[
-                { val: 'all', label: 'All Deposits' },
-                { val: 'approved', label: '✓ Approved' },
-                { val: 'pending', label: '⏳ Pending' },
-                { val: 'rejected', label: '✕ Rejected' },
-              ].map((s) => (
-                <button
-                  key={s.val}
-                  type="button"
-                  onClick={() => setLedgerStatus(s.val)}
-                  style={{
-                    padding: '6px 12px',
-                    borderRadius: 8,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    border: 'none',
-                    cursor: 'pointer',
-                    background: ledgerStatus === s.val ? '#0f172a' : '#f1f5f9',
-                    color: ledgerStatus === s.val ? '#ffffff' : '#64748b',
-                  }}
-                >
-                  {s.label}
-                </button>
-              ))}
+            {/* Status pills & Real Clients Filter Badge */}
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {[
+                  { val: 'all', label: 'All Deposits' },
+                  { val: 'approved', label: '✓ Approved' },
+                  { val: 'pending', label: '⏳ Pending' },
+                  { val: 'rejected', label: '✕ Rejected' },
+                ].map((s) => (
+                  <button
+                    key={s.val}
+                    type="button"
+                    onClick={() => setLedgerStatus(s.val)}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: 8,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: ledgerStatus === s.val ? '#0f172a' : '#f1f5f9',
+                      color: ledgerStatus === s.val ? '#ffffff' : '#64748b',
+                    }}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Indicator: Testing accounts excluded */}
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: '#047857',
+                  background: '#ecfdf5',
+                  border: '1px solid #a7f3d0',
+                  padding: '4px 10px',
+                  borderRadius: 20,
+                  whiteSpace: 'nowrap',
+                }}
+                title="Testing accounts aur demo sellers ke deposits is ledger mein shamil nahi hain"
+              >
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
+                <span>Real Clients Only (Testing Excluded)</span>
+              </span>
             </div>
 
             {/* Search Input */}
