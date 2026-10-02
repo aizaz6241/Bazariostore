@@ -48,6 +48,7 @@ export default function ChatPage() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [pendingImagePreview, setPendingImagePreview] = useState(null); // { file, previewUrl, caption: '' }
   const [fullscreenImage, setFullscreenImage] = useState(null); // Image URL for lightbox viewer
+  const [downloadToast, setDownloadToast] = useState(''); // Toast for mobile & desktop image download feedback
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -411,6 +412,106 @@ export default function ChatPage() {
       alert('Failed to process and send picture. Please try again.');
     } finally {
       setUploadingImage(false);
+    }
+  };
+
+  // ─── Robust Mobile & Desktop Image Download / Save Helper ───
+  const downloadImageFile = async (imageUrl, defaultFilename = `photo-${Date.now()}.jpg`) => {
+    if (!imageUrl) return;
+
+    try {
+      setDownloadToast('Saving picture to your device...');
+
+      let blob;
+      let mimeType = 'image/jpeg';
+
+      if (imageUrl.startsWith('data:')) {
+        const parts = imageUrl.split(',');
+        const mimeMatch = parts[0].match(/:(.*?);/);
+        if (mimeMatch) mimeType = mimeMatch[1];
+
+        const byteCharacters = atob(parts[1]);
+        const byteArrays = [];
+        const sliceSize = 1024;
+        for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+          const slice = byteCharacters.slice(offset, offset + sliceSize);
+          const byteNumbers = new Array(slice.length);
+          for (let i = 0; i < slice.length; i++) {
+            byteNumbers[i] = slice.charCodeAt(i);
+          }
+          byteArrays.push(new Uint8Array(byteNumbers));
+        }
+        blob = new Blob(byteArrays, { type: mimeType });
+      } else {
+        const res = await fetch(imageUrl);
+        blob = await res.blob();
+        mimeType = blob.type || 'image/jpeg';
+      }
+
+      let extension = 'jpg';
+      if (mimeType.includes('png')) extension = 'png';
+      else if (mimeType.includes('webp')) extension = 'webp';
+      else if (mimeType.includes('gif')) extension = 'gif';
+
+      const filename = defaultFilename.includes('.')
+        ? defaultFilename
+        : `${defaultFilename}.${extension}`;
+
+      // 1. Mobile Web Share API (Direct save to mobile gallery/files on Android & iOS)
+      const isMobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (isMobile && navigator.canShare && typeof File !== 'undefined') {
+        try {
+          const testFile = new File([blob], filename, { type: mimeType });
+          if (navigator.canShare({ files: [testFile] })) {
+            await navigator.share({
+              files: [testFile],
+              title: 'Bazario Picture',
+              text: 'Save picture from chat',
+            });
+            setDownloadToast('Picture saved / shared!');
+            setTimeout(() => setDownloadToast(''), 3000);
+            return;
+          }
+        } catch (shareErr) {
+          if (shareErr.name === 'AbortError') {
+            setDownloadToast('');
+            return; // User dismissed share dialog
+          }
+          console.warn('Web Share failed, continuing to blob download:', shareErr);
+        }
+      }
+
+      // 2. Universal Blob URL Download (Standard for Chrome, Safari, Firefox)
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+
+      setTimeout(() => {
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(blobUrl);
+      }, 2000);
+
+      setDownloadToast('Picture saved to your device!');
+      setTimeout(() => setDownloadToast(''), 3000);
+    } catch (err) {
+      console.error('Download image error:', err);
+      // Fallback: open in new window for manual save
+      try {
+        const w = window.open();
+        if (w) {
+          w.document.write(`<img src="${imageUrl}" style="max-width:100%;height:auto;margin:auto;display:block;" /><p style="text-align:center;font-family:sans-serif;margin-top:20px;">Tap and hold image to save to your device.</p>`);
+          setDownloadToast('Opened image. Tap and hold to save.');
+        } else {
+          window.location.href = imageUrl;
+        }
+      } catch (e) {
+        setDownloadToast('Tap and hold the image to save.');
+      }
+      setTimeout(() => setDownloadToast(''), 4000);
     }
   };
 
@@ -1131,6 +1232,23 @@ export default function ChatPage() {
                                         <span>Click to View</span>
                                       </span>
                                     </div>
+
+                                    {/* Direct Save / Download button (always visible & 1-tap accessible on mobile) */}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        downloadImageFile(
+                                          msg.mediaUrl,
+                                          `chat-photo-${new Date(msg.createdAt).getTime()}.jpg`
+                                        );
+                                      }}
+                                      className="absolute bottom-2 right-2 px-2.5 py-1 rounded-xl bg-black/75 hover:bg-black/90 active:scale-95 text-white shadow-lg backdrop-blur-md flex items-center gap-1.5 text-[11px] font-semibold transition z-10 border border-white/20"
+                                      title="Save / Download Picture"
+                                    >
+                                      <Download className="w-3.5 h-3.5 text-emerald-400" />
+                                      <span>Save</span>
+                                    </button>
                                   </div>
                                   {msg.text && (
                                     <p className="text-xs sm:text-sm whitespace-pre-wrap leading-relaxed break-words px-1">
@@ -1465,21 +1583,19 @@ export default function ChatPage() {
               <ImageIcon className="w-5 h-5 text-emerald-400" />
               <span className="text-sm font-semibold tracking-wide">Photo Viewer</span>
             </div>
-            <div className="flex items-center space-x-3">
-              <a
-                href={fullscreenImage}
-                download={`chat-photo-${Date.now()}.jpg`}
-                target="_blank"
-                rel="noreferrer"
-                className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition flex items-center space-x-1.5 text-xs font-semibold shadow-sm"
-                title="Download / Save Photo"
+            <div className="flex items-center space-x-2 sm:space-x-3">
+              <button
+                type="button"
+                onClick={() => downloadImageFile(fullscreenImage, `chat-photo-${Date.now()}.jpg`)}
+                className="px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white transition flex items-center space-x-1.5 text-xs font-bold shadow-md shadow-emerald-600/30"
+                title="Download / Save Photo to Device"
               >
                 <Download className="w-4 h-4" />
-                <span>Save</span>
-              </a>
+                <span>Save to Device</span>
+              </button>
               <button
                 onClick={() => setFullscreenImage(null)}
-                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
+                className="p-1.5 sm:p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition"
                 title="Close (Esc)"
               >
                 <X className="w-5 h-5" />
@@ -1501,8 +1617,16 @@ export default function ChatPage() {
           </div>
 
           <div className="text-center text-xs text-slate-400 py-1">
-            Click outside or press <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white text-[10px]">Esc</kbd> to return to chat
+            Tap <strong className="text-emerald-400">&quot;Save to Device&quot;</strong> or tap &amp; hold photo to save to gallery
           </div>
+        </div>
+      )}
+
+      {/* ─── FLOATING TOAST: Download & Save Status (Mobile & Desktop) ─── */}
+      {downloadToast && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[1001] px-4 py-2.5 rounded-2xl bg-slate-900/95 text-white border border-slate-700 shadow-2xl flex items-center space-x-2.5 text-xs font-semibold backdrop-blur-md animate-fade-in pointer-events-none">
+          <Download className="w-4 h-4 text-emerald-400 shrink-0 animate-bounce" />
+          <span>{downloadToast}</span>
         </div>
       )}
     </div>
