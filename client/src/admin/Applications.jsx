@@ -31,6 +31,17 @@ export default function Applications() {
     loadSellers();
   }, []);
 
+  const handleToggleTest = async (sellerId) => {
+    try {
+      const res = await api(`/sellers/${sellerId}/toggle-test`, { method: 'PATCH' });
+      setSellers((prev) =>
+        prev.map((s) => (s._id === sellerId ? { ...s, isTestAccount: res.seller?.isTestAccount, accountType: res.seller?.accountType } : s))
+      );
+    } catch (err) {
+      alert('Error toggling account type: ' + err.message);
+    }
+  };
+
   const handleApproveSubmit = async (e) => {
     e.preventDefault();
     if (!pendingApproveModal?.seller) return;
@@ -43,6 +54,8 @@ export default function Applications() {
           securityDepositPaid: Boolean(pendingApproveModal.securityDepositPaid),
           assignedReferralCode: pendingApproveModal.referralCode?.trim() || '',
           commissionRate: Number(pendingApproveModal.commissionRate || 10),
+          isTestAccount: Boolean(pendingApproveModal.isTestAccount),
+          accountType: pendingApproveModal.isTestAccount ? 'test' : 'client',
         },
       });
       alert(`🎉 Store "${pendingApproveModal.seller.storeName}" has been successfully approved! Notification sent.`);
@@ -64,6 +77,8 @@ export default function Applications() {
         method: 'POST',
         body: {
           reason: pendingRejectModal.reason?.trim() || 'Application does not meet platform merchant criteria.',
+          isTestAccount: Boolean(pendingRejectModal.isTestAccount),
+          accountType: pendingRejectModal.isTestAccount ? 'test' : 'client',
         },
       });
       alert(`Seller application for "${pendingRejectModal.seller.storeName}" has been rejected.`);
@@ -208,6 +223,29 @@ export default function Applications() {
                           )}
                         </div>
                         <small className="muted block">{s.description || 'Merchant Store'}</small>
+                        <div style={{ marginTop: 4 }}>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleTest(s._id)}
+                            title="Click to toggle Test Account / Client Account"
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: 12,
+                              fontSize: 10.5,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              background: s.isTestAccount ? '#f3e8ff' : '#ecfdf5',
+                              color: s.isTestAccount ? '#7e22ce' : '#047857',
+                              border: `1px solid ${s.isTestAccount ? '#d8b4fe' : '#a7f3d0'}`,
+                            }}
+                          >
+                            {s.isTestAccount ? '🧪 Test Account' : '👤 Client Account'}
+                            <span style={{ fontSize: 9, opacity: 0.7 }}>⇄</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </td>
@@ -286,14 +324,14 @@ export default function Applications() {
                         <>
                           <button
                             type="button"
-                            onClick={() => setPendingApproveModal({ seller: s, securityDepositAmount: 500, securityDepositPaid: true, referralCode: s.securityDeposit?.referralCode || s.referralCode || '', commissionRate: s.commissionRate || 10 })}
+                            onClick={() => setPendingApproveModal({ seller: s, securityDepositAmount: 500, securityDepositPaid: true, referralCode: s.securityDeposit?.referralCode || s.referralCode || '', commissionRate: s.commissionRate || 10, isTestAccount: Boolean(s.isTestAccount) })}
                             style={{ padding: '6px 12px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 800, cursor: 'pointer' }}
                           >
                             ✅ Approve
                           </button>
                           <button
                             type="button"
-                            onClick={() => setPendingRejectModal({ seller: s, reason: '' })}
+                            onClick={() => setPendingRejectModal({ seller: s, reason: '', isTestAccount: Boolean(s.isTestAccount) })}
                             style={{ padding: '6px 12px', background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
                           >
                             ❌ Reject
@@ -302,7 +340,7 @@ export default function Applications() {
                       ) : s.status === 'active' ? (
                         <button
                           type="button"
-                          onClick={() => setPendingApproveModal({ seller: s, securityDepositAmount: s.securityDeposit?.amount || 500, securityDepositPaid: s.securityDeposit?.paid || false, referralCode: s.securityDeposit?.referralCode || '', commissionRate: s.commissionRate || 10 })}
+                          onClick={() => setPendingApproveModal({ seller: s, securityDepositAmount: s.securityDeposit?.amount || 500, securityDepositPaid: s.securityDeposit?.paid || false, referralCode: s.securityDeposit?.referralCode || '', commissionRate: s.commissionRate || 10, isTestAccount: Boolean(s.isTestAccount) })}
                           style={{ padding: '5px 10px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
                         >
                           ✏️ Edit Deposit / Settings
@@ -310,7 +348,7 @@ export default function Applications() {
                       ) : (
                         <button
                           type="button"
-                          onClick={() => setPendingApproveModal({ seller: s, securityDepositAmount: 500, securityDepositPaid: true, referralCode: s.securityDeposit?.referralCode || '', commissionRate: 10 })}
+                          onClick={() => setPendingApproveModal({ seller: s, securityDepositAmount: 500, securityDepositPaid: true, referralCode: s.securityDeposit?.referralCode || '', commissionRate: 10, isTestAccount: Boolean(s.isTestAccount) })}
                           style={{ padding: '5px 10px', background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
                         >
                           🔄 Re-Approve
@@ -345,6 +383,56 @@ export default function Applications() {
                 <div style={{ fontSize: 13, color: '#1e293b' }}>
                   <b>Applicant:</b> {pendingApproveModal.seller.ownerName} &bull; <b>Email:</b> {pendingApproveModal.seller.email}
                 </div>
+              </div>
+
+              {/* Account Classification Toggle (Client Account vs Test Account) */}
+              <div
+                style={{
+                  marginBottom: 14,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: pendingApproveModal.isTestAccount ? '#faf5ff' : '#eff6ff',
+                  border: `1.5px solid ${pendingApproveModal.isTestAccount ? '#d8b4fe' : '#bfdbfe'}`,
+                  padding: '12px 16px',
+                  borderRadius: 8,
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 16 }}>{pendingApproveModal.isTestAccount ? '🧪' : '👤'}</span>
+                    <b style={{ color: pendingApproveModal.isTestAccount ? '#6b21a8' : '#1d4ed8', fontSize: 13.5 }}>
+                      {pendingApproveModal.isTestAccount ? 'Test Seller Account' : 'Client Account (Live Merchant)'}
+                    </b>
+                  </div>
+                  <small style={{ color: pendingApproveModal.isTestAccount ? '#7c3aed' : '#2563eb', fontSize: 11.5, display: 'block', marginTop: 2 }}>
+                    {pendingApproveModal.isTestAccount
+                      ? 'Marked for internal admin testing & software feature verification'
+                      : 'Live client / vendor account operating in the marketplace'}
+                  </small>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPendingApproveModal({
+                      ...pendingApproveModal,
+                      isTestAccount: !pendingApproveModal.isTestAccount,
+                    })
+                  }
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: 20,
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontWeight: 800,
+                    fontSize: 12,
+                    background: pendingApproveModal.isTestAccount ? '#7c3aed' : '#2563eb',
+                    color: '#fff',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+                  }}
+                >
+                  {pendingApproveModal.isTestAccount ? '🧪 Switch to Client' : '👤 Switch to Test'}
+                </button>
               </div>
 
               <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px 16px', borderRadius: 8 }}>
@@ -432,6 +520,48 @@ export default function Applications() {
             </div>
 
             <form onSubmit={handleRejectSubmit} style={{ padding: '18px 22px' }}>
+              {/* Account Classification Toggle in Reject Modal */}
+              <div
+                style={{
+                  marginBottom: 14,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: pendingRejectModal.isTestAccount ? '#faf5ff' : '#f8fafc',
+                  border: `1.5px solid ${pendingRejectModal.isTestAccount ? '#d8b4fe' : '#e2e8f0'}`,
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                }}
+              >
+                <div>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: pendingRejectModal.isTestAccount ? '#6b21a8' : '#334155', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    {pendingRejectModal.isTestAccount ? '🧪 Test Seller Account' : '👤 Client Account'}
+                  </span>
+                  <small style={{ display: 'block', fontSize: 11, color: '#64748b' }}>Account classification record</small>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPendingRejectModal({
+                      ...pendingRejectModal,
+                      isTestAccount: !pendingRejectModal.isTestAccount,
+                    })
+                  }
+                  style={{
+                    padding: '4px 12px',
+                    borderRadius: 14,
+                    border: '1px solid #cbd5e1',
+                    background: pendingRejectModal.isTestAccount ? '#7c3aed' : '#fff',
+                    color: pendingRejectModal.isTestAccount ? '#fff' : '#334155',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                    fontSize: 11.5,
+                  }}
+                >
+                  {pendingRejectModal.isTestAccount ? '🧪 Switch to Client' : 'Mark as Test'}
+                </button>
+              </div>
+
               <div style={{ marginBottom: 16 }}>
                 <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 6 }}>
                   Rejection Reason:

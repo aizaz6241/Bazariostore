@@ -20,6 +20,7 @@ export default function Sellers() {
     phone: '',
     commissionRate: 10,
     city: 'New York',
+    isTestAccount: false,
   });
   const [creating, setCreating] = useState(false);
   const [createErr, setCreateErr] = useState('');
@@ -43,6 +44,7 @@ export default function Sellers() {
     plainPassword: '',
     city: '',
     street: '',
+    isTestAccount: false,
   });
   const [showAccPassword, setShowAccPassword] = useState(true);
   const [savingAccount, setSavingAccount] = useState(false);
@@ -129,6 +131,7 @@ export default function Sellers() {
       plainPassword: seller.plainPassword || '',
       city: seller.address?.city || '',
       street: seller.address?.street || '',
+      isTestAccount: Boolean(seller.isTestAccount),
     });
 
     // Initialize Upgrades Form fields
@@ -223,6 +226,8 @@ export default function Sellers() {
           city: accForm.city,
           street: accForm.street,
         },
+        isTestAccount: Boolean(accForm.isTestAccount),
+        accountType: accForm.isTestAccount ? 'test' : 'client',
       };
 
       if (accForm.plainPassword) {
@@ -460,6 +465,7 @@ export default function Sellers() {
         phone: '',
         commissionRate: 10,
         city: 'New York',
+        isTestAccount: false,
       });
       loadSellers();
     } catch (err) {
@@ -469,12 +475,29 @@ export default function Sellers() {
     }
   };
 
+  // ─── TOGGLE TEST / CLIENT ACCOUNT HANDLER ───
+  const handleToggleTest = async (sellerId) => {
+    try {
+      const res = await api(`/sellers/${sellerId}/toggle-test`, { method: 'PATCH' });
+      setSellers((prev) =>
+        prev.map((s) => (s._id === sellerId ? { ...s, isTestAccount: res.seller?.isTestAccount, accountType: res.seller?.accountType } : s))
+      );
+      if (profileSeller?._id === sellerId) {
+        setProfileSeller((prev) => ({ ...prev, isTestAccount: res.seller?.isTestAccount, accountType: res.seller?.accountType }));
+      }
+    } catch (err) {
+      alert('Error updating account type: ' + err.message);
+    }
+  };
+
   const activeSellers = sellers.filter((s) => s.status !== 'pending_approval');
 
   // Filtered list
   const filtered = activeSellers.filter((s) => {
     const score = s.accountHealth?.score !== undefined ? s.accountHealth.score : 100;
     if (statusFilter === 'active' && s.status !== 'active') return false;
+    if (statusFilter === 'client' && s.isTestAccount) return false;
+    if (statusFilter === 'test' && !s.isTestAccount) return false;
     if (statusFilter === 'frozen' && s.status !== 'frozen') return false;
     if (statusFilter === 'suspended' && s.status !== 'suspended') return false;
     if (statusFilter === 'warned' && !s.warning?.active) return false;
@@ -489,6 +512,8 @@ export default function Sellers() {
     return match;
   });
 
+  const clientCount = activeSellers.filter((s) => !s.isTestAccount).length;
+  const testCount = activeSellers.filter((s) => s.isTestAccount).length;
   const healthyCount = activeSellers.filter((s) => s.status === 'active' && (s.accountHealth?.score ?? 100) >= 80).length;
   const warnedCount = activeSellers.filter((s) => s.warning?.active).length;
   const frozenCount = activeSellers.filter((s) => s.status === 'frozen' || s.status === 'suspended').length;
@@ -582,6 +607,38 @@ export default function Sellers() {
               }}
             >
               🟢 Active
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('client')}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 20,
+                border: statusFilter === 'client' ? '1.5px solid #059669' : '1px solid #cbd5e1',
+                background: statusFilter === 'client' ? '#ecfdf5' : '#ffffff',
+                color: statusFilter === 'client' ? '#047857' : '#64748b',
+                fontWeight: 700,
+                fontSize: 12,
+                cursor: 'pointer',
+              }}
+            >
+              👤 Client ({clientCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('test')}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 20,
+                border: statusFilter === 'test' ? '1.5px solid #7c3aed' : '1px solid #cbd5e1',
+                background: statusFilter === 'test' ? '#faf5ff' : '#ffffff',
+                color: statusFilter === 'test' ? '#6b21a8' : '#64748b',
+                fontWeight: 700,
+                fontSize: 12,
+                cursor: 'pointer',
+              }}
+            >
+              🧪 Test ({testCount})
             </button>
             <button
               type="button"
@@ -714,6 +771,27 @@ export default function Sellers() {
 
                   {/* Status Badges */}
                   <div className="seller-card-badges">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleTest(s._id)}
+                      title="Click to toggle Test Account / Client Account"
+                      style={{
+                        background: s.isTestAccount ? '#f3e8ff' : '#ecfdf5',
+                        color: s.isTestAccount ? '#7e22ce' : '#047857',
+                        border: `1px solid ${s.isTestAccount ? '#d8b4fe' : '#a7f3d0'}`,
+                        fontWeight: 700,
+                        padding: '3px 8px',
+                        borderRadius: 12,
+                        fontSize: 10.5,
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      {s.isTestAccount ? '🧪 Test' : '👤 Client'}
+                      <span style={{ fontSize: 9, opacity: 0.7 }}>⇄</span>
+                    </button>
                     <span
                       style={{
                         background: s.status === 'active' ? '#ecfdf5' : s.status === 'frozen' ? '#eff6ff' : '#fef2f2',
@@ -953,6 +1031,27 @@ export default function Sellers() {
                       </td>
                       <td>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleTest(s._id)}
+                            title="Click to toggle Test Account / Client Account"
+                            style={{
+                              background: s.isTestAccount ? '#f3e8ff' : '#ecfdf5',
+                              color: s.isTestAccount ? '#7e22ce' : '#047857',
+                              border: `1px solid ${s.isTestAccount ? '#d8b4fe' : '#a7f3d0'}`,
+                              fontWeight: 700,
+                              padding: '2px 8px',
+                              borderRadius: 10,
+                              fontSize: 10.5,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                            }}
+                          >
+                            {s.isTestAccount ? '🧪 Test Account' : '👤 Client Account'}
+                            <span style={{ fontSize: 9, opacity: 0.7 }}>⇄</span>
+                          </button>
                           <span
                             style={{
                               background: s.status === 'active' ? '#ecfdf5' : s.status === 'frozen' ? '#eff6ff' : '#fef2f2',
@@ -1178,6 +1277,51 @@ export default function Sellers() {
                   )}
 
                   <form onSubmit={handleSaveAccount}>
+                    {/* Account Classification Toggle (Client Account vs Test Account) */}
+                    <div
+                      style={{
+                        marginBottom: 16,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        background: accForm.isTestAccount ? '#faf5ff' : '#eff6ff',
+                        border: `1.5px solid ${accForm.isTestAccount ? '#d8b4fe' : '#bfdbfe'}`,
+                        padding: '12px 16px',
+                        borderRadius: 10,
+                      }}
+                    >
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 16 }}>{accForm.isTestAccount ? '🧪' : '👤'}</span>
+                          <b style={{ color: accForm.isTestAccount ? '#6b21a8' : '#1d4ed8', fontSize: 13.5 }}>
+                            {accForm.isTestAccount ? 'Test Seller Account' : 'Client Account (Live Merchant)'}
+                          </b>
+                        </div>
+                        <small style={{ color: accForm.isTestAccount ? '#7c3aed' : '#2563eb', fontSize: 11.5, display: 'block', marginTop: 2 }}>
+                          {accForm.isTestAccount
+                            ? 'Marked for internal QA & software feature testing (will not be mixed with live clients)'
+                            : 'Real merchant store selling live products to customers'}
+                        </small>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAccForm({ ...accForm, isTestAccount: !accForm.isTestAccount })}
+                        style={{
+                          padding: '6px 14px',
+                          borderRadius: 20,
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontWeight: 800,
+                          fontSize: 12,
+                          background: accForm.isTestAccount ? '#7c3aed' : '#2563eb',
+                          color: '#fff',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+                        }}
+                      >
+                        {accForm.isTestAccount ? '🧪 Switch to Client' : '👤 Switch to Test'}
+                      </button>
+                    </div>
+
                     <div className="seller-form-grid-2">
                       <div>
                         <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b', display: 'block', marginBottom: 4 }}>
@@ -2686,6 +2830,51 @@ export default function Sellers() {
                     required
                   />
                 </div>
+              </div>
+
+              {/* Account Type Toggle (Client Account vs Test Account) */}
+              <div
+                style={{
+                  marginBottom: 16,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: createForm.isTestAccount ? '#faf5ff' : '#eff6ff',
+                  border: `1.5px solid ${createForm.isTestAccount ? '#d8b4fe' : '#bfdbfe'}`,
+                  padding: '12px 16px',
+                  borderRadius: 8,
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 16 }}>{createForm.isTestAccount ? '🧪' : '👤'}</span>
+                    <b style={{ color: createForm.isTestAccount ? '#6b21a8' : '#1d4ed8', fontSize: 13.5 }}>
+                      {createForm.isTestAccount ? 'Test Seller Account' : 'Client Account (Live Merchant)'}
+                    </b>
+                  </div>
+                  <small style={{ color: createForm.isTestAccount ? '#7c3aed' : '#2563eb', fontSize: 11.5, display: 'block', marginTop: 2 }}>
+                    {createForm.isTestAccount
+                      ? 'Marked for internal QA & software feature testing (will not be mixed with live clients)'
+                      : 'Live merchant store for real customer transactions'}
+                  </small>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCreateForm({ ...createForm, isTestAccount: !createForm.isTestAccount })}
+                  style={{
+                    padding: '6px 14px',
+                    borderRadius: 20,
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontWeight: 800,
+                    fontSize: 12,
+                    background: createForm.isTestAccount ? '#7c3aed' : '#2563eb',
+                    color: '#fff',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
+                  }}
+                >
+                  {createForm.isTestAccount ? '🧪 Switch to Client' : '👤 Switch to Test'}
+                </button>
               </div>
 
               <div className="modal-bottom-actions">

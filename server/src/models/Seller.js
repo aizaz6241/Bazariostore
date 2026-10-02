@@ -76,6 +76,9 @@ const sellerSchema = new mongoose.Schema(
     },
     commissionRate: { type: Number, default: 10 },
     status: { type: String, enum: ['active', 'suspended', 'frozen', 'pending_approval'], default: 'active' },
+    // Account Classification: Client (Real Merchant) vs Test (Internal QA & Feature Testing)
+    isTestAccount: { type: Boolean, default: false },
+    accountType: { type: String, enum: ['client', 'test'], default: 'client' },
     freezeReason: { type: String, default: '' },
     frozenAt: Date,
     frozenBy: String,

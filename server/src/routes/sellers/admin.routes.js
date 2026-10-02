@@ -62,7 +62,7 @@ router.get('/', authAdmin('sellers'), async (req, res) => {
 // POST /api/sellers (Admin creates a new seller credentials)
 router.post('/', authAdmin('sellers'), async (req, res) => {
   try {
-    const { storeName, ownerName, email, password, phone, commissionRate, city } = req.body;
+    const { storeName, ownerName, email, password, phone, commissionRate, city, isTestAccount, accountType } = req.body;
     if (!storeName || !ownerName || !email || !password) {
       return res.status(400).json({ message: 'Store name, owner name, email, and password are required' });
     }
@@ -77,6 +77,7 @@ router.post('/', authAdmin('sellers'), async (req, res) => {
       storeSlug = `${baseSlug}-${counter++}`;
     }
 
+    const isTest = Boolean(isTestAccount || accountType === 'test');
     const passwordHash = await bcrypt.hash(password, 10);
     const seller = new Seller({
       storeName,
@@ -88,6 +89,8 @@ router.post('/', authAdmin('sellers'), async (req, res) => {
       storeSlug,
       commissionRate: commissionRate !== undefined ? Number(commissionRate) : 10,
       address: { city: city || 'New York' },
+      isTestAccount: isTest,
+      accountType: isTest ? 'test' : 'client',
       status: 'active',
       verified: true,
     });
@@ -643,6 +646,8 @@ router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
       securityDepositPaid,
       referralCode,
       note,
+      isTestAccount,
+      accountType,
     } = req.body;
 
     if (storeName) seller.storeName = storeName;
@@ -652,6 +657,14 @@ router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
     if (commissionRate !== undefined) seller.commissionRate = Number(commissionRate);
     if (status) seller.status = status;
     if (address) seller.address = { ...seller.address, ...address };
+
+    if (isTestAccount !== undefined) {
+      seller.isTestAccount = Boolean(isTestAccount);
+      seller.accountType = seller.isTestAccount ? 'test' : 'client';
+    } else if (accountType !== undefined) {
+      seller.accountType = accountType === 'test' ? 'test' : 'client';
+      seller.isTestAccount = seller.accountType === 'test';
+    }
 
     if (securityDepositAmount !== undefined || securityDepositPaid !== undefined || referralCode !== undefined) {
       const isPaid = securityDepositPaid !== undefined ? Boolean(securityDepositPaid) : Boolean(seller.securityDeposit?.paid);
@@ -758,7 +771,7 @@ router.post('/:id/withdrawal-limit', authAdmin(), async (req, res) => {
 // POST /api/sellers/:id/approve (Admin approves a pending seller registration)
 router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
   try {
-    const { securityDepositPaid, securityDepositAmount, referralCode, assignedReferralCode, commissionRate, note } = req.body || {};
+    const { securityDepositPaid, securityDepositAmount, referralCode, assignedReferralCode, commissionRate, note, isTestAccount, accountType } = req.body || {};
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
@@ -769,6 +782,14 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
     seller.status = 'active';
     seller.verified = true;
     if (commissionRate !== undefined) seller.commissionRate = Number(commissionRate);
+
+    if (isTestAccount !== undefined) {
+      seller.isTestAccount = Boolean(isTestAccount);
+      seller.accountType = seller.isTestAccount ? 'test' : 'client';
+    } else if (accountType !== undefined) {
+      seller.accountType = accountType === 'test' ? 'test' : 'client';
+      seller.isTestAccount = seller.accountType === 'test';
+    }
 
     seller.securityDeposit = {
       paid: isPaid,
@@ -885,17 +906,56 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
 // POST /api/sellers/:id/reject (Admin rejects a pending seller registration)
 router.post('/:id/reject', authAdmin('sellers'), async (req, res) => {
   try {
-    const { reason } = req.body || {};
+    const { reason, isTestAccount, accountType } = req.body || {};
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
     seller.status = 'suspended';
     seller.freezeReason = reason || 'KYC verification or document review rejected by platform administrator.';
+
+    if (isTestAccount !== undefined) {
+      seller.isTestAccount = Boolean(isTestAccount);
+      seller.accountType = seller.isTestAccount ? 'test' : 'client';
+    } else if (accountType !== undefined) {
+      seller.accountType = accountType === 'test' ? 'test' : 'client';
+      seller.isTestAccount = seller.accountType === 'test';
+    }
+
     await seller.save();
 
     audit(req, 'reject', 'seller_registration', seller._id, `Rejected registration for ${seller.storeName}. Reason: ${reason}`);
 
     res.json({ message: `Registration for ${seller.storeName} rejected.`, seller });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PATCH /api/sellers/:id/toggle-test (Quick toggle Test Account vs Client Account)
+router.patch('/:id/toggle-test', authAdmin('sellers'), async (req, res) => {
+  try {
+    const seller = await Seller.findById(req.params.id);
+    if (!seller) return res.status(404).json({ message: 'Seller not found' });
+
+    seller.isTestAccount = !seller.isTestAccount;
+    seller.accountType = seller.isTestAccount ? 'test' : 'client';
+    await seller.save();
+
+    audit(req, 'update', 'seller', seller._id, `Toggled account type to ${seller.accountType} (${seller.isTestAccount ? 'Test' : 'Client'}) for ${seller.storeName}`);
+
+    const safe = seller.toObject();
+    delete safe.passwordHash;
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to('admins').emit('seller:status_update', { seller: safe });
+    }
+
+    res.json({
+      ok: true,
+      message: `Store "${seller.storeName}" is now set to ${seller.isTestAccount ? '🧪 TEST ACCOUNT' : '👤 CLIENT ACCOUNT'}.`,
+      seller: safe,
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
