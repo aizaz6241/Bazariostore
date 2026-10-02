@@ -53,6 +53,8 @@ const withdrawalSchema = new mongoose.Schema(
     // For deposit: seller provides reference (e.g. UTR of payment they made)
     depositRef: { type: String, default: '' },
     depositNote: { type: String, default: '' },
+    // Admin Helping Amount (internal contribution from admin, hidden from seller)
+    helpingAmount: { type: Number, default: 0 },
     // Status
     status: { type: String, enum: ['pending', 'approved', 'rejected', 'completed'], default: 'pending' },
     adminNote: { type: String, default: '' },

@@ -18,6 +18,7 @@ export default function AdminWithdrawals() {
 
   // Per-request approval forms
   const [approvedAmountMap, setApprovedAmountMap] = useState({});
+  const [helpingAmountMap, setHelpingAmountMap] = useState({});
   const [noteMap, setNoteMap] = useState({});
   const [refMap, setRefMap] = useState({});
 
@@ -28,6 +29,7 @@ export default function AdminWithdrawals() {
     sellerId: '',
     type: 'credit',
     amount: '',
+    helpingAmount: '',
     reason: '',
     reference: '',
   });
@@ -65,10 +67,13 @@ export default function AdminWithdrawals() {
         setSummary(res.summary || {});
 
         const aMap = {};
+        const hMap = {};
         (res.requests || []).forEach((r) => {
           aMap[r._id] = r.amount;
+          if (r.helpingAmount !== undefined) hMap[r._id] = r.helpingAmount;
         });
         setApprovedAmountMap((prev) => ({ ...aMap, ...prev }));
+        setHelpingAmountMap((prev) => ({ ...hMap, ...prev }));
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -244,6 +249,11 @@ export default function AdminWithdrawals() {
 
     setProcessing((p) => ({ ...p, [id]: true }));
     try {
+      const isDepositReq = req?.type === 'deposit' || reqType === 'deposit';
+      const helpingAmt = (status === 'approved' && isDepositReq)
+        ? (helpingAmountMap[id] !== undefined && helpingAmountMap[id] !== '' ? Number(helpingAmountMap[id]) : 0)
+        : undefined;
+
       await api(`/sellers/withdrawals/${id}`, {
         method: 'PUT',
         body: {
@@ -251,6 +261,7 @@ export default function AdminWithdrawals() {
           adminNote: noteMap[id] || '',
           transactionRef: refMap[id] || '',
           approvedAmount: status === 'approved' ? appAmt : undefined,
+          helpingAmount: helpingAmt,
         },
       });
       load();
@@ -271,17 +282,19 @@ export default function AdminWithdrawals() {
 
     setAdjusting(true);
     try {
+      const helpingAmt = (adjustForm.type === 'credit' && adjustForm.helpingAmount) ? Number(adjustForm.helpingAmount) : 0;
       const res = await api(`/sellers/${adjustForm.sellerId}/wallet/adjust`, {
         method: 'POST',
         body: {
           type: adjustForm.type,
           amount: amt,
+          helpingAmount: helpingAmt,
           reason: adjustForm.reason,
           reference: adjustForm.reference,
         },
       });
       setAdjustMsg(`✅ ${res.message || 'Wallet adjusted successfully!'}`);
-      setAdjustForm((f) => ({ ...f, amount: '', reason: '', reference: '' }));
+      setAdjustForm((f) => ({ ...f, amount: '', helpingAmount: '', reason: '', reference: '' }));
       load();
       setTimeout(() => {
         setShowAdjustModal(false);
@@ -472,12 +485,18 @@ export default function AdminWithdrawals() {
                     <>
                       <div>
                         <span className="muted-sm block">Payment Ref / UTR:</span>
-                        <small><b>{r.depositRef || 'N/A'}</b></small>
+                        <small><b>{r.depositRef || r.transactionRef || 'N/A'}</b></small>
                       </div>
                       <div>
-                        <span className="muted-sm block">Seller Note:</span>
-                        <small>{r.depositNote || 'None'}</small>
+                        <span className="muted-sm block">{r.isManualAdjustment ? 'Reason / Note:' : 'Seller Note:'}</span>
+                        <small>{r.depositNote || r.adminNote || 'None'}</small>
                       </div>
+                      {Number(r.helpingAmount) > 0 && (
+                        <div>
+                          <span className="muted-sm block">🤝 Helping Amount:</span>
+                          <small><b style={{ color: '#7c3aed' }}>${Number(r.helpingAmount).toLocaleString('en-US')}</b> <span style={{ fontSize: 10, color: '#6b7280' }}>(Admin Internal)</span></small>
+                        </div>
+                      )}
                     </>
                   ) : (
                     <>
@@ -550,6 +569,22 @@ export default function AdminWithdrawals() {
                           style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, fontWeight: 700 }}
                         />
                       </div>
+                      {isDeposit && (
+                        <div>
+                          <label style={{ fontSize: 11, fontWeight: 800, display: 'block', marginBottom: 4, color: '#7c3aed' }}>
+                            🤝 Helping Amount ($ USD) <span style={{ fontSize: 10, fontWeight: 600, color: '#6b7280' }}>(Admin Internal • Hidden from Seller)</span>:
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            placeholder="0"
+                            value={helpingAmountMap[r._id] !== undefined ? helpingAmountMap[r._id] : (r.helpingAmount || '')}
+                            onChange={(e) => setHelpingAmountMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
+                            style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1.5px solid #c4b5fd', background: '#faf5ff', fontSize: 13, fontWeight: 700, color: '#6b21a8' }}
+                          />
+                        </div>
+                      )}
                       <div>
                         <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4 }}>
                           Bank Ref / UTR Number:
@@ -1173,6 +1208,27 @@ export default function AdminWithdrawals() {
                       mode={adjustForm.type === 'credit' ? 'deposit' : 'withdraw'}
                     />
                   </div>
+
+                  {/* Helping Amount Input (Admin Internal • Hidden from Seller) */}
+                  {!isDebit && (
+                    <div style={{ background: '#faf5ff', border: '1.5px solid #c4b5fd', borderRadius: 8, padding: '10px 14px' }}>
+                      <label style={{ fontSize: 12, fontWeight: 800, color: '#7c3aed', display: 'block', marginBottom: 4 }}>
+                        🤝 Helping Amount ($ USD) <span style={{ fontSize: 10.5, fontWeight: 600, color: '#6b7280' }}>(Admin Internal • Hidden from Seller)</span>:
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        placeholder="0 (e.g. how much admin contributed as help)"
+                        value={adjustForm.helpingAmount}
+                        onChange={(e) => setAdjustForm((f) => ({ ...f, helpingAmount: e.target.value }))}
+                        style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #c4b5fd', background: '#ffffff', fontSize: 13, fontWeight: 700, color: '#6b21a8' }}
+                      />
+                      <small style={{ color: '#8b5cf6', fontSize: 11, marginTop: 4, display: 'block' }}>
+                        Admin ki taraf se di gayi help amount. Seller ko chat ya wallet mein ye amount show nahi hoga.
+                      </small>
+                    </div>
+                  )}
 
                   {/* Excess Debit Warning */}
                   {isExcessDebit && (

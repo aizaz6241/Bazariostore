@@ -120,6 +120,7 @@ const sellerSchema = new mongoose.Schema(
       pendingWithdrawal: { type: Number, default: 0 }, // pending withdrawal requests
       totalWithdrawn: { type: Number, default: 0 },    // total paid out
       securityDeposit: { type: Number, default: 0 },   // security deposit amount recorded
+      totalHelpingAmount: { type: Number, default: 0 },// cumulative helping amount provided by admin (hidden from seller)
     },
     // KYC Verification / Identity & Financial Documents uploaded during self-registration
     kycDocuments: {

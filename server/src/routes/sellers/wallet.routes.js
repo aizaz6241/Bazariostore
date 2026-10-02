@@ -122,6 +122,15 @@ router.get('/wallet', authSellerOrAdmin, async (req, res) => {
     const w = seller.wallet || {};
     const requests = await Withdrawal.find({ seller: seller._id }).sort({ createdAt: -1 }).limit(100);
 
+    // Sanitize requests: helpingAmount is strictly an admin internal field and hidden from seller
+    const sanitizedRequests = requests.map((r) => {
+      const obj = r.toObject();
+      if (!req.admin) {
+        delete obj.helpingAmount;
+      }
+      return obj;
+    });
+
     const defaultLimit = {
       maxAmount: 500,
       minAmount: 10,
@@ -156,7 +165,7 @@ router.get('/wallet', authSellerOrAdmin, async (req, res) => {
       withdrawalLimit: seller.withdrawalLimit || defaultLimit,
       withdrawalMethods: seller.withdrawalMethods || {},
       pendingOrdersCount,
-      requests,
+      requests: sanitizedRequests,
       targets: seller.targets || [],
       seller: {
         storeName: seller.storeName,
@@ -666,7 +675,7 @@ router.get('/withdrawals/all', authAdmin('finance'), async (req, res) => {
 // PUT /api/sellers/withdrawals/:id — admin approves or rejects
 router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
   try {
-    const { status, adminNote, transactionRef, approvedAmount } = req.body;
+    const { status, adminNote, transactionRef, approvedAmount, helpingAmount } = req.body;
     if (!['approved', 'rejected'].includes(status)) {
       return res.status(400).json({ message: 'Invalid status. Use: approved or rejected' });
     }
@@ -686,6 +695,14 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
       const parsed = Number(approvedAmount);
       if (!isNaN(parsed) && parsed >= 0) {
         finalAmount = parsed;
+      }
+    }
+
+    // Determine admin helping amount (for deposits)
+    if (helpingAmount !== undefined && helpingAmount !== null && helpingAmount !== '') {
+      const parsedHelping = Number(helpingAmount);
+      if (!isNaN(parsedHelping) && parsedHelping >= 0) {
+        reqDoc.helpingAmount = parsedHelping;
       }
     }
 
@@ -717,6 +734,9 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
         // Add the actually approved/credited amount to balance
         seller.wallet.balance = (seller.wallet.balance || 0) + finalAmount;
         seller.wallet.totalDeposited = (seller.wallet.totalDeposited || 0) + finalAmount;
+        if (reqDoc.helpingAmount > 0) {
+          seller.wallet.totalHelpingAmount = (seller.wallet.totalHelpingAmount || 0) + reqDoc.helpingAmount;
+        }
       }
     } else {
       // Withdrawal
@@ -847,7 +867,9 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
         pendingWithdrawal: seller.wallet.pendingWithdrawal,
         pendingDeposit: seller.wallet.pendingDeposit,
       });
-      io.to(`seller:${seller._id}`).emit('withdrawal:update', reqDoc);
+      const sellerDoc = reqDoc.toObject ? reqDoc.toObject() : { ...reqDoc };
+      delete sellerDoc.helpingAmount;
+      io.to(`seller:${seller._id}`).emit('withdrawal:update', sellerDoc);
       io.to('admins').emit('withdrawal:update', reqDoc);
     }
 
@@ -861,7 +883,7 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
 // POST /api/sellers/:id/wallet/adjust — Super Admin directly adds or deducts funds from seller wallet anytime
 router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
   try {
-    const { type, amount, reason, reference } = req.body; // type: 'credit' | 'debit'
+    const { type, amount, reason, reference, helpingAmount } = req.body; // type: 'credit' | 'debit'
     const amt = Number(amount);
 
     if (!amt || amt <= 0) {
@@ -876,9 +898,20 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
 
     seller.wallet = seller.wallet || {};
 
+    let parsedHelping = 0;
+    if (type === 'credit' && helpingAmount !== undefined && helpingAmount !== null && helpingAmount !== '') {
+      const numHelping = Number(helpingAmount);
+      if (!isNaN(numHelping) && numHelping >= 0) {
+        parsedHelping = numHelping;
+      }
+    }
+
     if (type === 'credit') {
       seller.wallet.balance = (seller.wallet.balance || 0) + amt;
       seller.wallet.totalDeposited = (seller.wallet.totalDeposited || 0) + amt;
+      if (parsedHelping > 0) {
+        seller.wallet.totalHelpingAmount = (seller.wallet.totalHelpingAmount || 0) + parsedHelping;
+      }
     } else {
       if (amt > (seller.wallet.balance || 0)) {
         return res.status(400).json({ message: `Insufficient balance to debit. Available: $${seller.wallet.balance || 0}` });
@@ -896,6 +929,7 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
       storeName: seller.storeName,
       amount: amt,
       approvedAmount: amt,
+      helpingAmount: (type === 'credit' && parsedHelping > 0) ? parsedHelping : 0,
       balanceAfter: seller.wallet.balance,
       isManualAdjustment: true,
       status: 'approved',
