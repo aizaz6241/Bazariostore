@@ -1,8 +1,6 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/components/AuthProvider';
-import WalletModal from '@/components/WalletModal';
 import {
   Wallet,
   ArrowDownLeft,
@@ -10,7 +8,6 @@ import {
   Calendar,
   Filter,
   TrendingUp,
-  TrendingDown,
   Clock,
   Shield,
   Award,
@@ -19,22 +16,27 @@ import {
   Loader2,
   RefreshCw,
   Search,
+  Building2,
+  Coins,
+  X,
 } from 'lucide-react';
+import { formatMoney, formatUSDT, USDT_INR_RATE, USDT_PKR_RATE } from '@/lib/utils/currency';
 
 export default function WalletPage() {
-  const { user } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState('');
   const [period, setPeriod] = useState('all');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [searchTx, setSearchTx] = useState('');
-  const [currencyFilter, setCurrencyFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all'); // 'all', 'earnings', 'client_activity', 'payouts'
+  const [currencyFilter, setCurrencyFilter] = useState('all'); // 'all', 'USDT', 'INR', 'PKR'
 
-  // Payout Drawer state
+  // Payout / Withdrawal Drawer Form state
   const [showPayoutForm, setShowPayoutForm] = useState(false);
   const [payoutAmount, setPayoutAmount] = useState('');
-  const [payoutCurrency, setPayoutCurrency] = useState('PKR');
+  const [payoutCurrency, setPayoutCurrency] = useState('USDT');
   const [payoutNote, setPayoutNote] = useState('');
   const [payoutLoading, setPayoutLoading] = useState(false);
   const [payoutMsg, setPayoutMsg] = useState({ text: '', type: '' });
@@ -42,6 +44,7 @@ export default function WalletPage() {
   const fetchWallet = async (selectedPeriod = period, start = customStart, end = customEnd) => {
     try {
       setLoading(true);
+      setErrorMsg('');
       const token = localStorage.getItem('portal_token');
       let url = `/api/wallet?period=${selectedPeriod}`;
       if (selectedPeriod === 'custom') {
@@ -56,9 +59,13 @@ export default function WalletPage() {
       if (res.ok) {
         const json = await res.json();
         setData(json);
+      } else {
+        const errJson = await res.json().catch(() => ({}));
+        setErrorMsg(errJson.message || 'Failed to load wallet statement');
       }
     } catch (err) {
-      console.error('Fetch wallet page error:', err);
+      setErrorMsg('Network error connecting to financial service');
+      console.error('Fetch wallet error:', err);
     } finally {
       setLoading(false);
     }
@@ -107,17 +114,14 @@ export default function WalletPage() {
       });
 
       if (res.ok) {
-        setPayoutMsg({ text: 'Payout recorded and deducted from wallet!', type: 'success' });
+        setPayoutMsg({ text: 'Payout recorded successfully!', type: 'success' });
         setPayoutAmount('');
         setPayoutNote('');
-        setTimeout(() => {
-          setShowPayoutForm(false);
-          setPayoutMsg({ text: '', type: '' });
-          fetchWallet();
-        }, 1200);
+        setTimeout(() => setShowPayoutForm(false), 1500);
+        fetchWallet();
       } else {
-        const errJson = await res.json();
-        setPayoutMsg({ text: errJson.message || 'Failed to record payout', type: 'error' });
+        const errData = await res.json();
+        setPayoutMsg({ text: errData.message || 'Failed to record payout', type: 'error' });
       }
     } catch (err) {
       setPayoutMsg({ text: 'Network error recording payout', type: 'error' });
@@ -126,73 +130,114 @@ export default function WalletPage() {
     }
   };
 
-  const isAdmin = user?.role === 'admin';
-  const formatMoney = (val, maxDec = 2) => {
-    return Number(val || 0).toLocaleString(undefined, {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: maxDec,
-    });
+  const user = data?.user || {};
+  const isAdmin = user.role === 'admin';
+  const is50Inr = user.commissionLabel === 'inr_50';
+  const balances = data?.balances || {
+    balanceUSDT: 0,
+    balanceINR: 0,
+    balancePKR: 0,
+    totalEarnedUSDT: 0,
+    totalEarnedINR: 0,
+    totalEarnedPKR: 0,
+    totalWithdrawnUSDT: 0,
+    totalWithdrawnINR: 0,
+    totalWithdrawnPKR: 0,
+    totalClientDepositsINR: 0,
+    totalClientWithdrawalsINR: 0,
+    totalClientDepositsUSDT: 0,
+    totalClientWithdrawalsUSDT: 0,
+  };
+  const periodTotals = data?.periodTotals || {
+    earnedUSDT: 0,
+    withdrawnUSDT: 0,
+    netUSDT: 0,
+    earnedINR: 0,
+    withdrawnINR: 0,
+    netINR: 0,
+    earnedPKR: 0,
+    withdrawnPKR: 0,
+    netPKR: 0,
+    count: 0,
   };
 
-  const balances = data?.balances || { balanceINR: 0, balancePKR: 0, totalEarnedINR: 0, totalEarnedPKR: 0, totalWithdrawnINR: 0, totalWithdrawnPKR: 0 };
-  const periodTotals = data?.periodTotals || { earnedINR: 0, earnedPKR: 0, withdrawnINR: 0, withdrawnPKR: 0, netINR: 0, netPKR: 0, count: 0 };
+  // Filter transactions
   const transactions = (data?.transactions || []).filter((tx) => {
-    if (currencyFilter !== 'all' && tx.currency !== currencyFilter) return false;
-    if (!searchTx.trim()) return true;
-    const q = searchTx.toLowerCase().trim();
-    return (
-      tx.description?.toLowerCase().includes(q) ||
-      tx.storeName?.toLowerCase().includes(q) ||
-      tx.sourceRef?.toLowerCase().includes(q) ||
-      tx.details?.toLowerCase().includes(q)
-    );
+    if (searchTx.trim()) {
+      const q = searchTx.toLowerCase();
+      const matchDesc = tx.description?.toLowerCase().includes(q);
+      const matchStore = tx.storeName?.toLowerCase().includes(q);
+      const matchRef = tx.sourceRef?.toLowerCase().includes(q);
+      const matchDetails = tx.details?.toLowerCase().includes(q);
+      if (!matchDesc && !matchStore && !matchRef && !matchDetails) return false;
+    }
+
+    if (typeFilter === 'earnings') {
+      if (tx.type !== 'credit') return false;
+    } else if (typeFilter === 'client_activity') {
+      if (!tx.isClientActivity && tx.type !== 'activity' && !tx.category?.startsWith('commission')) return false;
+    } else if (typeFilter === 'payouts') {
+      if (tx.type !== 'debit') return false;
+    }
+
+    if (currencyFilter !== 'all') {
+      if (currencyFilter === 'USDT' && tx.currency !== 'USDT' && !tx.amountUSDT) return false;
+      if (currencyFilter === 'INR' && tx.currency !== 'INR') return false;
+      if (currencyFilter === 'PKR' && tx.currency !== 'PKR') return false;
+    }
+
+    return true;
   });
 
   return (
-    <div className="space-y-6 animate-fade-in pb-12">
-      {/* ── Page Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-6 max-w-7xl mx-auto pb-12">
+      {/* ── Top Header Bar ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs">
         <div>
-          <div className="flex items-center space-x-2.5 flex-wrap">
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center space-x-2.5">
-              <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-white flex items-center justify-center font-bold shadow-md shadow-emerald-500/20">
-                <Wallet className="w-5 h-5" />
-              </div>
-              <span>{isAdmin ? 'Admin Profit & Operations Wallet' : 'My Wallet & Financial Statement'}</span>
+          <div className="flex items-center space-x-2.5">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+              Financial Statement & Wallet
             </h1>
-            {data?.user?.commissionLabel && !isAdmin && (
-              <span className={`text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                data.user.commissionLabel === 'inr_50'
-                  ? 'bg-purple-100 text-purple-700 border border-purple-200'
-                  : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-              }`}>
-                {data.user.commissionLabel === 'inr_50' ? '🇮🇳 50% INR Deal' : '🇵🇰 1:1 PKR Deal'}
+            {isAdmin ? (
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                🛡️ Admin Account (50% Personal Handler + 25% Pool)
+              </span>
+            ) : (
+              <span
+                className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                  is50Inr
+                    ? 'bg-purple-100 text-purple-800 border-purple-200'
+                    : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                }`}
+              >
+                {is50Inr ? '🇮🇳 50% INR Split Deal' : '🇵🇰 1:1 PKR Fixed Deal'}
               </span>
             )}
           </div>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            {isAdmin
-              ? `Live Admin Treasury Pool • Shared 50-50 across ${data?.activeAdminsCount || 2} active Admins`
-              : data?.user?.commissionLabel === 'inr_50'
-              ? 'Active Agreement: 50% Indian Rupees from all client store deposits'
-              : 'Active Agreement: 1 PKR per 1 INR of client deposits + platform bonuses'}
+          <p className="text-xs sm:text-sm text-slate-500 mt-1 flex items-center space-x-2 flex-wrap">
+            <span>
+              Real-time ledger connected with client store deposits and withdrawals.
+            </span>
+            <span className="text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-xs">
+              Binance Auto-Conversion: 1 USDT ≈ {USDT_INR_RATE} INR / {USDT_PKR_RATE} PKR
+            </span>
           </p>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 self-start sm:self-auto shrink-0">
           <button
             onClick={() => fetchWallet()}
             disabled={loading}
-            className="p-2 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-slate-900 shadow-xs transition flex items-center space-x-1 text-xs font-semibold"
-            title="Refresh statement"
+            className="p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition flex items-center space-x-1.5 text-xs shadow-xs"
+            title="Refresh financial data"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-emerald-600' : ''}`} />
             <span className="hidden sm:inline">Refresh</span>
           </button>
 
           <button
             onClick={() => setShowPayoutForm(!showPayoutForm)}
-            className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white transition flex items-center space-x-1.5 shadow-sm"
+            className="px-4 py-2.5 rounded-2xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white transition flex items-center space-x-1.5 shadow-sm"
           >
             <PlusCircle className="w-4 h-4" />
             <span>{showPayoutForm ? 'Close Payout' : 'Record Payout / Withdraw'}</span>
@@ -200,55 +245,137 @@ export default function WalletPage() {
         </div>
       </div>
 
-      {/* ── Top Balance Showcase Cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {errorMsg && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-2xl flex items-center justify-between text-xs text-red-700 animate-fade-in">
+          <span className="font-semibold">{errorMsg}</span>
+          <button
+            onClick={() => fetchWallet()}
+            className="px-3 py-1 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* ── Top Balance Showcase Cards (Hero USDT + Native Breakdown) ── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* HERO CARD: USDT Available Balance */}
+        <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-6 text-white shadow-xl shadow-slate-950/20 relative overflow-hidden flex flex-col justify-between border border-slate-800">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center space-x-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>Available USDT Balance (₮)</span>
+              </span>
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                Binance P2P
+              </span>
+            </div>
+
+            <div className="mt-3">
+              <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-white">
+                {formatUSDT(balances.balanceUSDT)}
+              </h2>
+              <p className="text-xs text-slate-300 mt-1 flex items-center gap-2">
+                <span>≈ ₹{formatMoney(balances.balanceINR)} INR</span>
+                {balances.balancePKR > 0 && <span>• Rs {formatMoney(balances.balancePKR)} PKR</span>}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between text-xs text-slate-300/90 mt-5 pt-4 border-t border-white/10">
+            <span>Total Earned: <strong className="text-emerald-400">₮{formatMoney(balances.totalEarnedUSDT)}</strong></span>
+            <span>Payouts: <strong className="text-red-400">₮{formatMoney(balances.totalWithdrawnUSDT)}</strong></span>
+          </div>
+        </div>
+
         {/* INR Wallet Card */}
-        <div className="bg-gradient-to-br from-purple-700 via-indigo-700 to-indigo-800 rounded-3xl p-6 text-white shadow-xl shadow-indigo-600/15 relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-purple-200 flex items-center space-x-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span>Available INR Balance (₹)</span>
-            </span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/20 text-white font-semibold">
-              {isAdmin ? '50% Admin Split' : '50% INR Stores'}
-            </span>
+        <div className="bg-gradient-to-br from-purple-700 via-indigo-700 to-indigo-800 rounded-3xl p-6 text-white shadow-xl shadow-indigo-600/15 relative overflow-hidden flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-purple-200 flex items-center space-x-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-purple-300"></span>
+                <span>Available INR Balance (₹)</span>
+              </span>
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/20 text-white font-semibold">
+                {isAdmin ? '50% Direct + 25% Pool' : '50% INR Stores'}
+              </span>
+            </div>
+
+            <div className="mt-3">
+              <h2 className="text-3xl sm:text-4xl font-black tracking-tight">
+                ₹{formatMoney(balances.balanceINR)}
+                <span className="text-sm sm:text-base font-normal text-purple-200 ml-2">INR</span>
+              </h2>
+              <p className="text-xs text-purple-200/80 mt-1">
+                Converted: ≈ ₮{formatMoney(balances.balanceINR / USDT_INR_RATE)} USDT
+              </p>
+            </div>
           </div>
 
-          <div className="mt-3">
-            <h2 className="text-3xl sm:text-4xl font-black tracking-tight">
-              ₹{formatMoney(balances.balanceINR)}
-              <span className="text-sm sm:text-base font-normal text-purple-200 ml-2">INR</span>
-            </h2>
-          </div>
-
-          <div className="flex items-center justify-between text-xs text-purple-200/90 mt-4 pt-4 border-t border-white/15">
+          <div className="flex items-center justify-between text-xs text-purple-200/90 mt-5 pt-4 border-t border-white/15">
             <span>Total Earned: <strong>₹{formatMoney(balances.totalEarnedINR, 0)}</strong></span>
             <span>Withdrawn / Payouts: <strong>₹{formatMoney(balances.totalWithdrawnINR, 0)}</strong></span>
           </div>
         </div>
 
         {/* PKR Wallet Card */}
-        <div className="bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 rounded-3xl p-6 text-white shadow-xl shadow-emerald-600/15 relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-emerald-200 flex items-center space-x-1.5">
-              <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse"></span>
-              <span>Available PKR Balance (Rs)</span>
-            </span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/20 text-white font-semibold">
-              1 INR = 1 PKR + Bonuses
-            </span>
+        <div className="bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 rounded-3xl p-6 text-white shadow-xl shadow-emerald-600/15 relative overflow-hidden flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-emerald-200 flex items-center space-x-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-white"></span>
+                <span>Available PKR Balance (Rs)</span>
+              </span>
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/20 text-white font-semibold">
+                1 INR = 1 PKR + Bonuses
+              </span>
+            </div>
+
+            <div className="mt-3">
+              <h2 className="text-3xl sm:text-4xl font-black tracking-tight">
+                Rs {formatMoney(balances.balancePKR)}
+                <span className="text-sm sm:text-base font-normal text-emerald-200 ml-2">PKR</span>
+              </h2>
+              <p className="text-xs text-emerald-200/80 mt-1">
+                Converted: ≈ ₮{formatMoney(balances.balancePKR / USDT_PKR_RATE)} USDT
+              </p>
+            </div>
           </div>
 
-          <div className="mt-3">
-            <h2 className="text-3xl sm:text-4xl font-black tracking-tight">
-              Rs {formatMoney(balances.balancePKR)}
-              <span className="text-sm sm:text-base font-normal text-emerald-200 ml-2">PKR</span>
-            </h2>
-          </div>
-
-          <div className="flex items-center justify-between text-xs text-emerald-200/90 mt-4 pt-4 border-t border-white/15">
+          <div className="flex items-center justify-between text-xs text-emerald-200/90 mt-5 pt-4 border-t border-white/15">
             <span>Total Earned: <strong>Rs {formatMoney(balances.totalEarnedPKR, 0)}</strong></span>
             <span>Withdrawn / Payouts: <strong>Rs {formatMoney(balances.totalWithdrawnPKR, 0)}</strong></span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Assigned Stores Client Activity Bar (Volume) ── */}
+      <div className="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-xs flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center space-x-2.5">
+          <Building2 className="w-5 h-5 text-slate-500" />
+          <span className="text-sm font-bold text-slate-800">Assigned Stores Volume Overview:</span>
+        </div>
+        <div className="flex items-center space-x-6 text-xs sm:text-sm">
+          <div className="flex items-center space-x-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+            <span className="text-slate-500">Client Deposits:</span>
+            <strong className="text-emerald-700">
+              ₹{formatMoney(balances.totalClientDepositsINR, 0)} INR
+            </strong>
+            <span className="text-slate-400 font-medium">
+              (₮{formatMoney(balances.totalClientDepositsUSDT)} USDT)
+            </span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-400"></span>
+            <span className="text-slate-500">Client Withdrawals:</span>
+            <strong className="text-slate-800">
+              ₹{formatMoney(balances.totalClientWithdrawalsINR, 0)} INR
+            </strong>
+            <span className="text-slate-400 font-medium">
+              (₮{formatMoney(balances.totalClientWithdrawalsUSDT)} USDT)
+            </span>
           </div>
         </div>
       </div>
@@ -280,7 +407,7 @@ export default function WalletPage() {
                 min="1"
                 step="any"
                 required
-                placeholder="e.g. 50000"
+                placeholder="e.g. 500"
                 value={payoutAmount}
                 onChange={(e) => setPayoutAmount(e.target.value)}
                 className="w-full p-2.5 rounded-xl bg-white border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 font-bold"
@@ -294,8 +421,9 @@ export default function WalletPage() {
                 onChange={(e) => setPayoutCurrency(e.target.value)}
                 className="w-full p-2.5 rounded-xl bg-white border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 font-semibold"
               >
-                <option value="PKR">PKR (Rs)</option>
-                <option value="INR">INR (₹)</option>
+                <option value="USDT">₮ USDT (Binance)</option>
+                <option value="PKR">Rs PKR</option>
+                <option value="INR">₹ INR</option>
               </select>
             </div>
 
@@ -304,7 +432,7 @@ export default function WalletPage() {
               <div className="flex space-x-2">
                 <input
                   type="text"
-                  placeholder="e.g. Bank Transfer UTR: 991288 or Cash in Hand"
+                  placeholder="e.g. Binance TXID / Bank Transfer UTR: 991288"
                   value={payoutNote}
                   onChange={(e) => setPayoutNote(e.target.value)}
                   className="flex-1 p-2.5 rounded-xl bg-white border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500"
@@ -349,15 +477,28 @@ export default function WalletPage() {
           </div>
 
           <div className="flex items-center space-x-2">
-            <span className="text-xs font-bold text-slate-500">Currency:</span>
+            <span className="text-xs font-bold text-slate-500">View:</span>
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="p-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 focus:outline-none"
+            >
+              <option value="all">All Statements & Activity</option>
+              <option value="earnings">Commissions & Pool Shares</option>
+              <option value="client_activity">Store Client Activity (Deposits & Withdrawals)</option>
+              <option value="payouts">Payout Withdrawals Only</option>
+            </select>
+
+            <span className="text-xs font-bold text-slate-500 ml-2">Currency:</span>
             <select
               value={currencyFilter}
               onChange={(e) => setCurrencyFilter(e.target.value)}
               className="p-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 focus:outline-none"
             >
               <option value="all">All Currencies</option>
-              <option value="INR">INR (₹) Only</option>
-              <option value="PKR">PKR (Rs) Only</option>
+              <option value="USDT">₮ USDT Only</option>
+              <option value="INR">₹ INR Only</option>
+              <option value="PKR">Rs PKR Only</option>
             </select>
           </div>
         </div>
@@ -400,6 +541,13 @@ export default function WalletPage() {
       {/* ── Period Summary Metrics ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
         <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
+          <span className="text-[10px] uppercase font-bold text-slate-400 block">Period Net (USDT)</span>
+          <p className="text-xl sm:text-2xl font-black text-emerald-600 mt-1">
+            {periodTotals.netUSDT >= 0 ? '+' : ''}₮{formatMoney(periodTotals.netUSDT)}
+          </p>
+        </div>
+
+        <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
           <span className="text-[10px] uppercase font-bold text-slate-400 block">Period Inflow (INR)</span>
           <p className="text-xl sm:text-2xl font-black text-purple-700 mt-1">
             +₹{formatMoney(periodTotals.earnedINR)}
@@ -408,24 +556,15 @@ export default function WalletPage() {
 
         <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
           <span className="text-[10px] uppercase font-bold text-slate-400 block">Period Inflow (PKR)</span>
-          <p className="text-xl sm:text-2xl font-black text-emerald-600 mt-1">
+          <p className="text-xl sm:text-2xl font-black text-teal-700 mt-1">
             +Rs {formatMoney(periodTotals.earnedPKR)}
           </p>
         </div>
 
         <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
-          <span className="text-[10px] uppercase font-bold text-slate-400 block">Payouts Withdrawn</span>
-          <p className="text-xl sm:text-2xl font-black text-red-600 mt-1">
-            {periodTotals.withdrawnINR > 0 ? `-₹${formatMoney(periodTotals.withdrawnINR)} ` : ''}
-            {periodTotals.withdrawnPKR > 0 ? `-Rs ${formatMoney(periodTotals.withdrawnPKR)}` : ''}
-            {periodTotals.withdrawnINR === 0 && periodTotals.withdrawnPKR === 0 ? '0' : ''}
-          </p>
-        </div>
-
-        <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
-          <span className="text-[10px] uppercase font-bold text-slate-400 block">Transactions in Range</span>
+          <span className="text-[10px] uppercase font-bold text-slate-400 block">Filtered Entries</span>
           <p className="text-xl sm:text-2xl font-black text-slate-900 mt-1">
-            {periodTotals.count} {periodTotals.count === 1 ? 'entry' : 'entries'}
+            {transactions.length} {transactions.length === 1 ? 'entry' : 'entries'}
           </p>
         </div>
       </div>
@@ -454,14 +593,17 @@ export default function WalletPage() {
             <Calendar className="w-12 h-12 text-slate-300 mx-auto mb-2" />
             <p className="font-bold text-slate-700 text-base">No transactions found</p>
             <p className="text-xs text-slate-400 mt-1">
-              No deposits, commissions, or payouts match the selected period filter ({period}).
+              No deposits, commissions, client activity, or payouts match the selected filter ({period}).
             </p>
           </div>
         ) : (
           <div className="overflow-x-auto divide-y divide-slate-100">
             {transactions.map((tx) => {
               const isCredit = tx.type === 'credit';
+              const isDebit = tx.type === 'debit';
+              const isActivity = tx.type === 'activity' || tx.isClientActivity;
               const isINR = tx.currency === 'INR';
+              const isPKR = tx.currency === 'PKR';
               const formattedDate = new Date(tx.date).toLocaleDateString('en-GB', {
                 day: 'numeric',
                 month: 'short',
@@ -473,7 +615,9 @@ export default function WalletPage() {
               return (
                 <div
                   key={tx.id}
-                  className="p-4 sm:p-4.5 hover:bg-slate-50/80 transition flex items-center justify-between gap-3 text-xs"
+                  className={`p-4 sm:p-4.5 transition flex items-center justify-between gap-3 text-xs ${
+                    isActivity ? 'bg-slate-50/50 hover:bg-slate-100/60' : 'hover:bg-slate-50/80'
+                  }`}
                 >
                   {/* Left: Direction Icon & Details */}
                   <div className="flex items-center space-x-3.5 min-w-0">
@@ -481,13 +625,17 @@ export default function WalletPage() {
                       className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
                         isCredit
                           ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
-                          : 'bg-red-50 text-red-600 border border-red-100'
+                          : isDebit
+                          ? 'bg-red-50 text-red-600 border border-red-100'
+                          : 'bg-amber-50 text-amber-700 border border-amber-200'
                       }`}
                     >
                       {isCredit ? (
                         <ArrowDownLeft className="w-5 h-5" />
-                      ) : (
+                      ) : isDebit ? (
                         <ArrowUpRight className="w-5 h-5" />
+                      ) : (
+                        <Building2 className="w-5 h-5" />
                       )}
                     </div>
 
@@ -496,15 +644,21 @@ export default function WalletPage() {
                         <span className="font-bold text-slate-900 text-xs sm:text-sm truncate">
                           {tx.description}
                         </span>
+
                         {/* Commission Model / Type Badge */}
-                        {tx.category === 'commission_inr_50' && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700">
-                            🇮🇳 50% INR Split
+                        {tx.category === 'admin_personal_handler' && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                            🛡️ Personal Handler (50% INR)
                           </span>
                         )}
-                        {tx.category === 'admin_share_inr_50' && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-700">
-                            🇮🇳 Admin 50-50 Split
+                        {tx.category === 'admin_pool_share' && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-700 border border-indigo-200">
+                            🤝 Admin Pool (25% Split)
+                          </span>
+                        )}
+                        {tx.category === 'commission_inr_50' && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700">
+                            🇮🇳 50% INR Commission
                           </span>
                         )}
                         {tx.category === 'commission_pkr_1to1' && (
@@ -512,9 +666,19 @@ export default function WalletPage() {
                             🇵🇰 1:1 PKR Earning
                           </span>
                         )}
+                        {tx.category === 'admin_share_inr_50' && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-700">
+                            🇮🇳 Admin 50-50 Split
+                          </span>
+                        )}
                         {tx.category === 'admin_share_pkr_1to1' && (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
                             💼 Admin Profit
+                          </span>
+                        )}
+                        {tx.category === 'client_withdrawal' && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-200">
+                            🛒 Client Withdrawal ({tx.status || 'Processed'})
                           </span>
                         )}
                         {tx.category === 'bonus_reward' && (
@@ -544,26 +708,26 @@ export default function WalletPage() {
                     </div>
                   </div>
 
-                  {/* Right: Amount */}
+                  {/* Right: Dual Currency (Hero USDT + Native) */}
                   <div className="text-right shrink-0">
                     <div
                       className={`text-sm sm:text-base font-black ${
                         isCredit
-                          ? isINR
-                            ? 'text-purple-700'
-                            : 'text-emerald-600'
-                          : 'text-red-600'
+                          ? 'text-emerald-600'
+                          : isDebit
+                          ? 'text-red-600'
+                          : 'text-amber-700'
                       }`}
                     >
-                      {isCredit ? '+' : '-'}
-                      {isINR ? '₹' : 'Rs '}
-                      {formatMoney(tx.amount)}{' '}
-                      <span className="text-[10px] font-bold text-slate-400 uppercase">
-                        {tx.currency}
-                      </span>
+                      {isCredit ? '+' : isDebit ? '-' : '🛒 '}
+                      {formatUSDT(tx.amountUSDT)}
+                    </div>
+                    <div className="text-[11px] font-bold text-slate-500">
+                      {isINR ? '₹' : isPKR ? 'Rs ' : '₮'}
+                      {formatMoney(tx.amount)} {tx.currency}
                     </div>
                     <span className="text-[10px] text-slate-400 capitalize">
-                      {isCredit ? 'Credit (Inflow)' : 'Debit (Payout)'}
+                      {isCredit ? 'Credit (Inflow)' : isDebit ? 'Debit (Payout)' : 'Client Store Outflow'}
                     </span>
                   </div>
                 </div>

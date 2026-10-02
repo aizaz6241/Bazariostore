@@ -97,6 +97,7 @@ export async function GET(req) {
             totalWithdrawalsINR: memberWithdrawalsINR,
             netVolumeINR: memberDepositsINR - memberWithdrawalsINR,
             totalBonusesPKR,
+            walletBalanceUSDT: mWallet.balanceUSDT || 0,
             walletBalancePKR: mWallet.balancePKR,
             walletBalanceINR: mWallet.balanceINR,
             wallet: mWallet,
@@ -196,6 +197,7 @@ export async function GET(req) {
         console.error('Error fetching member wallet in stats:', wErr);
       }
 
+      const walletBalanceUSDT = memberWallet?.balanceUSDT ?? 0;
       const walletBalancePKR = memberWallet?.balancePKR ?? Math.max(0, totalDepositsINR - totalWithdrawalsINR + totalBonusesPKR);
       const walletBalanceINR = memberWallet?.balanceINR ?? 0;
 
@@ -203,6 +205,7 @@ export async function GET(req) {
         totalAssignedSellers: mySellers.length,
         totalDepositsINR,
         totalWithdrawalsINR,
+        walletBalanceUSDT,
         walletBalancePKR,
         walletBalanceINR,
         memberWallet,

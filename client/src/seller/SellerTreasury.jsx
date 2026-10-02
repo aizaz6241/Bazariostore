@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { sapi, money } from '../api.js';
 import Ic from '../components/Icons.jsx';
@@ -14,9 +14,13 @@ export default function SellerTreasury() {
   const [loading, setLoading] = useState(true);
   const [selectedCat, setSelectedCat] = useState('');
   const [q, setQ] = useState('');
+  const [sort, setSort] = useState('mixed'); // 'mixed' | 'price-low' | 'price-high' | 'stock' | 'newest'
   const [storeFilter, setStoreFilter] = useState('all'); // 'all' | 'not_added' | 'added'
+  const [visibleCount, setVisibleCount] = useState(48);
   const [actionLoadingId, setActionLoadingId] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
+
+  const sentinelRef = useRef(null);
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -29,6 +33,7 @@ export default function SellerTreasury() {
     const params = new URLSearchParams();
     if (selectedCat) params.append('category', selectedCat);
     if (q.trim()) params.append('q', q.trim());
+    if (sort) params.append('sort', sort);
     url += params.toString();
 
     sapi(url)
@@ -45,7 +50,12 @@ export default function SellerTreasury() {
 
   useEffect(() => {
     loadTreasury();
-  }, [selectedCat]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedCat, sort]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset pagination window whenever filters or sort change
+  useEffect(() => {
+    setVisibleCount(48);
+  }, [selectedCat, storeFilter, q, sort]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -107,9 +117,9 @@ export default function SellerTreasury() {
     }
   };
 
-  // Filter products by search and store status, and ALWAYS sort unadded on top & added to bottom
-  const filteredProducts = products
-    .filter((p) => {
+  // Filter products by search and store status; preserve balanced mix without artificial segregation
+  const filteredProducts = useMemo(() => {
+    let list = products.filter((p) => {
       if (q.trim()) {
         const matchQ =
           p.name?.toLowerCase().includes(q.toLowerCase()) ||
@@ -120,15 +130,55 @@ export default function SellerTreasury() {
       if (storeFilter === 'added') return p.isAddedToStore;
       if (storeFilter === 'not_added') return !p.isAddedToStore;
       return true;
-    })
-    .sort((a, b) => {
-      // Unadded products are ALWAYS on top, already added products are pushed to the bottom
-      if (a.isAddedToStore !== b.isAddedToStore) {
-        return a.isAddedToStore ? 1 : -1;
-      }
-      return 0;
     });
 
+    if (sort === 'price-low') {
+      list = [...list].sort((a, b) => (a.price || 0) - (b.price || 0));
+    } else if (sort === 'price-high') {
+      list = [...list].sort((a, b) => (b.price || 0) - (a.price || 0));
+    } else if (sort === 'stock') {
+      list = [...list].sort((a, b) => (b.stock || 0) - (a.stock || 0));
+    } else if (sort === 'newest') {
+      list = [...list].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    }
+
+    return list;
+  }, [products, q, storeFilter, sort]);
+
+  // Sliced items for progressive DOM rendering (prevents mobile/laptop browser tile freezing)
+  const visibleProducts = useMemo(() => {
+    return filteredProducts.slice(0, visibleCount);
+  }, [filteredProducts, visibleCount]);
+
+  // Auto-load next batch as user scrolls near bottom
+  useEffect(() => {
+    if (!sentinelRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && visibleCount < filteredProducts.length) {
+          setVisibleCount((prev) => Math.min(filteredProducts.length, prev + 36));
+        }
+      },
+      { rootMargin: '450px' }
+    );
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [visibleCount, filteredProducts.length]);
+
+  // Fallback scroll listener on the actual layout scrolling container (.seller-main-wrap)
+  useEffect(() => {
+    const scroller = document.querySelector('.seller-main-wrap') || window;
+    const onScroll = () => {
+      const target = scroller === window ? document.documentElement : scroller;
+      if (target.scrollTop + target.clientHeight >= target.scrollHeight - 700) {
+        if (visibleCount < filteredProducts.length) {
+          setVisibleCount((prev) => Math.min(filteredProducts.length, prev + 36));
+        }
+      }
+    };
+    scroller.addEventListener('scroll', onScroll, { passive: true });
+    return () => scroller.removeEventListener('scroll', onScroll);
+  }, [visibleCount, filteredProducts.length]);
 
   const totalInTreasury = products.length;
   const inMyStoreCount = products.filter((p) => p.isAddedToStore).length;
@@ -209,6 +259,26 @@ export default function SellerTreasury() {
             </button>
           </form>
 
+          {/* Sort Selector */}
+          <div className="treasury-sort-select-wrap">
+            <label htmlFor="treasury-sort">
+              <Ic name="sparkle" size={13} />
+              <span>Sort:</span>
+            </label>
+            <select
+              id="treasury-sort"
+              value={sort}
+              onChange={(e) => setSort(e.target.value)}
+              className="treasury-sort-select"
+            >
+              <option value="mixed">🔀 Balanced Mix (Low & High Mixed)</option>
+              <option value="price-low">💵 Price: Low to High</option>
+              <option value="price-high">💎 Price: High to Low</option>
+              <option value="stock">📦 Central Stock (Highest First)</option>
+              <option value="newest">✨ Newest First</option>
+            </select>
+          </div>
+
           {/* Store Filter Tabs */}
           <div className="treasury-store-filter-tabs">
             <button
@@ -287,8 +357,9 @@ export default function SellerTreasury() {
           </button>
         </div>
       ) : (
-        <div className="seller-treasury-grid">
-          {filteredProducts.map((p) => {
+        <>
+          <div className="seller-treasury-grid">
+            {visibleProducts.map((p) => {
             const isAdded = p.isAddedToStore;
             const isLoading = actionLoadingId === p._id;
             const stockQty = p.stock || 0;
@@ -430,6 +501,47 @@ export default function SellerTreasury() {
             );
           })}
         </div>
+
+        {/* Infinite Scroll Sentinel (auto-loads next chunk when scrolled into view) */}
+        <div ref={sentinelRef} style={{ height: '24px', width: '100%', margin: '10px 0' }} />
+
+        {/* Progressive Load Status & Batch Controls */}
+        {filteredProducts.length > visibleCount ? (
+          <div className="treasury-load-more-section">
+            <div className="treasury-load-progress">
+              <span>
+                Showing <b>{visibleCount}</b> of <b>{filteredProducts.length}</b> products in Treasury
+              </span>
+              <div className="treasury-progress-bar-track">
+                <div
+                  className="treasury-progress-bar-fill"
+                  style={{ width: `${Math.min(100, Math.round((visibleCount / filteredProducts.length) * 100))}%` }}
+                />
+              </div>
+            </div>
+            <div className="treasury-load-actions">
+              <button
+                type="button"
+                className="treasury-load-more-btn"
+                onClick={() => setVisibleCount((prev) => Math.min(filteredProducts.length, prev + 48))}
+              >
+                <Ic name="refresh" size={15} /> Load More Products (+48)
+              </button>
+              <button
+                type="button"
+                className="treasury-load-all-btn"
+                onClick={() => setVisibleCount(filteredProducts.length)}
+              >
+                ⚡ Show All ({filteredProducts.length}) Products
+              </button>
+            </div>
+          </div>
+        ) : filteredProducts.length > 0 ? (
+          <div className="treasury-all-loaded-banner">
+            <span>✓ All <b>{filteredProducts.length}</b> products loaded and visible</span>
+          </div>
+        ) : null}
+      </>
       )}
     </div>
   );

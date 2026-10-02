@@ -58,7 +58,11 @@ export async function POST(req) {
 
     // Notify the member via 1-on-1 personal chat system message
     const personalConvId = [targetMember._id.toString(), session._id.toString()].sort().join('_');
-    const labelDesc = chosenLabel === 'inr_50' ? '🇮🇳 50% INR Commission' : '🇵🇰 1:1 INR to PKR Commission';
+    const labelDesc = targetMember.role === 'admin'
+      ? '🛡️ Admin Handler Deal (50% Personal Handler + 25% Admin Pool Split)'
+      : chosenLabel === 'inr_50'
+      ? '🇮🇳 50% INR Commission'
+      : '🇵🇰 1:1 INR to PKR Commission';
     await ChatMessage.create({
       chatType: 'personal',
       conversationId: `personal_${personalConvId}`,
@@ -67,7 +71,7 @@ export async function POST(req) {
       senderRole: 'admin',
       targetMemberId: targetMember._id,
       messageType: 'text',
-      text: `💼 Store "${seller.storeName}" (${seller.ownerName}) has been officially assigned to you!\nCommission Model: ${labelDesc}.\nDeposits and performance will reflect in your live wallet.`,
+      text: `💼 Store "${seller.storeName}" (${seller.ownerName}) has been officially assigned to you!\nCommission Model: ${labelDesc}.\nDeposits, withdrawals, and USDT conversions will reflect in your live wallet.`,
       readBy: [session._id],
     });
 

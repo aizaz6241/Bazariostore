@@ -80,6 +80,9 @@ export default function App() {
         <Route path="/reset-password" element={<Reset />} />
         <Route path="/account" element={<Account />} />
         <Route path="/seller/login" element={<SellerLogin />} />
+        <Route path="/seller/register" element={<Navigate to="/seller/login?mode=register" replace />} />
+        <Route path="/sellers/register" element={<Navigate to="/seller/login?mode=register" replace />} />
+        <Route path="/become-seller" element={<Navigate to="/seller/login?mode=register" replace />} />
         <Route path="/admin/login" element={<AdminLogin />} />
       </Route>
 

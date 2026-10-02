@@ -200,7 +200,7 @@ export default function ChatMessageBubble({ msg, isMe, myRole = 'seller', onRepl
             {myRole === 'admin' && isMe && !msg.isDeleted && (
               <span
                 className={`chat-seen-ticks ${msg.isSeen ? 'seen-blue' : 'sent-grey'}`}
-                title={msg.isSeen ? `Seen by seller ${msg.seenAt ? `(${fmtDate(msg.seenAt)})` : ''}` : 'Sent / Delivered'}
+                title={msg.isSeen ? `Seen ${msg.seenAt ? `(${fmtDate(msg.seenAt)})` : ''}` : 'Sent / Delivered'}
                 aria-label={msg.isSeen ? 'Seen' : 'Delivered'}
               >
                 <svg viewBox="0 0 16 11" width="14" height="10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

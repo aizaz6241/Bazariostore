@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { sapi, money, fmtDay } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
+import { getProductLiveViewers } from '../utils/liveMetrics.js';
 
 export default function SellerInventory() {
   const { formatMoney } = useCurrency();
@@ -120,7 +121,14 @@ export default function SellerInventory() {
                     <td>
                       <div className="inv-product-cell">
                         {p.images?.[0] && <img src={p.images[0]} alt="" className="inv-thumb" />}
-                        <span>{p.name}</span>
+                        <div>
+                          <span>{p.name}</span>
+                          <div style={{ marginTop: '3px' }}>
+                            <span className="prod-live-viewers-tag-sm" title="Live active shoppers viewing this product">
+                              <Ic name="eye" size={11} stroke={2.2} /> <b>{getProductLiveViewers(p._id, p.price)}</b> viewing
+                            </span>
+                          </div>
+                        </div>
                       </div>
                     </td>
                     <td><b>{formatMoney(p.price)}</b></td>

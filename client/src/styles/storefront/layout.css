@@ -626,6 +626,64 @@
   color: #c4b5fd !important;
 }
 
+/* ─── Become a Seller Storefront Buttons ─── */
+.header-become-seller-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #0f172a !important;
+  text-decoration: none;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35);
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.header-become-seller-btn:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.45);
+}
+
+.header-become-seller-btn .hbs-badge {
+  background: #0f172a;
+  color: #fbbf24;
+  font-size: 9.5px;
+  font-weight: 900;
+  padding: 2px 5px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.header-become-seller-btn .hbs-text {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.become-seller-nav-pill {
+  background: rgba(245, 158, 11, 0.22) !important;
+  border: 1px solid rgba(245, 158, 11, 0.6) !important;
+  color: #fbbf24 !important;
+  padding: 5px 12px !important;
+  border-radius: 16px !important;
+  font-weight: 800 !important;
+}
+
+.become-seller-nav-pill:hover {
+  background: rgba(245, 158, 11, 0.35) !important;
+  border-color: #f59e0b !important;
+}
+
+@media (max-width: 900px) {
+  .header-become-seller-btn {
+    display: none;
+  }
+}
+
 /* ─── 4. STOREFRONT FOOTER ─── */
 .footer {
   background: var(--amazon-subnav, #232f3e);

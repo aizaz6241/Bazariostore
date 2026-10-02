@@ -15,19 +15,22 @@ const walletTransactionSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['credit', 'debit'], // credit = incoming commission/bonus, debit = withdrawal/payout
+      enum: ['credit', 'debit', 'activity'], // credit = inflow, debit = payout, activity = store event
       required: true,
     },
     category: {
       type: String,
       enum: [
-        'commission_inr_50',   // 50% INR commission
-        'commission_pkr_1to1', // 1:1 INR to PKR commission
-        'admin_share_inr_50',  // Admin's share from 50% INR split
-        'admin_share_pkr_1to1',// Admin's share from 1:1 PKR store deposit
-        'bonus_reward',        // Milestone/weekly bonus approved
-        'payout_withdrawal',   // Member/Admin payout withdrawal
-        'adjustment',          // Manual balance adjustment
+        'commission_inr_50',      // 50% INR commission to member
+        'commission_pkr_1to1',    // 1:1 INR to PKR commission to member
+        'admin_personal_handler', // Admin 50% direct managing handler share
+        'admin_pool_share',       // Admin 25% platform pool split
+        'admin_share_inr_50',     // Admin share from 50% INR split
+        'admin_share_pkr_1to1',   // Admin share from 1:1 PKR store deposit
+        'client_withdrawal',      // Store client withdrawal activity
+        'bonus_reward',           // Milestone/weekly bonus approved
+        'payout_withdrawal',      // Member/Admin payout withdrawal
+        'adjustment',             // Manual balance adjustment
       ],
       required: true,
     },
@@ -35,9 +38,13 @@ const walletTransactionSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    amountUSDT: {
+      type: Number,
+      default: 0,
+    },
     currency: {
       type: String,
-      enum: ['INR', 'PKR'],
+      enum: ['INR', 'PKR', 'USDT'],
       required: true,
       default: 'PKR',
     },

@@ -57,12 +57,15 @@ const memberSchema = new mongoose.Schema(
       enum: ['pkr_1to1', 'inr_50'],
       default: 'pkr_1to1',
     },
-    // Dual-currency wallet tracking (For Members & Admins: INR & PKR)
+    // Multi-currency wallet tracking (USDT as hero/base, INR & PKR native)
     wallet: {
+      balanceUSDT: { type: Number, default: 0 },
       balancePKR: { type: Number, default: 0 },
       balanceINR: { type: Number, default: 0 },
+      totalEarnedUSDT: { type: Number, default: 0 },
       totalEarnedPKR: { type: Number, default: 0 },
       totalEarnedINR: { type: Number, default: 0 },
+      totalWithdrawnUSDT: { type: Number, default: 0 },
       totalWithdrawnPKR: { type: Number, default: 0 },
       totalWithdrawnINR: { type: Number, default: 0 },
       totalDepositsPKR: { type: Number, default: 0 },

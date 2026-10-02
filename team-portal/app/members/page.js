@@ -407,8 +407,8 @@ export default function MembersPage() {
                             </span>
                           )
                         ) : (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
-                            Admin Treasury Pool
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                            🛡️ Admin (50% Personal + 25% Pool)
                           </span>
                         )}
                       </div>
@@ -455,30 +455,19 @@ export default function MembersPage() {
                     >
                       <span className="text-[10px] uppercase font-bold text-emerald-800 flex items-center justify-center gap-1 group-hover:text-emerald-950">
                         <Wallet className="w-3 h-3 text-emerald-600" />
-                        <span>Wallet Earned</span>
+                        <span>Wallet (USDT)</span>
                       </span>
-                      {member.commissionLabel === 'inr_50' ? (
-                        <>
-                          <span className="text-sm font-extrabold text-amber-700 block">
-                            ₹{(member.wallet?.balanceINR || 0).toLocaleString()} INR
-                          </span>
-                          {(member.wallet?.balancePKR || member.netBalancePKR || 0) > 0 && (
-                            <span className="text-[10px] text-emerald-700 font-bold block">
-                              + Rs. {(member.wallet?.balancePKR || member.netBalancePKR || 0).toLocaleString()} PKR
-                            </span>
-                          )}
-                        </>
+                      <span className="text-sm font-black text-slate-900 block">
+                        ₮{((member.wallet?.balanceUSDT != null ? member.wallet?.balanceUSDT : (((member.wallet?.balancePKR || member.netBalancePKR || 0) / 280) + ((member.wallet?.balanceINR || 0) / 90)))).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                      {member.role === 'admin' || member.commissionLabel === 'inr_50' ? (
+                        <span className="text-[10px] text-purple-700 font-bold block">
+                          ₹{(member.wallet?.balanceINR || 0).toLocaleString()} INR
+                        </span>
                       ) : (
-                        <>
-                          <span className="text-sm font-extrabold text-emerald-700 block">
-                            Rs. {(member.wallet?.balancePKR ?? member.netBalancePKR ?? 0).toLocaleString()}
-                          </span>
-                          {(member.wallet?.balanceINR || 0) > 0 && (
-                            <span className="text-[10px] text-emerald-800 font-bold block">
-                              + ₹{(member.wallet.balanceINR).toLocaleString()} INR
-                            </span>
-                          )}
-                        </>
+                        <span className="text-[10px] text-emerald-700 font-bold block">
+                          Rs. {(member.wallet?.balancePKR ?? member.netBalancePKR ?? 0).toLocaleString()} PKR
+                        </span>
                       )}
                       {member.totalBonusesPKR > 0 && (
                         <span className="text-[9px] text-amber-700 block font-semibold">

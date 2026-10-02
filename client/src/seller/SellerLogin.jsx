@@ -11,8 +11,15 @@ export default function SellerLogin() {
   const urlResetToken = params.get('resetToken') || '';
   const urlEmail = params.get('email') || '';
   const urlAffiliate = (params.get('affiliate') || params.get('ref') || params.get('affiliateCode') || params.get('code') || '').trim();
+  const urlMode = (params.get('mode') || params.get('tab') || '').toLowerCase().trim();
 
-  const [mode, setMode] = useState(urlAffiliate ? 'register' : 'login'); // 'login' | 'register'
+  const [mode, setMode] = useState(urlAffiliate || urlMode === 'register' ? 'register' : 'login'); // 'login' | 'register'
+
+  useEffect(() => {
+    if (urlMode === 'register' || urlAffiliate) {
+      setMode('register');
+    }
+  }, [urlMode, urlAffiliate]);
 
   // Registration Submitted State
   const [submittedInfo, setSubmittedInfo] = useState(null);

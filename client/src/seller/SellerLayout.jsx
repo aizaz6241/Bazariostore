@@ -11,6 +11,7 @@ import CurrencySelector from '../components/CurrencySelector.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 import { playNotificationSound } from '../utils/audio.js';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
+import { getLiveStoreVisitors } from '../utils/liveMetrics.js';
 
 const SELLER_NAV = [
   { to: '/seller', icon: 'grid', label: 'Dashboard', end: true },
@@ -43,6 +44,15 @@ export default function SellerLayout() {
   });
   const [unreadChat, setUnreadChat] = useState(0);
   const [toasts, setToasts] = useState([]);
+  const [liveShoppers, setLiveShoppers] = useState(() => getLiveStoreVisitors(seller?._id, 14));
+
+  useEffect(() => {
+    setLiveShoppers(getLiveStoreVisitors(seller?._id, 14));
+    const timer = setInterval(() => {
+      setLiveShoppers(getLiveStoreVisitors(seller?._id, 14));
+    }, 20000);
+    return () => clearInterval(timer);
+  }, [seller?._id]);
 
   const addToast = (toast) => {
     const id = Date.now() + Math.random().toString(36).slice(2, 6);
@@ -377,6 +387,17 @@ export default function SellerLayout() {
               ) : (
                 <span className="seller-pending-badge">⏳ Under Review</span>
               )}
+            </div>
+
+            {/* Live Active Shoppers in Store */}
+            <div
+              className="seller-live-shoppers-pill"
+              title="Real-time estimated customers active in your store right now"
+            >
+              <span className="live-pulse-dot" />
+              <Ic name="eye" size={13} stroke={2.2} />
+              <b>{liveShoppers}</b>
+              <span className="live-lbl hide-on-mobile">Shoppers Live</span>
             </div>
 
             <span className="seller-sep hide-on-tablet">|</span>

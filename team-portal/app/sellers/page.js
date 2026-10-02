@@ -737,10 +737,15 @@ export default function SellersPage() {
                 onChange={(e) => setSelectedMemberId(e.target.value)}
                 className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
-                <option value="">-- Choose Member --</option>
+                <option value="">-- Choose Member or Admin --</option>
                 {members.map((m) => (
                   <option key={m._id} value={m._id}>
-                    {m.name} (@{m.username}) — {m.commissionLabel === 'inr_50' ? '🇮🇳 50% INR Split Deal' : '🇵🇰 1:1 PKR Fixed Deal'}
+                    {m.name} (@{m.username}) —{' '}
+                    {m.role === 'admin'
+                      ? '🛡️ Admin (50% Personal Handler + 25% Pool Split)'
+                      : m.commissionLabel === 'inr_50'
+                      ? '🇮🇳 50% INR Split Deal'
+                      : '🇵🇰 1:1 PKR Fixed Deal'}
                   </option>
                 ))}
               </select>
@@ -749,6 +754,7 @@ export default function SellersPage() {
             {selectedMemberId && (() => {
               const targetMember = members.find((m) => m._id === selectedMemberId);
               if (!targetMember) return null;
+              const isTargetAdmin = targetMember.role === 'admin';
               const is50Inr = targetMember.commissionLabel === 'inr_50';
               return (
                 <div className="mt-4 p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1.5">
@@ -758,17 +764,25 @@ export default function SellersPage() {
                   <div className="flex items-center gap-2">
                     <span
                       className={`text-xs font-extrabold px-2.5 py-1 rounded-xl border ${
-                        is50Inr
+                        isTargetAdmin
                           ? 'bg-amber-100 text-amber-900 border-amber-300'
+                          : is50Inr
+                          ? 'bg-purple-100 text-purple-900 border-purple-300'
                           : 'bg-emerald-100 text-emerald-900 border-emerald-300'
                       }`}
                     >
-                      {is50Inr ? '🇮🇳 50% INR Split Deal' : '🇵🇰 1:1 PKR Fixed Deal'}
+                      {isTargetAdmin
+                        ? '🛡️ Admin Handler Deal (50% Personal + 25% Pool = 75% Total)'
+                        : is50Inr
+                        ? '🇮🇳 50% INR Split Deal'
+                        : '🇵🇰 1:1 PKR Fixed Deal'}
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-600 leading-snug">
-                    {is50Inr
-                      ? '50% in Indian Rupees from all store deposits directly credits to this member. The other 50% INR goes to the Admin pool.'
+                    {isTargetAdmin
+                      ? '50% INR from all store deposits directly credits to this Admin as managing handler share. The remaining 50% INR platform pool is split 50-50 across both Admins (25% each).'
+                      : is50Inr
+                      ? '50% in Indian Rupees from all store deposits directly credits to this member. The other 50% INR goes to the Admin platform pool.'
                       : 'Member earns 1 Pakistani Rupee for every 1 Indian Rupee deposited. 100% of the deposit INR flows to Admin pool.'}
                   </p>
                   <p className="text-[10px] text-slate-400 italic">

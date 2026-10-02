@@ -387,7 +387,11 @@ router.post('/admin/conversations/:id/reply', authAdmin('chat'), async (req, res
     conv.lastMessage = previewMsg;
     conv.lastSender = 'admin';
     conv.lastAt = new Date();
-    conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
+    if (conv.type === 'guest' || conv.isGuest) {
+      conv.unreadForCustomer = (conv.unreadForCustomer || 0) + 1;
+    } else {
+      conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
+    }
     conv.unreadForAdmin = 0;
     conv.assignedStaff = req.admin.id;
     conv.assignedStaffName = req.admin.name || 'Support Staff';
@@ -395,7 +399,8 @@ router.post('/admin/conversations/:id/reply', authAdmin('chat'), async (req, res
 
     const message = new Message({
       conversation: conv._id,
-      seller: conv.seller,
+      seller: conv.seller || null,
+      guestId: conv.guestId || null,
       sender: 'admin',
       senderName: req.admin.name || 'Official Support Admin',
       text: cleanText,
@@ -417,7 +422,14 @@ router.post('/admin/conversations/:id/reply', authAdmin('chat'), async (req, res
     // Broadcast via socket.io
     const io = req.app.get('io');
     if (io) {
-      io.to(`seller:${conv.seller}`).emit('message:new', message);
+      if (conv.seller) {
+        io.to(`seller:${conv.seller}`).emit('message:new', message);
+      }
+      if (conv.guestId) {
+        io.to(`guest:${conv.guestId}`).emit('message:new', message);
+        io.to(`customer:${conv.guestId}`).emit('message:new', message);
+      }
+      io.to(`conversation:${conv._id}`).emit('message:new', message);
       io.to('admins').emit('message:new', message);
     }
 
@@ -1241,11 +1253,34 @@ router.post('/read/:guestId', async (req, res) => {
   try {
     const { guestId } = req.params;
     if (guestId) {
-      await Conversation.updateOne({ guestId }, { $set: { unreadForCustomer: 0 } });
+      const conv = await Conversation.findOne({ guestId });
+      const now = new Date();
+      if (conv) {
+        conv.unreadForCustomer = 0;
+        await conv.save();
+      }
+
       await Message.updateMany(
-        { guestId, sender: { $in: ['admin', 'staff'] }, isSeen: { $ne: true } },
-        { $set: { isSeen: true, seenAt: new Date(), seenBy: 'guest' } }
+        {
+          $or: [
+            { guestId },
+            ...(conv ? [{ conversation: conv._id }] : []),
+          ],
+          sender: { $in: ['admin', 'staff'] },
+          isSeen: { $ne: true },
+        },
+        { $set: { isSeen: true, seenAt: now, seenBy: 'guest' } }
       );
+
+      const io = req.app.get('io');
+      if (io) {
+        io.to('admins').emit('messages:seen', {
+          conversationId: conv?._id,
+          guestId,
+          seenAt: now,
+          seenBy: 'guest',
+        });
+      }
     }
     res.json({ ok: true });
   } catch (err) {

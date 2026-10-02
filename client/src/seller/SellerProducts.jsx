@@ -3,6 +3,7 @@ import { useOutletContext, Link } from 'react-router-dom';
 import { sapi } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
+import { getLiveStoreVisitors, getProductLiveViewers } from '../utils/liveMetrics.js';
 
 export default function SellerProducts() {
   const { seller } = useOutletContext() || {};
@@ -12,6 +13,15 @@ export default function SellerProducts() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [stockFilter, setStockFilter] = useState('all');
+  const [liveShoppers, setLiveShoppers] = useState(() => getLiveStoreVisitors(seller?._id, 12));
+
+  useEffect(() => {
+    setLiveShoppers(getLiveStoreVisitors(seller?._id, products.length || 12));
+    const timer = setInterval(() => {
+      setLiveShoppers(getLiveStoreVisitors(seller?._id, products.length || 12));
+    }, 20000);
+    return () => clearInterval(timer);
+  }, [seller?._id, products.length]);
 
   // Add / Edit Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -227,7 +237,14 @@ export default function SellerProducts() {
     <div className="seller-products-page">
       <div className="seller-page-header">
         <div>
-          <h2>📦 My Store Products</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <h2 style={{ margin: 0 }}>📦 My Store Products</h2>
+            <span className="live-store-traffic-badge" title="Estimated live shoppers browsing your store right now">
+              <span className="live-pulse-dot" />
+              <Ic name="eye" size={13} stroke={2.2} />
+              <b>{liveShoppers}</b> Active Store Shoppers
+            </span>
+          </div>
           <p>Products currently active in your store. To add more products from the master warehouse catalog, browse the Product Treasury.</p>
         </div>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
@@ -291,6 +308,7 @@ export default function SellerProducts() {
                 <th>Wholesale Cost</th>
                 <th>Est. Profit / Unit</th>
                 <th>Inventory Stock</th>
+                <th style={{ textAlign: 'center' }}>Live Viewers</th>
                 <th>Total Sold</th>
                 <th>Status</th>
                 <th>Actions</th>
@@ -299,12 +317,12 @@ export default function SellerProducts() {
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan="9" className="text-center py-8 muted">Loading products catalog...</td>
+                  <td colSpan="10" className="text-center py-8 muted">Loading products catalog...</td>
                 </tr>
               )}
               {!loading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan="9">
+                  <td colSpan="10">
                     <div className="table-empty-box">
                       <div className="empty-icon-circle">📦</div>
                       <h4>No products found</h4>
@@ -352,6 +370,11 @@ export default function SellerProducts() {
                             )}
                           </div>
                           <small className="muted block">SKU: {p.sku || 'N/A'} • {p.brand || 'Generic'}</small>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
+                            <span className="prod-live-viewers-tag-sm" title="Shoppers currently viewing this product">
+                              <Ic name="eye" size={11} stroke={2.2} /> <b>{getProductLiveViewers(p._id, p.price)}</b> viewing now
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -373,6 +396,11 @@ export default function SellerProducts() {
                           Central Pool
                         </div>
                       )}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span className="seller-viewers-pill" title="Estimated live customers viewing this product right now">
+                        <Ic name="eye" size={13} stroke={2.2} /> <b>{getProductLiveViewers(p._id, p.price)}</b>
+                      </span>
                     </td>
                     <td>{p.sold || 0}</td>
                     <td>

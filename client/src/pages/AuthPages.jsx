@@ -63,6 +63,21 @@ export function Login() {
 
   return (
     <AuthShell title="Sign In" sub="Sign in to your customer account">
+      {/* ─── PROMINENT BECOME SELLER / REGISTER AS SELLER CALLOUT ─── */}
+      <div className="login-seller-prompt-card">
+        <div className="lsp-text">
+          <div className="lsp-header">
+            <span className="lsp-tag">🏬 Sell on Bazario</span>
+            <span className="lsp-badge">Merchants &amp; Vendors</span>
+          </div>
+          <b className="lsp-title">Want to sell your products on Bazario?</b>
+          <p className="lsp-desc">Open your seller store, manage inventory, and start receiving orders today.</p>
+        </div>
+        <Link to="/seller/login?mode=register" className="lsp-btn">
+          <Ic name="tag" size={15} /> <b>Register as Seller →</b>
+        </Link>
+      </div>
+
       <form onSubmit={submit} className="auth-form-clean">
         {error && <div className="alert-error"><Ic name="x" size={14} /> {error}</div>}
         <div className="field">
@@ -114,8 +129,11 @@ export function Login() {
       <div className="auth-quick-portals">
         <span className="aqp-label">Looking for other portals?</span>
         <div className="aqp-links">
+          <Link to="/seller/login?mode=register" className="aqp-pill seller-pill" style={{ fontWeight: 700 }}>
+            <Ic name="tag" size={13} /> Become a Seller
+          </Link>
           <Link to="/seller/login" className="aqp-pill seller-pill">
-            <Ic name="tag" size={13} /> Seller Central
+            <Ic name="tag" size={13} /> Seller Hub
           </Link>
           <Link to="/admin/login" className="aqp-pill admin-pill">
             <Ic name="shield" size={13} /> Super Admin

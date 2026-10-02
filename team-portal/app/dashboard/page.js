@@ -135,12 +135,14 @@ export default function DashboardPage() {
                 </span>
               </div>
 
-              <div className="mt-3 flex items-baseline gap-2">
-                <h2 className="text-3xl sm:text-4xl font-black tracking-tight">
-                  ₹{(stats?.adminWallet?.balanceINR ?? user?.wallet?.balanceINR ?? 0).toLocaleString()}
+              <div className="mt-3 flex items-baseline gap-2 flex-wrap">
+                <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-white">
+                  ₮{((stats?.adminWallet?.balanceUSDT ?? user?.wallet?.balanceUSDT ?? (stats?.adminWallet?.balanceINR ?? user?.wallet?.balanceINR ?? 0) / 90)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </h2>
-                <span className="text-lg font-bold text-amber-200">INR</span>
-                <span className="text-xs text-amber-100/80 ml-2">(Your Current Net Balance)</span>
+                <span className="text-lg font-bold text-emerald-300">USDT</span>
+                <span className="text-xs text-amber-100/90 ml-1">
+                  (≈ ₹{(stats?.adminWallet?.balanceINR ?? user?.wallet?.balanceINR ?? 0).toLocaleString()} INR)
+                </span>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-white/20 text-xs">
@@ -252,17 +254,17 @@ export default function DashboardPage() {
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-baseline gap-2 sm:gap-3">
-                  <h2 className="text-3xl sm:text-4xl font-black tracking-tight">
-                    Rs {(stats?.walletBalancePKR || user?.wallet?.balancePKR || 0).toLocaleString()}
-                    <span className="text-base sm:text-lg font-normal opacity-90 ml-1.5">PKR</span>
+                  <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-white">
+                    ₮{((stats?.walletBalanceUSDT ?? user?.wallet?.balanceUSDT ?? (((stats?.walletBalancePKR || user?.wallet?.balancePKR || 0) / 280) + ((stats?.walletBalanceINR || user?.wallet?.balanceINR || 0) / 90)))).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <span className="text-base sm:text-lg font-normal opacity-90 ml-1.5">USDT</span>
                   </h2>
-                  {(stats?.walletBalanceINR || user?.wallet?.balanceINR || 0) > 0 && (
-                    <div className="bg-white/20 border border-white/25 rounded-2xl px-3 py-1 flex items-baseline gap-1 text-white">
-                      <span className="text-xs opacity-80 uppercase font-semibold">INR Pool:</span>
-                      <span className="text-lg font-extrabold">₹{(stats?.walletBalanceINR || user?.wallet?.balanceINR || 0).toLocaleString()}</span>
-                      <span className="text-xs font-bold">INR</span>
-                    </div>
-                  )}
+                  <div className="bg-white/20 border border-white/25 rounded-2xl px-3 py-1 flex items-baseline gap-1 text-white text-xs">
+                    {user?.commissionLabel === 'inr_50' ? (
+                      <span>≈ ₹{(stats?.walletBalanceINR || user?.wallet?.balanceINR || 0).toLocaleString()} INR</span>
+                    ) : (
+                      <span>≈ Rs {(stats?.walletBalancePKR || user?.wallet?.balancePKR || 0).toLocaleString()} PKR</span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Sub-breakdown */}

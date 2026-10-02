@@ -10,16 +10,17 @@
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
-  cursor: grab;
+  cursor: default;
   transition: left 0.35s cubic-bezier(0.18, 0.89, 0.32, 1.28), top 0.22s ease, transform 0.2s ease;
   will-change: left, top, transform;
 }
 
 .floating-chat-fab-wrap:active {
-  cursor: grabbing;
+  cursor: default;
 }
 
-.floating-chat-fab-wrap.is-dragging {
+.floating-chat-fab-wrap.is-dragging,
+.floating-chat-fab-wrap.is-dragging * {
   transition: none !important;
   cursor: grabbing !important;
   transform: scale(1.08) !important;
@@ -39,7 +40,7 @@
   color: #ffffff;
   font-size: 13.5px;
   font-weight: 700;
-  cursor: grab;
+  cursor: pointer;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.28), 0 2px 6px rgba(0, 0, 0, 0.12);
   position: relative;
   transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;

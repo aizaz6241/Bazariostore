@@ -162,9 +162,11 @@ export default function AppNavbar() {
                   <Wallet className="w-3.5 h-3.5" />
                 </div>
                 <div className="text-xs">
-                  <span className="text-[10px] uppercase font-bold text-amber-600 block leading-none">Admin Share</span>
-                  <span className="font-bold text-slate-900 leading-tight">
-                    ₹{(user.wallet?.balanceINR || 0).toLocaleString()} <span className="text-[10px] text-slate-500 font-normal">INR</span>
+                  <span className="text-[9px] uppercase font-bold text-amber-600 block leading-none">Admin Balance</span>
+                  <span className="font-extrabold text-slate-900 leading-tight">
+                    ₮{((user.wallet?.balanceUSDT != null ? user.wallet?.balanceUSDT : (user.wallet?.balanceINR || 0) / 90)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+                    <span className="text-[10px] text-slate-500 font-normal">USDT</span>{' '}
+                    <span className="text-[10px] text-purple-700 font-semibold">(₹{(user.wallet?.balanceINR || 0).toLocaleString()})</span>
                   </span>
                 </div>
               </button>
@@ -179,12 +181,15 @@ export default function AppNavbar() {
                   <Wallet className="w-3.5 h-3.5" />
                 </div>
                 <div className="text-xs">
-                  <span className="text-[10px] uppercase font-bold text-emerald-600 block leading-none">Wallet</span>
-                  <div className="flex items-center space-x-1.5 font-bold text-slate-900 leading-tight">
-                    <span>Rs {(user.wallet?.balancePKR || 0).toLocaleString()} PKR</span>
-                    {(user.wallet?.balanceINR || 0) > 0 && (
-                      <span className="text-emerald-700 text-[11px] font-semibold">| ₹{(user.wallet?.balanceINR || 0).toLocaleString()} INR</span>
-                    )}
+                  <span className="text-[9px] uppercase font-bold text-emerald-600 block leading-none">Wallet</span>
+                  <div className="flex items-center space-x-1.5 font-extrabold text-slate-900 leading-tight">
+                    <span>
+                      ₮{((user.wallet?.balanceUSDT != null ? user.wallet?.balanceUSDT : ((user.wallet?.balancePKR || 0) / 280) + ((user.wallet?.balanceINR || 0) / 90))).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+                      <span className="text-[10px] text-slate-500 font-normal">USDT</span>
+                    </span>
+                    <span className="text-[10px] text-emerald-700 font-semibold">
+                      {user.commissionLabel === 'inr_50' ? `(₹${(user.wallet?.balanceINR || 0).toLocaleString()})` : `(Rs ${(user.wallet?.balancePKR || 0).toLocaleString()})`}
+                    </span>
                   </div>
                 </div>
               </button>

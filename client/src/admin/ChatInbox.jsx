@@ -361,13 +361,13 @@ export default function ChatInbox() {
       );
     };
 
-    const onMessagesSeen = ({ conversationId, seenAt }) => {
+    const onMessagesSeen = ({ conversationId, guestId: seenGuestId, seenAt }) => {
       setMessages((prev) =>
         Array.isArray(prev)
           ? prev.map((m) => {
               const isMatch =
                 (m.sender === 'admin' || m.sender === 'staff') &&
-                (!conversationId || !m.conversation || String(m.conversation) === String(conversationId) || String(m.conversation?._id) === String(conversationId));
+                (!conversationId || !m.conversation || String(m.conversation) === String(conversationId) || String(m.conversation?._id) === String(conversationId) || (seenGuestId && m.guestId === seenGuestId));
               return isMatch ? { ...m, isSeen: true, seenAt: seenAt || new Date() } : m;
             })
           : prev

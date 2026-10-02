@@ -112,13 +112,6 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
   const handlePointerDown = (e) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
 
-    const btnEl = buttonRef.current;
-    if (!btnEl) return;
-
-    try {
-      btnEl.setPointerCapture(e.pointerId);
-    } catch {}
-
     dragInfoRef.current = {
       startX: e.clientX,
       startY: e.clientY,
@@ -137,10 +130,13 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
     const dy = e.clientY - drag.startY;
     const dist = Math.hypot(dx, dy);
 
-    if (dist > 6) {
+    if (dist > 10) {
       if (!drag.isMoved) {
         drag.isMoved = true;
         setIsDragging(true);
+        try {
+          buttonRef.current?.setPointerCapture(e.pointerId);
+        } catch {}
       }
 
       const btnEl = buttonRef.current;
@@ -210,9 +206,9 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
   };
 
   const handleBtnClick = (e) => {
-    if (justDraggedRef.current) {
-      e.preventDefault();
-      e.stopPropagation();
+    if (justDraggedRef.current || isDragging) {
+      if (e?.preventDefault) e.preventDefault();
+      if (e?.stopPropagation) e.stopPropagation();
       return;
     }
     toggleOpen();
@@ -234,6 +230,16 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
           if (!res) return;
           setConv(res.conversation || null);
           setMessages(Array.isArray(res.messages) ? res.messages : []);
+          if (isOpen) {
+            api(`/chat/read/${guestId}`, { method: 'POST' }).catch(() => {});
+            try {
+              const s = getSocket();
+              if (s?.connected) s.emit('guest:read', { guestId, conversationId: res.conversation?._id });
+            } catch {}
+            setUnreadCount(0);
+          } else if (res.conversation?.unreadForCustomer) {
+            setUnreadCount(res.conversation.unreadForCustomer);
+          }
         })
         .catch((e) => console.error('Guest thread load error:', e))
         .finally(() => setLoading(false));
@@ -247,6 +253,10 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
         setMessages(Array.isArray(res.messages) ? res.messages : []);
         if (isOpen) {
           sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
+          try {
+            const s = getSocket();
+            if (s?.connected) s.emit('seller:read', { conversationId: res.conversation?._id });
+          } catch {}
           setUnreadCount(0);
         } else if (res.conversation?.unreadForSeller) {
           setUnreadCount(res.conversation.unreadForSeller);
@@ -284,7 +294,7 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
   };
 
   useEffect(() => {
-    if (role === 'seller') {
+    if (role === 'seller' || role === 'guest') {
       loadSellerThread();
     } else {
       loadAdminConvos();
@@ -297,18 +307,52 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
       console.warn('Socket warning:', e);
     }
 
+    // Join room for guest/customer
+    const isSellerLoggedIn = Boolean(localStorage.getItem('ng_seller_token'));
+    const guestId = getGuestId();
+    const joinGuest = () => {
+      if (!socket || !socket.connected) return;
+      if (role === 'guest' || !isSellerLoggedIn) {
+        socket.emit('guest:join', { guestId });
+        socket.emit('customer:join', { guestId });
+      }
+    };
+
+    if (socket) {
+      if (socket.connected) joinGuest();
+      socket.on('connect', joinGuest);
+    }
+
     const onNewMsg = (msg) => {
       if (!msg) return;
-      if (role === 'seller') {
+      if (role === 'seller' || role === 'guest') {
+        const sellerToken = Boolean(localStorage.getItem('ng_seller_token'));
+        if (!sellerToken) {
+          const curGuestId = getGuestId();
+          const isForThisGuest =
+            (msg.guestId && msg.guestId === curGuestId) ||
+            (conv?._id && String(msg.conversation) === String(conv._id)) ||
+            (msg.sender === 'admin' || msg.sender === 'staff');
+          if (!isForThisGuest) return;
+        }
+
         setMessages((prev) => {
           if (!Array.isArray(prev)) return [msg];
           if (prev.some((m) => m?._id === msg?._id)) return prev;
           return [...prev, msg];
         });
-        if (!isOpen && msg.sender === 'admin') {
+
+        if (!isOpen && (msg.sender === 'admin' || msg.sender === 'staff')) {
           setUnreadCount((prev) => prev + 1);
         } else if (isOpen) {
-          sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
+          if (sellerToken) {
+            sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
+            socket?.emit?.('seller:read', { conversationId: conv?._id });
+          } else {
+            const curGuestId = getGuestId();
+            api(`/chat/read/${curGuestId}`, { method: 'POST' }).catch(() => {});
+            socket?.emit?.('guest:read', { guestId: curGuestId, conversationId: conv?._id });
+          }
         }
       } else {
         // Admin
@@ -319,22 +363,23 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
             return [...prev, msg];
           });
         }
-        if (!isOpen && msg.sender === 'seller') {
+        if (!isOpen && (msg.sender === 'seller' || msg.sender === 'customer' || msg.sender === 'guest')) {
           setUnreadCount((prev) => prev + 1);
         }
         loadAdminConvos();
       }
     };
 
-    const onMessagesSeen = ({ conversationId, seenAt }) => {
+    const onMessagesSeen = ({ conversationId, guestId: seenGuestId, seenAt }) => {
       if (role === 'admin') {
         setMessages((prev) =>
           Array.isArray(prev)
-            ? prev.map((m) =>
-                m.sender === 'admin' || m.sender === 'staff'
-                  ? { ...m, isSeen: true, seenAt: seenAt || new Date() }
-                  : m
-              )
+            ? prev.map((m) => {
+                const match =
+                  (m.sender === 'admin' || m.sender === 'staff') &&
+                  (!conversationId || !m.conversation || String(m.conversation) === String(conversationId) || String(m.conversation?._id) === String(conversationId) || (seenGuestId && m.guestId === seenGuestId));
+                return match ? { ...m, isSeen: true, seenAt: seenAt || new Date() } : m;
+              })
             : prev
         );
       }
@@ -376,13 +421,14 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
     }
     return () => {
       if (socket) {
+        socket.off('connect', joinGuest);
         socket.off('message:new', onNewMsg);
         socket.off('messages:seen', onMessagesSeen);
         socket.off('message:edit', onMessageEdit);
         socket.off('message:delete', onMessageDelete);
       }
     };
-  }, [role, isOpen, selectedConvoId]);
+  }, [role, isOpen, selectedConvoId, conv?._id]);
 
   useEffect(() => {
     if (role === 'admin' && selectedConvoId && isOpen) {
@@ -401,8 +447,17 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
     setIsOpen(next);
     if (next) {
       setUnreadCount(0);
-      if (role === 'seller') {
+      if (role === 'seller' || role === 'guest') {
         loadSellerThread();
+        const isSellerLoggedIn = Boolean(localStorage.getItem('ng_seller_token'));
+        if (!isSellerLoggedIn) {
+          const guestId = getGuestId();
+          api(`/chat/read/${guestId}`, { method: 'POST' }).catch(() => {});
+          try {
+            const s = getSocket();
+            if (s?.connected) s.emit('guest:read', { guestId, conversationId: conv?._id });
+          } catch {}
+        }
       } else if (selectedConvoId) {
         loadAdminMessages(selectedConvoId);
       }
@@ -609,10 +664,12 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
                 <b className="floating-header-title">
                   {role === 'seller'
                     ? 'Admin Support Desk'
-                    : currentConvo?.seller?.storeName || currentConvo?.storeName || 'Seller Support Desk'}
+                    : role === 'guest'
+                    ? 'Bazario Support Desk'
+                    : currentConvo?.seller?.storeName || currentConvo?.storeName || 'Support Desk'}
                 </b>
                 <span className="floating-header-status">
-                  {role === 'seller' ? '● Online & Available' : `${adminConvos.length} active seller chats`}
+                  {role === 'admin' ? `${adminConvos.length} active seller chats` : '● Online & Available'}
                 </span>
               </div>
             </div>

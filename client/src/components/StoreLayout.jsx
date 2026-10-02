@@ -123,6 +123,18 @@ function Header() {
           {/* Global Currency Selector in Header */}
           <CurrencySelector compact />
 
+          {/* Clearly visible Become a Seller / Register as Seller Button */}
+          {!isSeller && !isAdmin && (
+            <Link
+              to="/seller/login?mode=register"
+              className="header-become-seller-btn"
+              title="Register as a Seller on Bazario Marketplace"
+            >
+              <span className="hbs-badge">SELL</span>
+              <span className="hbs-text">Become a Seller</span>
+            </Link>
+          )}
+
           {/* User Account / Dashboard Dropdown */}
           <div className="nav-drop header-account-drop">
             <Link to={accountMainLink} className="header-account">
@@ -200,8 +212,8 @@ function Header() {
                   {isCustomer && !isSeller && !isAdmin && (
                     <>
                       <hr className="menu-divider" />
-                      <Link to="/seller/login" className="menu-link-subtle">
-                        <Ic name="tag" size={14} /> Sell on Bazario (Seller Central)
+                      <Link to="/seller/login?mode=register" className="menu-link-subtle" style={{ color: '#d97706', fontWeight: 700 }}>
+                        <Ic name="tag" size={14} /> Register as Seller (Open Store)
                       </Link>
                     </>
                   )}
@@ -288,6 +300,9 @@ function Header() {
                     <small>New customer? <Link to="/register">Start here.</Link></small>
                   </div>
                   <hr className="menu-divider" />
+                  <Link to="/seller/login?mode=register" style={{ color: '#d97706', fontWeight: 700 }}>
+                    <Ic name="tag" size={14} /> <b>Register as Seller / Open Store</b>
+                  </Link>
                   <Link to="/track-order"><Ic name="truck" size={14} /> Track Orders</Link>
                   <Link to="/seller/login"><Ic name="tag" size={14} /> Seller Central Login</Link>
                   <Link to="/admin/login"><Ic name="shield" size={14} /> Admin Control Center</Link>
@@ -350,8 +365,8 @@ function NavBar() {
               🏬 Seller Dashboard
             </NavLink>
           ) : (
-            <NavLink to="/seller/login" className="nav-seller-pill">
-              🏬 Sell on Bazario
+            <NavLink to="/seller/login?mode=register" className="nav-seller-pill become-seller-nav-pill">
+              🚀 Become a Seller
             </NavLink>
           )}
         </div>
@@ -466,6 +481,12 @@ function MobileNav() {
     <nav className="mobile-nav">
       <NavLink to="/" end><Ic name="home" size={20} /><span>Home</span></NavLink>
       <NavLink to="/shop"><Ic name="grid" size={20} /><span>Deals</span></NavLink>
+      {!isSeller && !isAdmin && (
+        <NavLink to="/seller/login?mode=register" className="mn-sell">
+          <Ic name="tag" size={20} />
+          <span>Sell</span>
+        </NavLink>
+      )}
       <NavLink to="/cart" className="mn-cart">
         <Ic name="cart" size={20} />
         {count > 0 && <em className="mn-badge">{count}</em>}

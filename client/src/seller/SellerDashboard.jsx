@@ -7,6 +7,7 @@ import CurrencySelector from '../components/CurrencySelector.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 import { getSocket } from '../socket.js';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
+import { getLiveStoreVisitors, getProductLiveViewers } from '../utils/liveMetrics.js';
 
 export default function SellerDashboard() {
   const { formatMoney, currentCurrency } = useCurrency();
@@ -14,6 +15,7 @@ export default function SellerDashboard() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [appModalOpen, setAppModalOpen] = useState(false);
+  const [liveShoppers, setLiveShoppers] = useState(() => getLiveStoreVisitors());
 
   const loadData = () => {
     sapi('/sellers/dashboard')
@@ -28,6 +30,11 @@ export default function SellerDashboard() {
   useEffect(() => {
     loadData();
 
+    // Gentle organic fluctuation timer for live shoppers
+    const shopperTimer = setInterval(() => {
+      setLiveShoppers(getLiveStoreVisitors(data?.seller?._id, data?.stats?.totalProducts || 12));
+    }, 18000);
+
     const socket = getSocket();
     const onSync = () => loadData();
     socket.on('order:new', onSync);
@@ -37,13 +44,14 @@ export default function SellerDashboard() {
     socket.on('seller:targets_update', onSync);
 
     return () => {
+      clearInterval(shopperTimer);
       socket.off('order:new', onSync);
       socket.off('wallet:update', onSync);
       socket.off('seller:health_update', onSync);
       socket.off('seller:status_update', onSync);
       socket.off('seller:targets_update', onSync);
     };
-  }, []);
+  }, [data?.seller?._id, data?.stats?.totalProducts]);
 
   if (loading && !data) {
     return <div className="seller-loading-state"><div className="spinner"></div><p>Loading your seller analytics...</p></div>;
@@ -283,6 +291,24 @@ export default function SellerDashboard() {
 
       {/* KPI Metric Cards */}
       <div className="seller-kpi-grid">
+        {/* Active Store Visitors (Real-Time Traffic) */}
+        <div className="seller-kpi-card visitors-card">
+          <div className="kpi-header">
+            <span className="kpi-title">Active Store Visitors</span>
+            <span className="kpi-icon-wrap emerald">
+              <span className="live-pulse-dot" />
+              <Ic name="eye" size={20} />
+            </span>
+          </div>
+          <div className="kpi-value text-emerald" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>{liveShoppers}</span>
+            <span className="live-pill-tag">● LIVE NOW</span>
+          </div>
+          <div className="kpi-footer text-emerald">
+            <span>Customers currently browsing your catalog</span>
+          </div>
+        </div>
+
         {/* Available Wallet Balance */}
         <div className="seller-kpi-card revenue-card">
           <div className="kpi-header">
@@ -354,6 +380,12 @@ export default function SellerDashboard() {
 
       {/* Secondary Metrics Bar */}
       <div className="seller-secondary-metrics">
+        <div className="sec-metric">
+          <span className="sec-lbl">Active Shoppers Now</span>
+          <b className="sec-val text-green" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <span className="live-pulse-dot" /> {liveShoppers} Live
+          </b>
+        </div>
         <div className="sec-metric">
           <span className="sec-lbl">Gross Store Sales</span>
           <b className="sec-val">{formatMoney(stats?.grossRevenue)}</b>
@@ -514,7 +546,12 @@ export default function SellerDashboard() {
                 <img src={p.image || '/img/products/serum.svg'} alt={p.name} className="top-prod-img" />
                 <div className="top-prod-info">
                   <b className="top-prod-name" title={p.name}>{p.name}</b>
-                  <small className="top-prod-meta">{p.qty} units sold</small>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <small className="top-prod-meta">{p.qty} units sold</small>
+                    <span className="prod-live-viewers-tag-sm" title="Live shoppers currently viewing this product">
+                      <Ic name="eye" size={11} stroke={2.2} /> {getProductLiveViewers(p.id || p._id || p.name, p.revenue)} viewing
+                    </span>
+                  </div>
                 </div>
                 <div className="top-prod-rev">{formatMoney(p.revenue)}</div>
               </div>

@@ -443,10 +443,45 @@ io.on('connection', (socket) => {
           conversationId: conv._id,
           sellerId: targetSellerId,
           seenAt: now,
+          seenBy: 'seller',
         });
       }
     } catch (e) {
       console.error('seller:read socket error:', e.message);
+    }
+  });
+
+  // Real-time Seen / Read status update from guest
+  socket.on('guest:read', async ({ guestId, conversationId }) => {
+    try {
+      const now = new Date();
+      const targetGuestId = guestId || socket.data?.guestId;
+      if (!targetGuestId && !conversationId) return;
+
+      const query = targetGuestId ? { guestId: targetGuestId } : { _id: conversationId };
+      const conv = await Conversation.findOne(query);
+      if (conv) {
+        conv.unreadForCustomer = 0;
+        await conv.save();
+
+        await Message.updateMany(
+          {
+            $or: [{ conversation: conv._id }, { guestId: conv.guestId || targetGuestId }],
+            sender: { $in: ['admin', 'staff'] },
+            isSeen: { $ne: true },
+          },
+          { $set: { isSeen: true, seenAt: now, seenBy: 'guest' } }
+        );
+
+        io.to('admins').emit('messages:seen', {
+          conversationId: conv._id,
+          guestId: conv.guestId || targetGuestId,
+          seenAt: now,
+          seenBy: 'guest',
+        });
+      }
+    } catch (e) {
+      console.error('guest:read socket error:', e.message);
     }
   });
 });

@@ -9,6 +9,67 @@ import { escapeRegex } from '../../utils/sanitize.js';
 
 const router = express.Router();
 
+function balancedPriceMix(items) {
+  if (!items || items.length <= 2) return items;
+
+  // Split into 4 price tiers: Budget (<$60), Value ($60-$200), Premium ($200-$600), Luxury (>$600)
+  const tier1 = [];
+  const tier2 = [];
+  const tier3 = [];
+  const tier4 = [];
+
+  const hash = (id) => {
+    const s = String(id || '');
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return Math.abs(h);
+  };
+
+  items.forEach((item) => {
+    const p = Number(item.price) || 0;
+    if (p < 60) tier1.push(item);
+    else if (p < 200) tier2.push(item);
+    else if (p < 600) tier3.push(item);
+    else tier4.push(item);
+  });
+
+  // Deterministic spread within tiers
+  tier1.sort((a, b) => (hash(a._id) % 100) - (hash(b._id) % 100));
+  tier2.sort((a, b) => (hash(a._id) % 100) - (hash(b._id) % 100));
+  tier3.sort((a, b) => (hash(a._id) % 100) - (hash(b._id) % 100));
+  tier4.sort((a, b) => (hash(a._id) % 100) - (hash(b._id) % 100));
+
+  // Interleave pattern across tiers so low and high priced products are evenly intermingled
+  const pattern = [2, 4, 1, 3, 2, 1, 3, 4];
+  const mixed = [];
+  const indices = { 1: 0, 2: 0, 3: 0, 4: 0 };
+  const tiers = { 1: tier1, 2: tier2, 3: tier3, 4: tier4 };
+
+  let pIdx = 0;
+  while (mixed.length < items.length) {
+    const targetTierNum = pattern[pIdx % pattern.length];
+    pIdx++;
+
+    let targetTier = tiers[targetTierNum];
+    if (indices[targetTierNum] < targetTier.length) {
+      mixed.push(targetTier[indices[targetTierNum]++]);
+      continue;
+    }
+
+    let found = false;
+    for (const alt of [1, 3, 2, 4]) {
+      if (indices[alt] < tiers[alt].length) {
+        mixed.push(tiers[alt][indices[alt]++]);
+        found = true;
+        break;
+      }
+    }
+    if (!found) break;
+  }
+
+  return mixed;
+}
+
 // GET /api/sellers/treasury - Browse master products catalog for logged-in seller
 router.get('/treasury', authSeller, async (req, res) => {
   try {
@@ -34,14 +95,15 @@ router.get('/treasury', authSeller, async (req, res) => {
       ];
     }
 
-    let sortBy = { createdAt: -1 };
+    let sortBy = null;
     if (sort === 'stock') sortBy = { stock: -1 };
-    if (sort === 'price-low') sortBy = { price: 1 };
-    if (sort === 'price-high') sortBy = { price: -1 };
+    else if (sort === 'price-low') sortBy = { price: 1 };
+    else if (sort === 'price-high') sortBy = { price: -1 };
+    else if (sort === 'newest') sortBy = { createdAt: -1 };
 
     const items = await TreasuryProduct.find(filter)
       .populate('category', 'name slug')
-      .sort(sortBy)
+      .sort(sortBy || { createdAt: -1 })
       .lean();
 
     const itemIds = items.map((i) => i._id);
@@ -86,15 +148,22 @@ router.get('/treasury', authSeller, async (req, res) => {
       };
     });
 
-    // Ensure unadded products are ALWAYS on top, and already added products are pushed to the bottom
-    enriched.sort((a, b) => {
-      if (a.isAddedToStore !== b.isAddedToStore) {
-        return a.isAddedToStore ? 1 : -1;
-      }
-      return 0;
-    });
+    let finalItems = enriched;
+    // Default to balanced mix of high & low prices unless seller specifically chooses an ordered sort
+    if (!sort || sort === 'mixed') {
+      finalItems = balancedPriceMix(enriched);
+    }
 
-    res.json(enriched);
+    if (req.query.prioritizeUnadded === 'true') {
+      finalItems.sort((a, b) => {
+        if (a.isAddedToStore !== b.isAddedToStore) {
+          return a.isAddedToStore ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+
+    res.json(finalItems);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
