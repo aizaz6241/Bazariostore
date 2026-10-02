@@ -7,7 +7,6 @@ import { Conversation, Message } from '../../models/Chat.js';
 import { authSeller, authAdmin, authSellerOrAdmin } from '../../middleware/auth.js';
 import { notify } from '../../utils/notify.js';
 import { audit } from '../../utils/audit.js';
-import { syncWithdrawalDocToFinance } from '../../services/businessFinance.service.js';
 
 const router = express.Router();
 
@@ -754,13 +753,6 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
     seller.markModified('wallet');
     seller.markModified('withdrawalLimit');
     await seller.save();
-
-    // Auto-sync approved deposit or withdrawal to Business Finance Manager
-    if (status === 'approved') {
-      syncWithdrawalDocToFinance(reqDoc, finalAmount, seller).catch((syncErr) => {
-        console.error('[Finance Auto-Sync Error]', syncErr.message);
-      });
-    }
 
     // Send chat notification about result
     try {
