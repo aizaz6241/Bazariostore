@@ -58,7 +58,6 @@ import Audit from './admin/Audit.jsx';
 import Content from './admin/Content.jsx';
 import Settings from './admin/Settings.jsx';
 import InstallAppBanner from './components/InstallAppBanner.jsx';
-import BusinessFinance from './finance/BusinessFinance.jsx';
 
 export default function App() {
   return (
@@ -152,13 +151,6 @@ export default function App() {
         <Route path="content" element={<Content />} />
         <Route path="settings" element={<Settings />} />
       </Route>
-
-      {/* ─── Confidential Partner Business Finance App ───────────────── */}
-      <Route path="/business-finance" element={<BusinessFinance />} />
-      <Route path="/bussiness-finance" element={<Navigate to="/business-finance" replace />} />
-      <Route path="/partner-finance" element={<Navigate to="/business-finance" replace />} />
-      <Route path="/finance-manager" element={<Navigate to="/business-finance" replace />} />
-      <Route path="/partners-hub" element={<Navigate to="/business-finance" replace />} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

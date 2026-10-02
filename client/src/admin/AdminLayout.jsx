@@ -22,7 +22,6 @@ const NAV = [
   { to: '/admin/chat', icon: 'chat', label: 'Seller Support Desk', perm: 'chat' },
   { to: '/admin/backup', icon: 'database', label: 'Database Backup', perm: 'settings' },
   { to: '/admin/staff', icon: 'user', label: 'Staff & Team', perm: 'staff' },
-  { to: '/business-finance', icon: 'shield', label: '🔒 Partner Finance', superAdminOnly: true },
 ];
 
 export default function AdminLayout() {
