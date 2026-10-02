@@ -81,7 +81,77 @@ router.get('/dashboard', authAdmin(), async (req, res) => {
 
   const recent = await Order.find().sort({ createdAt: -1 }).limit(8);
 
+  // ─── USDT WALLET (REAL CLIENT SELLERS ONLY - EXCLUDES TEST ACCOUNTS) ───
+  const clientSellers = await Seller.find({
+    isTestAccount: { $ne: true },
+    accountType: { $ne: 'test' },
+  }).select('_id storeName');
+  const clientSellerIds = clientSellers.map((s) => s._id);
+
+  const clientDeposits = await Withdrawal.find({
+    seller: { $in: clientSellerIds },
+    type: 'deposit',
+    status: 'approved',
+  }).sort({ createdAt: -1 });
+
+  const getNetSellerDeposit = (r) => {
+    const gross = r.approvedAmount !== null && r.approvedAmount !== undefined ? r.approvedAmount : r.amount;
+    const helping = r.helpingAmount || 0;
+    return Math.max(0, gross - helping);
+  };
+
+  const dayStart = startOf.day();
+  const weekStart = startOf.week();
+  const monthStart = startOf.month();
+  const yearStart = startOf.year();
+
+  let usdtWalletTotal = 0;
+  let usdtWalletToday = 0;
+  let usdtWalletWeek = 0;
+  let usdtWalletMonth = 0;
+  let usdtWalletYear = 0;
+  let totalGrossDeposits = 0;
+  let totalHelpingAmount = 0;
+
+  clientDeposits.forEach((d) => {
+    const net = getNetSellerDeposit(d);
+    const gross = d.approvedAmount !== null && d.approvedAmount !== undefined ? d.approvedAmount : d.amount;
+    const helping = d.helpingAmount || 0;
+    const dTime = new Date(d.processedAt || d.createdAt);
+
+    usdtWalletTotal += net;
+    totalGrossDeposits += gross;
+    totalHelpingAmount += helping;
+
+    if (dTime >= dayStart) usdtWalletToday += net;
+    if (dTime >= weekStart) usdtWalletWeek += net;
+    if (dTime >= monthStart) usdtWalletMonth += net;
+    if (dTime >= yearStart) usdtWalletYear += net;
+  });
+
+  const usdtWallet = {
+    total: usdtWalletTotal,
+    today: usdtWalletToday,
+    week: usdtWalletWeek,
+    month: usdtWalletMonth,
+    year: usdtWalletYear,
+    grossDeposits: totalGrossDeposits,
+    helpingAmount: totalHelpingAmount,
+    depositCount: clientDeposits.length,
+    clientSellersCount: clientSellers.length,
+    recentPayments: clientDeposits.slice(0, 5).map((d) => ({
+      _id: d._id,
+      storeName: d.storeName,
+      netUsdt: getNetSellerDeposit(d),
+      grossAmount: d.approvedAmount !== null && d.approvedAmount !== undefined ? d.approvedAmount : d.amount,
+      helpingAmount: d.helpingAmount || 0,
+      createdAt: d.processedAt || d.createdAt,
+      transactionRef: d.depositRef || d.transactionRef,
+    })),
+  };
+
   res.json({
+    usdtWallet,
     sales: { today, week, month, year },
     ordersByStatus,
     customers: { total: totalCustomers, newThisMonth: newCustomers, returning: returningAgg[0]?.returning || 0 },

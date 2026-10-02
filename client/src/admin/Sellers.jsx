@@ -90,6 +90,7 @@ export default function Sellers() {
   const [resetSuccess, setResetSuccess] = useState('');
   const [resetError, setResetError] = useState('');
   const [showAdminSellerPw, setShowAdminSellerPw] = useState(true);
+  const [toggleToast, setToggleToast] = useState('');
 
   // Delete Seller Modal
   const [deleteModalSeller, setDeleteModalSeller] = useState(null);
@@ -485,6 +486,9 @@ export default function Sellers() {
       if (profileSeller?._id === sellerId) {
         setProfileSeller((prev) => ({ ...prev, isTestAccount: res.seller?.isTestAccount, accountType: res.seller?.accountType }));
       }
+      const isNowTest = res.seller?.isTestAccount;
+      setToggleToast(`Store "${res.seller?.storeName || 'Merchant'}" switched to ${isNowTest ? '🧪 TEST ACCOUNT' : '👤 CLIENT ACCOUNT'}!`);
+      setTimeout(() => setToggleToast(''), 3500);
     } catch (err) {
       alert('Error updating account type: ' + err.message);
     }
@@ -3022,6 +3026,43 @@ export default function Sellers() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {toggleToast && (
+        <div style={{
+          position: 'fixed',
+          bottom: 24,
+          right: 24,
+          background: '#0f172a',
+          color: '#ffffff',
+          padding: '12px 20px',
+          borderRadius: 10,
+          boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+          zIndex: 99999,
+          fontWeight: 700,
+          fontSize: 13,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+        }}>
+          <span style={{ fontSize: 16 }}>⚡</span>
+          <span>{toggleToast}</span>
+          <button
+            type="button"
+            onClick={() => setToggleToast('')}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: '#94a3b8',
+              cursor: 'pointer',
+              marginLeft: 8,
+              fontSize: 14,
+              padding: 0,
+            }}
+          >
+            ✕
+          </button>
         </div>
       )}
     </div>

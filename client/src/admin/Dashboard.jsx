@@ -41,24 +41,83 @@ export default function Dashboard() {
     socket.on('order:update', handleSync);
     socket.on('order:status_update', handleSync);
     socket.on('order:new', handleSync);
+    socket.on('withdrawal:new', handleSync);
+    socket.on('withdrawal:update', handleSync);
+    socket.on('seller:status_update', handleSync);
+    socket.on('wallet:update', handleSync);
 
     return () => {
       socket.off('connect', rejoin);
       socket.off('order:update', handleSync);
       socket.off('order:status_update', handleSync);
       socket.off('order:new', handleSync);
+      socket.off('withdrawal:new', handleSync);
+      socket.off('withdrawal:update', handleSync);
+      socket.off('seller:status_update', handleSync);
+      socket.off('wallet:update', handleSync);
     };
   }, []);
 
   if (error) return <ErrorBox error={error} />;
   if (!d) return <p className="muted">Loading…</p>;
 
-  const salesCards = [
-    { label: "Today's Sales", ...d.sales.today },
-    { label: 'Weekly Sales', ...d.sales.week },
-    { label: 'Monthly Sales', ...d.sales.month },
-    { label: 'Yearly Sales', ...d.sales.year },
+  const fmtUsdt = (val) => {
+    const n = Number(val || 0);
+    return `${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+  };
+
+  const w = d.usdtWallet || {
+    total: 0,
+    today: 0,
+    week: 0,
+    month: 0,
+    year: 0,
+    grossDeposits: 0,
+    helpingAmount: 0,
+    depositCount: 0,
+    clientSellersCount: 0,
+  };
+
+  const usdtCards = [
+    {
+      label: 'USDT Wallet',
+      value: fmtUsdt(w.total),
+      sub: `${w.depositCount || 0} deposits · Real Clients`,
+      icon: 'wallet',
+      badge: 'Main Balance',
+      isPrimary: true,
+      color: '#059669',
+      bg: '#ecfdf5',
+    },
+    {
+      label: "Today Received",
+      value: fmtUsdt(w.today),
+      sub: "Today's Client Inflow",
+      icon: 'clock',
+      badge: 'Today',
+      color: '#0284c7',
+      bg: '#f0f9ff',
+    },
+    {
+      label: 'Weekly Received',
+      value: fmtUsdt(w.week),
+      sub: "This Week's Client Inflow",
+      icon: 'sparkle',
+      badge: '7 Days',
+      color: '#7c3aed',
+      bg: '#faf5ff',
+    },
+    {
+      label: 'Monthly Received',
+      value: fmtUsdt(w.month),
+      sub: "This Month's Client Inflow",
+      icon: 'banknote',
+      badge: '30 Days',
+      color: '#ea580c',
+      bg: '#fff7ed',
+    },
   ];
+
   const statusPie = Object.entries(d.ordersByStatus).map(([k, v]) => ({ name: STATUS_LABELS[k] || k, value: v }));
   const payPie = d.paymentSplit.map((p) => ({ name: PAYMENT_LABELS[p.label] || p.label, value: p.n }));
 
@@ -66,13 +125,101 @@ export default function Dashboard() {
     <>
       <h1 className="admin-h1">Dashboard</h1>
 
-      <div className="stat-grid stat-grid-4">
-        {salesCards.map((c) => (
-          <div className="card stat-card" key={c.label}>
-            <i><Ic name="banknote" size={22} /></i>
-            <div><b>{money(c.revenue)}</b><small>{c.label} · {c.orders} orders</small></div>
+      {/* ─── USDT WALLET SECTION (REAL CLIENT FUNDS ONLY) ─── */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ display: 'inline-flex', padding: '6px 8px', borderRadius: 8, background: '#ecfdf5', color: '#059669' }}>
+                <Ic name="wallet" size={20} />
+              </span>
+              USDT Wallet
+            </h2>
+            <span style={{
+              background: '#ecfdf5',
+              color: '#047857',
+              border: '1px solid #a7f3d0',
+              fontSize: 11,
+              fontWeight: 700,
+              padding: '3px 10px',
+              borderRadius: 20,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }}></span>
+              Real Client Accounts Only (Testing Excluded)
+            </span>
+            {w.helpingAmount > 0 && (
+              <span style={{
+                background: '#f8fafc',
+                color: '#64748b',
+                border: '1px solid #e2e8f0',
+                fontSize: 11,
+                fontWeight: 600,
+                padding: '3px 9px',
+                borderRadius: 6,
+              }}>
+                Gross: {fmtUsdt(w.grossDeposits)} | Helping: -{fmtUsdt(w.helpingAmount)}
+              </span>
+            )}
           </div>
-        ))}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Link
+              to="/admin/withdrawals"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                background: '#ffffff',
+                border: '1px solid #cbd5e1',
+                borderRadius: 8,
+                padding: '6px 12px',
+                fontSize: 12,
+                fontWeight: 700,
+                color: '#0f172a',
+                textDecoration: 'none',
+              }}
+            >
+              <span>Manage Deposits & Payouts</span>
+              <span>→</span>
+            </Link>
+          </div>
+        </div>
+
+        <div className="stat-grid stat-grid-4">
+          {usdtCards.map((c) => (
+            <div
+              className="card stat-card"
+              key={c.label}
+              style={c.isPrimary ? {
+                border: '1.5px solid #a7f3d0',
+                background: 'linear-gradient(180deg, #ffffff 0%, #f0fdf4 100%)',
+                boxShadow: '0 2px 8px rgba(16, 185, 129, 0.08)',
+              } : {}}
+            >
+              <i style={{ background: c.bg, color: c.color }}>
+                <Ic name={c.icon} size={22} />
+              </i>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 2 }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                    {c.label}
+                  </span>
+                  <span style={{ fontSize: 9.5, fontWeight: 800, padding: '1px 6px', borderRadius: 4, background: c.bg, color: c.color }}>
+                    {c.badge}
+                  </span>
+                </div>
+                <b style={{ fontSize: 18, fontWeight: 900, color: c.isPrimary ? '#047857' : '#0f172a', letterSpacing: '-0.3px' }}>
+                  {c.value}
+                </b>
+                <small style={{ color: '#64748b', fontSize: 11, marginTop: 2 }}>
+                  {c.sub}
+                </small>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="stat-grid stat-grid-4">

@@ -55,6 +55,10 @@ const withdrawalSchema = new mongoose.Schema(
     depositNote: { type: String, default: '' },
     // Admin Helping Amount (internal contribution from admin, hidden from seller)
     helpingAmount: { type: Number, default: 0 },
+    // Binance rate & conversion for withdrawals (admin internal, hidden from seller)
+    binanceRate: { type: Number, default: 0 }, // B.Rate (e.g. 90 INR/USDT)
+    inrAmount: { type: Number, default: 0 },   // Indian Rupees paid out
+    usdtAmount: { type: Number, default: 0 },  // Resulting USDT amount (INR / binanceRate)
     // Status
     status: { type: String, enum: ['pending', 'approved', 'rejected', 'completed'], default: 'pending' },
     adminNote: { type: String, default: '' },

@@ -19,6 +19,8 @@ export default function AdminWithdrawals() {
   // Per-request approval forms
   const [approvedAmountMap, setApprovedAmountMap] = useState({});
   const [helpingAmountMap, setHelpingAmountMap] = useState({});
+  const [bRateMap, setBRateMap] = useState({});
+  const [inrAmountMap, setInrAmountMap] = useState({});
   const [noteMap, setNoteMap] = useState({});
   const [refMap, setRefMap] = useState({});
 
@@ -68,12 +70,18 @@ export default function AdminWithdrawals() {
 
         const aMap = {};
         const hMap = {};
+        const bMap = {};
+        const iMap = {};
         (res.requests || []).forEach((r) => {
           aMap[r._id] = r.amount;
           if (r.helpingAmount !== undefined) hMap[r._id] = r.helpingAmount;
+          if (r.binanceRate !== undefined) bMap[r._id] = r.binanceRate;
+          if (r.inrAmount !== undefined) iMap[r._id] = r.inrAmount;
         });
         setApprovedAmountMap((prev) => ({ ...aMap, ...prev }));
         setHelpingAmountMap((prev) => ({ ...hMap, ...prev }));
+        setBRateMap((prev) => ({ ...bMap, ...prev }));
+        setInrAmountMap((prev) => ({ ...iMap, ...prev }));
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -250,8 +258,22 @@ export default function AdminWithdrawals() {
     setProcessing((p) => ({ ...p, [id]: true }));
     try {
       const isDepositReq = req?.type === 'deposit' || reqType === 'deposit';
+      const isWithdrawReq = req?.type === 'withdrawal' || req?.type === 'withdraw' || reqType === 'withdrawal' || reqType === 'withdraw';
+
       const helpingAmt = (status === 'approved' && isDepositReq)
         ? (helpingAmountMap[id] !== undefined && helpingAmountMap[id] !== '' ? Number(helpingAmountMap[id]) : 0)
+        : undefined;
+
+      const bRate = (status === 'approved' && isWithdrawReq && bRateMap[id] !== undefined && bRateMap[id] !== '')
+        ? Number(bRateMap[id])
+        : undefined;
+
+      const currentInrVal = (status === 'approved' && isWithdrawReq)
+        ? (inrAmountMap[id] !== undefined && inrAmountMap[id] !== '' ? Number(inrAmountMap[id]) : Number((appAmt * 83.50).toFixed(2)))
+        : undefined;
+
+      const usdtAmt = (status === 'approved' && isWithdrawReq && bRate > 0 && currentInrVal > 0)
+        ? Number((currentInrVal / bRate).toFixed(2))
         : undefined;
 
       await api(`/sellers/withdrawals/${id}`, {
@@ -262,6 +284,9 @@ export default function AdminWithdrawals() {
           transactionRef: refMap[id] || '',
           approvedAmount: status === 'approved' ? appAmt : undefined,
           helpingAmount: helpingAmt,
+          binanceRate: bRate,
+          inrAmount: currentInrVal,
+          usdtAmount: usdtAmt,
         },
       });
       load();
@@ -550,6 +575,24 @@ export default function AdminWithdrawals() {
                           <small><b style={{ fontFamily: 'monospace', color: '#16a34a' }}>{r.walletAddress}</b></small>
                         </div>
                       )}
+                      {Number(r.binanceRate) > 0 && (
+                        <div>
+                          <span className="muted-sm block">🟡 B.Rate (Binance):</span>
+                          <small><b style={{ color: '#b45309' }}>₹{r.binanceRate} / USDT</b> <span style={{ fontSize: 10, color: '#6b7280' }}>(Admin Internal)</span></small>
+                        </div>
+                      )}
+                      {Number(r.inrAmount) > 0 && (
+                        <div>
+                          <span className="muted-sm block">🇮🇳 INR Payout:</span>
+                          <small><b style={{ color: '#0f172a' }}>₹{Number(r.inrAmount).toLocaleString('en-IN')}</b> <span style={{ fontSize: 10, color: '#6b7280' }}>(Admin Internal)</span></small>
+                        </div>
+                      )}
+                      {Number(r.usdtAmount) > 0 && (
+                        <div>
+                          <span className="muted-sm block">💎 Resulting USDT:</span>
+                          <small><b style={{ color: '#15803d' }}>{r.usdtAmount} USDT</b> <span style={{ fontSize: 10, color: '#6b7280' }}>(Admin Internal)</span></small>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -610,6 +653,106 @@ export default function AdminWithdrawals() {
                         />
                       </div>
                     </div>
+
+                    {/* Binance B.Rate & USDT Calculator (Admin Internal for Withdrawals) */}
+                    {!isDeposit && (() => {
+                      const appNum = Number(currentApprovedAmt !== undefined && currentApprovedAmt !== '' ? currentApprovedAmt : (r.amount || 0));
+                      const defaultInr = appNum > 0 ? (appNum * 83.5).toFixed(0) : '';
+                      const currentInr = inrAmountMap[r._id] !== undefined
+                        ? inrAmountMap[r._id]
+                        : (r.inrAmount ? String(r.inrAmount) : defaultInr);
+                      const currentBRate = bRateMap[r._id] !== undefined ? bRateMap[r._id] : (r.binanceRate ? String(r.binanceRate) : '');
+                      const calcUsdt = (Number(currentInr) > 0 && Number(currentBRate) > 0)
+                        ? (Number(currentInr) / Number(currentBRate)).toFixed(2)
+                        : null;
+
+                      return (
+                        <div style={{
+                          background: 'linear-gradient(135deg, #fefce8 0%, #fffdf0 100%)',
+                          border: '1.5px solid #fde047',
+                          borderRadius: 8,
+                          padding: '10px 14px',
+                          marginBottom: 10,
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 16 }}>🟡</span>
+                              <b style={{ fontSize: 12, color: '#854d0e' }}>B.Rate &amp; Binance USDT Conversion</b>
+                              <span style={{ fontSize: 10, background: '#fef9c3', color: '#a16207', padding: '1px 6px', borderRadius: 4, fontWeight: 700, border: '1px solid #fde047' }}>
+                                Admin Internal • Hidden from Seller
+                              </span>
+                            </div>
+                            {calcUsdt && (
+                              <div style={{ background: '#16a34a', color: '#ffffff', padding: '3px 10px', borderRadius: 6, fontSize: 12.5, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 5 }}>
+                                <span>💎 Binance USDT:</span>
+                                <span>{calcUsdt} USDT</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, alignItems: 'flex-start' }}>
+                            <div>
+                              <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4, color: '#713f12' }}>
+                                🇮🇳 Indian Rupees Payout (₹ INR):
+                              </label>
+                              <input
+                                type="number"
+                                step="any"
+                                placeholder="e.g. 8350"
+                                value={currentInr}
+                                onChange={(e) => setInrAmountMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
+                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #fde047', background: '#ffffff', fontSize: 13, fontWeight: 700, color: '#0f172a' }}
+                              />
+                              <small style={{ fontSize: 10.5, color: '#a16207', display: 'block', marginTop: 2 }}>
+                                Auto: ${appNum} × 83.50 = ₹{(appNum * 83.5).toFixed(0)} (editable)
+                              </small>
+                            </div>
+
+                            <div>
+                              <label style={{ fontSize: 11, fontWeight: 800, display: 'block', marginBottom: 4, color: '#854d0e' }}>
+                                🟡 B.Rate (Binance Rate ₹/USDT) *:
+                              </label>
+                              <input
+                                type="number"
+                                step="any"
+                                placeholder="e.g. 90.00"
+                                value={currentBRate}
+                                onChange={(e) => setBRateMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
+                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1.5px solid #eab308', background: '#ffffff', fontSize: 13, fontWeight: 800, color: '#854d0e' }}
+                              />
+                              <small style={{ fontSize: 10.5, color: '#a16207', display: 'block', marginTop: 2 }}>
+                                Binance P2P rate (1 USDT = ₹{currentBRate || '...'})
+                              </small>
+                            </div>
+
+                            <div>
+                              <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4, color: '#713f12' }}>
+                                💎 Converted Binance USDT:
+                              </label>
+                              <div style={{
+                                padding: '6px 10px',
+                                borderRadius: 6,
+                                background: calcUsdt ? '#ecfdf5' : '#f8fafc',
+                                border: `1.5px solid ${calcUsdt ? '#86efac' : '#cbd5e1'}`,
+                                fontSize: 13,
+                                fontWeight: 800,
+                                color: calcUsdt ? '#15803d' : '#94a3b8',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                minHeight: 33,
+                              }}>
+                                <span>{calcUsdt ? `${calcUsdt} USDT` : 'B.Rate enter karein'}</span>
+                                {calcUsdt && <span style={{ fontSize: 10.5, color: '#16a34a' }}>₹{currentInr} ÷ {currentBRate}</span>}
+                              </div>
+                              <small style={{ fontSize: 10.5, color: '#a16207', display: 'block', marginTop: 2 }}>
+                                Indian Rupees se itni USDT bani
+                              </small>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     <div className="withdrawal-btns mt-2" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                       <button

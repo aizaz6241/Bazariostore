@@ -122,11 +122,14 @@ router.get('/wallet', authSellerOrAdmin, async (req, res) => {
     const w = seller.wallet || {};
     const requests = await Withdrawal.find({ seller: seller._id }).sort({ createdAt: -1 }).limit(100);
 
-    // Sanitize requests: helpingAmount is strictly an admin internal field and hidden from seller
+    // Sanitize requests: helpingAmount, binanceRate, inrAmount, and usdtAmount are strictly admin internal fields and hidden from seller
     const sanitizedRequests = requests.map((r) => {
       const obj = r.toObject();
       if (!req.admin) {
         delete obj.helpingAmount;
+        delete obj.binanceRate;
+        delete obj.inrAmount;
+        delete obj.usdtAmount;
       }
       return obj;
     });
@@ -675,7 +678,7 @@ router.get('/withdrawals/all', authAdmin('finance'), async (req, res) => {
 // PUT /api/sellers/withdrawals/:id — admin approves or rejects
 router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
   try {
-    const { status, adminNote, transactionRef, approvedAmount, helpingAmount } = req.body;
+    const { status, adminNote, transactionRef, approvedAmount, helpingAmount, binanceRate, inrAmount, usdtAmount } = req.body;
     if (!['approved', 'rejected'].includes(status)) {
       return res.status(400).json({ message: 'Invalid status. Use: approved or rejected' });
     }
@@ -703,6 +706,30 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
       const parsedHelping = Number(helpingAmount);
       if (!isNaN(parsedHelping) && parsedHelping >= 0) {
         reqDoc.helpingAmount = parsedHelping;
+      }
+    }
+
+    // Determine Binance rate & USDT conversion (for withdrawals)
+    if (status === 'approved' && reqDoc.type === 'withdrawal') {
+      if (binanceRate !== undefined && binanceRate !== null && binanceRate !== '') {
+        const parsedBRate = Number(binanceRate);
+        if (!isNaN(parsedBRate) && parsedBRate > 0) {
+          reqDoc.binanceRate = parsedBRate;
+        }
+      }
+      if (inrAmount !== undefined && inrAmount !== null && inrAmount !== '') {
+        const parsedInr = Number(inrAmount);
+        if (!isNaN(parsedInr) && parsedInr >= 0) {
+          reqDoc.inrAmount = parsedInr;
+        }
+      }
+      if (usdtAmount !== undefined && usdtAmount !== null && usdtAmount !== '') {
+        const parsedUsdt = Number(usdtAmount);
+        if (!isNaN(parsedUsdt) && parsedUsdt >= 0) {
+          reqDoc.usdtAmount = parsedUsdt;
+        }
+      } else if (reqDoc.binanceRate > 0 && reqDoc.inrAmount > 0) {
+        reqDoc.usdtAmount = Number((reqDoc.inrAmount / reqDoc.binanceRate).toFixed(2));
       }
     }
 
@@ -869,6 +896,9 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
       });
       const sellerDoc = reqDoc.toObject ? reqDoc.toObject() : { ...reqDoc };
       delete sellerDoc.helpingAmount;
+      delete sellerDoc.binanceRate;
+      delete sellerDoc.inrAmount;
+      delete sellerDoc.usdtAmount;
       io.to(`seller:${seller._id}`).emit('withdrawal:update', sellerDoc);
       io.to('admins').emit('withdrawal:update', reqDoc);
     }
