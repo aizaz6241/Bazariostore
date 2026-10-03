@@ -19,7 +19,7 @@ async function getSellerFromReq(req) {
   if (req.admin) {
     const sId = req.params?.id || req.body?.sellerId || req.query?.sellerId || req.seller?.id || req.seller?._id;
     if (sId && mongoose.Types.ObjectId.isValid(sId)) {
-      const s = await Seller.findById(sId);
+      const s = await Seller.findById(sId).select('-kycDocuments');
       if (s) return s;
     }
   }
@@ -28,15 +28,15 @@ async function getSellerFromReq(req) {
   if (req.seller) {
     const sId = req.seller.id || req.seller._id;
     if (sId && mongoose.Types.ObjectId.isValid(sId)) {
-      const s = await Seller.findById(sId);
+      const s = await Seller.findById(sId).select('-kycDocuments');
       if (s) return s;
     }
     if (req.seller.email) {
-      const s = await Seller.findOne({ email: req.seller.email.toLowerCase() });
+      const s = await Seller.findOne({ email: req.seller.email.toLowerCase() }).select('-kycDocuments');
       if (s) return s;
     }
     if (req.seller.storeSlug) {
-      const s = await Seller.findOne({ storeSlug: req.seller.storeSlug });
+      const s = await Seller.findOne({ storeSlug: req.seller.storeSlug }).select('-kycDocuments');
       if (s) return s;
     }
   }
@@ -54,7 +54,7 @@ async function getSellerFromReq(req) {
  * and moves it into seller.wallet.processingFund.
  */
 export async function lockSellerOrderFund(app, sellerId, order) {
-  const seller = await Seller.findById(sellerId);
+  const seller = await Seller.findById(sellerId).select('-kycDocuments');
   if (!seller) return { totalToLock: 0, itemsLocked: 0 };
 
   seller.wallet = seller.wallet || {};
@@ -143,7 +143,7 @@ export async function lockSellerOrderFund(app, sellerId, order) {
  * When order is delivered, releases locked processing fund + 20% profit directly into available balance!
  */
 export async function releaseSellerOrderDelivered(app, sellerId, order) {
-  const seller = await Seller.findById(sellerId);
+  const seller = await Seller.findById(sellerId).select('-kycDocuments');
   if (!seller) return { totalPrincipal: 0, totalProfit: 0, totalPayout: 0, settledItems: 0 };
 
   seller.wallet = seller.wallet || {};
@@ -323,7 +323,7 @@ export async function releaseSellerOrderDelivered(app, sellerId, order) {
  * Returns locked processing fund back to available balance without profit/loss.
  */
 export async function releaseSellerOrderCancelled(app, sellerId, order) {
-  const seller = await Seller.findById(sellerId);
+  const seller = await Seller.findById(sellerId).select('-kycDocuments');
   if (!seller) return;
 
   seller.wallet = seller.wallet || {};

@@ -49,7 +49,7 @@ export async function GET(req) {
         allMembers.map(async (m) => {
           const assignments = await SellerAssignment.find({ memberId: m._id, status: 'active' });
           const sellerIds = assignments.map((a) => a.sellerId);
-          const assignedSellers = await Seller.find({ _id: { $in: sellerIds } });
+          const assignedSellers = await Seller.find({ _id: { $in: sellerIds } }).select('-kycDocuments');
 
           let memberDepositsINR = 0;
           let memberWithdrawalsINR = 0;
@@ -162,7 +162,7 @@ export async function GET(req) {
       // Member specific dashboard stats
       const myAssignments = await SellerAssignment.find({ memberId: session._id, status: 'active' });
       const sellerIds = myAssignments.map((a) => a.sellerId);
-      const mySellers = await Seller.find({ _id: { $in: sellerIds } });
+      const mySellers = await Seller.find({ _id: { $in: sellerIds } }).select('-kycDocuments');
 
       let totalDepositsINR = 0;
       let totalWithdrawalsINR = 0;

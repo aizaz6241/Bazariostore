@@ -118,7 +118,7 @@ export async function fetchConversationMessages(query, { limit = 100, before = n
 router.get('/seller/thread', authSeller, async (req, res) => {
   try {
     const sellerId = req.seller.id;
-    const seller = await Seller.findById(sellerId);
+    const seller = await Seller.findById(sellerId).select('-kycDocuments');
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
     let conv = await Conversation.findOne({ seller: sellerId, type: { $ne: 'internal' } }).sort({ lastAt: -1 });
@@ -188,7 +188,7 @@ router.post('/seller/send', authSeller, async (req, res) => {
     const cleanText = (text || '').trim();
     if (!cleanText && !attachment) return res.status(400).json({ message: 'Message or attachment is required' });
 
-    const seller = await Seller.findById(sellerId);
+    const seller = await Seller.findById(sellerId).select('-kycDocuments');
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
     let conv = await Conversation.findOne({ seller: sellerId, type: { $ne: 'internal' } });

@@ -13,4 +13,9 @@ const notificationSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// perf: read-path indexes (non-unique, additive — no data is changed)
+notificationSchema.index({ createdAt: -1 });
+notificationSchema.index({ read: 1 });
+notificationSchema.index({ recipientType: 1, seller: 1, createdAt: -1 });
+
 export default mongoose.model('Notification', notificationSchema);

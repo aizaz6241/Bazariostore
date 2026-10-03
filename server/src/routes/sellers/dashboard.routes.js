@@ -12,16 +12,20 @@ const router = express.Router();
 router.get('/dashboard', authSeller, async (req, res) => {
   try {
     const sellerId = req.seller.id;
-    const seller = await Seller.findById(sellerId);
+    // perf: run the independent reads in parallel and skip the heavy KYC images
+    const [seller, products, orders, refunds] = await Promise.all([
+      Seller.findById(sellerId).select('-kycDocuments'),
+      Product.find({ seller: sellerId }),
+      Order.find({ 'items.seller': sellerId }).sort({ createdAt: -1 }),
+      Refund.find({ seller: sellerId }),
+    ]);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
     // Products by this seller
-    const products = await Product.find({ seller: sellerId });
     const totalProducts = products.length;
     const lowStockProducts = products.filter((p) => (p.stock || 0) <= (p.lowStockThreshold || 5));
 
-    // Orders containing items from this seller
-    const orders = await Order.find({ 'items.seller': sellerId }).sort({ createdAt: -1 });
+    // Orders containing items from this seller (loaded above)
 
     let grossRevenue = 0;
     let totalCost = 0;
@@ -61,7 +65,6 @@ router.get('/dashboard', authSeller, async (req, res) => {
     const netProfit = grossRevenue - totalCost - platformCommission;
 
     // Refunds for this seller
-    const refunds = await Refund.find({ seller: sellerId });
     const refundCount = refunds.length;
 
     // Top selling products
@@ -156,7 +159,7 @@ router.get('/dashboard', authSeller, async (req, res) => {
 // GET /api/sellers/analytics?days=30&from=&to=
 router.get('/analytics', authSeller, async (req, res) => {
   try {
-    const seller = await Seller.findById(req.seller.id);
+    const seller = await Seller.findById(req.seller.id).select('-kycDocuments');
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
     let since = null;

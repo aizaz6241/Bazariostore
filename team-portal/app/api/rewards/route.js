@@ -33,7 +33,7 @@ export async function GET(req) {
     if (session.role === 'member') {
       const assignments = await SellerAssignment.find({ memberId: session._id, status: 'active' });
       const sellerIds = assignments.map((a) => a.sellerId);
-      const sellers = await Seller.find({ _id: { $in: sellerIds } });
+      const sellers = await Seller.find({ _id: { $in: sellerIds } }).select('-kycDocuments');
 
       const currentTotalDepositedINR = sellers.reduce(
         (sum, s) => sum + Number(s.wallet?.totalDeposited || 0),

@@ -170,7 +170,7 @@ router.post('/login', async (req, res) => {
         { email: e },
         { email: { $regex: new RegExp(`^${e.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
       ]),
-    });
+    }).select('-kycDocuments'); // perf: KYC base64 images are never needed by the seller portal
     if (!seller) return res.status(401).json({ message: 'Invalid email or password' });
 
     if (seller.status === 'suspended') {
@@ -218,7 +218,7 @@ router.post('/login', async (req, res) => {
 // GET /api/sellers/me
 router.get('/me', authSeller, async (req, res) => {
   try {
-    const seller = await Seller.findById(req.seller.id).select('-passwordHash');
+    const seller = await Seller.findById(req.seller.id).select('-passwordHash -kycDocuments');
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
     if (seller.status === 'active' && !seller.verified) {
       seller.verified = true;

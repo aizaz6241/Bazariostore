@@ -91,6 +91,13 @@ const orderSchema = new mongoose.Schema(
 );
 
 orderSchema.index({ nextStatusAt: 1, status: 1 });
+// perf: read-path indexes (non-unique, additive — no data is changed)
+orderSchema.index({ createdAt: -1 });
+orderSchema.index({ seller: 1, createdAt: -1 });
+orderSchema.index({ 'items.seller': 1, createdAt: -1 });
+orderSchema.index({ 'items.product': 1 });
+orderSchema.index({ status: 1, createdAt: -1 });
+orderSchema.index({ user: 1, createdAt: -1 });
 
 orderSchema.pre('save', async function (next) {
   try {

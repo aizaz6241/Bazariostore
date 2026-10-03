@@ -131,7 +131,7 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
     });
 
     const sellerIds = assignments.map((a) => a.sellerId);
-    const sellers = await Seller.find({ _id: { $in: sellerIds } });
+    const sellers = await Seller.find({ _id: { $in: sellerIds } }).select('-kycDocuments');
     const sellerMap = new Map();
     sellers.forEach((s) => sellerMap.set(s._id.toString(), s));
 
@@ -259,7 +259,7 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
     }
   } else if (user.role === 'admin') {
     // ─── ADMIN DISTRIBUTION, PERSONAL STORES & OVERALL ACTIVITY ───
-    const allSellers = await Seller.find();
+    const allSellers = await Seller.find().select('-kycDocuments');
     const sellerMap = new Map();
     allSellers.forEach((s) => sellerMap.set(s._id.toString(), s));
 

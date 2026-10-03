@@ -93,6 +93,12 @@ const chatSettingsSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// perf: read-path indexes (non-unique, additive — no data is changed)
+conversationSchema.index({ lastAt: -1 });
+messageSchema.index({ conversation: 1, createdAt: -1 });
+messageSchema.index({ seller: 1, createdAt: -1 });
+messageSchema.index({ guestId: 1, createdAt: -1 });
+
 export const Conversation = mongoose.model('Conversation', conversationSchema);
 export const Message = mongoose.model('Message', messageSchema);
 export const ChatSettings = mongoose.model('ChatSettings', chatSettingsSchema);

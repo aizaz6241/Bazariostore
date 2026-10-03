@@ -16,7 +16,7 @@ async function getSellerFromReq(req) {
   if (req.admin) {
     const sId = req.params?.id || req.body?.sellerId || req.query?.sellerId || req.seller?.id || req.seller?._id;
     if (sId && mongoose.Types.ObjectId.isValid(sId)) {
-      const s = await Seller.findById(sId);
+      const s = await Seller.findById(sId).select('-kycDocuments');
       if (s) return s;
     }
   }
@@ -25,15 +25,15 @@ async function getSellerFromReq(req) {
   if (req.seller) {
     const sId = req.seller.id || req.seller._id;
     if (sId && mongoose.Types.ObjectId.isValid(sId)) {
-      const s = await Seller.findById(sId);
+      const s = await Seller.findById(sId).select('-kycDocuments');
       if (s) return s;
     }
     if (req.seller.email) {
-      const s = await Seller.findOne({ email: req.seller.email.toLowerCase() });
+      const s = await Seller.findOne({ email: req.seller.email.toLowerCase() }).select('-kycDocuments');
       if (s) return s;
     }
     if (req.seller.storeSlug) {
-      const s = await Seller.findOne({ storeSlug: req.seller.storeSlug });
+      const s = await Seller.findOne({ storeSlug: req.seller.storeSlug }).select('-kycDocuments');
       if (s) return s;
     }
   }

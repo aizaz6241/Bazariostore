@@ -21,4 +21,8 @@ const refundSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// perf: read-path indexes (non-unique, additive — no data is changed)
+refundSchema.index({ seller: 1, createdAt: -1 });
+refundSchema.index({ createdAt: -1 });
+
 export default mongoose.model('Refund', refundSchema);

@@ -29,7 +29,7 @@ export async function GET(req) {
         const assignments = await SellerAssignment.find({ memberId: m._id, status: 'active' });
         const sellerIds = assignments.map((a) => a.sellerId);
 
-        const sellers = await Seller.find({ _id: { $in: sellerIds } });
+        const sellers = await Seller.find({ _id: { $in: sellerIds } }).select('-kycDocuments');
 
         let totalDepositsINR = 0;
         let totalWithdrawalsINR = 0;

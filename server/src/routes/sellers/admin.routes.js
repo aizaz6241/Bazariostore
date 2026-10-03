@@ -15,45 +15,106 @@ import { slugify, calculateHealthStatus } from './helpers.js';
 
 const router = express.Router();
 
+// perf: the six KYC file fields hold base64 images (up to ~1.5 MB each). They are never sent in
+// list responses; the admin UI loads them on demand via GET /api/sellers/:id/kyc (or GET /api/sellers/:id).
+const KYC_FILE_FIELDS = ['idDocumentUrl', 'idCard', 'passportDocumentUrl', 'passport', 'bankStatementUrl', 'bankStatement'];
+const SELLER_LIST_SELECT = ['-passwordHash', ...KYC_FILE_FIELDS.map((f) => `-kycDocuments.${f}`)].join(' ');
+
 // GET /api/sellers (Admin list all sellers)
 router.get('/', authAdmin('sellers'), async (req, res) => {
   try {
-    const sellers = await Seller.find().select('-passwordHash').sort({ createdAt: -1 });
-
-    // Attach product count and order count for each seller
-    const enriched = await Promise.all(
-      sellers.map(async (s) => {
-        const productCount = await Product.countDocuments({ seller: s._id });
-        const orders = await Order.find({
-          $or: [{ 'items.seller': s._id }, { seller: s._id }],
-        });
-        let sales = 0;
-        let pendingOrders = 0;
-        orders.forEach((ord) => {
-          const st = (ord.status || '').toLowerCase();
-          if (!['delivered', 'cancelled', 'refunded'].includes(st)) {
-            pendingOrders += 1;
-          }
-          if (ord.status !== 'cancelled') {
-            ord.items
-              .filter((it) => (it.seller && it.seller.toString() === s._id.toString()) || (!it.seller && ord.seller && ord.seller.toString() === s._id.toString()))
-              .forEach((it) => {
-                sales += (it.price || 0) * (it.qty || 1);
-              });
-          }
-        });
-        return {
-          ...s.toObject(),
-          plainPassword: s.plainPassword || '',
-          productCount,
-          orderCount: orders.length,
-          pendingOrders,
-          lifetimeSales: sales,
-        };
+    // A handful of queries in parallel instead of 1 + 2 per seller
+    const hasDoc = (a, b) =>
+      Seller.find({
+        $or: [{ [`kycDocuments.${a}`]: { $nin: ['', null] } }, { [`kycDocuments.${b}`]: { $nin: ['', null] } }],
       })
-    );
+        .select('_id')
+        .lean();
+
+    const [sellers, withId, withPassport, withBank, productCounts, allOrders] = await Promise.all([
+      Seller.find().select(SELLER_LIST_SELECT).sort({ createdAt: -1 }),
+      hasDoc('idCard', 'idDocumentUrl'),
+      hasDoc('passport', 'passportDocumentUrl'),
+      hasDoc('bankStatement', 'bankStatementUrl'),
+      Product.aggregate([{ $group: { _id: '$seller', n: { $sum: 1 } } }]),
+      Order.find({}).select('status seller items.seller items.price items.qty').lean(),
+    ]);
+
+    const idSet = (rows) => new Set(rows.map((r) => String(r._id)));
+    const kycIdSet = idSet(withId);
+    const kycPassportSet = idSet(withPassport);
+    const kycBankSet = idSet(withBank);
+    const productCountMap = new Map(productCounts.map((p) => [String(p._id), p.n]));
+
+    // Same maths as before (per seller: order count, pending orders, lifetime sales), computed in one pass
+    const statsMap = new Map();
+    const statFor = (id) => {
+      let st = statsMap.get(id);
+      if (!st) {
+        st = { orderCount: 0, pendingOrders: 0, sales: 0 };
+        statsMap.set(id, st);
+      }
+      return st;
+    };
+    allOrders.forEach((ord) => {
+      const ordSeller = ord.seller ? ord.seller.toString() : '';
+      const items = ord.items || [];
+      const involved = new Set();
+      if (ordSeller) involved.add(ordSeller);
+      items.forEach((it) => {
+        if (it.seller) involved.add(it.seller.toString());
+      });
+      const st = (ord.status || '').toLowerCase();
+      const isPending = !['delivered', 'cancelled', 'refunded'].includes(st);
+      involved.forEach((sid) => {
+        const agg = statFor(sid);
+        agg.orderCount += 1;
+        if (isPending) agg.pendingOrders += 1;
+        if (ord.status !== 'cancelled') {
+          items
+            .filter((it) => (it.seller && it.seller.toString() === sid) || (!it.seller && ordSeller === sid))
+            .forEach((it) => {
+              agg.sales += (it.price || 0) * (it.qty || 1);
+            });
+        }
+      });
+    });
+
+    const enriched = sellers.map((s) => {
+      const id = s._id.toString();
+      const agg = statsMap.get(id) || { orderCount: 0, pendingOrders: 0, sales: 0 };
+      return {
+        ...s.toObject(),
+        plainPassword: s.plainPassword || '',
+        // Tells the UI which documents exist without shipping the files themselves
+        kycAvailable: {
+          idCard: kycIdSet.has(id),
+          passport: kycPassportSet.has(id),
+          bankStatement: kycBankSet.has(id),
+        },
+        productCount: productCountMap.get(id) || 0,
+        orderCount: agg.orderCount,
+        pendingOrders: agg.pendingOrders,
+        lifetimeSales: agg.sales,
+      };
+    });
 
     res.json(enriched);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/sellers/:id/kyc (Admin loads one seller's KYC documents on demand)
+router.get('/:id/kyc', authAdmin('sellers'), async (req, res, next) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return next();
+    }
+    const seller = await Seller.findById(req.params.id).select('kycDocuments storeName ownerName');
+    if (!seller) return res.status(404).json({ message: 'Seller not found' });
+    const obj = seller.toObject();
+    res.json({ _id: obj._id, kycDocuments: obj.kycDocuments || {} });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -558,13 +619,16 @@ router.get('/:id', authAdmin('sellers'), async (req, res, next) => {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return next();
     }
-    const seller = await Seller.findById(req.params.id).select('-passwordHash');
+    // perf: callers that do not show KYC documents pass ?kyc=0 to skip the base64 images
+    const sellerSelect = req.query.kyc === '0' ? SELLER_LIST_SELECT : '-passwordHash';
+    const [seller, products, orders] = await Promise.all([
+      Seller.findById(req.params.id).select(sellerSelect),
+      Product.find({ seller: req.params.id }).populate('category', 'name slug'),
+      Order.find({
+        $or: [{ 'items.seller': req.params.id }, { seller: req.params.id }],
+      }).sort({ createdAt: -1 }),
+    ]);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
-
-    const products = await Product.find({ seller: seller._id }).populate('category', 'name slug');
-    const orders = await Order.find({
-      $or: [{ 'items.seller': seller._id }, { seller: seller._id }],
-    }).sort({ createdAt: -1 });
 
     let grossRevenue = 0;
     let totalCost = 0;

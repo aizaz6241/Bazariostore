@@ -190,7 +190,7 @@ export default function Orders() {
 
     setLoadingProds(true);
     try {
-      const data = await api(`/sellers/${sellerId}`);
+      const data = await api(`/sellers/${sellerId}?kyc=0`);
       const prods = data.products || [];
       setSellerProds(prods);
       if (prods.length > 0) {

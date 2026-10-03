@@ -72,5 +72,10 @@ const withdrawalSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// perf: read-path indexes (non-unique, additive — no data is changed)
+withdrawalSchema.index({ seller: 1, createdAt: -1 });
+withdrawalSchema.index({ type: 1, status: 1, createdAt: -1 });
+withdrawalSchema.index({ createdAt: -1 });
+
 export default mongoose.model('Withdrawal', withdrawalSchema);
 

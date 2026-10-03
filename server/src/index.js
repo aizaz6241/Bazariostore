@@ -280,7 +280,7 @@ io.on('connection', (socket) => {
         return cb?.({ error: 'Unauthorized: invalid session' });
       }
 
-      const seller = await Seller.findById(sellerId);
+      const seller = await Seller.findById(sellerId).select('-kycDocuments');
       if (!seller) return;
 
       let conv = await Conversation.findOne({ seller: sellerId });

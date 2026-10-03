@@ -16,6 +16,35 @@ export default function Applications() {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
 
+  // perf: the sellers list no longer carries the KYC files themselves (they are large base64 images).
+  // `kycAvailable` says which documents exist; the file is fetched only when the admin opens it.
+  const kycValue = (s, docType) => {
+    const k = s?.kycDocuments || {};
+    if (docType === 'idCard') return k.idCard || k.idDocumentUrl || '';
+    if (docType === 'passport') return k.passport || k.passportDocumentUrl || '';
+    return k.bankStatement || k.bankStatementUrl || '';
+  };
+  const hasKyc = (s, docType) => Boolean(kycValue(s, docType) || s?.kycAvailable?.[docType]);
+
+  const openKycDoc = async (s, docType) => {
+    let docUrl = kycValue(s, docType);
+    if (!docUrl) {
+      try {
+        const res = await api(`/sellers/${s._id}/kyc`);
+        const full = res?.kycDocuments || {};
+        docUrl = kycValue({ kycDocuments: full }, docType);
+        // keep it in memory so the next click is instant
+        setSellers((prev) => prev.map((it) => (it._id === s._id ? { ...it, kycDocuments: { ...(it.kycDocuments || {}), ...full } } : it)));
+      } catch (e) {
+        console.error(e);
+        alert('Could not load this document: ' + e.message);
+        return;
+      }
+    }
+    if (!docUrl) return;
+    setKycDocModal({ seller: s, docType, docUrl });
+  };
+
   const loadSellers = () => {
     setLoading(true);
     api('/sellers')
@@ -266,10 +295,10 @@ export default function Applications() {
                   </td>
                   <td>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {s.kycDocuments?.idCard || s.kycDocuments?.idDocumentUrl ? (
+                      {hasKyc(s, 'idCard') ? (
                         <button
                           type="button"
-                          onClick={() => setKycDocModal({ seller: s, docType: 'idCard', docUrl: s.kycDocuments.idCard || s.kycDocuments.idDocumentUrl })}
+                          onClick={() => openKycDoc(s, 'idCard')}
                           style={{ padding: '3px 8px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
                         >
                           🪪 View ID
@@ -277,10 +306,10 @@ export default function Applications() {
                       ) : (
                         <small className="muted-sm">No ID</small>
                       )}
-                      {s.kycDocuments?.passport || s.kycDocuments?.passportDocumentUrl ? (
+                      {hasKyc(s, 'passport') ? (
                         <button
                           type="button"
-                          onClick={() => setKycDocModal({ seller: s, docType: 'passport', docUrl: s.kycDocuments.passport || s.kycDocuments.passportDocumentUrl })}
+                          onClick={() => openKycDoc(s, 'passport')}
                           style={{ padding: '3px 8px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
                         >
                           🛂 View Passport
@@ -288,10 +317,10 @@ export default function Applications() {
                       ) : (
                         <small className="muted-sm">No Passport</small>
                       )}
-                      {s.kycDocuments?.bankStatement || s.kycDocuments?.bankStatementUrl ? (
+                      {hasKyc(s, 'bankStatement') ? (
                         <button
                           type="button"
-                          onClick={() => setKycDocModal({ seller: s, docType: 'bankStatement', docUrl: s.kycDocuments.bankStatement || s.kycDocuments.bankStatementUrl })}
+                          onClick={() => openKycDoc(s, 'bankStatement')}
                           style={{ padding: '3px 8px', background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: 4, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', color: '#1d4ed8' }}
                         >
                           🏦 Bank Statement
