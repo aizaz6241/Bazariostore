@@ -53,6 +53,16 @@ const productSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+productSchema.index({ active: 1, createdAt: -1 });
+productSchema.index({ active: 1, category: 1, createdAt: -1 });
+productSchema.index({ active: 1, seller: 1, createdAt: -1 });
+productSchema.index({ active: 1, sellerSlug: 1, createdAt: -1 });
+productSchema.index({ active: 1, labels: 1, createdAt: -1 });
+productSchema.index({ active: 1, price: 1 });
+productSchema.index({ active: 1, price: -1 });
+productSchema.index({ active: 1, rating: -1 });
+productSchema.index({ active: 1, sold: -1 });
+
 productSchema.pre('save', function (next) {
   if (this.images?.length) this.image = this.images[0].url;
   next();

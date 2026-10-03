@@ -9,15 +9,18 @@ import { escapeRegex } from '../utils/sanitize.js';
 
 const router = Router();
 
+const PUBLIC_CARD_FIELDS =
+  'name slug brand category seller sellerName sellerSlug price oldPrice stock image images rating numReviews sold labels tags primeEligible freeDelivery createdAt';
+
 // ---------- public ----------
-// GET /api/products?category=<slug>&q=&label=&seller=&sellerSlug=&featured=1&sort=&limit=
+// GET /api/products?category=<slug>&q=&label=&seller=&sellerSlug=&featured=1&sort=&limit=&page=
 router.get('/', async (req, res) => {
   try {
-    const { category, q, label, badge, featured, seller, sellerSlug, sort, limit } = req.query;
+    const { category, q, label, badge, featured, seller, sellerSlug, sort, limit, page } = req.query;
     const filter = { active: true };
 
     if (category) {
-      const cat = await Category.findOne({ slug: category });
+      const cat = await Category.findOne({ slug: category }).select('_id').lean();
       filter.category = cat ? cat._id : null;
     }
     if (seller) {
@@ -45,12 +48,20 @@ router.get('/', async (req, res) => {
     if (sort === 'rating') sortBy = { rating: -1 };
     if (sort === 'popular') sortBy = { sold: -1 };
 
+    const parsedLimit = limit ? Math.min(Math.max(Number(limit), 1), 100) : 36;
+    const pageNum = Math.max(Number(page) || 1, 1);
+    const skip = (pageNum - 1) * parsedLimit;
+
     const products = await Product.find(filter)
+      .select(PUBLIC_CARD_FIELDS)
       .populate('category', 'name slug')
       .populate('seller', 'storeName storeSlug rating numReviews verified')
       .sort(sortBy)
-      .limit(Number(limit) || 100);
+      .skip(skip)
+      .limit(parsedLimit)
+      .lean();
 
+    res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
     res.json(products);
   } catch (e) {
     res.status(500).json({ message: e.message });
@@ -60,7 +71,8 @@ router.get('/', async (req, res) => {
 router.get('/slug/:slug', async (req, res) => {
   const product = await Product.findOne({ slug: req.params.slug, active: true })
     .populate('category', 'name slug')
-    .populate('seller', 'storeName storeSlug rating numReviews verified logo description address');
+    .populate('seller', 'storeName storeSlug rating numReviews verified logo description address')
+    .lean();
   if (!product) return res.status(404).json({ message: 'Product not found' });
 
   // If this product was added from Central Treasury, find other sellers offering the same master product
@@ -73,21 +85,25 @@ router.get('/slug/:slug', async (req, res) => {
     })
       .populate('seller', 'storeName storeSlug rating numReviews verified logo')
       .select('seller sellerName sellerSlug price stock slug rating numReviews')
-      .limit(6);
+      .limit(6)
+      .lean();
   }
 
-  const result = product.toObject();
-  result.otherOffers = otherOffers;
-  res.json(result);
+  product.otherOffers = otherOffers;
+  res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
+  res.json(product);
 });
 
 router.get('/related/:slug', async (req, res) => {
-  const product = await Product.findOne({ slug: req.params.slug });
+  const product = await Product.findOne({ slug: req.params.slug }).select('category').lean();
   if (!product) return res.json([]);
   const related = await Product.find({ category: product.category, active: true, _id: { $ne: product._id } })
+    .select(PUBLIC_CARD_FIELDS)
     .populate('category', 'name slug')
     .populate('seller', 'storeName storeSlug rating')
-    .limit(6);
+    .limit(6)
+    .lean();
+  res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
   res.json(related);
 });
 

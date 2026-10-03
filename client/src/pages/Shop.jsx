@@ -11,6 +11,9 @@ export default function Shop() {
   const { categories } = useContent();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const category = params.get('category') || '';
   const q = params.get('q') || '';
@@ -20,11 +23,45 @@ export default function Shop() {
 
   useEffect(() => {
     setLoading(true);
-    api('/products?' + params.toString())
-      .then(setProducts)
-      .catch(() => setProducts([]))
+    setPage(1);
+    const p = new URLSearchParams(params);
+    if (!p.has('limit')) p.set('limit', '36');
+    p.set('page', '1');
+
+    api('/products?' + p.toString())
+      .then((data) => {
+        const list = Array.isArray(data) ? data : [];
+        setProducts(list);
+        setHasMore(list.length >= 36);
+      })
+      .catch(() => {
+        setProducts([]);
+        setHasMore(false);
+      })
       .finally(() => setLoading(false));
   }, [params]);
+
+  const handleLoadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    const nextPage = page + 1;
+    const p = new URLSearchParams(params);
+    if (!p.has('limit')) p.set('limit', '36');
+    p.set('page', String(nextPage));
+
+    try {
+      const data = await api('/products?' + p.toString());
+      const nextList = Array.isArray(data) ? data : [];
+      if (nextList.length === 0) {
+        setHasMore(false);
+      } else {
+        setProducts((prev) => [...prev, ...nextList]);
+        setPage(nextPage);
+        setHasMore(nextList.length >= 36);
+      }
+    } catch (_) {}
+    setLoadingMore(false);
+  };
 
   const setParam = (key, value) => {
     const next = new URLSearchParams(params);
@@ -108,11 +145,26 @@ export default function Shop() {
             <Link to="/shop" className="btn-primary">VIEW ALL PRODUCTS</Link>
           </div>
         ) : (
-          <div className="pgrid pgrid-4">
-            {products.map((p) => (
-              <ProductCard p={p} key={p._id} />
-            ))}
-          </div>
+          <>
+            <div className="pgrid pgrid-4">
+              {products.map((p) => (
+                <ProductCard p={p} key={p._id} />
+              ))}
+            </div>
+            {hasMore && (
+              <div style={{ textAlign: 'center', marginTop: 36, marginBottom: 20 }}>
+                <button
+                  type="button"
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="btn-outline"
+                  style={{ minWidth: 200, padding: '12px 28px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {loadingMore ? 'Loading More Products…' : 'Load More Products ↓'}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
       <TrustStrip />

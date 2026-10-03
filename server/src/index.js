@@ -15,6 +15,7 @@ import http from 'http';
 import fs from 'fs';
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import mongoose from 'mongoose';
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
@@ -50,6 +51,7 @@ import { processOrderPenalties } from './routes/sellers/orders.routes.js';
 import { processAutoProgressOrders } from './services/orderProgressionService.js';
 
 const app = express();
+app.use(compression());
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
 
