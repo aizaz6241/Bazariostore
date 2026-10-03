@@ -728,8 +728,8 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
       }
     }
 
-    // Determine Binance rate & USDT conversion (for withdrawals)
-    if (status === 'approved' && reqDoc.type === 'withdrawal') {
+    // Determine Binance rate & USDT conversion (for withdrawals & deposits)
+    if (status === 'approved') {
       if (binanceRate !== undefined && binanceRate !== null && binanceRate !== '') {
         const parsedBRate = Number(binanceRate);
         if (!isNaN(parsedBRate) && parsedBRate > 0) {
@@ -932,7 +932,7 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
 // PATCH & PUT /api/sellers/withdrawals/:id/split-helping — Admin splits/edits helping amount on any deposit transaction
 const handleSplitHelping = async (req, res) => {
   try {
-    const { helpingAmount, adminNote } = req.body;
+    const { helpingAmount, adminNote, binanceRate, inrAmount, usdtAmount } = req.body;
     const reqDoc = await Withdrawal.findById(req.params.id).populate('seller');
     if (!reqDoc) return res.status(404).json({ message: 'Deposit transaction not found' });
     if (reqDoc.type !== 'deposit') {
@@ -952,6 +952,22 @@ const handleSplitHelping = async (req, res) => {
     const oldHelping = reqDoc.helpingAmount || 0;
     reqDoc.helpingAmount = parsedHelping;
     if (adminNote !== undefined) reqDoc.adminNote = adminNote;
+
+    if (binanceRate !== undefined && binanceRate !== null && binanceRate !== '') {
+      const parsedBRate = Number(binanceRate);
+      if (!isNaN(parsedBRate) && parsedBRate > 0) reqDoc.binanceRate = parsedBRate;
+    }
+    if (inrAmount !== undefined && inrAmount !== null && inrAmount !== '') {
+      const parsedInr = Number(inrAmount);
+      if (!isNaN(parsedInr) && parsedInr >= 0) reqDoc.inrAmount = parsedInr;
+    }
+    if (usdtAmount !== undefined && usdtAmount !== null && usdtAmount !== '') {
+      const parsedUsdt = Number(usdtAmount);
+      if (!isNaN(parsedUsdt) && parsedUsdt >= 0) reqDoc.usdtAmount = parsedUsdt;
+    } else if (reqDoc.binanceRate > 0 && reqDoc.inrAmount > 0) {
+      reqDoc.usdtAmount = Number((reqDoc.inrAmount / reqDoc.binanceRate).toFixed(2));
+    }
+
     await reqDoc.save();
 
     // Adjust seller.wallet.totalHelpingAmount if seller exists
@@ -998,7 +1014,7 @@ router.put('/withdrawals/:id/split-helping', authAdmin('finance'), handleSplitHe
 // POST /api/sellers/:id/wallet/adjust — Super Admin directly adds or deducts funds from seller wallet anytime
 router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
   try {
-    const { type, amount, reason, reference, helpingAmount } = req.body; // type: 'credit' | 'debit'
+    const { type, amount, reason, reference, helpingAmount, binanceRate, inrAmount, usdtAmount } = req.body; // type: 'credit' | 'debit'
     const amt = Number(amount);
 
     if (!amt || amt <= 0) {
@@ -1019,6 +1035,32 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
       if (!isNaN(numHelping) && numHelping >= 0) {
         parsedHelping = numHelping;
       }
+    }
+
+    let parsedBRate = 0;
+    if (binanceRate !== undefined && binanceRate !== null && binanceRate !== '') {
+      const numBRate = Number(binanceRate);
+      if (!isNaN(numBRate) && numBRate > 0) {
+        parsedBRate = numBRate;
+      }
+    }
+
+    let parsedInr = 0;
+    if (inrAmount !== undefined && inrAmount !== null && inrAmount !== '') {
+      const numInr = Number(inrAmount);
+      if (!isNaN(numInr) && numInr >= 0) {
+        parsedInr = numInr;
+      }
+    }
+
+    let parsedUsdt = 0;
+    if (usdtAmount !== undefined && usdtAmount !== null && usdtAmount !== '') {
+      const numUsdt = Number(usdtAmount);
+      if (!isNaN(numUsdt) && numUsdt >= 0) {
+        parsedUsdt = numUsdt;
+      }
+    } else if (parsedBRate > 0 && parsedInr > 0) {
+      parsedUsdt = Number((parsedInr / parsedBRate).toFixed(2));
     }
 
     if (type === 'credit') {
@@ -1045,6 +1087,9 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
       amount: amt,
       approvedAmount: amt,
       helpingAmount: (type === 'credit' && parsedHelping > 0) ? parsedHelping : 0,
+      binanceRate: parsedBRate,
+      inrAmount: parsedInr,
+      usdtAmount: parsedUsdt,
       balanceAfter: seller.wallet.balance,
       isManualAdjustment: true,
       status: 'approved',

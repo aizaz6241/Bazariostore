@@ -4,6 +4,8 @@ import Ic from '../components/Icons.jsx';
 
 export default function SplitDepositModal({ isOpen, onClose, deposit, onSuccess }) {
   const [helpingAmount, setHelpingAmount] = useState('');
+  const [binanceRate, setBinanceRate] = useState('');
+  const [inrAmount, setInrAmount] = useState('');
   const [adminNote, setAdminNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -21,10 +23,13 @@ export default function SplitDepositModal({ isOpen, onClose, deposit, onSuccess 
   useEffect(() => {
     if (deposit) {
       setHelpingAmount(deposit.helpingAmount !== undefined ? String(deposit.helpingAmount) : '0');
+      setBinanceRate(deposit.binanceRate ? String(deposit.binanceRate) : '');
+      const defaultInr = gross > 0 ? (gross * 83.5).toFixed(0) : '';
+      setInrAmount(deposit.inrAmount ? String(deposit.inrAmount) : defaultInr);
       setAdminNote(deposit.adminNote || '');
       setError('');
     }
-  }, [deposit]);
+  }, [deposit, gross]);
 
   // Handle ESC key
   useEffect(() => {
@@ -60,16 +65,23 @@ export default function SplitDepositModal({ isOpen, onClose, deposit, onSuccess 
     setError('');
 
     try {
+      const bRate = binanceRate ? Number(binanceRate) : undefined;
+      const inrVal = inrAmount ? Number(inrAmount) : undefined;
+      const usdtVal = (bRate > 0 && inrVal > 0) ? Number((inrVal / bRate).toFixed(2)) : undefined;
+
       const res = await api(`/sellers/withdrawals/${deposit._id}/split-helping`, {
         method: 'PATCH',
         body: {
           helpingAmount: parsedHelping,
+          binanceRate: bRate,
+          inrAmount: inrVal,
+          usdtAmount: usdtVal,
           adminNote: adminNote.trim(),
         },
       });
 
       if (onSuccess) {
-        onSuccess(res.transaction || res.request || { ...deposit, helpingAmount: parsedHelping, adminNote });
+        onSuccess(res.transaction || res.request || { ...deposit, helpingAmount: parsedHelping, binanceRate: bRate, inrAmount: inrVal, usdtAmount: usdtVal, adminNote });
       }
       onClose();
     } catch (err) {
@@ -424,6 +436,62 @@ export default function SplitDepositModal({ isOpen, onClose, deposit, onSuccess 
                 <div style={{ fontSize: 10, color: '#dc2626', marginTop: 2, fontWeight: 600 }}>
                   ✕ Excluded from Admin USDT Wallet
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Binance USDT Rate Section (Admin Internal) */}
+          <div
+            style={{
+              background: 'linear-gradient(135deg, #fefce8 0%, #fffdf0 100%)',
+              border: '1.5px solid #fde047',
+              borderRadius: 10,
+              padding: '12px 14px',
+              marginBottom: 16,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 14 }}>🟡</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#854d0e' }}>Binance USDT Rate &amp; Conversion</span>
+                <span style={{ fontSize: 10, background: '#fef9c3', color: '#a16207', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
+                  Admin Internal • Hidden from Seller
+                </span>
+              </div>
+              {Number(inrAmount) > 0 && Number(binanceRate) > 0 && (
+                <span style={{ background: '#16a34a', color: '#fff', padding: '2px 8px', borderRadius: 5, fontSize: 11.5, fontWeight: 800 }}>
+                  💎 {(Number(inrAmount) / Number(binanceRate)).toFixed(2)} USDT
+                </span>
+              )}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 3, color: '#713f12' }}>
+                  🇮🇳 INR Amount (₹):
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={inrAmount}
+                  onChange={(e) => setInrAmount(e.target.value)}
+                  placeholder={`e.g. ${(gross * 83.5).toFixed(0)}`}
+                  style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #fde047', background: '#fff', fontSize: 13, fontWeight: 700, color: '#0f172a' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 800, display: 'block', marginBottom: 3, color: '#854d0e' }}>
+                  🟡 Binance Rate (₹/USDT):
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={binanceRate}
+                  onChange={(e) => setBinanceRate(e.target.value)}
+                  placeholder="e.g. 90.00"
+                  style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1.5px solid #eab308', background: '#fff', fontSize: 13, fontWeight: 800, color: '#854d0e' }}
+                />
               </div>
             </div>
           </div>
