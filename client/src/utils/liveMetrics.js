@@ -1,6 +1,6 @@
 /**
  * Realistic Live Traffic & Viewing Metrics for Seller Portal
- * Generates believable, realistic visitor numbers that gently fluctuate over time.
+ * Generates believable, realistic visitor numbers that gently fluctuate in real-time.
  */
 
 function hashStr(str = '') {
@@ -13,42 +13,68 @@ function hashStr(str = '') {
   return Math.abs(hash);
 }
 
+// In-memory smooth cache for persistent stateful walking per id
+const storeCache = new Map();
+const productCache = new Map();
+
 /**
  * Returns a realistic active store visitor count for a seller.
- * Typically 18 to 42 active shoppers browsing the store,
- * gently fluctuating by ±1-3 over rolling intervals.
+ * Realistic Range: 7 to 18 active shoppers (average 10-14).
+ * Gently fluctuates in real time without unrealistically huge or tiny numbers.
  */
 export function getLiveStoreVisitors(sellerId = '', totalProducts = 10) {
-  const baseSeed = hashStr(String(sellerId || 'bazario-store'));
-  const catalogBonus = Math.min(12, Math.floor((totalProducts || 1) * 0.3));
-  const baseCount = 19 + (baseSeed % 14) + catalogBonus; // 19 to 38
+  const key = String(sellerId || 'bazario-store');
+  const baseSeed = hashStr(key);
+  // Base center between 9 and 14
+  const targetBase = 9 + (baseSeed % 6);
 
-  // Small realistic organic fluctuation based on 25-second rolling window
-  const timeBlock = Math.floor(Date.now() / 25000);
-  const jitter = ((baseSeed + timeBlock * 7) % 7) - 3; // -3 to +3
+  if (!storeCache.has(key)) {
+    storeCache.set(key, targetBase);
+    return targetBase;
+  }
 
-  return Math.max(14, Math.min(58, baseCount + jitter));
+  // Smooth random walk: step by +1, -1, or stay same (0)
+  const current = storeCache.get(key);
+  const rand = Math.random();
+  let step = 0;
+  if (rand < 0.38) {
+    step = current < targetBase + 3 ? 1 : -1;
+  } else if (rand < 0.76) {
+    step = current > targetBase - 3 ? -1 : 1;
+  }
+
+  const next = Math.max(7, Math.min(18, current + step));
+  storeCache.set(key, next);
+  return next;
 }
 
 /**
  * Returns a realistic live viewer count for a specific product.
- * Range: 3 to 25 people currently viewing this product.
+ * Realistic Range: 2 to 7 people viewing this product right now.
+ * Never displays absurd spikes.
  */
 export function getProductLiveViewers(productId = '', price = 0) {
-  const str = String(productId || 'prod');
-  const h = hashStr(str);
+  const key = String(productId || 'prod');
+  const h = hashStr(key);
+  // Base center between 2 and 5
+  const targetBase = 2 + (h % 4);
 
-  // Base range between 3 and 18
-  let base = 3 + (h % 16);
-
-  // Higher interest items (based on hash variation) get a slight bump
-  if ((h >> 2) % 3 === 0) {
-    base += 5;
+  if (!productCache.has(key)) {
+    productCache.set(key, targetBase);
+    return targetBase;
   }
 
-  // Realistic organic jitter (changes subtly every 35 seconds by ±1 or 0)
-  const timeBlock = Math.floor(Date.now() / 35000);
-  const jitter = ((h + timeBlock * 11) % 5) - 2; // -2 to +2
+  // Smooth random walk: step by +1, -1, or 0
+  const current = productCache.get(key);
+  const rand = Math.random();
+  let step = 0;
+  if (rand < 0.35) {
+    step = current < 6 ? 1 : -1;
+  } else if (rand < 0.70) {
+    step = current > 2 ? -1 : 1;
+  }
 
-  return Math.max(2, Math.min(29, base + jitter));
+  const next = Math.max(2, Math.min(7, current + step));
+  productCache.set(key, next);
+  return next;
 }

@@ -7,6 +7,7 @@ import WalletTransaction from '@/lib/models/WalletTransaction';
 import RewardClaim from '@/lib/models/RewardClaim';
 import { Seller, Withdrawal } from '@/lib/models/SharedModels';
 import { computeSplit, computeBonusSplit, r2, r6 } from '@/lib/utils/financeSplit';
+import { getLiveVersion, forgetLiveVersion, hashOf } from '@/lib/utils/liveVersion';
 
 /**
  * USDT FINANCE LEDGER — single source of truth for "how much is in Binance and whose is it".
@@ -33,10 +34,14 @@ export const FINANCE_START = new Date(process.env.FINANCE_START_DATE || '2026-09
 const OLD_DEFAULT_RATE = 90;
 const OLD_DEFAULT_INR_PER_USD = 83.5;
 
+// The cached ledger is reused only while the database still looks the same (see liveVersion.js),
+// so a deposit approved on the seller website shows up here at once. The time limits below are a
+// safety net: CACHE_MAX_MS when the version check works, CACHE_MS if it ever cannot be read.
 const CACHE_MS = 15000;
+const CACHE_MAX_MS = 30000;
 
 function cacheStore() {
-  if (!global.__financeLedgerCache) global.__financeLedgerCache = { at: 0, data: null };
+  if (!global.__financeLedgerCache) global.__financeLedgerCache = { at: 0, data: null, version: '', building: null };
   return global.__financeLedgerCache;
 }
 
@@ -44,6 +49,8 @@ export function invalidateLedger() {
   const c = cacheStore();
   c.at = 0;
   c.data = null;
+  c.version = '';
+  forgetLiveVersion();
 }
 
 const num = (v) => {
@@ -70,13 +77,63 @@ function looksAutoFilled(doc) {
 }
 
 /**
- * Build the whole ledger. Cached for a few seconds because several screens ask for it at once.
+ * The whole ledger. Served from memory while nothing has changed in the database; rebuilt the
+ * moment something has (a deposit approved, funds added, a payout, a new assignment, ...).
  */
 export async function buildLedger({ fresh = false } = {}) {
   const cache = cacheStore();
-  if (!fresh && cache.data && Date.now() - cache.at < CACHE_MS) return cache.data;
-
   await connectDB();
+
+  let version = '';
+  try {
+    version = (await getLiveVersion({ force: fresh })).full;
+  } catch (e) {
+    console.error('[finance] live version check failed:', e.message);
+  }
+
+  if (!fresh && cache.data) {
+    const age = Date.now() - cache.at;
+    const stillGood = version ? cache.version === version && age < CACHE_MAX_MS : age < CACHE_MS;
+    if (stillGood) return cache.data;
+  }
+
+  // Several screens ask at the same moment: build once and share the result.
+  if (!fresh && cache.building) return cache.building;
+
+  const run = (async () => {
+    const { data, wrote } = await computeLedger();
+    let builtVersion = version;
+    if (wrote) {
+      // Building locked some new splits, which is itself a change in the database: note the
+      // version as it is now, otherwise the next request would rebuild for nothing.
+      try {
+        builtVersion = (await getLiveVersion({ force: true })).full;
+      } catch (e) {
+        builtVersion = '';
+      }
+    }
+    cache.at = Date.now();
+    cache.data = data;
+    cache.version = builtVersion;
+    return data;
+  })();
+
+  if (!fresh) {
+    cache.building = run;
+    run.then(
+      () => {
+        if (cache.building === run) cache.building = null;
+      },
+      () => {
+        if (cache.building === run) cache.building = null;
+      }
+    );
+  }
+  return run;
+}
+
+async function computeLedger() {
+  let wrote = false;
 
   const [partnerDocs, memberDocs, sellers, assignments, docs, splitDocs, payoutDocs, claimDocs] = await Promise.all([
     Member.find({ role: 'admin', active: true }).sort({ createdAt: 1 }).select('name username email').lean(),
@@ -219,6 +276,7 @@ export async function buildLedger({ fresh = false } = {}) {
           },
           { upsert: true }
         );
+        wrote = true;
       } catch (e) {
         console.error('[finance] could not lock split for', id, e.message);
       }
@@ -299,6 +357,7 @@ export async function buildLedger({ fresh = false } = {}) {
           },
           { upsert: true }
         );
+        wrote = true;
       } catch (e) {
         console.error('[finance] could not lock bonus split for', id, e.message);
       }
@@ -532,9 +591,21 @@ export async function buildLedger({ fresh = false } = {}) {
     console.error('[finance] wallet sync error:', e.message);
   }
 
-  cache.at = Date.now();
-  cache.data = data;
-  return data;
+  // Short signature of everything the screens show. Open pages compare it to know that their
+  // numbers are out of date (see /api/live).
+  data.sig = hashOf([
+    data.totals,
+    data.sellerLiability,
+    data.partners.map((p) => [p.id, p.name]),
+    wallets.map((w) => [w.userId, w.name, w.deal, w.earnedUSDT, w.bonusUSDT, w.bonusCostUSDT, w.sellerWithdrawUSDT, w.payoutUSDT]),
+    entries.map((e) => [e.id, e.kind, e.usdt, e.inr, e.pkrRate, e.owner ? e.owner.id : '', new Date(e.date).getTime(), e.storeName]),
+    pending.map((e) => [e.id, e.reason, e.usdt, e.inr, e.owner ? e.owner.id : '']),
+    skipped.map((e) => e.id),
+    payouts.map((p) => [p.id, p.amountUSDT]),
+    unassignedSellers.map((x) => x.id),
+  ]);
+
+  return { data, wrote };
 }
 
 /**

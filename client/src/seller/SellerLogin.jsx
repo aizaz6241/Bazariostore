@@ -52,9 +52,10 @@ export default function SellerLogin() {
     phone: '',
     password: '',
     referralCode: urlAffiliate.toUpperCase(),
-    idDocument: '',
-    passportDocument: '',
-    bankStatementDocument: '',
+    aadhaarFront: '',
+    aadhaarBack: '',
+    panFront: '',
+    panBack: '',
     description: '',
   });
 
@@ -122,9 +123,10 @@ export default function SellerLogin() {
         phone: '',
         password: '',
         referralCode: '',
-        idDocument: '',
-        passportDocument: '',
-        bankStatementDocument: '',
+        aadhaarFront: '',
+        aadhaarBack: '',
+        panFront: '',
+        panBack: '',
         description: '',
       });
     } catch (e) {
@@ -348,7 +350,7 @@ export default function SellerLogin() {
                     Direct Sign-In Is Not Active Yet!
                   </b>
                   <p style={{ margin: 0, fontSize: 12.5, color: '#78350f', lineHeight: 1.5 }}>
-                    Your account is currently under <b>Review &amp; Verification</b>. The Platform Admin will review your KYC documents (ID, passport, bank details). Once approved, your account will be activated and you will be able to sign in using your registered business email and password.
+                    Your account is currently under <b>Review &amp; Verification</b>. The Platform Admin will review your KYC documents (Aadhaar Card Front &amp; Back, PAN Card Front &amp; Back). Once approved, your account will be activated and you will be able to sign in using your registered business email and password.
                   </p>
                 </div>
               </div>
@@ -456,16 +458,7 @@ export default function SellerLogin() {
             </div>
 
             <div className="field">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                <label style={{ margin: 0 }}>Password</label>
-                <button
-                  type="button"
-                  onClick={() => setForgotModalOpen(true)}
-                  style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}
-                >
-                  Forgot password?
-                </button>
-              </div>
+              <label style={{ marginBottom: 4 }}>Password</label>
               <div className="pw-wrap" style={{ position: 'relative' }}>
                 <input
                   type={showPassword ? 'text' : 'password'}
@@ -490,6 +483,11 @@ export default function SellerLogin() {
             <button type="submit" className="btn-primary btn-block btn-auth-submit" disabled={loading}>
               {loading ? 'Signing in…' : 'SIGN IN TO SELLER CENTRAL →'}
             </button>
+
+            {/* Customer Support Password Reset Guidance */}
+            <div style={{ marginTop: 14, padding: '10px 14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12, color: '#64748b', textAlign: 'center', lineHeight: 1.45 }}>
+              🔒 <b>Forgot password?</b> Please contact <b>Customer Support</b>. Our team will verify your merchant account and reset your password for you.
+            </div>
           </form>
         ) : (
           <form onSubmit={handleRegister} className="auth-form-clean">
@@ -562,41 +560,95 @@ export default function SellerLogin() {
               </div>
             </div>
 
-            {/* KYC Documents Upload Section */}
-            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '12px 14px', marginBottom: 14 }}>
-              <b style={{ fontSize: 12.5, color: '#0f172a', display: 'block', marginBottom: 8 }}>
-                📑 KYC &amp; Verification Documents (ID / Passport / Bank Statement)
-              </b>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-                <div>
-                  <label style={{ fontSize: 11, color: '#64748b', display: 'block', marginBottom: 4, fontWeight: 700 }}>1. National ID / Aadhaar / DL</label>
+            {/* Mandatory KYC Documents Upload: Aadhaar Card & PAN Card (Front & Back) */}
+            <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
+                <b style={{ fontSize: 13, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>🪪</span> Merchant KYC Documents (Aadhaar &amp; PAN Card)
+                </b>
+                <span style={{ fontSize: 10.5, fontWeight: 800, background: '#eff6ff', color: '#1d4ed8', padding: '2px 8px', borderRadius: 999, border: '1px solid #bfdbfe' }}>
+                  Front &amp; Back Required
+                </span>
+              </div>
+              <p style={{ margin: '0 0 12px', fontSize: 11.5, color: '#64748b', lineHeight: 1.4 }}>
+                Please upload clear photos or scans of your Aadhaar Card (Front &amp; Back) and PAN Card (Front &amp; Back) for verification.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                {/* 1. Aadhaar Card Front */}
+                <div style={{ background: '#ffffff', border: '1.5px dashed #cbd5e1', borderRadius: 8, padding: '10px 12px' }}>
+                  <label style={{ fontSize: 11.5, color: '#1e293b', display: 'block', marginBottom: 4, fontWeight: 800 }}>
+                    1. Aadhaar Card (Front) *
+                  </label>
                   <input
                     type="file"
                     accept="image/*,.pdf"
-                    onChange={handleFileUpload('idDocument')}
+                    onChange={handleFileUpload('aadhaarFront')}
                     style={{ fontSize: 11, width: '100%' }}
+                    required
                   />
-                  {regForm.idDocument && <small style={{ color: '#16a34a', display: 'block', fontWeight: 700, marginTop: 2 }}>✓ ID Attached</small>}
+                  {regForm.aadhaarFront && (
+                    <small style={{ color: '#16a34a', display: 'block', fontWeight: 800, marginTop: 4 }}>
+                      ✓ Front Attached
+                    </small>
+                  )}
                 </div>
-                <div>
-                  <label style={{ fontSize: 11, color: '#64748b', display: 'block', marginBottom: 4, fontWeight: 700 }}>2. Passport / Address Proof</label>
+
+                {/* 2. Aadhaar Card Back */}
+                <div style={{ background: '#ffffff', border: '1.5px dashed #cbd5e1', borderRadius: 8, padding: '10px 12px' }}>
+                  <label style={{ fontSize: 11.5, color: '#1e293b', display: 'block', marginBottom: 4, fontWeight: 800 }}>
+                    2. Aadhaar Card (Back) *
+                  </label>
                   <input
                     type="file"
                     accept="image/*,.pdf"
-                    onChange={handleFileUpload('passportDocument')}
+                    onChange={handleFileUpload('aadhaarBack')}
                     style={{ fontSize: 11, width: '100%' }}
+                    required
                   />
-                  {regForm.passportDocument && <small style={{ color: '#16a34a', display: 'block', fontWeight: 700, marginTop: 2 }}>✓ Passport Attached</small>}
+                  {regForm.aadhaarBack && (
+                    <small style={{ color: '#16a34a', display: 'block', fontWeight: 800, marginTop: 4 }}>
+                      ✓ Back Attached
+                    </small>
+                  )}
                 </div>
-                <div>
-                  <label style={{ fontSize: 11, color: '#64748b', display: 'block', marginBottom: 4, fontWeight: 700 }}>3. Bank Statement / Proof</label>
+
+                {/* 3. PAN Card Front */}
+                <div style={{ background: '#ffffff', border: '1.5px dashed #cbd5e1', borderRadius: 8, padding: '10px 12px' }}>
+                  <label style={{ fontSize: 11.5, color: '#1e293b', display: 'block', marginBottom: 4, fontWeight: 800 }}>
+                    3. PAN Card (Front) *
+                  </label>
                   <input
                     type="file"
                     accept="image/*,.pdf"
-                    onChange={handleFileUpload('bankStatementDocument')}
+                    onChange={handleFileUpload('panFront')}
                     style={{ fontSize: 11, width: '100%' }}
+                    required
                   />
-                  {regForm.bankStatementDocument && <small style={{ color: '#16a34a', display: 'block', fontWeight: 700, marginTop: 2 }}>✓ Statement Attached</small>}
+                  {regForm.panFront && (
+                    <small style={{ color: '#16a34a', display: 'block', fontWeight: 800, marginTop: 4 }}>
+                      ✓ Front Attached
+                    </small>
+                  )}
+                </div>
+
+                {/* 4. PAN Card Back */}
+                <div style={{ background: '#ffffff', border: '1.5px dashed #cbd5e1', borderRadius: 8, padding: '10px 12px' }}>
+                  <label style={{ fontSize: 11.5, color: '#1e293b', display: 'block', marginBottom: 4, fontWeight: 800 }}>
+                    4. PAN Card (Back) *
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={handleFileUpload('panBack')}
+                    style={{ fontSize: 11, width: '100%' }}
+                    required
+                  />
+                  {regForm.panBack && (
+                    <small style={{ color: '#16a34a', display: 'block', fontWeight: 800, marginTop: 4 }}>
+                      ✓ Back Attached
+                    </small>
+                  )}
                 </div>
               </div>
             </div>

@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import WalletModal from '@/components/WalletModal';
 import { readCache, writeCache } from '@/lib/clientCache';
+import { useLiveRefresh } from '@/components/LiveProvider';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -71,6 +72,9 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchDashboardData();
   }, []);
+
+  // Deposits approved / funds added on the seller website show up here by themselves
+  useLiveRefresh(fetchDashboardData);
 
   return (
     <div className="space-y-6 animate-fade-in">

@@ -30,10 +30,10 @@ export default function SellerDashboard() {
   useEffect(() => {
     loadData();
 
-    // Gentle organic fluctuation timer for live shoppers
+    // Gentle organic fluctuation timer for live shoppers in real time
     const shopperTimer = setInterval(() => {
-      setLiveShoppers(getLiveStoreVisitors(data?.seller?._id, data?.stats?.totalProducts || 12));
-    }, 18000);
+      setLiveShoppers(getLiveStoreVisitors(data?.seller?._id, data?.stats?.totalProducts || 10));
+    }, 4500);
 
     const socket = getSocket();
     const onSync = () => loadData();

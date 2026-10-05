@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import {
   Landmark,
@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { computeSplit } from '@/lib/utils/financeSplit';
+import { useLiveRefresh, LiveBadge } from '@/components/LiveProvider';
 
 const fmt = (n, d = 2) =>
   Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -415,25 +416,38 @@ export default function FinancePage() {
   const [fFrom, setFFrom] = useState('');
   const [fTo, setFTo] = useState('');
 
-  const load = useCallback(async (fresh = false) => {
+  // Each request gets a number; an answer is used only if nothing newer was asked meanwhile, so a
+  // background refresh can never put older numbers back over a change you just saved.
+  const requestNo = useRef(0);
+
+  const load = useCallback(async (fresh = false, silent = false) => {
+    const mine = ++requestNo.current;
     try {
-      setLoading(true);
-      setError('');
+      if (!silent) {
+        setLoading(true);
+        setError('');
+      }
       const token = localStorage.getItem('portal_token');
       const res = await fetch(`/api/finance${fresh ? '?fresh=1' : ''}`, { headers: { Authorization: `Bearer ${token}` } });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.message || 'Failed to load finance ledger');
-      setData(json);
+      if (mine === requestNo.current) setData(json);
     } catch (e) {
-      setError(e.message);
+      if (!silent) setError(e.message);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
+  const isAdminUser = user?.role === 'admin';
   useEffect(() => {
-    if (user?.role === 'admin') load();
-  }, [user, load]);
+    if (isAdminUser) load();
+  }, [isAdminUser, load]);
+
+  // A deposit approved, funds added or adjusted on the seller website: the ledger reloads by itself
+  useLiveRefresh(() => {
+    if (isAdminUser) load(false, true);
+  });
 
   const act = async (id, action, values = {}, kind = '') => {
     try {
@@ -447,6 +461,7 @@ export default function FinancePage() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.message || 'Could not save');
+      requestNo.current += 1; // anything still loading in the background is older than this
       setData(json);
       setEditId('');
     } catch (e) {
@@ -542,6 +557,7 @@ export default function FinancePage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <LiveBadge />
           <button
             onClick={() => setShowAdd(true)}
             disabled={!data}
@@ -1004,6 +1020,7 @@ export default function FinancePage() {
           data={data}
           onClose={() => setShowAdd(false)}
           onSaved={(json) => {
+            requestNo.current += 1;
             setData(json);
             setShowAdd(false);
           }}

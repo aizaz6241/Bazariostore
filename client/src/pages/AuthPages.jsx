@@ -92,10 +92,7 @@ export function Login() {
           />
         </div>
         <div className="field">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-            <label style={{ margin: 0 }}>Password</label>
-            <Link to="/forgot-password" style={{ fontSize: 12, fontWeight: 600, color: '#2563eb' }}>Forgot password?</Link>
-          </div>
+          <label style={{ marginBottom: 4 }}>Password</label>
           <div className="pw-wrap" style={{ position: 'relative' }}>
             <input
               type={showPassword ? 'text' : 'password'}
@@ -119,6 +116,11 @@ export function Login() {
         <button className="btn-primary btn-block btn-auth-submit" disabled={busy}>
           {busy ? 'Signing in…' : 'SIGN IN AS CUSTOMER →'}
         </button>
+
+        {/* Customer Support Password Reset Notice */}
+        <div style={{ marginTop: 14, padding: '10px 14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12, color: '#64748b', textAlign: 'center', lineHeight: 1.45 }}>
+          🔒 <b>Forgot password?</b> Please contact <b>Customer Support</b>. Our team will verify your account and provide a new reset password.
+        </div>
       </form>
 
       <div className="auth-links" style={{ justifyContent: 'center', marginTop: 16 }}>

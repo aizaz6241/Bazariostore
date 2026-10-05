@@ -20,6 +20,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Landmark,
+  BarChart3,
 } from 'lucide-react';
 
 export default function AppNavbar() {
@@ -68,6 +69,7 @@ export default function AppNavbar() {
     { href: '/models', label: 'Models', icon: ImageIcon },
     { href: '/rewards', label: 'Rewards', icon: Award },
     { href: '/wallet', label: 'Wallet', icon: Wallet },
+    { href: '/analytics', label: 'Analytics', icon: BarChart3 },
     ...(isAdmin ? [{ href: '/members', label: 'Members', icon: UserCheck }] : []),
     ...(isAdmin ? [{ href: '/finance', label: 'Finance', icon: Landmark }] : []),
   ];
@@ -163,7 +165,8 @@ export default function AppNavbar() {
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  {/* icons come back on wide screens; at laptop width the labels need the room */}
+                  <Icon className="w-4 h-4 hidden xl:block" />
                   <span>{item.label}</span>
                 </Link>
               );

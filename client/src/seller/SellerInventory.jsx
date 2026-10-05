@@ -13,12 +13,18 @@ export default function SellerInventory() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState({});
   const [search, setSearch] = useState('');
+  const [, setViewersTick] = useState(0);
 
   useEffect(() => {
     sapi('/sellers/products?limit=200')
       .then(setProducts)
       .catch(() => {})
       .finally(() => setLoading(false));
+
+    const timer = setInterval(() => {
+      setViewersTick((t) => t + 1);
+    }, 4500);
+    return () => clearInterval(timer);
   }, []);
 
   const updateStock = async (productId, newStock) => {

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useLiveRefresh } from '@/components/LiveProvider';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import confetti from 'canvas-confetti';
@@ -103,9 +104,9 @@ export default function MembersPage() {
     }
   }, [user, router]);
 
-  const fetchData = async () => {
+  const fetchData = async (silent = false) => {
     try {
-      setLoading(true);
+      if (silent !== true) setLoading(true);
       const token = localStorage.getItem('portal_token');
       const headers = { Authorization: `Bearer ${token}` };
 
@@ -135,6 +136,11 @@ export default function MembersPage() {
       fetchData();
     }
   }, [isAdmin]);
+
+  // Wallet balances follow new deposits / payouts without a reload
+  useLiveRefresh(() => {
+    if (isAdmin) fetchData(true);
+  });
 
   const handleCreateMember = async (e) => {
     e?.preventDefault();

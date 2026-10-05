@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useLiveRefresh } from '@/components/LiveProvider';
 import { useAuth } from '@/components/AuthProvider';
 import {
   Users,
@@ -55,9 +56,9 @@ export default function SellersPage() {
 
   const isAdmin = user?.role === 'admin';
 
-  const fetchData = async () => {
+  const fetchData = async (silent = false) => {
     try {
-      setLoading(true);
+      if (silent !== true) setLoading(true);
       const token = localStorage.getItem('portal_token');
       const headers = { Authorization: `Bearer ${token}` };
 
@@ -85,6 +86,9 @@ export default function SellersPage() {
   useEffect(() => {
     fetchData();
   }, [isAdmin]);
+
+  // Store deposits / balances follow the seller website without a reload
+  useLiveRefresh(() => fetchData(true));
 
   // Handle Admin Assigning Seller to a Member (Deal agreement is inherited from Member)
   const handleAssignSeller = async () => {

@@ -1673,10 +1673,14 @@ export default function Sellers() {
 
                   {(() => {
                     const kyc = profileSeller.kycDocuments || {};
+                    const aadhaarFront = kyc.aadhaarFront || '';
+                    const aadhaarBack = kyc.aadhaarBack || '';
+                    const panFront = kyc.panFront || '';
+                    const panBack = kyc.panBack || '';
                     const idDoc = kyc.idCard || kyc.idDocumentUrl || '';
                     const passportDoc = kyc.passport || kyc.passportDocumentUrl || '';
                     const bankDoc = kyc.bankStatement || kyc.bankStatementUrl || '';
-                    const hasAny = Boolean(idDoc || passportDoc || bankDoc);
+                    const hasAny = Boolean(aadhaarFront || aadhaarBack || panFront || panBack || idDoc || passportDoc || bankDoc);
 
                     if (!hasAny) {
                       return (
@@ -1691,9 +1695,14 @@ export default function Sellers() {
                     }
 
                     const docList = [
-                      { title: 'National ID / Aadhaar / DL', url: idDoc, type: 'idCard' },
-                      { title: 'Passport / Proof of Address', url: passportDoc, type: 'passport' },
-                      { title: 'Bank Statement / Passbook', url: bankDoc, type: 'bankStatement' },
+                      { title: '🪪 Aadhaar Card (Front Side)', url: aadhaarFront, type: 'aadhaarFront' },
+                      { title: '🪪 Aadhaar Card (Back Side)', url: aadhaarBack, type: 'aadhaarBack' },
+                      { title: '📑 PAN Card (Front Side)', url: panFront, type: 'panFront' },
+                      { title: '📑 PAN Card (Back Side)', url: panBack, type: 'panBack' },
+                      // Legacy docs if present
+                      { title: 'National ID / DL (Legacy)', url: idDoc && idDoc !== aadhaarFront ? idDoc : '', type: 'idCard' },
+                      { title: 'Passport (Legacy)', url: passportDoc && passportDoc !== panFront ? passportDoc : '', type: 'passport' },
+                      { title: 'Bank Statement (Legacy)', url: bankDoc, type: 'bankStatement' },
                     ].filter((d) => Boolean(d.url));
 
                     return (

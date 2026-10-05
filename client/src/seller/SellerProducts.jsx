@@ -13,13 +13,15 @@ export default function SellerProducts() {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [stockFilter, setStockFilter] = useState('all');
-  const [liveShoppers, setLiveShoppers] = useState(() => getLiveStoreVisitors(seller?._id, 12));
+  const [liveShoppers, setLiveShoppers] = useState(() => getLiveStoreVisitors(seller?._id, 10));
+  const [, setViewersTick] = useState(0);
 
   useEffect(() => {
-    setLiveShoppers(getLiveStoreVisitors(seller?._id, products.length || 12));
+    setLiveShoppers(getLiveStoreVisitors(seller?._id, products.length || 10));
     const timer = setInterval(() => {
-      setLiveShoppers(getLiveStoreVisitors(seller?._id, products.length || 12));
-    }, 20000);
+      setLiveShoppers(getLiveStoreVisitors(seller?._id, products.length || 10));
+      setViewersTick((t) => t + 1);
+    }, 4500);
     return () => clearInterval(timer);
   }, [seller?._id, products.length]);
 

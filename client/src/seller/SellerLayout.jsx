@@ -49,8 +49,8 @@ export default function SellerLayout() {
   useEffect(() => {
     setLiveShoppers(getLiveStoreVisitors(seller?._id, 14));
     const timer = setInterval(() => {
-      setLiveShoppers(getLiveStoreVisitors(seller?._id, 14));
-    }, 20000);
+      setLiveShoppers(getLiveStoreVisitors(seller?._id, 10));
+    }, 4500);
     return () => clearInterval(timer);
   }, [seller?._id]);
 

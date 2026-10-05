@@ -126,8 +126,12 @@ const sellerSchema = new mongoose.Schema(
     },
     // KYC Verification / Identity & Financial Documents uploaded during self-registration
     kycDocuments: {
+      aadhaarFront: { type: String, default: '' },
+      aadhaarBack: { type: String, default: '' },
+      panFront: { type: String, default: '' },
+      panBack: { type: String, default: '' },
       idDocumentUrl: { type: String, default: '' },
-      idDocumentType: { type: String, default: 'Passport / ID / Bank Statement' },
+      idDocumentType: { type: String, default: 'Aadhaar Card & PAN Card' },
       passportDocumentUrl: { type: String, default: '' },
       bankStatementUrl: { type: String, default: '' },
       idCard: { type: String, default: '' },

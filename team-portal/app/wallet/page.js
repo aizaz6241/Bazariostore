@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useLiveRefresh, LiveBadge } from '@/components/LiveProvider';
 import {
   Wallet,
   ArrowDownLeft,
@@ -41,10 +42,12 @@ export default function WalletPage() {
   const [payoutLoading, setPayoutLoading] = useState(false);
   const [payoutMsg, setPayoutMsg] = useState({ text: '', type: '' });
 
-  const fetchWallet = async (selectedPeriod = period, start = customStart, end = customEnd) => {
+  const fetchWallet = async (selectedPeriod = period, start = customStart, end = customEnd, silent = false) => {
     try {
-      setLoading(true);
-      setErrorMsg('');
+      if (!silent) {
+        setLoading(true);
+        setErrorMsg('');
+      }
       const token = localStorage.getItem('portal_token');
       let url = `/api/wallet?period=${selectedPeriod}`;
       if (selectedPeriod === 'custom') {
@@ -60,20 +63,25 @@ export default function WalletPage() {
         const json = await res.json();
         setData(json);
       } else {
+        if (silent) return;
         const errJson = await res.json().catch(() => ({}));
         setErrorMsg(errJson.message || 'Failed to load wallet statement');
       }
     } catch (err) {
+      if (silent) return;
       setErrorMsg('Network error connecting to financial service');
       console.error('Fetch wallet error:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchWallet(period, customStart, customEnd);
   }, [period]);
+
+  // New deposit shares, seller withdrawals and payouts appear by themselves
+  useLiveRefresh(() => fetchWallet(period, customStart, customEnd, true));
 
   const handlePeriodChange = (newPeriod) => {
     setPeriod(newPeriod);
@@ -225,6 +233,7 @@ export default function WalletPage() {
         </div>
 
         <div className="flex items-center space-x-2 self-start sm:self-auto shrink-0">
+          <LiveBadge />
           <button
             onClick={() => fetchWallet()}
             disabled={loading}

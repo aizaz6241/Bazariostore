@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useLiveRefresh } from '@/components/LiveProvider';
 import {
   X,
   Wallet,
@@ -45,10 +46,12 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
   const [payoutLoading, setPayoutLoading] = useState(false);
   const [payoutMsg, setPayoutMsg] = useState({ text: '', type: '' });
 
-  const fetchWallet = async (selectedPeriod = period, start = customStart, end = customEnd) => {
+  const fetchWallet = async (selectedPeriod = period, start = customStart, end = customEnd, silent = false) => {
     try {
-      setLoading(true);
-      setErrorMsg('');
+      if (!silent) {
+        setLoading(true);
+        setErrorMsg('');
+      }
       const token = localStorage.getItem('portal_token');
       let url = `/api/wallet?period=${selectedPeriod}`;
       if (memberId && memberId !== 'undefined' && memberId !== 'null') {
@@ -67,15 +70,17 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
         const json = await res.json();
         setData(json);
       } else {
+        if (silent) return;
         const errJson = await res.json().catch(() => ({}));
         setErrorMsg(errJson.message || 'Failed to load wallet transaction history');
         console.error('Failed to load wallet data:', errJson);
       }
     } catch (err) {
+      if (silent) return;
       setErrorMsg('Network error connecting to financial service');
       console.error('Fetch wallet statement error:', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -84,6 +89,11 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
       fetchWallet(period, customStart, customEnd);
     }
   }, [isOpen, memberId, period]);
+
+  // Keep the open statement in step with new deposits / withdrawals / payouts
+  useLiveRefresh(() => {
+    if (isOpen) fetchWallet(period, customStart, customEnd, true);
+  });
 
   // Handle period change
   const handlePeriodChange = (newPeriod) => {

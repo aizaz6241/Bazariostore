@@ -13,6 +13,7 @@ import {
   UserCheck,
   Wallet,
   Landmark,
+  BarChart3,
 } from 'lucide-react';
 
 export default function MobileBottomNav() {
@@ -28,6 +29,7 @@ export default function MobileBottomNav() {
     { href: '/chat', label: 'Chats', icon: MessageSquare },
     ...(isAdmin ? [] : [{ href: '/sellers', label: 'Sellers', icon: Users }]),
     { href: '/wallet', label: 'Wallet', icon: Wallet },
+    { href: '/analytics', label: 'Analytics', icon: BarChart3 },
     { href: '/rewards', label: 'Rewards', icon: Award },
     ...(isAdmin ? [{ href: '/members', label: 'Members', icon: UserCheck }] : []),
     ...(isAdmin ? [{ href: '/finance', label: 'Finance', icon: Landmark }] : []),

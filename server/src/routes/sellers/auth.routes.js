@@ -46,6 +46,10 @@ router.post('/register', async (req, res) => {
       phone,
       city,
       referralCode,
+      aadhaarFront,
+      aadhaarBack,
+      panFront,
+      panBack,
       idDocumentUrl,
       idDocumentType,
       idDocument,
@@ -82,10 +86,14 @@ router.post('/register', async (req, res) => {
       storeSlug = `${baseSlug}-${counter++}`;
     }
 
-    const finalIdDoc = idDocument || idDocumentUrl || '';
-    const finalPassportDoc = passportDocument || passportDocumentUrl || '';
+    const finalAadhaarFront = aadhaarFront || '';
+    const finalAadhaarBack = aadhaarBack || '';
+    const finalPanFront = panFront || '';
+    const finalPanBack = panBack || '';
+    const finalIdDoc = idDocument || idDocumentUrl || finalAadhaarFront || '';
+    const finalPassportDoc = passportDocument || passportDocumentUrl || finalPanFront || '';
     const finalBankDoc = bankStatementDocument || bankStatementUrl || '';
-    const hasAnyKyc = Boolean(finalIdDoc || finalPassportDoc || finalBankDoc);
+    const hasAnyKyc = Boolean(finalAadhaarFront || finalAadhaarBack || finalPanFront || finalPanBack || finalIdDoc || finalPassportDoc || finalBankDoc);
 
     const passwordHash = await bcrypt.hash(password, 10);
     const seller = new Seller({
@@ -101,13 +109,17 @@ router.post('/register', async (req, res) => {
       address: { city: city || 'New York', country: 'United States' },
       status: 'pending_approval',
       kycDocuments: {
-        idDocumentUrl: finalIdDoc || finalPassportDoc || '',
-        idCard: finalIdDoc,
+        aadhaarFront: finalAadhaarFront,
+        aadhaarBack: finalAadhaarBack,
+        panFront: finalPanFront,
+        panBack: finalPanBack,
+        idDocumentUrl: finalAadhaarFront || finalIdDoc || finalPassportDoc || '',
+        idCard: finalAadhaarFront || finalIdDoc,
         passport: finalPassportDoc,
         passportDocumentUrl: finalPassportDoc,
         bankStatement: finalBankDoc,
         bankStatementUrl: finalBankDoc,
-        idDocumentType: idDocumentType || 'Passport / National ID / Bank Statement',
+        idDocumentType: idDocumentType || 'Aadhaar Card & PAN Card',
         uploadedAt: hasAnyKyc ? new Date() : null,
       },
       securityDeposit: {
