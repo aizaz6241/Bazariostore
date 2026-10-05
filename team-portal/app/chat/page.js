@@ -74,8 +74,21 @@ export default function ChatPage() {
   const fileInputRef = useRef(null);
   const prevMessagesLengthRef = useRef(0);
   const messagesSigRef = useRef(''); // fingerprint of the messages already on screen
+  const messagesCursorRef = useRef(0); // newest change we already have (for delta polling)
+  const messagesRef = useRef([]); // always the latest list, for merging poll results
+  const chatKeyRef = useRef(''); // which conversation the refs above belong to
+  const activeKeyRef = useRef(''); // the conversation that is open right now
+  const [clearingChat, setClearingChat] = useState(false);
 
   const isAdmin = user?.role === 'admin';
+
+  activeKeyRef.current = `${activeChat.type}:${activeChat.contact?._id || ''}`;
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  const sortByTime = (list) => [...list].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
   // ─── 1. Fetch Contacts & Group Metadata ───
   const fetchContacts = async () => {
@@ -121,8 +134,12 @@ export default function ChatPage() {
         if (!activeChat.contact?._id) return;
         url += `&targetMemberId=${activeChat.contact._id}`;
       }
-      // Background polls send what we already have, so an unchanged chat costs almost nothing.
+      // Background polls send what we already have: an unchanged chat answers "unchanged",
+      // and a changed one sends back only the new / edited messages.
+      const chatKey = `${activeChat.type}:${activeChat.contact?._id || ''}`;
+      const isDelta = quiet && chatKeyRef.current === chatKey && messagesCursorRef.current > 0;
       if (quiet && messagesSigRef.current) url += `&sig=${encodeURIComponent(messagesSigRef.current)}`;
+      if (isDelta) url += `&after=${messagesCursorRef.current}`;
 
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
@@ -130,25 +147,64 @@ export default function ChatPage() {
 
       if (res.ok) {
         const data = await res.json();
+        // The user switched to another chat while this request was on its way: ignore it
+        if (chatKey !== activeKeyRef.current) return;
         if (data.unchanged) return;
-        messagesSigRef.current = data.sig || '';
-        const incoming = data.messages || [];
 
-        // Check if new messages arrived while user was scrolled up
-        if (prevMessagesLengthRef.current > 0 && incoming.length > prevMessagesLengthRef.current) {
-          const diff = incoming.length - prevMessagesLengthRef.current;
-          if (showScrollBottom) {
-            setUnreadWhileScrolled((prev) => prev + diff);
+        const incoming = data.messages || [];
+        const current = messagesRef.current;
+        let next;
+
+        if (data.delta) {
+          const byId = new Map(current.map((m) => [m._id, m]));
+          for (const inc of incoming) {
+            const old = byId.get(inc._id);
+            if (old) {
+              // edited / deleted / read update of a message we already show (media is kept locally)
+              byId.set(inc._id, inc.partial ? { ...old, ...inc, mediaUrl: inc.isDeleted ? '' : old.mediaUrl } : inc);
+            } else if (!inc.partial) {
+              byId.set(inc._id, inc);
+            }
           }
-          const latest = incoming[incoming.length - 1];
-          if (latest && latest.senderId !== user?._id) {
-            setHighlightedMsgId(latest._id);
-            setTimeout(() => setHighlightedMsgId(null), 4000);
+          next = sortByTime([...byId.values()]);
+
+          // The chat was cleared (or trimmed) on the server: reload it from scratch
+          const realCount = next.filter((m) => !m.pending && !m.failed).length;
+          if (typeof data.count === 'number' && data.count < realCount) {
+            if (data.count === 0) {
+              next = next.filter((m) => m.pending || m.failed);
+            } else {
+              messagesSigRef.current = '';
+              messagesCursorRef.current = 0;
+              fetchMessages(true);
+              return;
+            }
           }
+        } else {
+          // full load: keep messages that are still being sent
+          const sending = current.filter((m) => m.pending || m.failed);
+          next = sortByTime([...incoming, ...sending]);
         }
 
-        prevMessagesLengthRef.current = incoming.length;
-        setMessages(incoming);
+        chatKeyRef.current = chatKey;
+        messagesSigRef.current = data.sig || '';
+        messagesCursorRef.current = data.cursor || 0;
+
+        // New messages from someone else while the user was scrolled up
+        const known = new Set(current.map((m) => m._id));
+        const arrived = next.filter((m) => !known.has(m._id) && !m.pending && m.senderId !== user?._id);
+        if (prevMessagesLengthRef.current > 0 && arrived.length > 0) {
+          if (showScrollBottom) {
+            setUnreadWhileScrolled((prev) => prev + arrived.length);
+          }
+          const latest = arrived[arrived.length - 1];
+          setHighlightedMsgId(latest._id);
+          setTimeout(() => setHighlightedMsgId(null), 4000);
+        }
+
+        prevMessagesLengthRef.current = next.length;
+        messagesRef.current = next;
+        setMessages(next);
       }
     } catch (err) {
       console.error('Failed to load chat messages:', err);
@@ -157,17 +213,20 @@ export default function ChatPage() {
     }
   };
 
-  // Immediate message fetch when activeChat changes, plus auto-polling every 2.5 seconds
+  // Immediate message fetch when activeChat changes, plus light polling every 2 seconds
   useEffect(() => {
     setMessages([]);
     prevMessagesLengthRef.current = 0;
     messagesSigRef.current = '';
+    messagesCursorRef.current = 0;
+    chatKeyRef.current = '';
+    messagesRef.current = [];
     setUnreadWhileScrolled(0);
     fetchMessages(false);
 
     const interval = setInterval(() => {
       if (!document.hidden) fetchMessages(true);
-    }, 2500);
+    }, 2000);
     const onVisible = () => {
       if (!document.hidden) fetchMessages(true);
     };
@@ -263,7 +322,46 @@ export default function ChatPage() {
   }, [fullscreenImage, pendingImagePreview, uploadingImage, editingMessage, deleteConfirmMsg]);
 
   // ─── 3. Send Message ───
+  // The message appears at once ("Sending…") and is confirmed in the background, so typing and
+  // sending never wait for the server.
   const handleSendMessage = async (payload) => {
+    const chatKey = `${activeChat.type}:${activeChat.contact?._id || ''}`;
+    const tempId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const optimistic = {
+      _id: tempId,
+      conversationId: '',
+      senderId: user?._id,
+      senderName: user?.name || 'You',
+      senderRole: user?.role,
+      messageType: payload.messageType || 'text',
+      text: payload.text || '',
+      mediaUrl: payload.mediaUrl || '',
+      audioDuration: payload.audioDuration || 0,
+      readBy: [],
+      createdAt: new Date().toISOString(),
+      pending: true,
+    };
+
+    const withTemp = [...messagesRef.current, optimistic];
+    messagesRef.current = withTemp;
+    setMessages(withTemp);
+    setShowScrollBottom(false);
+    setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 30);
+
+    const settle = (replacement) => {
+      // only touch the list if the user is still in the same chat
+      if (activeKeyRef.current !== chatKey) return;
+      const without = messagesRef.current.filter((m) => m._id !== tempId);
+      const next = replacement
+        ? without.some((m) => m._id === replacement._id)
+          ? without
+          : sortByTime([...without, replacement])
+        : without;
+      messagesRef.current = next;
+      prevMessagesLengthRef.current = next.length;
+      setMessages(next);
+    };
+
     try {
       const token = localStorage.getItem('portal_token');
       const body = {
@@ -283,16 +381,53 @@ export default function ChatPage() {
 
       if (res.ok) {
         const data = await res.json();
-        setMessages((prev) => [...prev, data.chatMessage]);
+        settle(data.chatMessage);
         fetchContacts();
-        scrollToBottom();
       } else {
         const errData = await res.json().catch(() => ({}));
-        alert(errData.message || 'Failed to send message');
+        settle({ ...optimistic, pending: false, failed: true, failReason: errData.message || 'Failed to send' });
       }
     } catch (err) {
       console.error('Send message failed:', err);
-      alert('Network error while sending message. Please try again.');
+      settle({ ...optimistic, pending: false, failed: true, failReason: 'Network error' });
+    }
+  };
+
+  // Remove a message that could not be sent
+  const dismissFailedMessage = (id) => {
+    const next = messagesRef.current.filter((m) => m._id !== id);
+    messagesRef.current = next;
+    setMessages(next);
+  };
+
+  // ─── Admin: clear the whole conversation for everyone ───
+  const handleClearChat = async () => {
+    if (!isAdmin || clearingChat) return;
+    const label = activeChat.type === 'group' ? 'the Team Group chat' : `your chat with ${activeChat.contact?.name || 'this member'}`;
+    if (!window.confirm(`Clear ${label}?\n\nAll messages, pictures and voice notes in it will be deleted for everyone. This cannot be undone.`)) return;
+
+    try {
+      setClearingChat(true);
+      const token = localStorage.getItem('portal_token');
+      let url = `/api/chat?chatType=${activeChat.type}`;
+      if (activeChat.type === 'personal') url += `&targetMemberId=${activeChat.contact?._id}`;
+      const res = await fetch(url, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.message || 'Could not clear the chat');
+        return;
+      }
+      messagesRef.current = [];
+      messagesSigRef.current = '';
+      messagesCursorRef.current = 0;
+      prevMessagesLengthRef.current = 0;
+      setMessages([]);
+      fetchContacts();
+    } catch (err) {
+      console.error('Clear chat failed:', err);
+      alert('Network error while clearing the chat. Please try again.');
+    } finally {
+      setClearingChat(false);
     }
   };
 
@@ -1026,8 +1161,20 @@ export default function ChatPage() {
             </div>
           </div>
 
-          {/* Right Header Controls: Jump to Date */}
-          <div className="relative">
+          {/* Right Header Controls: Clear chat (admin) + Jump to Date */}
+          <div className="relative flex items-center space-x-2">
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={handleClearChat}
+                disabled={clearingChat || messages.length === 0}
+                className="p-2 rounded-xl bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white transition flex items-center space-x-1.5 text-xs font-medium disabled:opacity-40 disabled:hover:bg-slate-800"
+                title="Delete every message in this chat for everyone"
+              >
+                {clearingChat ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4 text-red-400" />}
+                <span className="hidden sm:inline">Clear chat</span>
+              </button>
+            )}
             <button
               onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}
               className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition flex items-center space-x-1.5 text-xs font-medium"
@@ -1102,7 +1249,7 @@ export default function ChatPage() {
               );
 
               // Admin or sender can edit/delete
-              const canModify = (isAdmin || isMe) && !msg.isDeleted;
+              const canModify = (isAdmin || isMe) && !msg.isDeleted && !msg.pending && !msg.failed;
 
               return (
                 <React.Fragment key={msg._id}>
@@ -1296,8 +1443,23 @@ export default function ChatPage() {
                             {msg.isEdited && !msg.isDeleted && (
                               <span className="italic opacity-80 mr-0.5">(edited)</span>
                             )}
-                            <span>{formatMessageTime(msg.createdAt)}</span>
-                            {isMe && <CheckCheck className="w-3.5 h-3.5 inline" />}
+                            {msg.failed ? (
+                              <button
+                                type="button"
+                                onClick={() => dismissFailedMessage(msg._id)}
+                                className="font-bold text-red-200 underline"
+                                title={msg.failReason || 'Not sent'}
+                              >
+                                Not sent • tap to remove
+                              </button>
+                            ) : msg.pending ? (
+                              <span className="italic opacity-80 flex items-center gap-1">
+                                <Clock className="w-3 h-3 inline" /> Sending…
+                              </span>
+                            ) : (
+                              <span>{formatMessageTime(msg.createdAt)}</span>
+                            )}
+                            {isMe && !msg.pending && !msg.failed && <CheckCheck className="w-3.5 h-3.5 inline" />}
                           </div>
                         </div>
                       </div>
