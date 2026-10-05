@@ -60,3 +60,6 @@ const withdrawalSchema = new mongoose.Schema(
 export const Seller = mongoose.models.Seller || mongoose.model('Seller', sellerSchema, 'sellers');
 export const Order = mongoose.models.Order || mongoose.model('Order', orderSchema, 'orders');
 export const Withdrawal = mongoose.models.Withdrawal || mongoose.model('Withdrawal', withdrawalSchema, 'withdrawals');
+
+// Real client stores only: test / demo seller accounts never appear in the team portal.
+export const CLIENT_SELLER_FILTER = { isTestAccount: { $ne: true }, accountType: { $ne: 'test' } };

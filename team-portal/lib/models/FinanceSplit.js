@@ -34,6 +34,10 @@ const financeSplitSchema = new mongoose.Schema(
     ownerRole: { type: String, default: '' },
     ownerDeal: { type: String, default: '' },
     shares: { type: [shareSchema], default: [] },
+    // Entry typed in by an admin on the Finance screen (not linked to a store wallet transaction)
+    manual: { type: Boolean, default: false },
+    note: { type: String, default: '' },
+    createdBy: { type: String, default: '' },
   },
   { timestamps: true }
 );

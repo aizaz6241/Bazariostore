@@ -14,12 +14,16 @@ import {
   Pencil,
   Shuffle,
   EyeOff,
-  Undo2,
+  Plus,
+  Search,
+  Trash2,
+  X,
 } from 'lucide-react';
+import { computeSplit } from '@/lib/utils/financeSplit';
 
 const fmt = (n, d = 2) =>
   Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
-const usdt = (n) => `₮${fmt(n)}`;
+const usdt = (n) => `${Number(n || 0) < 0 ? '-' : ''}₮${fmt(Math.abs(Number(n || 0)))}`;
 const day = (d) =>
   new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
@@ -29,6 +33,7 @@ const REASONS = {
   pkr_rate: 'PKR member: INR amount and that day’s PKR rate are needed',
   partners: 'Exactly 2 active admins are required before this can be split',
   bonus_rate: 'Milestone bonus: enter that day’s PKR rate to convert it to USDT',
+  unassigned: 'This seller is not assigned to anyone. Assign it on the Sellers page and it will be divided automatically',
 };
 
 const KIND_LABEL = { deposit: 'Deposit', seller_withdrawal: 'Seller withdrawal', bonus: 'Milestone bonus' };
@@ -41,7 +46,7 @@ const KIND_STYLE = {
 function ownerText(owner, previousStore, kind) {
   if (kind === 'bonus') return `${owner ? owner.name : 'Member'} gets it • partners pay 50 / 50`;
   if (kind === 'seller_withdrawal' && previousStore) return 'Previous-store seller → both partners';
-  if (!owner) return 'Unassigned → both partners';
+  if (!owner) return 'Not assigned yet';
   if (owner.role === 'admin') return `${owner.name} (partner)`;
   return `${owner.name} (${owner.deal === 'inr_50' ? '50% member' : '1:1 PKR member'})`;
 }
@@ -158,6 +163,242 @@ function EntryForm({ row, busy, onSave, onCancel }) {
   );
 }
 
+const inputCls = 'w-full p-2.5 rounded-xl border border-slate-300 bg-white text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500';
+const labelCls = 'block text-[11px] font-bold text-slate-600 mb-1';
+
+function dealText(p) {
+  if (!p) return '';
+  if (p.role === 'partner' || p.role === 'admin') return 'Partner';
+  return p.deal === 'inr_50' ? '50% member' : '1:1 PKR member';
+}
+
+/* ───────────────────────── Add entry (manual) ───────────────────────── */
+function AddEntryModal({ data, onClose, onSaved }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [entryKind, setEntryKind] = useState('deposit');
+  const [sellerId, setSellerId] = useState('');
+  const [ownerId, setOwnerId] = useState('');
+  const [date, setDate] = useState(today);
+  const [inr, setInr] = useState('');
+  const [amount, setAmount] = useState('');
+  const [pkrRate, setPkrRate] = useState('');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const sellers = data.sellerOptions || [];
+  const people = data.people || [];
+  const seller = sellers.find((x) => x.id === sellerId);
+  const owner = people.find((p) => p.id === ownerId);
+  const partnersPayAll = entryKind === 'seller_withdrawal' && seller?.previousStore;
+  const needsPkr = entryKind === 'deposit' && owner && owner.role === 'member' && owner.deal !== 'inr_50';
+
+  const pickSeller = (id) => {
+    setSellerId(id);
+    const picked = sellers.find((x) => x.id === id);
+    setOwnerId(picked?.assignedTo && people.some((p) => p.id === picked.assignedTo) ? picked.assignedTo : '');
+  };
+
+  // Live preview with the same rules the server uses.
+  let preview = null;
+  if (Number(amount) > 0 && data.partnersOk && (owner || partnersPayAll)) {
+    preview = computeSplit({
+      kind: entryKind,
+      usdt: Number(amount),
+      inr: Number(inr) || 0,
+      pkrRate: Number(pkrRate) || 0,
+      owner: owner ? { id: owner.id, name: owner.name, role: owner.role === 'partner' ? 'admin' : 'member', deal: owner.deal } : null,
+      partners: data.partners,
+      previousStore: !!seller?.previousStore,
+    });
+  }
+  const rate = Number(inr) > 0 && Number(amount) > 0 ? (Number(inr) / Number(amount)).toFixed(2) : null;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    try {
+      setSaving(true);
+      setErr('');
+      const token = localStorage.getItem('portal_token');
+      const res = await fetch('/api/finance/entry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          action: 'create',
+          entryKind,
+          sellerId,
+          ownerId,
+          date,
+          inrAmount: inr,
+          usdtAmount: amount,
+          pkrRate: needsPkr ? pkrRate : '',
+          note,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || 'Could not add the entry');
+      onSaved(json);
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <form
+        onSubmit={submit}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white w-full max-w-xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden"
+      >
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-extrabold text-slate-900">Add finance entry</h2>
+            <p className="text-[11px] text-slate-500 mt-0.5">Adds to the Binance ledger only. The seller’s store wallet is not changed.</p>
+          </div>
+          <button type="button" onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-500">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {err && <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs font-semibold text-red-700">{err}</div>}
+
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { key: 'deposit', label: 'Deposit received', cls: 'emerald' },
+              { key: 'seller_withdrawal', label: 'Seller withdrawal paid', cls: 'red' },
+            ].map((k) => (
+              <button
+                key={k.key}
+                type="button"
+                onClick={() => setEntryKind(k.key)}
+                className={`p-2.5 rounded-xl text-xs font-bold border transition ${
+                  entryKind === k.key
+                    ? k.cls === 'emerald'
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : 'bg-red-600 text-white border-red-600'
+                    : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                {k.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>Seller *</label>
+              <select required value={sellerId} onChange={(e) => pickSeller(e.target.value)} className={inputCls}>
+                <option value="">Select seller…</option>
+                {sellers.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.storeName}
+                    {x.previousStore ? ' (previous store)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Belongs to {partnersPayAll ? '(not needed)' : '*'}</label>
+              <select required={!partnersPayAll} value={ownerId} onChange={(e) => setOwnerId(e.target.value)} className={inputCls}>
+                <option value="">Select person…</option>
+                {people.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} — {dealText(p)}
+                  </option>
+                ))}
+              </select>
+              {seller && !seller.assignedTo && (
+                <span className="text-[10px] text-amber-700 mt-1 block">This seller is not assigned yet — pick the owner here and also assign it on the Sellers page.</span>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div>
+              <label className={labelCls}>Date *</label>
+              <input type="date" required value={date} max={today} onChange={(e) => setDate(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>INR amount</label>
+              <input type="number" step="any" min="0" value={inr} onChange={(e) => setInr(e.target.value)} placeholder="e.g. 5000" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>USDT {entryKind === 'deposit' ? 'received' : 'sent'} *</label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                required
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="e.g. 46.45"
+                className={`${inputCls} border-emerald-400`}
+              />
+            </div>
+            {needsPkr && (
+              <div>
+                <label className={labelCls}>PKR per 1 USDT *</label>
+                <input type="number" step="any" min="0" required value={pkrRate} onChange={(e) => setPkrRate(e.target.value)} placeholder="e.g. 282" className={inputCls} />
+              </div>
+            )}
+            <div className={needsPkr ? 'col-span-2' : 'col-span-2 sm:col-span-3'}>
+              <label className={labelCls}>Note</label>
+              <input type="text" value={note} maxLength={300} onChange={(e) => setNote(e.target.value)} placeholder="Optional — e.g. Binance TXID" className={inputCls} />
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+            <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 uppercase">
+              <span>How it will be divided</span>
+              {rate && <span className="normal-case text-slate-500">Rate ₹{rate} / USDT</span>}
+            </div>
+            {preview && preview.ok ? (
+              <div className="mt-2 space-y-1.5">
+                {preview.shares.map((sh) => (
+                  <div key={sh.userId} className="flex items-center justify-between text-xs">
+                    <span className="text-slate-700">
+                      <b>{sh.name}</b> <span className="text-slate-400">• {Number(sh.pct.toFixed(2))}%</span>
+                    </span>
+                    <b className={entryKind === 'deposit' ? 'text-emerald-700' : 'text-red-600'}>
+                      {entryKind === 'deposit' ? '+' : '-'}
+                      {fmt(sh.amountUSDT, 3)} USDT
+                    </b>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 mt-2">
+                {!data.partnersOk
+                  ? 'Exactly 2 active admins are required.'
+                  : preview && preview.reason === 'pkr_rate'
+                  ? 'Enter the INR amount and the PKR rate for this 1:1 PKR member.'
+                  : 'Choose the seller, who it belongs to and the USDT amount.'}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-2">
+          <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-700 text-xs font-bold">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={saving || !(preview && preview.ok)}
+            className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-50"
+          >
+            {saving ? 'Adding…' : 'Add entry'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/* ───────────────────────── Page ───────────────────────── */
 export default function FinancePage() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
@@ -165,7 +406,14 @@ export default function FinancePage() {
   const [error, setError] = useState('');
   const [busyId, setBusyId] = useState('');
   const [editId, setEditId] = useState('');
-  const [showSkipped, setShowSkipped] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+
+  // Table filters
+  const [q, setQ] = useState('');
+  const [fType, setFType] = useState('all');
+  const [fOwner, setFOwner] = useState('all');
+  const [fFrom, setFFrom] = useState('');
+  const [fTo, setFTo] = useState('');
 
   const load = useCallback(async (fresh = false) => {
     try {
@@ -215,34 +463,105 @@ export default function FinancePage() {
 
   const t = data?.totals || {};
   const liability = data?.sellerLiability || {};
+  const partners = data?.partners || [];
   const mismatch = Math.abs(t.diffUSDT || 0) > 0.01;
   const short = (liability.totalUSD || 0) > (t.balanceUSDT || 0);
+  const unassigned = data?.unassignedSellers || [];
+
+  // ── Filtered transactions (newest first) ──
+  const allEntries = data ? [...data.entries].reverse() : [];
+  const rows = allEntries.filter((e) => {
+    if (fType !== 'all' && e.kind !== fType) return false;
+    if (fOwner !== 'all') {
+      if (fOwner === 'none') {
+        if (e.owner) return false;
+      } else if (!e.owner || e.owner.id !== fOwner) return false;
+    }
+    const d = new Date(e.date).toISOString().slice(0, 10);
+    if (fFrom && d < fFrom) return false;
+    if (fTo && d > fTo) return false;
+    if (q.trim()) {
+      const needle = q.trim().toLowerCase();
+      const hay = `${e.storeName} ${e.owner?.name || ''} ${e.note || ''} ${e.ref || ''}`.toLowerCase();
+      if (!hay.includes(needle)) return false;
+    }
+    return true;
+  });
+  const filtersOn = q || fType !== 'all' || fOwner !== 'all' || fFrom || fTo;
+
+  // signed amount of one person in one entry (+ money for them, − money from them)
+  const signed = (e, sh) => {
+    if (e.kind === 'deposit') return sh.amountUSDT;
+    if (e.kind === 'seller_withdrawal') return -sh.amountUSDT;
+    return sh.role === 'member' ? sh.amountUSDT : -sh.amountUSDT;
+  };
+  const shareOf = (e, userId) => {
+    const sh = e.shares.find((x) => String(x.userId) === String(userId));
+    return sh ? signed(e, sh) : null;
+  };
+  const memberShare = (e) => {
+    const sh = e.shares.find((x) => !partners.some((p) => p.id === String(x.userId)));
+    return sh ? { name: sh.name, value: signed(e, sh) } : null;
+  };
+
+  const sum = { inr: 0, inUSDT: 0, outUSDT: 0, p: partners.map(() => 0), member: 0 };
+  rows.forEach((e) => {
+    if (e.kind === 'deposit') {
+      sum.inUSDT += e.usdt;
+      sum.inr += e.inr || 0;
+    } else if (e.kind === 'seller_withdrawal') sum.outUSDT += e.usdt;
+    partners.forEach((p, i) => {
+      sum.p[i] += shareOf(e, p.id) || 0;
+    });
+    sum.member += memberShare(e)?.value || 0;
+  });
+
+  const money = (v, d = 2) =>
+    v === null || v === undefined ? (
+      <span className="text-slate-300">—</span>
+    ) : (
+      <span className={v < 0 ? 'text-red-600' : 'text-emerald-700'}>
+        {v < 0 ? '-' : '+'}
+        {fmt(Math.abs(v), d)}
+      </span>
+    );
+
+  const colCount = 8 + partners.length;
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
-      <div className="flex items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200/80">
+      {/* ── Header ── */}
+      <div className="flex flex-wrap items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200/80">
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
             <Landmark className="w-7 h-7 text-emerald-600" />
             <span>Binance Finance</span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
-            Real USDT only. Test accounts, helping amounts and anything before {data ? day(data.start) : '…'} are not counted.
+            Real USDT only, counted from {data ? day(new Date(new Date(data.start).getTime() + 12 * 3600 * 1000)) : '…'}. Test accounts and helping amounts are not counted.
           </p>
         </div>
-        <button
-          onClick={() => load(true)}
-          disabled={loading}
-          className="p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center gap-1.5 text-xs"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-emerald-600' : ''}`} />
-          <span className="hidden sm:inline">Refresh</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowAdd(true)}
+            disabled={!data}
+            className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center gap-1.5 text-xs shadow-sm disabled:opacity-50"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add entry</span>
+          </button>
+          <button
+            onClick={() => load(true)}
+            disabled={loading}
+            className="p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center gap-1.5 text-xs"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-emerald-600' : ''}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+        </div>
       </div>
 
-      {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-xs font-semibold text-red-700">{error}</div>
-      )}
+      {error && <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-xs font-semibold text-red-700">{error}</div>}
 
       {data && !data.partnersOk && (
         <div className="p-4 bg-red-50 border border-red-300 rounded-2xl text-xs text-red-800 flex gap-2">
@@ -250,8 +569,27 @@ export default function FinancePage() {
           <div>
             <b>Splits are paused: exactly 2 active admins are required, found {data.partners.length}.</b>
             <div className="mt-1">
-              Active admins: {data.partners.map((p) => `${p.name}${p.email ? ` (${p.email})` : ''}`).join(', ') || 'none'}.
-              Remove or deactivate the extra account in the store admin panel (Staff), then refresh.
+              Active admins: {data.partners.map((p) => `${p.name}${p.email ? ` (${p.email})` : ''}`).join(', ') || 'none'}. Remove or deactivate the extra
+              account in the store admin panel (Staff), then refresh.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {unassigned.length > 0 && (
+        <div className="p-4 bg-amber-50 border border-amber-300 rounded-2xl text-xs text-amber-900 flex gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div>
+            <b>
+              {unassigned.length} client {unassigned.length === 1 ? 'seller has' : 'sellers have'} no owner.
+            </b>{' '}
+            Every client seller must be assigned to a partner or a member. Their deposits and withdrawals are not divided until you assign them on the Sellers page.
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {unassigned.map((x) => (
+                <span key={x.id} className="px-2 py-0.5 rounded-full bg-white border border-amber-300 font-bold text-[11px]">
+                  {x.storeName}
+                </span>
+              ))}
             </div>
           </div>
         </div>
@@ -296,18 +634,20 @@ export default function FinancePage() {
               <p className="text-2xl sm:text-3xl font-black mt-1">{usdt(t.balanceUSDT)}</p>
               <p className={`text-[11px] mt-1 flex items-center gap-1 ${mismatch ? 'text-red-300' : 'text-emerald-300'}`}>
                 {mismatch ? <AlertTriangle className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                {mismatch
-                  ? `Wallets add up to ${usdt(t.walletsUSDT)} (difference ${usdt(t.diffUSDT)})`
-                  : 'Matches the sum of all wallets'}
+                {mismatch ? `Wallets add up to ${usdt(t.walletsUSDT)} (difference ${usdt(t.diffUSDT)})` : 'Matches the sum of all wallets'}
               </p>
             </div>
           </div>
 
           {/* ── What sellers can still ask for ── */}
-          <div className={`p-4 rounded-3xl border text-xs flex flex-wrap items-center gap-x-6 gap-y-1 ${short ? 'bg-amber-50 border-amber-300 text-amber-900' : 'bg-white border-slate-200 text-slate-700'}`}>
+          <div
+            className={`p-4 rounded-3xl border text-xs flex flex-wrap items-center gap-x-6 gap-y-1 ${
+              short ? 'bg-amber-50 border-amber-300 text-amber-900' : 'bg-white border-slate-200 text-slate-700'
+            }`}
+          >
             <span className="font-bold">Seller store wallets (what they can still ask to withdraw):</span>
             <span>
-              <b>${fmt(liability.totalUSD)}</b> across {liability.sellerCount} real sellers
+              <b>${fmt(liability.totalUSD)}</b> across {liability.sellerCount} client sellers
             </span>
             <span>
               Already requested, waiting: <b>${fmt(liability.pendingWithdrawalUSD)}</b>
@@ -317,11 +657,9 @@ export default function FinancePage() {
 
           {/* ── Whose money is it ── */}
           <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 font-bold text-slate-900 text-sm">
-              Whose share is in Binance
-            </div>
+            <div className="px-5 py-4 border-b border-slate-100 font-bold text-slate-900 text-sm">Whose share is in Binance</div>
             <div className="overflow-x-auto">
-              <table className="w-full text-xs">
+              <table className="w-full text-xs min-w-[640px]">
                 <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase">
                   <tr>
                     <th className="text-left px-5 py-2.5">Person</th>
@@ -334,44 +672,41 @@ export default function FinancePage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {data.wallets.map((w) => (
-                    <tr key={w.userId}>
+                    <tr key={w.userId} className="hover:bg-slate-50/60">
                       <td className="px-5 py-3">
                         <b className="text-slate-900">{w.name}</b>
-                        <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
-                          {w.role === 'partner' ? 'Partner' : w.deal === 'inr_50' ? '50% member' : '1:1 PKR member'}
-                        </span>
+                        <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">{dealText(w)}</span>
                       </td>
-                      <td className="text-right px-3 py-3 text-emerald-700 font-bold">+{fmt(w.earnedUSDT)}</td>
-                      <td className={`text-right px-3 py-3 font-bold ${w.bonusUSDT - w.bonusCostUSDT < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
-                        {w.bonusUSDT - w.bonusCostUSDT < 0 ? '-' : '+'}
-                        {fmt(Math.abs(w.bonusUSDT - w.bonusCostUSDT))}
-                      </td>
-                      <td className="text-right px-3 py-3 text-red-600 font-bold">-{fmt(w.sellerWithdrawUSDT)}</td>
-                      <td className="text-right px-3 py-3 text-amber-700 font-bold">-{fmt(w.payoutUSDT)}</td>
-                      <td className={`text-right px-5 py-3 font-black text-sm ${w.balanceUSDT < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                      <td className="text-right px-3 py-3 font-bold tabular-nums">{money(w.earnedUSDT)}</td>
+                      <td className="text-right px-3 py-3 font-bold tabular-nums">{money(w.bonusUSDT - w.bonusCostUSDT)}</td>
+                      <td className="text-right px-3 py-3 font-bold tabular-nums">{money(-w.sellerWithdrawUSDT)}</td>
+                      <td className="text-right px-3 py-3 font-bold tabular-nums">{money(-w.payoutUSDT)}</td>
+                      <td className={`text-right px-5 py-3 font-black text-sm tabular-nums ${w.balanceUSDT < 0 ? 'text-red-600' : 'text-slate-900'}`}>
                         {usdt(w.balanceUSDT)}
                       </td>
                     </tr>
                   ))}
-                  <tr className="bg-slate-50 font-black">
-                    <td className="px-5 py-3">Total</td>
-                    <td className="text-right px-3 py-3">+{fmt(t.inUSDT)}</td>
-                    <td className="text-right px-3 py-3 text-slate-500">0.00</td>
-                    <td className="text-right px-3 py-3">-{fmt(t.sellerOutUSDT)}</td>
-                    <td className="text-right px-3 py-3">-{fmt(t.payoutUSDT)}</td>
-                    <td className="text-right px-5 py-3 text-sm">{usdt(t.walletsUSDT)}</td>
-                  </tr>
                 </tbody>
+                <tfoot>
+                  <tr className="bg-slate-50 font-black border-t border-slate-200">
+                    <td className="px-5 py-3">Total</td>
+                    <td className="text-right px-3 py-3 tabular-nums">+{fmt(t.inUSDT)}</td>
+                    <td className="text-right px-3 py-3 text-slate-400 tabular-nums">0.00</td>
+                    <td className="text-right px-3 py-3 tabular-nums">-{fmt(t.sellerOutUSDT)}</td>
+                    <td className="text-right px-3 py-3 tabular-nums">-{fmt(t.payoutUSDT)}</td>
+                    <td className="text-right px-5 py-3 text-sm tabular-nums">{usdt(t.walletsUSDT)}</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>
 
-          {/* ── Needs the real USDT ── */}
+          {/* ── Waiting for an amount, a rate or an owner ── */}
           {data.pending.length > 0 && (
             <div className="bg-amber-50/70 rounded-3xl border border-amber-200 overflow-hidden">
               <div className="px-5 py-4 border-b border-amber-200 font-bold text-amber-900 text-sm flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4" />
-                <span>Not counted yet — {data.pending.length} need a real amount or rate</span>
+                <span>Not counted yet ({data.pending.length})</span>
               </div>
               <div className="divide-y divide-amber-100">
                 {data.pending.map((row) => (
@@ -386,13 +721,14 @@ export default function FinancePage() {
                         <span className="text-slate-500">
                           Store wallet: ${fmt(row.walletAmount)}
                           {row.helping > 0 ? ` (helping $${fmt(row.helping)})` : ''}
+                          {row.usdt > 0 ? ` • ₮${fmt(row.usdt)} entered` : ''}
                         </span>
                       )}
-                      {row.isManual && <span className="text-slate-500">• Direct add / manual</span>}
-                      <span className="text-slate-500">• {ownerText(row.owner, row.previousStore, row.kind)}</span>
+                      {row.isManual && <span className="text-slate-500">• Direct add</span>}
+                      {row.reason !== 'unassigned' && <span className="text-slate-500">• {ownerText(row.owner, row.previousStore, row.kind)}</span>}
                     </div>
                     <div className="text-[11px] text-amber-800 mt-1">{REASONS[row.reason] || row.reason}</div>
-                    {row.reason !== 'partners' && (
+                    {row.reason !== 'partners' && row.reason !== 'unassigned' && (
                       <div className="flex flex-wrap items-end gap-2">
                         <EntryForm row={row} busy={busyId === row.id} onSave={(v) => act(row.id, 'save', v, row.kind)} />
                         <button
@@ -412,129 +748,265 @@ export default function FinancePage() {
             </div>
           )}
 
-          {/* ── Every counted movement ── */}
+          {/* ── Transactions table ── */}
           <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 font-bold text-slate-900 text-sm">
-              Counted deposits, seller withdrawals and bonuses ({data.entries.length})
-            </div>
-            {data.entries.length === 0 ? (
-              <div className="py-12 text-center text-xs text-slate-400">Nothing counted yet.</div>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {[...data.entries].reverse().map((e) => (
-                  <div key={e.id} className="px-5 py-3 text-xs">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <b className="text-slate-900">{e.storeName}</b>
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${KIND_STYLE[e.kind]}`}>{KIND_LABEL[e.kind]}</span>
-                        <span className="text-slate-500">{day(e.date)}</span>
-                        {e.inr > 0 && (
-                          <span className="text-slate-500">
-                            ₹{fmt(e.inr, 0)} @ {e.rate}
-                          </span>
-                        )}
-                        {e.kind === 'bonus' && (
-                          <span className="text-slate-500">
-                            Rs {fmt(e.amountPKR, 0)} @ {e.pkrRate}
-                          </span>
-                        )}
-                        <span className="text-slate-500">• {ownerText(e.owner, e.previousStore, e.kind)}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-sm font-black ${e.kind === 'deposit' ? 'text-emerald-600' : e.kind === 'bonus' ? 'text-amber-600' : 'text-red-600'}`}>
-                          {e.kind === 'deposit' ? '+' : e.kind === 'bonus' ? '' : '-'}
-                          {usdt(e.usdt)}
-                        </span>
-                        <button
-                          onClick={() => setEditId(editId === e.id ? '' : e.id)}
-                          className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"
-                          title="Correct the amounts"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          disabled={busyId === e.id}
-                          onClick={() => {
-                            if (window.confirm('Recalculate this split from the seller’s current assignment?')) act(e.id, 'resplit', {}, e.kind);
-                          }}
-                          className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"
-                          title="Recalculate the split from the current assignment"
-                        >
-                          <Shuffle className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5 mt-1.5">
-                      {e.shares.map((s) => (
-                        <span key={s.userId} className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700">
-                          {s.name}: {e.kind === 'deposit' || (e.kind === 'bonus' && s.role === 'member') ? '+' : '-'}
-                          {fmt(s.amountUSDT, 3)} ({Number(Number(s.pct).toFixed(2))}%)
-                        </span>
-                      ))}
-                    </div>
-                    {editId === e.id && (
-                      <EntryForm row={e} busy={busyId === e.id} onSave={(v) => act(e.id, 'save', v, e.kind)} onCancel={() => setEditId('')} />
-                    )}
-                  </div>
-                ))}
+            <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-bold text-slate-900 text-sm">Transactions</h2>
+                <p className="text-[11px] text-slate-500">
+                  {rows.length} of {allEntries.length} entries • deposits, seller withdrawals and bonuses
+                </p>
               </div>
-            )}
+              <div className="relative w-full sm:w-64">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search seller or person…"
+                  className="w-full pl-8 pr-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/60 flex flex-wrap items-end gap-3 text-xs">
+              <label className="font-bold text-slate-500">
+                <span className="block text-[10px] uppercase mb-1">Type</span>
+                <select value={fType} onChange={(e) => setFType(e.target.value)} className="p-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-700">
+                  <option value="all">All types</option>
+                  <option value="deposit">Deposits</option>
+                  <option value="seller_withdrawal">Seller withdrawals</option>
+                  <option value="bonus">Bonuses</option>
+                </select>
+              </label>
+              <label className="font-bold text-slate-500">
+                <span className="block text-[10px] uppercase mb-1">Belongs to</span>
+                <select value={fOwner} onChange={(e) => setFOwner(e.target.value)} className="p-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-700">
+                  <option value="all">Everyone</option>
+                  {(data.people || []).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="font-bold text-slate-500">
+                <span className="block text-[10px] uppercase mb-1">From</span>
+                <input type="date" value={fFrom} onChange={(e) => setFFrom(e.target.value)} className="p-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-700" />
+              </label>
+              <label className="font-bold text-slate-500">
+                <span className="block text-[10px] uppercase mb-1">To</span>
+                <input type="date" value={fTo} onChange={(e) => setFTo(e.target.value)} className="p-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-700" />
+              </label>
+              {filtersOn && (
+                <button
+                  onClick={() => {
+                    setQ('');
+                    setFType('all');
+                    setFOwner('all');
+                    setFFrom('');
+                    setFTo('');
+                  }}
+                  className="px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-600 font-bold flex items-center gap-1"
+                >
+                  <X className="w-3.5 h-3.5" /> Clear
+                </button>
+              )}
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs min-w-[980px]">
+                <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase">
+                  <tr>
+                    <th className="text-left px-5 py-2.5">Date</th>
+                    <th className="text-left px-3 py-2.5">Seller</th>
+                    <th className="text-left px-3 py-2.5">Type</th>
+                    <th className="text-left px-3 py-2.5">Belongs to</th>
+                    <th className="text-right px-3 py-2.5">INR</th>
+                    <th className="text-right px-3 py-2.5">Rate</th>
+                    <th className="text-right px-3 py-2.5">USDT</th>
+                    {partners.map((p) => (
+                      <th key={p.id} className="text-right px-3 py-2.5">
+                        {p.name}
+                      </th>
+                    ))}
+                    <th className="text-right px-3 py-2.5">Member</th>
+                    <th className="text-right px-5 py-2.5"> </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {rows.length === 0 && (
+                    <tr>
+                      <td colSpan={colCount + 1} className="py-12 text-center text-slate-400">
+                        {allEntries.length === 0 ? 'Nothing counted yet.' : 'No entries match these filters.'}
+                      </td>
+                    </tr>
+                  )}
+                  {rows.map((e) => {
+                    const ms = memberShare(e);
+                    return (
+                      <React.Fragment key={e.id}>
+                        <tr className="hover:bg-slate-50/60 align-middle">
+                          <td className="px-5 py-3 text-slate-600 whitespace-nowrap">{day(e.date)}</td>
+                          <td className="px-3 py-3">
+                            <b className="text-slate-900">{e.storeName}</b>
+                            {e.manual && <span className="ml-1.5 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[9px] font-bold uppercase">Manual</span>}
+                            {e.note && <div className="text-[10px] text-slate-400 mt-0.5">{e.note}</div>}
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${KIND_STYLE[e.kind]}`}>{KIND_LABEL[e.kind]}</span>
+                          </td>
+                          <td className="px-3 py-3 whitespace-nowrap">
+                            {e.kind === 'seller_withdrawal' && e.previousStore ? (
+                              <span className="text-slate-500">Previous store</span>
+                            ) : e.owner ? (
+                              <>
+                                <span className="font-semibold text-slate-800">{e.owner.name}</span>
+                                <div className="text-[10px] text-slate-400">{dealText(e.owner)}</div>
+                              </>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-right tabular-nums text-slate-700">
+                            {e.kind === 'bonus' ? `Rs ${fmt(e.amountPKR, 0)}` : e.inr > 0 ? `₹${fmt(e.inr, 0)}` : <span className="text-slate-300">—</span>}
+                          </td>
+                          <td className="px-3 py-3 text-right tabular-nums text-slate-500">
+                            {e.kind === 'bonus' ? e.pkrRate : e.rate > 0 ? e.rate : <span className="text-slate-300">—</span>}
+                          </td>
+                          <td className={`px-3 py-3 text-right tabular-nums font-black ${e.kind === 'deposit' ? 'text-emerald-600' : e.kind === 'bonus' ? 'text-amber-600' : 'text-red-600'}`}>
+                            {e.kind === 'deposit' ? '+' : e.kind === 'bonus' ? '' : '-'}
+                            {fmt(e.usdt)}
+                          </td>
+                          {partners.map((p) => (
+                            <td key={p.id} className="px-3 py-3 text-right tabular-nums font-bold">
+                              {money(shareOf(e, p.id), 3)}
+                            </td>
+                          ))}
+                          <td className="px-3 py-3 text-right tabular-nums font-bold whitespace-nowrap">
+                            {ms ? (
+                              <>
+                                {money(ms.value, 3)}
+                                <div className="text-[10px] font-normal text-slate-400">{ms.name}</div>
+                              </>
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            )}
+                          </td>
+                          <td className="px-5 py-3">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {e.manual ? (
+                                <button
+                                  disabled={busyId === e.id}
+                                  onClick={() => {
+                                    if (window.confirm(`Delete this manual entry for ${e.storeName}?`)) act(e.id, 'delete', {}, 'manual');
+                                  }}
+                                  className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600"
+                                  title="Delete this manual entry"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={() => setEditId(editId === e.id ? '' : e.id)}
+                                    className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"
+                                    title="Correct the amounts"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    disabled={busyId === e.id}
+                                    onClick={() => {
+                                      if (window.confirm('Divide this entry again using the seller’s current assignment?')) act(e.id, 'resplit', {}, e.kind);
+                                    }}
+                                    className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"
+                                    title="Divide again using the current assignment"
+                                  >
+                                    <Shuffle className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                        {editId === e.id && (
+                          <tr className="bg-slate-50">
+                            <td colSpan={colCount + 1} className="px-5 pb-3">
+                              <EntryForm row={e} busy={busyId === e.id} onSave={(v) => act(e.id, 'save', v, e.kind)} onCancel={() => setEditId('')} />
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+                {rows.length > 0 && (
+                  <tfoot>
+                    <tr className="bg-slate-50 font-black border-t border-slate-200">
+                      <td className="px-5 py-3" colSpan={4}>
+                        {filtersOn ? 'Total of filtered entries' : 'Total'}
+                      </td>
+                      <td className="px-3 py-3 text-right tabular-nums">₹{fmt(sum.inr, 0)}</td>
+                      <td className="px-3 py-3"> </td>
+                      <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">
+                        <span className="text-emerald-700">+{fmt(sum.inUSDT)}</span>
+                        {sum.outUSDT > 0 && <span className="text-red-600"> / -{fmt(sum.outUSDT)}</span>}
+                      </td>
+                      {partners.map((p, i) => (
+                        <td key={p.id} className="px-3 py-3 text-right tabular-nums">
+                          {money(sum.p[i])}
+                        </td>
+                      ))}
+                      <td className="px-3 py-3 text-right tabular-nums">{money(sum.member)}</td>
+                      <td className="px-5 py-3"> </td>
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </div>
           </div>
 
           {/* ── Team payouts ── */}
           {data.payouts.length > 0 && (
             <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
-              <div className="px-5 py-4 border-b border-slate-100 font-bold text-slate-900 text-sm">
-                Payouts to members / partners ({data.payouts.length})
+              <div className="px-5 py-4 border-b border-slate-100 font-bold text-slate-900 text-sm">Payouts to members / partners ({data.payouts.length})</div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs min-w-[520px]">
+                  <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase">
+                    <tr>
+                      <th className="text-left px-5 py-2.5">Date</th>
+                      <th className="text-left px-3 py-2.5">Person</th>
+                      <th className="text-left px-3 py-2.5">Note</th>
+                      <th className="text-right px-5 py-2.5">USDT</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {[...data.payouts].reverse().map((p) => (
+                      <tr key={p.id} className="hover:bg-slate-50/60">
+                        <td className="px-5 py-3 text-slate-600 whitespace-nowrap">{day(p.date)}</td>
+                        <td className="px-3 py-3 font-bold text-slate-900">{p.name}</td>
+                        <td className="px-3 py-3 text-slate-500">{p.note || '—'}</td>
+                        <td className="px-5 py-3 text-right font-black text-amber-700 tabular-nums">-{fmt(p.amountUSDT)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <div className="divide-y divide-slate-100">
-                {[...data.payouts].reverse().map((p) => (
-                  <div key={p.id} className="px-5 py-3 text-xs flex items-center justify-between gap-3">
-                    <div>
-                      <b className="text-slate-900">{p.name}</b>
-                      <span className="text-slate-500 ml-2">{day(p.date)}</span>
-                      {p.note && <span className="text-slate-400 ml-2">• {p.note}</span>}
-                    </div>
-                    <span className="font-black text-amber-700">-{usdt(p.amountUSDT)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Marked as no real money ── */}
-          {data.skipped.length > 0 && (
-            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
-              <button
-                onClick={() => setShowSkipped(!showSkipped)}
-                className="w-full px-5 py-4 text-left font-bold text-slate-600 text-xs"
-              >
-                {showSkipped ? 'Hide' : 'Show'} {data.skipped.length} marked as “no real money”
-              </button>
-              {showSkipped && (
-                <div className="divide-y divide-slate-100 border-t border-slate-100">
-                  {data.skipped.map((row) => (
-                    <div key={row.id} className="px-5 py-3 text-xs flex items-center justify-between gap-3">
-                      <div>
-                        <b className="text-slate-800">{row.storeName}</b>
-                        <span className="text-slate-500 ml-2">
-                          {KIND_LABEL[row.kind]} • {day(row.date)} • {row.kind === 'bonus' ? `Rs ${fmt(row.amountPKR, 0)}` : `$${fmt(row.walletAmount)}`}
-                        </span>
-                      </div>
-                      <button
-                        disabled={busyId === row.id}
-                        onClick={() => act(row.id, 'unskip', {}, row.kind)}
-                        className="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 font-bold flex items-center gap-1"
-                      >
-                        <Undo2 className="w-3.5 h-3.5" /> Bring back
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           )}
         </>
+      )}
+
+      {showAdd && data && (
+        <AddEntryModal
+          data={data}
+          onClose={() => setShowAdd(false)}
+          onSaved={(json) => {
+            setData(json);
+            setShowAdd(false);
+          }}
+        />
       )}
     </div>
   );

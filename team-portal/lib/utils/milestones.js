@@ -1,5 +1,5 @@
 import RewardClaim from '../models/RewardClaim.js';
-import { Seller, Order, Withdrawal } from '../models/SharedModels.js';
+import { Seller, Order, Withdrawal, CLIENT_SELLER_FILTER } from '../models/SharedModels.js';
 import SellerAssignment from '../models/SellerAssignment.js';
 
 /**
@@ -11,7 +11,7 @@ export async function evaluateMemberMilestones(memberId) {
   if (!assignments.length) return [];
 
   const sellerIds = assignments.map((a) => a.sellerId);
-  const sellers = await Seller.find({ _id: { $in: sellerIds } });
+  const sellers = await Seller.find({ _id: { $in: sellerIds }, ...CLIENT_SELLER_FILTER });
 
   const generatedClaims = [];
 

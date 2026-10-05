@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAuthSession } from '@/lib/auth';
 import Member from '@/lib/models/Member';
 import SellerAssignment from '@/lib/models/SellerAssignment';
-import { Seller, Order } from '@/lib/models/SharedModels';
+import { Seller, Order, CLIENT_SELLER_FILTER } from '@/lib/models/SharedModels';
 import RewardClaim from '@/lib/models/RewardClaim';
 import { syncEcommerceAdmins } from '@/lib/adminSync';
 
@@ -27,8 +27,8 @@ export async function GET(req) {
         allMembers,
       ] = await Promise.all([
         Member.countDocuments({ role: 'member', active: true }),
-        Seller.countDocuments(),
-        Seller.find().select('wallet'),
+        Seller.countDocuments(CLIENT_SELLER_FILTER),
+        Seller.find(CLIENT_SELLER_FILTER).select('wallet'),
         RewardClaim.countDocuments({ status: 'pending' }),
         Order.countDocuments({ status: { $in: ['pending', 'processing', 'unfulfilled'] } }),
         Member.find({ role: 'member', active: true }).select('-passwordHash'),
@@ -49,7 +49,7 @@ export async function GET(req) {
         allMembers.map(async (m) => {
           const assignments = await SellerAssignment.find({ memberId: m._id, status: 'active' });
           const sellerIds = assignments.map((a) => a.sellerId);
-          const assignedSellers = await Seller.find({ _id: { $in: sellerIds } }).select('-kycDocuments');
+          const assignedSellers = await Seller.find({ _id: { $in: sellerIds }, ...CLIENT_SELLER_FILTER }).select('-kycDocuments');
 
           let memberDepositsINR = 0;
           let memberWithdrawalsINR = 0;
@@ -162,7 +162,7 @@ export async function GET(req) {
       // Member specific dashboard stats
       const myAssignments = await SellerAssignment.find({ memberId: session._id, status: 'active' });
       const sellerIds = myAssignments.map((a) => a.sellerId);
-      const mySellers = await Seller.find({ _id: { $in: sellerIds } }).select('-kycDocuments');
+      const mySellers = await Seller.find({ _id: { $in: sellerIds }, ...CLIENT_SELLER_FILTER }).select('-kycDocuments');
 
       let totalDepositsINR = 0;
       let totalWithdrawalsINR = 0;

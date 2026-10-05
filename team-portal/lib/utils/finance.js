@@ -19,7 +19,8 @@ import { computeSplit, computeBonusSplit, r2, r6 } from '@/lib/utils/financeSpli
  * pay for it 50 / 50, so the total stays the same.
  *
  * Not counted: test accounts, anything before FINANCE_START, helping amounts (they never
- * reach Binance), and deposits whose real USDT has not been entered yet (shown as "pending").
+ * reach Binance), deposits whose real USDT has not been entered yet, and sellers that are not
+ * assigned to anyone (every client seller must have an owner). Those show as "pending".
  *
  * Invariant shown on the Finance screen:  Binance balance = sum of every wallet.
  */
@@ -119,7 +120,12 @@ export async function buildLedger({ fresh = false } = {}) {
     const inr = num(doc.inrAmount);
     const pkrRate = num(doc.pkrRate);
     const previousStore = seller.isPreviousStoreSeller === true;
-    const existing = splitMap.get(id);
+    // A previous-store seller's withdrawal is paid by the two partners whoever the seller belongs to.
+    const partnersPayAll = kind === 'seller_withdrawal' && previousStore;
+
+    // A split made while the seller had no owner is not kept: it is redone once the seller is assigned.
+    let existing = splitMap.get(id);
+    if (existing && !existing.ownerId && !partnersPayAll) existing = null;
 
     // Owner is locked by the first split; before that it follows the current assignment.
     let owner = null;
@@ -163,6 +169,12 @@ export async function buildLedger({ fresh = false } = {}) {
       // A manual wallet debit with no USDT is only a store-wallet correction, not a Binance payout.
       if (kind === 'seller_withdrawal' && base.isManual) continue;
       pending.push({ ...base, reason });
+      continue;
+    }
+
+    // Every client seller must belong to someone before its money can be divided.
+    if (!owner && !partnersPayAll) {
+      pending.push({ ...base, reason: 'unassigned' });
       continue;
     }
 
@@ -295,6 +307,33 @@ export async function buildLedger({ fresh = false } = {}) {
     entries.push({ ...base, shares });
   }
 
+  // ─── Entries typed in by an admin on the Finance screen ───
+  for (const sp of splitDocs) {
+    if (sp.manual !== true) continue;
+    const usdt = r6(num(sp.usdt));
+    const inr = num(sp.inr);
+    entries.push({
+      id: sid(sp.sourceId),
+      kind: sp.kind,
+      date: new Date(sp.date),
+      sellerId: sid(sp.sellerId),
+      storeName: sp.storeName || 'Manual entry',
+      walletAmount: 0,
+      helping: 0,
+      inr,
+      usdt,
+      rate: usdt > 0 && inr > 0 ? r2(inr / usdt) : 0,
+      pkrRate: num(sp.pkrRate),
+      previousStore: sp.previousStore === true,
+      isManual: true,
+      manual: true,
+      note: sp.note || '',
+      owner: sp.ownerId ? { id: sid(sp.ownerId), name: sp.ownerName, role: sp.ownerRole, deal: sp.ownerDeal } : null,
+      ref: 'manual',
+      shares: (sp.shares || []).map((x) => ({ ...x, userId: sid(x.userId) })),
+    });
+  }
+
   entries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
   // ─── Payouts to members / partners (real USDT that left Binance) ───
@@ -401,8 +440,35 @@ export async function buildLedger({ fresh = false } = {}) {
     pendingWithdrawalUSD += num(s.wallet?.pendingWithdrawal);
   }
 
+  // ─── Choices for the "Add entry" form, and client sellers that still have no owner ───
+  const sellerOptions = sellers
+    .filter(isRealSeller)
+    .map((x) => ({
+      id: sid(x._id),
+      storeName: x.storeName || 'Store',
+      ownerName: x.ownerName || '',
+      assignedTo: ownerBySeller.get(sid(x._id)) || '',
+      previousStore: x.isPreviousStoreSeller === true,
+    }))
+    .sort((a, b) => a.storeName.localeCompare(b.storeName));
+
+  const people = memberDocs
+    .filter((m) => m.active !== false)
+    .map((m) => ({
+      id: sid(m._id),
+      name: m.name,
+      role: m.role === 'admin' ? 'partner' : 'member',
+      deal: m.role === 'member' ? m.commissionLabel || 'pkr_1to1' : '',
+    }))
+    .sort((a, b) => (a.role === b.role ? a.name.localeCompare(b.name) : a.role === 'partner' ? -1 : 1));
+
+  const unassignedSellers = sellerOptions.filter((x) => !x.assignedTo || !memberMap.get(x.assignedTo));
+
   const data = {
     start: FINANCE_START,
+    sellerOptions,
+    people,
+    unassignedSellers,
     generatedAt: new Date(),
     partners,
     partnersOk,
@@ -460,6 +526,79 @@ export async function buildLedger({ fresh = false } = {}) {
 }
 
 /**
+ * "Add entry" on the Finance screen: an admin types in a deposit or a seller withdrawal by hand.
+ * It only changes the finance ledger (who owns how much of the Binance USDT); the seller's
+ * store wallet is not touched.
+ */
+export async function createManualEntry({ kind, sellerId, ownerId, inrAmount, usdtAmount, pkrRate, date, note = '', by = '' }) {
+  await connectDB();
+
+  if (!['deposit', 'seller_withdrawal'].includes(kind)) throw new Error('Choose deposit or seller withdrawal');
+  if (!sellerId || !mongoose.Types.ObjectId.isValid(sellerId)) throw new Error('Choose a seller');
+
+  const usdt = Number(usdtAmount);
+  if (!Number.isFinite(usdt) || usdt <= 0) throw new Error('Enter the real USDT amount (greater than 0)');
+  const inr = inrAmount === undefined || inrAmount === null || inrAmount === '' ? 0 : Number(inrAmount);
+  if (!Number.isFinite(inr) || inr < 0) throw new Error('INR amount is not valid');
+  const rate = pkrRate === undefined || pkrRate === null || pkrRate === '' ? 0 : Number(pkrRate);
+  if (!Number.isFinite(rate) || rate < 0) throw new Error('PKR rate is not valid');
+
+  const when = date ? new Date(date) : new Date();
+  if (Number.isNaN(when.getTime())) throw new Error('Date is not valid');
+
+  const seller = await Seller.findById(sellerId).select('storeName isTestAccount accountType isPreviousStoreSeller').lean();
+  if (!seller) throw new Error('Seller not found');
+  if (!isRealSeller(seller)) throw new Error('Test accounts are not part of the finance ledger');
+
+  const partnerDocs = await Member.find({ role: 'admin', active: true }).sort({ createdAt: 1 }).select('name').lean();
+  const partners = partnerDocs.map((p) => ({ id: sid(p._id), name: p.name }));
+
+  const previousStore = seller.isPreviousStoreSeller === true;
+  const partnersPayAll = kind === 'seller_withdrawal' && previousStore;
+
+  let owner = null;
+  if (ownerId && mongoose.Types.ObjectId.isValid(ownerId)) {
+    const m = await Member.findById(ownerId).select('name role commissionLabel active').lean();
+    if (!m || m.active === false) throw new Error('Selected person was not found');
+    owner = { id: sid(m._id), name: m.name, role: m.role, deal: m.commissionLabel || 'pkr_1to1' };
+  }
+  if (!owner && !partnersPayAll) throw new Error('Choose who this seller belongs to');
+
+  const split = computeSplit({ kind, usdt, inr, pkrRate: rate, owner, partners, previousStore });
+  if (!split.ok) {
+    const why = {
+      partners: 'Exactly 2 active admins are required',
+      pkr_rate: 'For a 1:1 PKR member enter the INR amount and that day’s PKR rate',
+      usdt: 'Enter the real USDT amount',
+    };
+    throw new Error(why[split.reason] || 'Could not split this entry');
+  }
+
+  await FinanceSplit.create({
+    sourceId: new mongoose.Types.ObjectId(),
+    kind,
+    sellerId: seller._id,
+    storeName: seller.storeName || 'Store',
+    date: when,
+    usdt: r6(usdt),
+    inr,
+    pkrRate: rate,
+    previousStore,
+    ownerId: owner ? owner.id : null,
+    ownerName: owner ? owner.name : '',
+    ownerRole: owner ? owner.role : '',
+    ownerDeal: owner ? owner.deal || '' : '',
+    shares: split.shares,
+    manual: true,
+    note: String(note || '').trim().slice(0, 300),
+    createdBy: by,
+  });
+
+  invalidateLedger();
+  return buildLedger({ fresh: true });
+}
+
+/**
  * Admin action on one deposit / seller withdrawal from the Finance screen.
  *   save    -> store the real Binance USDT (and INR / PKR rate) on the transaction
  *   skip    -> "no real money moved" (e.g. helping-only credit, old-store balance)
@@ -470,6 +609,15 @@ export async function updateFinanceEntry({ id, kind, action, usdtAmount, inrAmou
   await connectDB();
   if (!id || !mongoose.Types.ObjectId.isValid(id)) throw new Error('Valid transaction id is required');
   const _id = new mongoose.Types.ObjectId(id);
+
+  // Hand-typed entry: it can only be removed (add it again to change it).
+  if (kind === 'manual') {
+    if (action !== 'delete') throw new Error('Manual entries can only be deleted');
+    const gone = await FinanceSplit.deleteOne({ sourceId: _id, manual: true });
+    if (!gone || gone.deletedCount === 0) throw new Error('Manual entry not found');
+    invalidateLedger();
+    return buildLedger({ fresh: true });
+  }
 
   // Milestone bonus: only the PKR rate of that day is needed.
   if (kind === 'bonus') {

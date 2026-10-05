@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAuthSession } from '@/lib/auth';
-import { Seller, Order } from '@/lib/models/SharedModels';
+import { Seller, Order, CLIENT_SELLER_FILTER } from '@/lib/models/SharedModels';
 import SellerAssignment from '@/lib/models/SellerAssignment';
 import Member from '@/lib/models/Member';
 import { evaluateMemberMilestones } from '@/lib/utils/milestones';
@@ -31,7 +31,8 @@ export async function GET(req) {
       );
     }
 
-    const sellers = await Seller.find(sellersQuery).select('-kycDocuments').sort({ createdAt: -1 }).limit(500);
+    // Only real client stores are listed; test / demo seller accounts are hidden.
+    const sellers = await Seller.find({ ...sellersQuery, ...CLIENT_SELLER_FILTER }).select('-kycDocuments').sort({ createdAt: -1 }).limit(500);
 
     // Fetch active assignments for these sellers
     const sellerIds = sellers.map((s) => s._id);

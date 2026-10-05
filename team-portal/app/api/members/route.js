@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAuthSession, hashPassword } from '@/lib/auth';
 import Member from '@/lib/models/Member';
 import SellerAssignment from '@/lib/models/SellerAssignment';
-import { Seller, Order } from '@/lib/models/SharedModels';
+import { Seller, Order, CLIENT_SELLER_FILTER } from '@/lib/models/SharedModels';
 import RewardClaim from '@/lib/models/RewardClaim';
 import { syncEcommerceAdmins } from '@/lib/adminSync';
 
@@ -29,7 +29,7 @@ export async function GET(req) {
         const assignments = await SellerAssignment.find({ memberId: m._id, status: 'active' });
         const sellerIds = assignments.map((a) => a.sellerId);
 
-        const sellers = await Seller.find({ _id: { $in: sellerIds } }).select('-kycDocuments');
+        const sellers = await Seller.find({ _id: { $in: sellerIds }, ...CLIENT_SELLER_FILTER }).select('-kycDocuments');
 
         let totalDepositsINR = 0;
         let totalWithdrawalsINR = 0;
