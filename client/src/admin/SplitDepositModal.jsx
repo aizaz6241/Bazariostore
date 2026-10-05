@@ -4,7 +4,7 @@ import Ic from '../components/Icons.jsx';
 
 export default function SplitDepositModal({ isOpen, onClose, deposit, onSuccess }) {
   const [helpingAmount, setHelpingAmount] = useState('');
-  const [binanceRate, setBinanceRate] = useState('');
+  const [usdtReceived, setUsdtReceived] = useState(''); // real USDT received on Binance
   const [inrAmount, setInrAmount] = useState('');
   const [adminNote, setAdminNote] = useState('');
   const [saving, setSaving] = useState(false);
@@ -23,9 +23,8 @@ export default function SplitDepositModal({ isOpen, onClose, deposit, onSuccess 
   useEffect(() => {
     if (deposit) {
       setHelpingAmount(deposit.helpingAmount !== undefined ? String(deposit.helpingAmount) : '0');
-      setBinanceRate(deposit.binanceRate ? String(deposit.binanceRate) : '');
-      const defaultInr = gross > 0 ? (gross * 83.5).toFixed(0) : '';
-      setInrAmount(deposit.inrAmount ? String(deposit.inrAmount) : defaultInr);
+      setUsdtReceived(deposit.usdtAmount ? String(deposit.usdtAmount) : '');
+      setInrAmount(deposit.inrAmount ? String(deposit.inrAmount) : '');
       setAdminNote(deposit.adminNote || '');
       setError('');
     }
@@ -65,9 +64,10 @@ export default function SplitDepositModal({ isOpen, onClose, deposit, onSuccess 
     setError('');
 
     try {
-      const bRate = binanceRate ? Number(binanceRate) : undefined;
+      // Admin types the REAL USDT received; the rate is only worked out from it.
       const inrVal = inrAmount ? Number(inrAmount) : undefined;
-      const usdtVal = (bRate > 0 && inrVal > 0) ? Number((inrVal / bRate).toFixed(2)) : undefined;
+      const usdtVal = Number(usdtReceived) > 0 ? Number(usdtReceived) : undefined;
+      const bRate = (usdtVal > 0 && inrVal > 0) ? Number((inrVal / usdtVal).toFixed(2)) : undefined;
 
       const res = await api(`/sellers/withdrawals/${deposit._id}/split-helping`, {
         method: 'PATCH',
@@ -453,14 +453,14 @@ export default function SplitDepositModal({ isOpen, onClose, deposit, onSuccess 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ fontSize: 14 }}>🟡</span>
-                <span style={{ fontSize: 12, fontWeight: 800, color: '#854d0e' }}>Binance USDT Rate &amp; Conversion</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: '#854d0e' }}>Binance USDT Received</span>
                 <span style={{ fontSize: 10, background: '#fef9c3', color: '#a16207', padding: '1px 5px', borderRadius: 4, fontWeight: 700 }}>
                   Admin Internal • Hidden from Seller
                 </span>
               </div>
-              {Number(inrAmount) > 0 && Number(binanceRate) > 0 && (
+              {Number(inrAmount) > 0 && Number(usdtReceived) > 0 && (
                 <span style={{ background: '#16a34a', color: '#fff', padding: '2px 8px', borderRadius: 5, fontSize: 11.5, fontWeight: 800 }}>
-                  💎 {(Number(inrAmount) / Number(binanceRate)).toFixed(2)} USDT
+                  Rate: ₹{(Number(inrAmount) / Number(usdtReceived)).toFixed(2)} / USDT
                 </span>
               )}
             </div>
@@ -475,46 +475,27 @@ export default function SplitDepositModal({ isOpen, onClose, deposit, onSuccess 
                   step="any"
                   value={inrAmount}
                   onChange={(e) => setInrAmount(e.target.value)}
-                  placeholder={`e.g. ${(gross * 83.5).toFixed(0)}`}
+                  placeholder="e.g. 5000"
                   style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #fde047', background: '#fff', fontSize: 13, fontWeight: 700, color: '#0f172a' }}
                 />
               </div>
 
               <div>
-                <label style={{ fontSize: 11, fontWeight: 800, display: 'block', marginBottom: 3, color: '#854d0e' }}>
-                  🟡 Binance Rate (₹/USDT):
+                <label style={{ fontSize: 11, fontWeight: 800, display: 'block', marginBottom: 3, color: '#15803d' }}>
+                  💎 USDT Received (Binance):
                 </label>
                 <input
                   type="number"
                   step="any"
-                  value={binanceRate}
-                  onChange={(e) => setBinanceRate(e.target.value)}
-                  placeholder="e.g. 90.00"
-                  style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1.5px solid #eab308', background: '#fff', fontSize: 13, fontWeight: 800, color: '#854d0e' }}
+                  min="0"
+                  value={usdtReceived}
+                  onChange={(e) => setUsdtReceived(e.target.value)}
+                  placeholder="e.g. 46.45"
+                  style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1.5px solid #86efac', background: '#fff', fontSize: 13, fontWeight: 800, color: '#15803d' }}
                 />
-                {/* Rate Presets */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap', marginTop: 4 }}>
-                  <span style={{ fontSize: 9.5, fontWeight: 700, color: '#854d0e' }}>Presets:</span>
-                  {['89.50', '90.00', '90.50', '91.00', '91.50'].map((rate) => (
-                    <button
-                      key={rate}
-                      type="button"
-                      onClick={() => setBinanceRate(rate)}
-                      style={{
-                        padding: '1px 5px',
-                        fontSize: 9.5,
-                        fontWeight: 800,
-                        borderRadius: 3,
-                        border: '1px solid #fde047',
-                        background: binanceRate === rate ? '#eab308' : '#fefce8',
-                        color: binanceRate === rate ? '#fff' : '#854d0e',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      ₹{rate}
-                    </button>
-                  ))}
-                </div>
+                <small style={{ fontSize: 10, color: '#a16207', display: 'block', marginTop: 3 }}>
+                  Binance me jitne USDT asal me aaye
+                </small>
               </div>
             </div>
           </div>

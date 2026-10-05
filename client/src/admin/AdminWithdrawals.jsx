@@ -861,6 +861,9 @@ export default function AdminWithdrawals() {
                         ? bRateMap[r._id]
                         : (r.binanceRate ? String(r.binanceRate) : '');
                       const typedUsdtVal = usdtMap[r._id] !== undefined ? usdtMap[r._id] : '';
+                      const shownRate = (Number(currentInr) > 0 && Number(typedUsdtVal) > 0)
+                        ? (Number(currentInr) / Number(typedUsdtVal)).toFixed(2)
+                        : null;
                       const calcUsdt = Number(typedUsdtVal) > 0
                         ? Number(typedUsdtVal).toFixed(2)
                         : (Number(currentInr) > 0 && Number(currentBRate) > 0)
@@ -879,7 +882,7 @@ export default function AdminWithdrawals() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                               <span style={{ fontSize: 16 }}>🟡</span>
                               <b style={{ fontSize: 12.5, color: '#854d0e' }}>
-                                {isDeposit ? 'Binance USDT Rate & Deposit Conversion' : 'B.Rate & Binance USDT Conversion'}
+                                {isDeposit ? 'Binance USDT Received' : 'Binance USDT Sent'}
                               </b>
                               <span style={{ fontSize: 10, background: '#fef9c3', color: '#a16207', padding: '1px 6px', borderRadius: 4, fontWeight: 700, border: '1px solid #fde047' }}>
                                 Admin Internal • Hidden from Seller
@@ -912,74 +915,41 @@ export default function AdminWithdrawals() {
                             </div>
 
                             <div>
-                              <label style={{ fontSize: 11, fontWeight: 800, display: 'block', marginBottom: 4, color: '#854d0e' }}>
-                                🟡 Binance USDT Rate (₹/USDT) *:
+                              <label style={{ fontSize: 11, fontWeight: 800, display: 'block', marginBottom: 4, color: '#15803d' }}>
+                                {isDeposit ? '💎 USDT Received (Binance me aaye):' : '💎 USDT Sent (Binance se gaye):'}
                               </label>
-                              <input
-                                type="number"
-                                step="any"
-                                placeholder="e.g. 90.00"
-                                value={currentBRate}
-                                onChange={(e) => setBRateMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
-                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1.5px solid #eab308', background: '#ffffff', fontSize: 13, fontWeight: 800, color: '#854d0e' }}
-                              />
-                              {/* Quick Rate Preset Chips */}
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
-                                <span style={{ fontSize: 10, fontWeight: 700, color: '#854d0e' }}>Presets:</span>
-                                {['89.50', '90.00', '90.50', '91.00', '91.50'].map((presetRate) => (
-                                  <button
-                                    key={presetRate}
-                                    type="button"
-                                    onClick={() => setBRateMap((prev) => ({ ...prev, [r._id]: presetRate }))}
-                                    style={{
-                                      padding: '2px 6px',
-                                      fontSize: 10.5,
-                                      fontWeight: 800,
-                                      borderRadius: 4,
-                                      border: '1px solid #fde047',
-                                      background: currentBRate === presetRate ? '#eab308' : '#fefce8',
-                                      color: currentBRate === presetRate ? '#ffffff' : '#854d0e',
-                                      cursor: 'pointer',
-                                    }}
-                                  >
-                                    ₹{presetRate}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div>
-                              <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4, color: '#713f12' }}>
-                                💎 Converted Binance USDT:
-                              </label>
-                              <div style={{
-                                padding: '6px 10px',
-                                borderRadius: 6,
-                                background: calcUsdt ? '#ecfdf5' : '#f8fafc',
-                                border: `1.5px solid ${calcUsdt ? '#86efac' : '#cbd5e1'}`,
-                                fontSize: 13,
-                                fontWeight: 800,
-                                color: calcUsdt ? '#15803d' : '#94a3b8',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                minHeight: 33,
-                              }}>
-                                <span>{calcUsdt ? `${calcUsdt} USDT` : 'USDT ya B.Rate enter karein'}</span>
-                                {calcUsdt && !(Number(typedUsdtVal) > 0) && <span style={{ fontSize: 10.5, color: '#16a34a' }}>₹{currentInr} ÷ {currentBRate}</span>}
-                              </div>
                               <input
                                 type="number"
                                 step="any"
                                 min="0"
-                                placeholder="Asli USDT (Binance wali amount) e.g. 46.45"
+                                placeholder="e.g. 46.45"
                                 value={typedUsdtVal}
                                 onChange={(e) => setUsdtMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
-                                style={{ width: '100%', marginTop: 4, padding: '6px 10px', borderRadius: 6, border: '1.5px solid #86efac', background: '#ffffff', fontSize: 13, fontWeight: 800, color: '#15803d' }}
+                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1.5px solid #86efac', background: '#ffffff', fontSize: 13, fontWeight: 800, color: '#15803d' }}
                               />
                               <small style={{ fontSize: 10.5, color: '#a16207', display: 'block', marginTop: 2 }}>
-                                {isDeposit ? 'Indian Rupees se itni USDT bani (Admin Only)' : 'Indian Rupees se itni USDT bani'}
+                                Binance me dekh kar asli amount likhein (Admin Only)
                               </small>
+                            </div>
+
+                            <div>
+                              <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4, color: '#713f12' }}>
+                                🟡 Rate (khud nikalta hai):
+                              </label>
+                              <div style={{
+                                padding: '6px 10px',
+                                borderRadius: 6,
+                                background: shownRate ? '#fefce8' : '#f8fafc',
+                                border: `1.5px solid ${shownRate ? '#fde047' : '#cbd5e1'}`,
+                                fontSize: 13,
+                                fontWeight: 800,
+                                color: shownRate ? '#854d0e' : '#94a3b8',
+                                minHeight: 33,
+                                display: 'flex',
+                                alignItems: 'center',
+                              }}>
+                                <span>{shownRate ? `₹${shownRate} / USDT` : 'INR aur USDT likhein'}</span>
+                              </div>
                             </div>
                           </div>
                         </div>

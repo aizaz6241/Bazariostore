@@ -29,7 +29,7 @@ export default function AddFundsModal({
   const lastEditedRef = useRef('inr'); // 'inr' | 'usd'
 
   // Binance & Helping (Admin Internal)
-  const [binanceRate, setBinanceRate] = useState(''); // no default: a made-up rate would create fake USDT
+  const [usdtReceived, setUsdtReceived] = useState(''); // real USDT that reached Binance (empty = no real money)
   const [helpingAmount, setHelpingAmount] = useState('');
 
   // Reason & Reference
@@ -124,8 +124,10 @@ export default function AddFundsModal({
 
   // Binance USDT conversion calculations
   const parsedInr = parseFloat(inrAmount) || (parseFloat(usdAmount) > 0 ? parseFloat(usdAmount) * INR_RATE : 0);
-  const parsedBRate = parseFloat(binanceRate) || 0;
-  const calcUsdt = (parsedInr > 0 && parsedBRate > 0) ? (parsedInr / parsedBRate).toFixed(2) : null;
+  // The admin types the REAL USDT received on Binance; the rate is only worked out for reference.
+  const parsedUsdt = parseFloat(usdtReceived) || 0;
+  const calcUsdt = parsedUsdt > 0 ? parsedUsdt.toFixed(2) : null;
+  const parsedBRate = (parsedInr > 0 && parsedUsdt > 0) ? Number((parsedInr / parsedUsdt).toFixed(2)) : 0;
 
   // Helping amount calculation
   const parsedHelping = parseFloat(helpingAmount) || 0;
@@ -155,7 +157,7 @@ export default function AddFundsModal({
     try {
       const inrVal = parsedInr > 0 ? Number(parsedInr.toFixed(2)) : undefined;
       const bRate = (!isDebit && parsedBRate > 0) ? parsedBRate : undefined;
-      const usdtVal = (!isDebit && calcUsdt) ? Number(calcUsdt) : undefined;
+      const usdtVal = (!isDebit && parsedUsdt > 0) ? parsedUsdt : undefined;
       const hAmt = (!isDebit && parsedHelping > 0) ? parsedHelping : 0;
 
       const res = await api(`/sellers/${selectedSellerId}/wallet/adjust`, {
@@ -188,6 +190,7 @@ export default function AddFundsModal({
       setInrAmount('');
       setUsdAmount('');
       setHelpingAmount('');
+      setUsdtReceived('');
       setReference('');
 
       setTimeout(() => {
@@ -397,60 +400,49 @@ export default function AddFundsModal({
                 </div>
                 {calcUsdt && (
                   <div className="afm-usdt-pill">
-                    <span>💎 Resulting Binance USDT:</span>
+                    <span>💎 Binance USDT Received:</span>
                     <b>{calcUsdt} USDT</b>
                   </div>
                 )}
               </div>
 
               <div className="afm-binance-grid">
-                {/* Rate Input */}
+                {/* Real USDT received */}
                 <div>
                   <label className="afm-sublabel">
-                    🟡 Binance Rate (₹/USDT) *:
+                    💎 USDT Received (Binance me jitne aaye):
                   </label>
                   <input
                     type="number"
                     step="any"
-                    placeholder="e.g. 90.00"
-                    value={binanceRate}
-                    onChange={(e) => setBinanceRate(e.target.value)}
+                    min="0"
+                    placeholder="e.g. 46.45"
+                    value={usdtReceived}
+                    onChange={(e) => setUsdtReceived(e.target.value)}
                     className="afm-subinput binance-rate-input"
-                    required
                   />
-                  {/* Preset Rate Chips */}
-                  <div className="afm-rate-chips-row">
-                    <span className="afm-chips-lbl">Rate Presets:</span>
-                    {BINANCE_RATE_PRESETS.map((rate) => (
-                      <button
-                        key={rate}
-                        type="button"
-                        className={`afm-rate-chip ${binanceRate === rate ? 'active' : ''}`}
-                        onClick={() => setBinanceRate(rate)}
-                      >
-                        ₹{rate}
-                      </button>
-                    ))}
-                  </div>
+                  <small className="afm-binance-hint">
+                    Binance me dekh kar asli amount likhein. Agar asal paisa nahi aaya (sirf helping ya purana balance) to khali chhor dein.
+                  </small>
                 </div>
 
-                {/* Live Converted USDT Box */}
+                {/* Worked-out rate (reference only) */}
                 <div>
                   <label className="afm-sublabel">
-                    💎 Converted Binance USDT:
+                    🟡 Rate (khud nikalta hai):
                   </label>
-                  <div className={`afm-usdt-display-box ${calcUsdt ? 'has-val' : ''}`}>
+                  <div className={`afm-usdt-display-box ${parsedBRate > 0 ? 'has-val' : ''}`}>
                     <span className="afm-usdt-val">
-                      {calcUsdt ? `${calcUsdt} USDT` : 'Enter amount & rate'}
+                      {parsedBRate > 0 ? `₹${parsedBRate} / USDT` : 'INR aur USDT likhein'}
                     </span>
-                    {calcUsdt && (
+                    {parsedBRate > 0 && (
                       <span className="afm-usdt-calc">
-                        ₹{Number(parsedInr).toFixed(0)} ÷ {binanceRate}
+                        ₹{Number(parsedInr).toFixed(0)} ÷ {calcUsdt}
                       </span>
                     )}
                   </div>
                   <small className="afm-binance-hint">
-                    Ye calculation Admin internal USDT wallet mein add hogi. Seller ko show nahi hogi.
+                    Ye USDT Finance ledger me add honge. Seller ko show nahi hota.
                   </small>
                 </div>
               </div>
