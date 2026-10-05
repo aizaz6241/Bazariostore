@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
+import { useNotifications } from '@/components/NotificationManager';
 import VoiceRecorder from '@/components/VoiceRecorder';
 import AudioPlayer from '@/components/AudioPlayer';
 import { readCache, writeCache, dropCache } from '@/lib/clientCache';
@@ -47,6 +48,7 @@ const lightCopy = (list) =>
 
 export default function ChatPage() {
   const { user } = useAuth();
+  const { playMessageSound, playCashSound } = useNotifications();
   const uid = user?._id || '';
   const contactsKey = `chat_contacts_${uid}`;
   const chatCacheKey = (chatKey) => `chat_msgs_${uid}_${chatKey}`;
@@ -318,6 +320,14 @@ export default function ChatPage() {
           const latest = arrived[arrived.length - 1];
           setHighlightedMsgId(latest._id);
           setTimeout(() => setHighlightedMsgId(null), 4000);
+
+          // Audio notification chime
+          const hasBonus = arrived.some((m) => m.messageType === 'system_bonus');
+          if (hasBonus) {
+            playCashSound();
+          } else {
+            playMessageSound();
+          }
         }
 
         prevMessagesLengthRef.current = next.length;

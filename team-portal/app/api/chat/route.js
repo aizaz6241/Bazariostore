@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAuthSession } from '@/lib/auth';
 import ChatMessage from '@/lib/models/ChatMessage';
 import Member from '@/lib/models/Member';
+import { sendPushToUser, sendPushToAllExcept } from '@/lib/utils/push';
 
 export const dynamic = 'force-dynamic';
 
@@ -185,6 +186,40 @@ export async function POST(req) {
     });
 
     await newMsg.populate('readBy', 'name username avatar role');
+
+    // Asynchronously trigger push notifications to recipient(s) with custom message sound
+    try {
+      const previewBody =
+        messageType === 'image'
+          ? '📷 Sent a photo'
+          : messageType === 'voice'
+          ? '🎤 Sent a voice message'
+          : (text ? text.trim().slice(0, 120) : 'New message');
+
+      if (chatType === 'personal' && target) {
+        sendPushToUser(target, {
+          title: `💬 ${session.name}`,
+          body: previewBody,
+          url: '/chat',
+          type: 'chat',
+          sound: '/sounds/message.wav',
+          vibrate: [200, 100, 200, 100, 200],
+          data: { chatType: 'personal', senderId: session._id.toString() },
+        }).catch((e) => console.error('Personal push error:', e));
+      } else {
+        sendPushToAllExcept(session._id, {
+          title: `💬 ${session.name} (Bazario Team)`,
+          body: previewBody,
+          url: '/chat',
+          type: 'chat',
+          sound: '/sounds/message.wav',
+          vibrate: [200, 100, 200, 100, 200],
+          data: { chatType: 'group', senderId: session._id.toString() },
+        }).catch((e) => console.error('Group push error:', e));
+      }
+    } catch (pushErr) {
+      console.error('Trigger push error:', pushErr);
+    }
 
     // The sender already has the picture / voice note it just uploaded: do not send it back.
     const sent = newMsg.toObject();

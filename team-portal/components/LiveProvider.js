@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { useAuth } from './AuthProvider';
+import { useNotifications } from './NotificationManager';
 
 /**
  * Live updates for every money screen.
@@ -27,6 +28,7 @@ const LiveContext = createContext({
 
 export function LiveProvider({ children }) {
   const { user, refreshUser } = useAuth();
+  const { playCashSound } = useNotifications();
   const [status, setStatus] = useState('connecting');
   const [lastChangeAt, setLastChangeAt] = useState(0);
   const listeners = useRef(new Set());
@@ -74,6 +76,9 @@ export function LiveProvider({ children }) {
         setStatus('live');
         if (json.v && current !== null && json.v !== current) {
           setLastChangeAt(Date.now());
+          try {
+            playCashSound();
+          } catch (_) {}
           listeners.current.forEach((fn) => {
             try {
               fn();

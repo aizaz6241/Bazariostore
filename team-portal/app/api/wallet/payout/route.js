@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getAuthSession } from '@/lib/auth';
 import { recordWalletPayout } from '@/lib/utils/wallet';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req) {
   try {
     const session = await getAuthSession(req);
@@ -25,6 +27,20 @@ export async function POST(req) {
       note: note || '',
       processedBy: session.name || session.username,
     });
+
+    try {
+      const { sendPushToUser } = await import('@/lib/utils/push');
+      sendPushToUser(targetUserId, {
+        title: `💳 Payout Processed: ${amount} ${currency || 'USDT'}`,
+        body: `Payout has been processed by ${session.name || 'Admin'}. Check your wallet balance.`,
+        url: '/wallet',
+        type: 'finance',
+        sound: '/sounds/cash.wav',
+        vibrate: [250, 100, 250, 100, 250],
+      }).catch((e) => console.error('Payout push error:', e));
+    } catch (pushErr) {
+      console.error('Trigger payout push error:', pushErr);
+    }
 
     return NextResponse.json({
       message: 'Payout recorded successfully',

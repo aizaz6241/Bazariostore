@@ -26,6 +26,23 @@ export async function POST(req) {
         note: body.note,
         by: session.name || session.username || '',
       });
+
+      if (body.ownerId) {
+        try {
+          const { sendPushToUser } = await import('@/lib/utils/push');
+          sendPushToUser(body.ownerId, {
+            title: `💰 Deposit / Finance Entry: ${body.entryKind === 'deposit' ? 'Deposit' : 'Record'}`,
+            body: `An amount of Rs ${Number(body.inrAmount || 0).toLocaleString()} was recorded. Wallet balance updated.`,
+            url: '/wallet',
+            type: 'finance',
+            sound: '/sounds/cash.wav',
+            vibrate: [250, 100, 250, 100, 250],
+          }).catch((e) => console.error('Finance entry push error:', e));
+        } catch (pushErr) {
+          console.error('Trigger finance push error:', pushErr);
+        }
+      }
+
       return NextResponse.json(created);
     }
 

@@ -3,6 +3,9 @@ import { getAuthSession } from '@/lib/auth';
 import RewardClaim from '@/lib/models/RewardClaim';
 import Member from '@/lib/models/Member';
 import ChatMessage from '@/lib/models/ChatMessage';
+import { sendPushToUser, sendPushToAllExcept } from '@/lib/utils/push';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req) {
   try {
@@ -83,6 +86,28 @@ export async function POST(req) {
       messageType: 'system_bonus',
       text: `🎁 You have received an instant bonus of Rs ${numAmount.toLocaleString()} PKR!\nReason: ${cleanReason}\nYour wallet balance is updated.`,
     });
+
+    // 5. Send Push Notification to Member with Cash Sound
+    try {
+      sendPushToUser(targetMember._id, {
+        title: `🎁 Special Bonus: Rs ${numAmount.toLocaleString()} PKR`,
+        body: `You received Rs ${numAmount.toLocaleString()} PKR bonus for "${cleanReason}"!`,
+        url: '/wallet',
+        type: 'finance',
+        sound: '/sounds/cash.wav',
+        vibrate: [250, 100, 250, 100, 250],
+      }).catch((e) => console.error('Bonus push error:', e));
+
+      sendPushToAllExcept(session._id, {
+        title: `🌟 Special Bonus Awarded!`,
+        body: `@${targetMember.name} was awarded Rs ${numAmount.toLocaleString()} PKR bonus!`,
+        url: '/chat',
+        type: 'chat',
+        sound: '/sounds/cash.wav',
+      }).catch((e) => console.error('Bonus announce error:', e));
+    } catch (pushErr) {
+      console.error('Trigger bonus push error:', pushErr);
+    }
 
     return NextResponse.json({
       message: `Bonus of Rs ${numAmount.toLocaleString()} PKR awarded to ${targetMember.name}`,

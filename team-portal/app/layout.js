@@ -1,6 +1,7 @@
 import './globals.css';
 import { AuthProvider, AuthGate } from '@/components/AuthProvider';
 import { LiveProvider } from '@/components/LiveProvider';
+import { NotificationProvider } from '@/components/NotificationManager';
 import AppNavbar from '@/components/AppNavbar';
 import MobileBottomNav from '@/components/MobileBottomNav';
 
@@ -43,13 +44,15 @@ export default function RootLayout({ children }) {
       </head>
       <body className="bg-slate-50 text-slate-900 antialiased min-h-screen flex flex-col pb-16 lg:pb-0">
         <AuthProvider>
-          <LiveProvider>
-            <AppNavbar />
-            <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
-              <AuthGate>{children}</AuthGate>
-            </main>
-            <MobileBottomNav />
-          </LiveProvider>
+          <NotificationProvider>
+            <LiveProvider>
+              <AppNavbar />
+              <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+                <AuthGate>{children}</AuthGate>
+              </main>
+              <MobileBottomNav />
+            </LiveProvider>
+          </NotificationProvider>
         </AuthProvider>
       </body>
     </html>

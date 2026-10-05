@@ -3,6 +3,9 @@ import { getAuthSession } from '@/lib/auth';
 import RewardClaim from '@/lib/models/RewardClaim';
 import Member from '@/lib/models/Member';
 import ChatMessage from '@/lib/models/ChatMessage';
+import { sendPushToUser, sendPushToAllExcept } from '@/lib/utils/push';
+
+export const dynamic = 'force-dynamic';
 
 export async function POST(req, { params }) {
   try {
@@ -100,6 +103,29 @@ export async function POST(req, { params }) {
       messageType: 'system_bonus',
       text: `🎁 Your bonus claim of Rs ${claim.amountPKR.toLocaleString()} PKR for "${claim.title}" has been APPROVED! It has been credited to your wallet balance.`,
     });
+
+    // 5. Send Push Notification to Member with Cash Sound
+    try {
+      sendPushToUser(targetMember._id, {
+        title: `🎉 Bonus Approved! Rs ${claim.amountPKR.toLocaleString()} PKR`,
+        body: `"${claim.title}" has been approved and added to your wallet!`,
+        url: '/wallet',
+        type: 'finance',
+        sound: '/sounds/cash.wav',
+        vibrate: [250, 100, 250, 100, 250],
+      }).catch((e) => console.error('Bonus push error:', e));
+
+      // Also announce to group push
+      sendPushToAllExcept(session._id, {
+        title: `🏆 Bonus Announcement!`,
+        body: `@${targetMember.name} earned Rs ${claim.amountPKR.toLocaleString()} PKR bonus for "${claim.title}"!`,
+        url: '/chat',
+        type: 'chat',
+        sound: '/sounds/cash.wav',
+      }).catch((e) => console.error('Bonus announcement push error:', e));
+    } catch (pushErr) {
+      console.error('Trigger bonus push error:', pushErr);
+    }
 
     return NextResponse.json({
       message: 'Reward claim approved and credited successfully',

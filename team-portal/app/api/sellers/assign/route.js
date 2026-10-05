@@ -5,6 +5,8 @@ import Member from '@/lib/models/Member';
 import { Seller } from '@/lib/models/SharedModels';
 import ChatMessage from '@/lib/models/ChatMessage';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(req) {
   try {
     const session = await getAuthSession(req);
@@ -74,6 +76,20 @@ export async function POST(req) {
       text: `💼 Store "${seller.storeName}" (${seller.ownerName}) has been officially assigned to you!\nCommission Model: ${labelDesc}.\nDeposits, withdrawals, and USDT conversions will reflect in your live wallet.`,
       readBy: [session._id],
     });
+
+    try {
+      const { sendPushToUser } = await import('@/lib/utils/push');
+      sendPushToUser(targetMember._id, {
+        title: `🤝 New Seller Assigned: ${seller.storeName}`,
+        body: `Store "${seller.storeName}" (${seller.ownerName}) has been assigned to you. Check your sellers dashboard!`,
+        url: '/sellers',
+        type: 'sellers',
+        sound: '/sounds/notification.wav',
+        vibrate: [200, 100, 200, 100, 200],
+      }).catch((e) => console.error('Seller assign push error:', e));
+    } catch (pushErr) {
+      console.error('Trigger seller assign push error:', pushErr);
+    }
 
     return NextResponse.json({
       message: `Seller "${seller.storeName}" successfully assigned to ${targetMember.name}`,
