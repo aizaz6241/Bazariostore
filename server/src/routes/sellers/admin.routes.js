@@ -20,6 +20,44 @@ const router = express.Router();
 const KYC_FILE_FIELDS = ['idDocumentUrl', 'idCard', 'passportDocumentUrl', 'passport', 'bankStatementUrl', 'bankStatement'];
 const SELLER_LIST_SELECT = ['-passwordHash', ...KYC_FILE_FIELDS.map((f) => `-kycDocuments.${f}`)].join(' ');
 
+// ─── Team portal link: who a seller belongs to ───
+// The team portal keeps its people in `portalmembers` and seller ownership in
+// `portalsellerassignments` (same database). The finance ledger divides every deposit and
+// withdrawal by that ownership, so a client seller must always have an owner.
+const portalMembersCol = () => mongoose.connection.db.collection('portalmembers');
+const portalAssignmentsCol = () => mongoose.connection.db.collection('portalsellerassignments');
+const toObjectId = (v) => (v && mongoose.Types.ObjectId.isValid(String(v)) ? new mongoose.Types.ObjectId(String(v)) : null);
+
+// GET /api/sellers/team/members?sellerId=... — people a seller can be assigned to (+ current owner)
+router.get('/team/members', authAdmin('sellers'), async (req, res) => {
+  try {
+    const docs = await portalMembersCol()
+      .find({ active: { $ne: false } })
+      .project({ name: 1, username: 1, role: 1, commissionLabel: 1 })
+      .toArray();
+
+    const members = docs
+      .map((m) => ({
+        _id: String(m._id),
+        name: m.name || m.username || 'Member',
+        role: m.role === 'admin' ? 'partner' : 'member',
+        deal: m.role === 'admin' ? 'partner' : m.commissionLabel || 'pkr_1to1',
+      }))
+      .sort((a, b) => (a.role === b.role ? a.name.localeCompare(b.name) : a.role === 'partner' ? -1 : 1));
+
+    let assignedMemberId = '';
+    const sellerOid = toObjectId(req.query.sellerId);
+    if (sellerOid) {
+      const current = await portalAssignmentsCol().findOne({ sellerId: sellerOid, status: 'active' });
+      if (current && members.some((m) => m._id === String(current.memberId))) assignedMemberId = String(current.memberId);
+    }
+
+    res.json({ members, assignedMemberId });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // GET /api/sellers (Admin list all sellers)
 router.get('/', authAdmin('sellers'), async (req, res) => {
   try {
@@ -842,9 +880,29 @@ router.post('/:id/withdrawal-limit', authAdmin(), async (req, res) => {
 // POST /api/sellers/:id/approve (Admin approves a pending seller registration)
 router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
   try {
-    const { securityDepositPaid, securityDepositAmount, referralCode, assignedReferralCode, commissionRate, note, isTestAccount, accountType, isPreviousStoreSeller } = req.body || {};
+    const { securityDepositPaid, securityDepositAmount, referralCode, assignedReferralCode, commissionRate, note, isTestAccount, accountType, isPreviousStoreSeller, assignedMemberId } = req.body || {};
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
+
+    // A client seller must belong to a partner or a team member, otherwise its money cannot be divided.
+    // (Test accounts are outside the finance ledger, so they do not need an owner.)
+    const willBeTest = isTestAccount !== undefined
+      ? Boolean(isTestAccount)
+      : accountType !== undefined
+      ? accountType === 'test'
+      : Boolean(seller.isTestAccount);
+
+    let ownerMember = null;
+    const ownerOid = toObjectId(assignedMemberId);
+    if (ownerOid) {
+      ownerMember = await portalMembersCol().findOne({ _id: ownerOid, active: { $ne: false } });
+      if (!ownerMember) return res.status(400).json({ message: 'Selected team member was not found. Please choose again.' });
+    } else if (!willBeTest) {
+      const alreadyAssigned = await portalAssignmentsCol().findOne({ sellerId: seller._id, status: 'active' });
+      if (!alreadyAssigned) {
+        return res.status(400).json({ message: 'Assign this seller to a partner or team member before approving (Assigned To is required).' });
+      }
+    }
 
     const isPaid = Boolean(securityDepositPaid);
     const depAmt = isPaid ? Math.max(0, Number(securityDepositAmount) || 0) : 0;
@@ -878,6 +936,45 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
     seller.wallet.securityDeposit = depAmt;
 
     await seller.save();
+
+    // Record who this seller belongs to (team portal assignment)
+    if (ownerMember) {
+      const assignments = portalAssignmentsCol();
+      const current = await assignments.findOne({ sellerId: seller._id, status: 'active' });
+      if (!current || String(current.memberId) !== String(ownerMember._id)) {
+        const now = new Date();
+        const deal = ownerMember.commissionLabel || 'pkr_1to1';
+        const adminOid = toObjectId(req.admin.id);
+        const approver = adminOid ? await portalMembersCol().findOne({ ecommerceAdminId: adminOid }).catch(() => null) : null;
+
+        await assignments.updateMany(
+          { sellerId: seller._id, status: 'active' },
+          { $set: { status: 'transferred', updatedAt: now } }
+        );
+        await assignments.insertOne({
+          sellerId: seller._id,
+          memberId: ownerMember._id,
+          assignedBy: approver ? approver._id : null,
+          status: 'active',
+          commissionLabel: deal,
+          privateNotes: {
+            customName: seller.storeName,
+            age: '',
+            occupation: 'Merchant / Seller',
+            maritalStatus: '',
+            location: seller.address?.city || '',
+            picture: '',
+            details: `Assigned on ${now.toLocaleDateString()} (seller approval)`,
+            updatedAt: now,
+          },
+          createdAt: now,
+          updatedAt: now,
+          __v: 0,
+        });
+        await Seller.collection.updateOne({ _id: seller._id }, { $set: { commissionLabel: deal } });
+        audit(req, 'update', 'seller', seller._id, `Assigned ${seller.storeName} to ${ownerMember.name}`);
+      }
+    }
 
     // Create Initial Security Deposit Ledger Record in Wallet History
     if (isPaid && depAmt > 0) {

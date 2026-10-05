@@ -16,6 +16,35 @@ export default function Applications() {
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
 
+  // Team members / partners a seller can belong to (finance is divided by this owner)
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [teamLoading, setTeamLoading] = useState(false);
+  const approveSellerId = pendingApproveModal?.seller?._id || '';
+
+  useEffect(() => {
+    if (!approveSellerId) return;
+    let cancelled = false;
+    setTeamLoading(true);
+    api(`/sellers/team/members?sellerId=${approveSellerId}`)
+      .then((res) => {
+        if (cancelled) return;
+        setTeamMembers(res.members || []);
+        // Pre-select the current owner, unless the admin already picked someone
+        setPendingApproveModal((prev) =>
+          prev && prev.seller?._id === approveSellerId && !prev.assignedMemberId
+            ? { ...prev, assignedMemberId: res.assignedMemberId || '' }
+            : prev
+        );
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setTeamLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [approveSellerId]);
+
   // perf: the sellers list no longer carries the KYC files themselves (they are large base64 images).
   // `kycAvailable` says which documents exist; the file is fetched only when the admin opens it.
   const kycValue = (s, docType) => {
@@ -74,6 +103,10 @@ export default function Applications() {
   const handleApproveSubmit = async (e) => {
     e.preventDefault();
     if (!pendingApproveModal?.seller) return;
+    if (!pendingApproveModal.isTestAccount && !pendingApproveModal.assignedMemberId) {
+      alert('Please choose who this seller is assigned to (Assigned To).');
+      return;
+    }
     setApproving(true);
     try {
       await api(`/sellers/${pendingApproveModal.seller._id}/approve`, {
@@ -86,6 +119,7 @@ export default function Applications() {
           isTestAccount: Boolean(pendingApproveModal.isTestAccount),
           accountType: pendingApproveModal.isTestAccount ? 'test' : 'client',
           isPreviousStoreSeller: Boolean(pendingApproveModal.isPreviousStoreSeller),
+          assignedMemberId: pendingApproveModal.assignedMemberId || '',
         },
       });
       alert(`🎉 Store "${pendingApproveModal.seller.storeName}" has been successfully approved! Notification sent.`);
@@ -413,6 +447,30 @@ export default function Applications() {
                 <div style={{ fontSize: 13, color: '#1e293b' }}>
                   <b>Applicant:</b> {pendingApproveModal.seller.ownerName} &bull; <b>Email:</b> {pendingApproveModal.seller.email}
                 </div>
+              </div>
+
+              {/* Assigned To: which partner / team member this seller belongs to */}
+              <div style={{ marginBottom: 14, background: '#fffbeb', border: '1.5px solid #fde68a', padding: '12px 16px', borderRadius: 8 }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 800, color: '#92400e', marginBottom: 6 }}>
+                  Assigned To {pendingApproveModal.isTestAccount ? '(optional for test account)' : '*'}
+                </label>
+                <select
+                  value={pendingApproveModal.assignedMemberId || ''}
+                  onChange={(e) => setPendingApproveModal({ ...pendingApproveModal, assignedMemberId: e.target.value })}
+                  required={!pendingApproveModal.isTestAccount}
+                  disabled={teamLoading}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 6, border: '1px solid #fcd34d', background: '#fff', fontSize: 13.5, fontWeight: 700, color: '#1e293b' }}
+                >
+                  <option value="">{teamLoading ? 'Loading team…' : 'Select partner or team member…'}</option>
+                  {teamMembers.map((m) => (
+                    <option key={m._id} value={m._id}>
+                      {m.name} — {m.role === 'partner' ? 'Partner' : m.deal === 'inr_50' ? '50% member' : '1:1 PKR member'}
+                    </option>
+                  ))}
+                </select>
+                <small style={{ color: '#b45309', fontSize: 11.5, display: 'block', marginTop: 5 }}>
+                  Ye seller kis ka hai. Is ke deposit aur withdraw ka hisaab isi ke mutabiq batega, is liye client seller ke liye ye lazmi hai.
+                </small>
               </div>
 
               {/* Account Classification Toggle (Client Account vs Test Account) */}
