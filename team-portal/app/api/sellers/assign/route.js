@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server';
 import { getAuthSession } from '@/lib/auth';
-import SellerAssignment from '@/lib/models/SellerAssignment';
-import Member from '@/lib/models/Member';
-import { Seller } from '@/lib/models/SharedModels';
-import ChatMessage from '@/lib/models/ChatMessage';
+import { submitAction } from '@/lib/utils/approvals';
+import { currentOwnerOf } from '@/lib/utils/sellerAssign';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * POST /api/sellers/assign
+ *
+ * A seller that has no owner yet is assigned at once.
+ * Moving a seller that already belongs to someone else changes who earns from it, so it is
+ * stored as a request and applied only after the other partner approves it.
+ */
 export async function POST(req) {
   try {
     const session = await getAuthSession(req);
@@ -14,89 +19,32 @@ export async function POST(req) {
       return NextResponse.json({ message: 'Forbidden. Admin access required.' }, { status: 403 });
     }
 
-    const { sellerId, memberId, commissionLabel } = await req.json();
+    const { sellerId, memberId } = await req.json();
 
     if (!sellerId || !memberId) {
       return NextResponse.json({ message: 'Seller ID and Member ID are required' }, { status: 400 });
     }
 
-    const [seller, targetMember] = await Promise.all([
-      Seller.findById(sellerId),
-      Member.findById(memberId),
-    ]);
+    const current = await currentOwnerOf(sellerId).catch(() => null);
+    const moving = !!current && String(current.memberId) !== String(memberId);
 
-    if (!seller) return NextResponse.json({ message: 'Seller not found' }, { status: 404 });
-    if (!targetMember) return NextResponse.json({ message: 'Target member not found' }, { status: 404 });
-
-    // The deal agreement is strictly configured on the Member (not the seller).
-    // The assigned store automatically inherits the member's commission agreement.
-    const chosenLabel = targetMember.commissionLabel || 'pkr_1to1';
-    seller.commissionLabel = chosenLabel;
-    await seller.save();
-
-    // Mark any previous active assignment for this seller as transferred
-    await SellerAssignment.updateMany(
-      { sellerId: seller._id, status: 'active' },
-      { $set: { status: 'transferred' } }
-    );
-
-    // Create new assignment
-    const newAssignment = await SellerAssignment.create({
-      sellerId: seller._id,
-      memberId: targetMember._id,
-      assignedBy: session._id,
-      status: 'active',
-      commissionLabel: chosenLabel,
-      privateNotes: {
-        customName: seller.storeName,
-        age: '',
-        occupation: 'Merchant / Seller',
-        maritalStatus: '',
-        location: seller.address?.city || '',
-        picture: '',
-        details: `Assigned on ${new Date().toLocaleDateString()}`,
-      },
+    const out = await submitAction({
+      session,
+      action: moving ? 'reassign' : 'assign',
+      payload: { sellerId: String(sellerId), memberId: String(memberId) },
+      gated: moving,
     });
 
-    // Notify the member via 1-on-1 personal chat system message
-    const personalConvId = [targetMember._id.toString(), session._id.toString()].sort().join('_');
-    const labelDesc = targetMember.role === 'admin'
-      ? '🛡️ Partner Deal (75% of this store’s deposits; the other partner gets 25%)'
-      : chosenLabel === 'inr_50'
-      ? '50% of every deposit, in real USDT'
-      : '🇵🇰 1:1 INR to PKR, paid in USDT at that day’s rate';
-    await ChatMessage.create({
-      chatType: 'personal',
-      conversationId: `personal_${personalConvId}`,
-      senderId: session._id,
-      senderName: session.name,
-      senderRole: 'admin',
-      targetMemberId: targetMember._id,
-      messageType: 'text',
-      text: `💼 Store "${seller.storeName}" (${seller.ownerName}) has been officially assigned to you!\nCommission Model: ${labelDesc}.\nDeposits, withdrawals, and USDT conversions will reflect in your live wallet.`,
-      readBy: [session._id],
-    });
-
-    try {
-      const { sendPushToUser } = await import('@/lib/utils/push');
-      sendPushToUser(targetMember._id, {
-        title: `🤝 New Seller Assigned: ${seller.storeName}`,
-        body: `Store "${seller.storeName}" (${seller.ownerName}) has been assigned to you. Check your sellers dashboard!`,
-        url: '/sellers',
-        type: 'sellers',
-        sound: '/sounds/notification.wav',
-        vibrate: [200, 100, 200, 100, 200],
-      }).catch((e) => console.error('Seller assign push error:', e));
-    } catch (pushErr) {
-      console.error('Trigger seller assign push error:', pushErr);
+    if (out.pending) {
+      return NextResponse.json({ message: out.message, pendingApproval: true });
     }
-
     return NextResponse.json({
-      message: `Seller "${seller.storeName}" successfully assigned to ${targetMember.name}`,
-      assignment: newAssignment,
+      message: `Seller "${out.result.seller.storeName}" successfully assigned to ${out.result.targetMember.name}`,
+      assignment: out.result.assignment,
     });
   } catch (err) {
     console.error('Assign seller error:', err);
-    return NextResponse.json({ message: err.message }, { status: 500 });
+    const notFound = /not found/i.test(err.message || '');
+    return NextResponse.json({ message: err.message }, { status: notFound ? 404 : 500 });
   }
 }

@@ -3,7 +3,21 @@ import bcrypt from 'bcryptjs';
 import { connectDB } from './db.js';
 import Member from './models/Member.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'bazario_super_secure_jwt_secret_2026_xyz';
+import crypto from 'crypto';
+
+// The signing secret comes only from the environment. If JWT_SECRET is not set, a private one is
+// worked out from MONGO_URI (which this app cannot run without), so logins keep working and the
+// secret is never a value that is written in the code.
+function resolveJwtSecret() {
+  const set = (process.env.JWT_SECRET || '').trim();
+  // values that used to be written in the code are public: never used (kept as fingerprints only)
+  const publicBefore = ['b928e7744831d150b714dccc839c92461e6b20d93d0828b87548594da402e3c5'];
+  if (set && !publicBefore.includes(crypto.createHash('sha256').update(set).digest('hex'))) return set;
+  const uri = (process.env.MONGO_URI || '').trim();
+  if (!uri) return crypto.randomBytes(32).toString('hex'); // nothing configured: no token can be valid
+  return crypto.createHash('sha256').update(`bazario-portal-jwt:${uri}`).digest('hex');
+}
+const JWT_SECRET = resolveJwtSecret();
 
 export async function hashPassword(plain) {
   return await bcrypt.hash(plain, 10);
@@ -49,6 +63,9 @@ export async function getAuthSession(req) {
 
   const decoded = verifyToken(token);
   if (!decoded || !decoded.id) return null;
+  // Only logins made by this portal. A store token (admin panel / seller / customer) carries a
+  // type field `t`; it must never open a portal session, even when the email matches a member.
+  if (decoded.t) return null;
 
   let member = await Member.findById(decoded.id).select('-passwordHash -plainPassword');
 

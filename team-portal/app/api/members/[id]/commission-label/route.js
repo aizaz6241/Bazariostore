@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAuthSession } from '@/lib/auth';
 import Member from '@/lib/models/Member';
 import SellerAssignment from '@/lib/models/SellerAssignment';
+import { logFinance, flushFinanceAlertsSoon } from '@/lib/utils/financeLog';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,8 +29,22 @@ export async function PUT(req, { params }) {
       return NextResponse.json({ message: 'Member not found' }, { status: 404 });
     }
 
+    const previousLabel = member.commissionLabel || 'pkr_1to1';
     member.commissionLabel = commissionLabel;
     await member.save();
+
+    if (previousLabel !== commissionLabel) {
+      await logFinance({
+        session,
+        action: 'member.updated',
+        summary: `Member “${member.name}”: deal changed to ${commissionLabel === 'inr_50' ? '50% member' : '1:1 PKR member'}`,
+        entity: 'member',
+        entityId: member._id,
+        before: { deal: previousLabel },
+        after: { deal: commissionLabel },
+      });
+      await flushFinanceAlertsSoon();
+    }
 
     // Sync all active store assignments for this member
     await SellerAssignment.updateMany(

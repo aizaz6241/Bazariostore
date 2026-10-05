@@ -1,10 +1,11 @@
+import './_script-guard.js';
 import dns from 'dns';
 dns.setServers(['8.8.8.8', '1.1.1.1']);
 import mongoose from 'mongoose';
 import TreasuryProduct from './models/TreasuryProduct.js';
 import fs from 'fs';
 
-const URI = 'mongodb+srv://aizazkhan6241_db_user:98av24298@cluster0.ijpphlb.mongodb.net/bazario?retryWrites=true&w=majority&appName=Cluster0';
+const URI = process.env.MONGO_URI;
 
 async function run() {
   await mongoose.connect(URI, { serverSelectionTimeoutMS: 20000 });

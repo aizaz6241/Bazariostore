@@ -207,6 +207,11 @@ export default function SellerProducts() {
   };
 
   const handleDelete = async (id, name) => {
+    const prod = products.find((p) => p._id === id);
+    if (prod?.treasuryProduct) {
+      alert('Products imported from Product Treasury cannot be removed from your store.');
+      return;
+    }
     if (!confirm(`Are you sure you want to delete "${name}" from your store catalog?`)) return;
     try {
       await sapi(`/sellers/products/${id}`, { method: 'DELETE' });
@@ -415,9 +420,32 @@ export default function SellerProducts() {
                         <button type="button" onClick={() => openEdit(p)} className="btn-action-edit" title="Edit Product">
                           <Ic name="sparkle" size={13} /> Edit
                         </button>
-                        <button type="button" onClick={() => handleDelete(p._id, p.name)} className="btn-action-delete" title="Delete Product">
-                          <Ic name="x" size={13} /> Delete
-                        </button>
+                        {p.treasuryProduct ? (
+                          <span
+                            className="btn-action-locked"
+                            title="Products added from Product Treasury cannot be removed from your store"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              color: '#64748b',
+                              padding: '5px 8px',
+                              background: '#f1f5f9',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: '6px',
+                              cursor: 'not-allowed',
+                              userSelect: 'none',
+                            }}
+                          >
+                            🔒 Treasury Locked
+                          </span>
+                        ) : (
+                          <button type="button" onClick={() => handleDelete(p._id, p.name)} className="btn-action-delete" title="Delete Product">
+                            <Ic name="x" size={13} /> Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

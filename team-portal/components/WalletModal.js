@@ -137,10 +137,12 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
       });
 
       if (res.ok) {
-        setPayoutMsg({ text: 'Payout recorded successfully!', type: 'success' });
+        const okData = await res.json().catch(() => ({}));
+        // A payout written for someone else waits for a second person: say so instead of "recorded"
+        setPayoutMsg({ text: okData.pendingApproval ? okData.message : 'Payout recorded successfully!', type: 'success' });
         setPayoutAmount('');
         setPayoutNote('');
-        setTimeout(() => setShowPayoutForm(false), 1500);
+        setTimeout(() => setShowPayoutForm(false), okData.pendingApproval ? 4000 : 1500);
         // Refresh statement data
         fetchWallet();
       } else {

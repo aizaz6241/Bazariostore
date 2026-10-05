@@ -279,43 +279,69 @@ export async function restoreDatabaseFromData(parsedData, sourceName = 'unnamed'
     throw new Error('Invalid backup file format: missing collections data.');
   }
 
-  // 1. Safety First: Take an automatic pre-restore backup
+  // 1. Safety First: Take an automatic pre-restore backup.
+  //    If that copy cannot be made, the restore does not start at all.
   try {
     await createBackup('prerestore');
     console.log('✅ Safety pre-restore backup created successfully before database restoration.');
   } catch (snapErr) {
-    console.warn('Warning: Could not create pre-restore backup snapshot:', snapErr.message);
+    throw new Error(`Restore was not started: the safety copy of the current data could not be made (${snapErr.message}). Nothing was changed.`);
   }
 
   const db = mongoose.connection.db;
-  const collectionNames = Object.keys(parsedData.collections);
+  const collectionNames = Object.keys(parsedData.collections).filter((colName) => {
+    if (colName.startsWith('system.')) return false;
+    // The finance activity log is append-only: a restore never rewinds or erases it.
+    if (colName === 'portalfinancelogs') return false;
+    return Array.isArray(parsedData.collections[colName]);
+  });
 
   let restoredCollections = 0;
   let restoredDocuments = 0;
   const collectionDetails = {};
 
-  for (const colName of collectionNames) {
-    if (colName.startsWith('system.')) continue;
-
-    const rawDocs = parsedData.collections[colName];
-    if (!Array.isArray(rawDocs)) continue;
-
-    const col = db.collection(colName);
-
-    // Delete existing documents in this collection
-    await col.deleteMany({});
-
-    if (rawDocs.length > 0) {
-      // Use ordered: false so if one doc has minor constraint issues, others still insert
-      const res = await col.insertMany(rawDocs, { ordered: false });
-      const count = res.insertedCount || rawDocs.length;
-      restoredDocuments += count;
-      collectionDetails[colName] = count;
-    } else {
-      collectionDetails[colName] = 0;
+  // 2. All or nothing. Before a collection is replaced, its current records are kept in memory.
+  //    If anything fails part-way, every collection already replaced is put back exactly as it
+  //    was, so the database is never left half old / half new.
+  const undo = []; // [{ colName, previous }]
+  const putBack = async () => {
+    for (const { colName, previous } of undo.reverse()) {
+      try {
+        const col = db.collection(colName);
+        await col.deleteMany({});
+        if (previous.length > 0) await col.insertMany(previous, { ordered: false });
+      } catch (undoErr) {
+        console.error(`❌ Restore roll-back failed for "${colName}":`, undoErr.message, '— use the "prerestore" backup file to recover it.');
+      }
     }
+  };
 
-    restoredCollections += 1;
+  try {
+    for (const colName of collectionNames) {
+      const rawDocs = parsedData.collections[colName];
+      const col = db.collection(colName);
+
+      const previous = await col.find({}).toArray();
+      undo.push({ colName, previous });
+
+      // Replace the records of this collection
+      await col.deleteMany({});
+
+      if (rawDocs.length > 0) {
+        const res = await col.insertMany(rawDocs, { ordered: true });
+        const count = res.insertedCount ?? rawDocs.length;
+        if (count !== rawDocs.length) throw new Error(`"${colName}": only ${count} of ${rawDocs.length} records could be written`);
+        restoredDocuments += count;
+        collectionDetails[colName] = count;
+      } else {
+        collectionDetails[colName] = 0;
+      }
+
+      restoredCollections += 1;
+    }
+  } catch (restoreErr) {
+    await putBack();
+    throw new Error(`Restore failed and was rolled back: the data is as it was before (${restoreErr.message}).`);
   }
 
   return {

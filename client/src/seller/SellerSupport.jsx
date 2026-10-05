@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { sapi, fmtDate, compressImage } from '../api.js';
+import { sapi, fmtDate, compressImage, dropClearedMessages } from '../api.js';
 import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
 import ChatAttachment from '../components/ChatAttachment.jsx';
@@ -172,16 +172,25 @@ export default function SellerSupport() {
       );
     };
 
+
+    // Admin cleared this chat (or part of it): remove those messages here too
+    const onChatCleared = (payload) => {
+      if (!payload) return;
+      setMessages((prev) => dropClearedMessages(prev, payload));
+    };
+
     if (socket) {
       socket.on('message:new', onNewMessage);
       socket.on('message:edit', onMessageEdit);
       socket.on('message:delete', onMessageDelete);
+      socket.on('chat:cleared', onChatCleared);
     }
     return () => {
       if (socket) {
         socket.off('message:new', onNewMessage);
         socket.off('message:edit', onMessageEdit);
         socket.off('message:delete', onMessageDelete);
+        socket.off('chat:cleared', onChatCleared);
       }
     };
   }, [seller]);

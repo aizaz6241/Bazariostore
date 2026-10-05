@@ -3,6 +3,7 @@ import { getAuthSession, hashPassword } from '@/lib/auth';
 import Member from '@/lib/models/Member';
 import SellerAssignment from '@/lib/models/SellerAssignment';
 import mongoose from 'mongoose';
+import { logFinance, flushFinanceAlertsSoon } from '@/lib/utils/financeLog';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,8 +24,22 @@ export async function PATCH(req, { params }) {
       return NextResponse.json({ message: 'Member not found' }, { status: 404 });
     }
 
+    const isSelf = session._id.toString() === member._id.toString();
+    const changes = [];
+    const beforeState = { active: member.active !== false, commissionLabel: member.commissionLabel || 'pkr_1to1', name: member.name };
+
+    // A partner's login belongs to that partner only: nobody else can change the password or
+    // switch the account off from here (otherwise one partner could log in as the other).
+    if (member.role === 'admin' && !isSelf && (password || active !== undefined)) {
+      return NextResponse.json(
+        { message: 'A partner’s password and status can only be changed by that partner (or from Staff in the store admin panel).' },
+        { status: 403 }
+      );
+    }
+
     // 1. Password update
     if (password) {
+      changes.push('password changed');
       if (password.length < 6) {
         return NextResponse.json({ message: 'Password must be at least 6 characters long' }, { status: 400 });
       }
@@ -65,11 +80,13 @@ export async function PATCH(req, { params }) {
 
     // 4. Status toggle
     if (active !== undefined) {
+      if (Boolean(active) !== beforeState.active) changes.push(Boolean(active) ? 'account switched on' : 'account switched off');
       member.active = Boolean(active);
     }
 
     // 5. Commission Agreement Label (Deal between Admin and Member: 'pkr_1to1' or 'inr_50')
     if (commissionLabel && ['inr_50', 'pkr_1to1'].includes(commissionLabel)) {
+      if (commissionLabel !== beforeState.commissionLabel) changes.push(`deal changed to ${commissionLabel === 'inr_50' ? '50% member' : '1:1 PKR member'}`);
       member.commissionLabel = commissionLabel;
       // Sync active assignments for this member
       await SellerAssignment.updateMany(
@@ -79,6 +96,19 @@ export async function PATCH(req, { params }) {
     }
 
     await member.save();
+
+    if (changes.length > 0) {
+      await logFinance({
+        session,
+        action: 'member.updated',
+        summary: `${member.role === 'admin' ? 'Partner' : 'Member'} “${member.name}”: ${changes.join(', ')}`,
+        entity: 'member',
+        entityId: member._id,
+        before: { active: beforeState.active, deal: beforeState.commissionLabel },
+        after: { active: member.active !== false, deal: member.commissionLabel || 'pkr_1to1' },
+      });
+      await flushFinanceAlertsSoon();
+    }
 
     const safeMember = member.toObject();
     delete safeMember.passwordHash;
@@ -120,11 +150,30 @@ export async function DELETE(req, { params }) {
       }, { status: 400 });
     }
 
+    const hadSellers = await SellerAssignment.countDocuments({ memberId: member._id, status: 'active' });
+
     // Release any client store assignments so they can be reassigned
     await SellerAssignment.deleteMany({ memberId: member._id });
 
     // Delete the member record
     await Member.findByIdAndDelete(member._id);
+
+    await logFinance({
+      session,
+      action: 'member.deleted',
+      summary: `Deleted ${member.role === 'admin' ? 'admin' : 'member'} “${member.name}” (${hadSellers} assigned ${hadSellers === 1 ? 'seller' : 'sellers'} became unassigned)`,
+      entity: 'member',
+      entityId: member._id,
+      before: {
+        name: member.name,
+        username: member.username,
+        role: member.role,
+        deal: member.commissionLabel || 'pkr_1to1',
+        walletUSDT: member.wallet?.balanceUSDT || 0,
+        activeSellers: hadSellers,
+      },
+    });
+    await flushFinanceAlertsSoon();
 
     return NextResponse.json({
       message: `Member "${member.name}" deleted successfully. Any assigned stores have been unassigned.`,

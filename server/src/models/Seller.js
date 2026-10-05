@@ -6,7 +6,13 @@ const sellerSchema = new mongoose.Schema(
     ownerName: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     passwordHash: { type: String, required: true },
+    // Look-up copy of the password for admins (see utils/sellerPassword.js). `passwordEnc` is the
+    // encrypted copy; `plainPassword` is only used while no SELLER_PASSWORD_KEY is set.
+    // Neither is ever sent to a browser: the transform at the bottom of this file removes them.
     plainPassword: { type: String, default: '' },
+    passwordEnc: { type: String, default: '' },
+    // When the password was last changed: logins made before this moment stop working.
+    pwdAt: { type: Date, default: null },
     phone: { type: String, default: '' },
     storeSlug: { type: String, unique: true, index: true },
     logo: { type: String, default: '' },
@@ -124,6 +130,8 @@ const sellerSchema = new mongoose.Schema(
       securityDeposit: { type: Number, default: 0 },   // security deposit amount recorded
       totalHelpingAmount: { type: Number, default: 0 },// cumulative helping amount provided by admin (hidden from seller)
     },
+    // Names of the latest once-only wallet steps (see utils/wallet.js). Internal; never sent out.
+    walletOps: { type: [String], default: undefined, select: false },
     // KYC Verification / Identity & Financial Documents uploaded during self-registration
     kycDocuments: {
       aadhaarFront: { type: String, default: '' },
@@ -214,5 +222,16 @@ const sellerSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Secrets never leave the server: whatever route sends a seller to the browser (res.json, a
+// socket message, a copy made with .toObject()), these fields are removed first.
+const SECRET_FIELDS = ['passwordHash', 'plainPassword', 'passwordEnc', 'resetToken', 'resetExpires', 'resetOtp', 'emailOtp', 'walletOps'];
+export function stripSellerSecrets(obj) {
+  if (obj && typeof obj === 'object') for (const f of SECRET_FIELDS) delete obj[f];
+  return obj;
+}
+const hideSecrets = { transform: (doc, ret) => stripSellerSecrets(ret) };
+sellerSchema.set('toJSON', hideSecrets);
+sellerSchema.set('toObject', hideSecrets);
 
 export default mongoose.model('Seller', sellerSchema);

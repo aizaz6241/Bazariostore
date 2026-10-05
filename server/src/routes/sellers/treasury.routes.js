@@ -277,27 +277,12 @@ router.post('/treasury/:id/add', authSeller, async (req, res) => {
   }
 });
 
-// POST or DELETE /api/sellers/treasury/:id/remove - Remove Treasury Product from seller's store
+// POST or DELETE /api/sellers/treasury/:id/remove - Remove Treasury Product from seller's store (Blocked)
 router.all('/treasury/:id/remove', authSeller, async (req, res) => {
-  try {
-    const deleted = await Product.findOneAndDelete({
-      seller: req.seller.id,
-      treasuryProduct: req.params.id,
-    });
-
-    if (!deleted) {
-      // Also try deleting by the product ID directly
-      const byId = await Product.findOneAndDelete({
-        _id: req.params.id,
-        seller: req.seller.id,
-      });
-      if (!byId) return res.status(404).json({ message: 'Product not found in your store' });
-    }
-
-    res.json({ ok: true, message: 'Product successfully removed from your store catalog' });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
+  return res.status(403).json({
+    ok: false,
+    message: 'Products added from Product Treasury cannot be removed from your store.',
+  });
 });
 
 export default router;

@@ -1,3 +1,4 @@
+import './_script-guard.js';
 /**
  * Bazario — Super Admin Setup Script
  * Run: node src/seed-admin.js
@@ -39,12 +40,17 @@ const Admin = mongoose.models.Admin || mongoose.model('Admin', adminSchema);
 const SUPER_ADMIN = {
   name: 'Super Admin',
   email: 'admin@bazario.com',
-  password: process.env.ADMIN_PASSWORD || 'Admin@Bazario2026!',
+  // No built-in password: it must be given on purpose (ADMIN_PASSWORD, at least 10 characters).
+  password: process.env.ADMIN_PASSWORD || '',
   role: 'super_admin',
   title: 'Platform Owner',
 };
 
 async function seedAdmin() {
+  if (!SUPER_ADMIN.password || SUPER_ADMIN.password.length < 10 || /^(admin123|password|12345678)/i.test(SUPER_ADMIN.password)) {
+    console.error('⛔ Set ADMIN_PASSWORD to a strong password (at least 10 characters) before running this script. Nothing was changed.');
+    process.exit(1);
+  }
   try {
     console.log('🔌 Connecting to MongoDB Atlas...');
     await mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 15000 });
@@ -78,7 +84,7 @@ async function seedAdmin() {
     console.log('  🎉 BAZARIO SUPER ADMIN READY');
     console.log('══════════════════════════════════════');
     console.log(`  Email   : ${SUPER_ADMIN.email}`);
-    console.log(`  Password: ${SUPER_ADMIN.password}`);
+    console.log('  Password: the one you set in ADMIN_PASSWORD');
     console.log(`  Login at: http://localhost:5000/admin/login`);
     console.log('══════════════════════════════════════\n');
 

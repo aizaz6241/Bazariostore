@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef } from 'react';
-import { api, fmtDay, compressImage } from '../api.js';
+import { api, fmtDay, compressImage, dropClearedMessages } from '../api.js';
 import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
 import ChatMessageBubble from '../components/ChatMessageBubble.jsx';
 import AiRewriteBox from '../components/AiRewriteBox.jsx';
+import ClearChatModal from './ClearChatModal.jsx';
 import VoiceRecordButton from '../components/VoiceRecordButton.jsx';
 
 const ROLE_LABELS = {
@@ -44,6 +45,9 @@ export default function ChatInbox() {
   // Message Edit Modal State
   const [editModal, setEditModal] = useState(null); // { messageId, text }
   const [savingEdit, setSavingEdit] = useState(false);
+
+  // Clear chat dialog: 'seller' (the open seller / guest chat) | 'team' (the open team chat) | null
+  const [clearChat, setClearChat] = useState(null);
 
   // Messages & Form State
   const [messages, setMessages] = useState([]);
@@ -384,9 +388,24 @@ export default function ChatInbox() {
       }
     };
 
+    // A chat was cleared (by this admin or another one): drop those messages from the open thread
+    const onChatCleared = (payload) => {
+      if (!payload) return;
+      if (payload.internal) {
+        if (activeTab === 'team' && selectedTeamId) loadTeamMessages(selectedTeamId, false);
+        loadTeamMembers();
+        return;
+      }
+      if (activeTab === 'sellers' && String(payload.conversationId) === String(selectedSellerId)) {
+        setMessages((prev) => dropClearedMessages(prev, payload));
+      }
+      loadSellerConvos();
+    };
+
     if (socket) {
       socket.on('message:new', onNewSellerMsg);
       socket.on('admin:message:new', onNewTeamMsg);
+      socket.on('chat:cleared', onChatCleared);
       socket.on('message:edit', onMessageEdit);
       socket.on('message:delete', onMessageDelete);
       socket.on('messages:seen', onMessagesSeen);
@@ -394,6 +413,7 @@ export default function ChatInbox() {
     }
     return () => {
       if (socket) {
+        socket.off('chat:cleared', onChatCleared);
         socket.off('message:new', onNewSellerMsg);
         socket.off('admin:message:new', onNewTeamMsg);
         socket.off('message:edit', onMessageEdit);
@@ -943,7 +963,25 @@ export default function ChatInbox() {
                 </div>
               </div>
 
-              <div className="ath-actions">
+              <div className="ath-actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setClearChat('seller')}
+                  title="Delete messages and their pictures / files for good"
+                  style={{
+                    padding: '7px 12px',
+                    borderRadius: 8,
+                    border: '1px solid #fecaca',
+                    background: '#fff',
+                    color: '#b91c1c',
+                    fontWeight: 700,
+                    fontSize: 12.5,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  🧹 Clear chat
+                </button>
                 <button
                   type="button"
                   className={`btn-status-toggle ${selectedSellerConv.status === 'resolved' ? 'status-resolved' : 'status-open'}`}
@@ -1048,6 +1086,26 @@ export default function ChatInbox() {
                     <span style={{ color: '#16a34a', fontWeight: 600 }}>● Internal Team Channel</span>
                   </div>
                 </div>
+              </div>
+              <div className="ath-actions">
+                <button
+                  type="button"
+                  onClick={() => setClearChat('team')}
+                  title="Delete messages and their pictures / files for good"
+                  style={{
+                    padding: '7px 12px',
+                    borderRadius: 8,
+                    border: '1px solid #fecaca',
+                    background: '#fff',
+                    color: '#b91c1c',
+                    fontWeight: 700,
+                    fontSize: 12.5,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  🧹 Clear chat
+                </button>
               </div>
             </div>
 
@@ -1324,6 +1382,30 @@ export default function ChatInbox() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* CLEAR CHAT (whole chat or by date; pictures / files are removed from storage too) */}
+      {clearChat === 'seller' && selectedSellerConv && (
+        <ClearChatModal
+          chatName={`Chat with ${selectedSellerConv.storeName || selectedSellerConv.seller?.storeName || selectedSellerConv.name || 'Guest'}`}
+          endpoint={`/chat/admin/conversations/${selectedSellerId}/clear`}
+          onClose={() => setClearChat(null)}
+          onCleared={() => {
+            loadSellerMessages(selectedSellerId, false);
+            loadSellerConvos();
+          }}
+        />
+      )}
+      {clearChat === 'team' && currentTeamMember && (
+        <ClearChatModal
+          chatName={`Team chat with ${currentTeamMember.name}`}
+          endpoint={`/chat/admin/team/${selectedTeamId}/clear`}
+          onClose={() => setClearChat(null)}
+          onCleared={() => {
+            loadTeamMessages(selectedTeamId, false);
+            loadTeamMembers();
+          }}
+        />
       )}
 
       {/* MESSAGE EDIT MODAL */}

@@ -8,11 +8,40 @@ import { slugify } from './helpers.js';
 import { notify } from '../../utils/notify.js';
 import { comparePassword, cleanEmail } from '../../utils/password.js';
 import { sendVerificationOtpEmail, sendPasswordResetEmail, sendWelcomeEmail } from '../../services/email.service.js';
+import { rememberPassword } from '../../utils/sellerPassword.js';
+import { jwtSecret } from '../../utils/secrets.js';
+import { limit, failureLimiter } from '../../utils/rateLimit.js';
+import { asText } from '../../middleware/sanitize.js';
+import { forgetAuthCache } from '../../middleware/auth.js';
+
+// Wrong passwords: 8 tries per account from one address in 15 minutes, then a 15 minute wait
+const loginGuard = failureLimiter({ name: 'seller-login', max: 8, windowMs: 15 * 60 * 1000 });
+// Wrong recovery codes: 5 tries, then the code is thrown away
+const MAX_OTP_TRIES = 5;
+const RESET_VALID_MS = 20 * 60 * 1000;
+const registerLimit = limit({ name: 'seller-register', max: 6, windowMs: 60 * 60 * 1000, message: 'Too many registrations from this network. Please try again later.' });
+const recoveryLimit = limit({ name: 'seller-recovery', max: 6, windowMs: 15 * 60 * 1000 });
+
+function sellerToken(seller) {
+  return jwt.sign(
+    {
+      id: seller._id,
+      t: 'seller',
+      storeName: seller.storeName,
+      email: seller.email,
+      storeSlug: seller.storeSlug,
+    },
+    jwtSecret(),
+    // Long on purpose (nobody is logged out every few days). Safe because every request checks
+    // the account again: a suspended seller or a changed password ends the login at once.
+    { expiresIn: '365d' }
+  );
+}
 
 const router = express.Router();
 
 function generateOtp() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return crypto.randomInt(100000, 1000000).toString();
 }
 
 // In-memory / temporary registration OTP store
@@ -36,7 +65,7 @@ router.post('/verify-otp', async (req, res) => {
 });
 
 // POST /api/sellers/register (Seller self-registers with KYC document)
-router.post('/register', async (req, res) => {
+router.post('/register', registerLimit, async (req, res) => {
   try {
     const {
       storeName,
@@ -62,6 +91,9 @@ router.post('/register', async (req, res) => {
 
     if (!storeName || !ownerName || !email || !password) {
       return res.status(400).json({ message: 'Store name, owner name, email, and password are required' });
+    }
+    if ([storeName, ownerName, email, password].some((v) => typeof v !== 'string')) {
+      return res.status(400).json({ message: 'Store name, owner name, email, and password must be text' });
     }
     if (password.length < 6) {
       return res.status(400).json({ message: 'Password must be at least 6 characters long' });
@@ -101,8 +133,7 @@ router.post('/register', async (req, res) => {
       ownerName: ownerName.trim(),
       email: cleanEmail,
       passwordHash,
-      plainPassword: password,
-      phone: (phone || '').trim(),
+      phone: asText(phone, 40).trim(),
       storeSlug,
       commissionRate: 10,
       isEmailVerified,
@@ -129,6 +160,7 @@ router.post('/register', async (req, res) => {
       },
     });
 
+    rememberPassword(seller, password);
     await seller.save();
 
     // Send confirmation/welcome email
@@ -168,9 +200,12 @@ router.post('/register', async (req, res) => {
 // POST /api/sellers/login
 router.post('/login', async (req, res) => {
   try {
-    const email = cleanEmail(req.body?.email);
-    const password = String(req.body?.password || '');
+    const email = cleanEmail(asText(req.body?.email, 200));
+    const password = asText(req.body?.password, 200);
     if (!email || !password) return res.status(400).json({ message: 'Email and password are required' });
+
+    const blocked = loginGuard.check(req, email);
+    if (blocked.blocked) return res.status(429).json({ message: blocked.message });
 
     const searchEmails = [email];
     if (email.includes('kavya') && email.includes('patel')) {
@@ -183,7 +218,19 @@ router.post('/login', async (req, res) => {
         { email: { $regex: new RegExp(`^${e.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
       ]),
     }).select('-kycDocuments'); // perf: KYC base64 images are never needed by the seller portal
-    if (!seller) return res.status(401).json({ message: 'Invalid email or password' });
+    if (!seller) {
+      loginGuard.fail(req, email);
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
+
+    // The password is checked FIRST. Only someone who knows it is told whether the account is
+    // suspended or still waiting for approval.
+    const match = await comparePassword(password, seller.passwordHash);
+    if (!match) {
+      loginGuard.fail(req, email);
+      return res.status(401).json({ message: 'Invalid email or password' });
+    }
+    loginGuard.ok(req, email);
 
     if (seller.status === 'suspended') {
       return res.status(403).json({ message: 'Your seller account has been suspended. Please contact platform admin.' });
@@ -196,26 +243,11 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    const match = await comparePassword(password, seller.passwordHash);
-    if (!match) return res.status(401).json({ message: 'Invalid email or password' });
-
     seller.lastLoginAt = new Date();
-    if (seller.plainPassword !== password) {
-      seller.plainPassword = password;
-    }
+    rememberPassword(seller, password);
     await seller.save();
 
-    const token = jwt.sign(
-      {
-        id: seller._id,
-        t: 'seller',
-        storeName: seller.storeName,
-        email: seller.email,
-        storeSlug: seller.storeSlug,
-      },
-      process.env.JWT_SECRET || 'bazario_super_secure_jwt_secret_2026_xyz',
-      { expiresIn: '365d' }
-    );
+    const token = sellerToken(seller);
 
     const safeSeller = seller.toObject();
     delete safeSeller.passwordHash;
@@ -286,7 +318,8 @@ router.put('/me', authSeller, async (req, res) => {
 // POST /api/sellers/me/change-password (Seller updates their own password)
 router.post('/me/change-password', authSeller, async (req, res) => {
   try {
-    const { currentPassword, newPassword } = req.body;
+    const currentPassword = asText(req.body?.currentPassword, 200);
+    const newPassword = asText(req.body?.newPassword, 200);
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ message: 'Current password and new password are required' });
     }
@@ -303,32 +336,36 @@ router.post('/me/change-password', authSeller, async (req, res) => {
     }
 
     seller.passwordHash = await bcrypt.hash(newPassword, 10);
-    seller.plainPassword = newPassword;
+    rememberPassword(seller, newPassword);
+    seller.pwdAt = new Date(); // every older login of this account stops working
     await seller.save();
+    forgetAuthCache('seller', seller._id);
 
-    res.json({ ok: true, message: 'Password updated successfully! ✅' });
+    // a fresh login for this browser, so the seller stays signed in here
+    res.json({ ok: true, message: 'Password updated successfully! ✅', token: sellerToken(seller) });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
 // POST /api/sellers/forgot-password (Send seller password recovery email & OTP)
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', recoveryLimit, async (req, res) => {
   try {
-    const email = (req.body?.email || '').toLowerCase().trim();
+    const email = cleanEmail(asText(req.body?.email, 200));
     if (!email) return res.status(400).json({ message: 'Please provide your registered business email' });
 
+    // Same answer whether or not the email is registered, so nobody can test which emails exist
+    const sameAnswer = {
+      ok: true,
+      message: 'If a merchant account with this email exists, password recovery instructions have been sent.',
+    };
+
     const seller = await Seller.findOne({ email });
-    if (!seller) {
-      return res.json({
-        ok: true,
-        message: 'If a merchant account with this email exists, password recovery instructions have been sent.',
-      });
-    }
+    if (!seller) return res.json(sameAnswer);
 
     const token = crypto.randomBytes(24).toString('hex');
     const otp = generateOtp();
-    const expires = new Date(Date.now() + 60 * 60 * 1000); // 60 mins
+    const expires = new Date(Date.now() + RESET_VALID_MS); // 20 minutes
 
     seller.resetToken = token;
     seller.resetExpires = expires;
@@ -346,46 +383,60 @@ router.post('/forgot-password', async (req, res) => {
       role: 'seller',
     });
 
-    res.json({
-      ok: true,
-      message: `Password reset instructions and 6-digit recovery code sent to ${email}.`,
-    });
+    res.json(sameAnswer);
   } catch (err) {
     console.error('[seller-forgot-password-error]', err);
-    res.status(500).json({ message: 'Failed to process password recovery. ' + err.message });
+    res.status(500).json({ message: 'Failed to process password recovery. Please try again.' });
   }
 });
 
 // POST /api/sellers/reset-password (Reset seller password using token OR OTP)
-router.post('/reset-password', async (req, res) => {
+router.post('/reset-password', recoveryLimit, async (req, res) => {
   try {
-    const { token, otp, email, password } = req.body || {};
-    if ((password || '').length < 6) {
+    // Plain text only. An object here (for example {"$ne": null}) used to match ANY account that
+    // had a reset in progress.
+    const token = asText(req.body?.token, 200).trim();
+    const otp = asText(req.body?.otp, 12).trim();
+    const email = cleanEmail(asText(req.body?.email, 200));
+    const password = asText(req.body?.password, 200);
+    if (password.length < 6) {
       return res.status(400).json({ message: 'Password must be at least 6 characters long' });
     }
 
+    const invalid = () => res.status(400).json({ message: 'Password reset link or verification code is invalid or has expired.' });
+    const now = new Date();
+
     let seller = null;
-    if (token) {
-      seller = await Seller.findOne({ resetToken: token, resetExpires: { $gt: new Date() } });
-    } else if (otp && email) {
-      const clean = email.toLowerCase().trim();
-      seller = await Seller.findOne({
-        email: clean,
-        'resetOtp.code': String(otp).trim(),
-        'resetOtp.expiresAt': { $gt: new Date() },
-      });
+    if (token.length >= 32) {
+      seller = await Seller.findOne({ resetToken: token, resetExpires: { $gt: now } });
+    } else if (/^\d{6}$/.test(otp) && email) {
+      const candidate = await Seller.findOne({ email });
+      const saved = candidate?.resetOtp;
+      if (!candidate || !saved?.code || !saved.expiresAt || new Date(saved.expiresAt) <= now) return invalid();
+      if ((saved.attempts || 0) >= MAX_OTP_TRIES) {
+        // too many wrong guesses: the code is dead, a new one has to be requested
+        await Seller.updateOne({ _id: candidate._id }, { $unset: { resetOtp: 1, resetToken: 1, resetExpires: 1 } });
+        return res.status(400).json({ message: 'Too many wrong codes. Please request a new recovery code.' });
+      }
+      const a = Buffer.from(String(saved.code));
+      const b = Buffer.from(otp);
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        await Seller.updateOne({ _id: candidate._id }, { $inc: { 'resetOtp.attempts': 1 } });
+        return invalid();
+      }
+      seller = candidate;
     }
 
-    if (!seller) {
-      return res.status(400).json({ message: 'Password reset link or verification code is invalid or has expired.' });
-    }
+    if (!seller) return invalid();
 
     seller.passwordHash = await bcrypt.hash(password, 10);
-    seller.plainPassword = password;
+    rememberPassword(seller, password);
+    seller.pwdAt = new Date(); // every older login of this account stops working
     seller.resetToken = undefined;
     seller.resetExpires = undefined;
     seller.resetOtp = undefined;
     await seller.save();
+    forgetAuthCache('seller', seller._id);
 
     res.json({
       ok: true,

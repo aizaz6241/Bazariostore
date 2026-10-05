@@ -10,6 +10,9 @@ import { notify } from '../../utils/notify.js';
 import { audit } from '../../utils/audit.js';
 import { adjustTreasuryStock } from '../../utils/stockSync.js';
 import { scheduleNextOrderStep } from '../../services/orderProgressionService.js';
+import { Conversation, Message } from '../../models/Chat.js';
+import { walletApply, walletNow } from '../../utils/wallet.js';
+import { restockOrder, settleDeliveredStock } from '../../utils/orderStock.js';
 
 const router = express.Router();
 
@@ -47,6 +50,62 @@ async function getSellerFromReq(req) {
 // ----------------------------------------------------
 // FINANCIAL SETTLEMENT HELPERS (PROCESSING FUND & 20% PROFIT)
 // ----------------------------------------------------
+//
+// How these three functions stay correct when a request is repeated, clicked twice, runs at the
+// same time as another one, or the server stops in the middle:
+//
+//   1. The money moves in ONE database step that carries the step's name
+//      (lock:<order>:<seller>:<n>, deliver:<order>:<seller>, cancel:<order>:<seller>:<n>).
+//      The database refuses a step whose name it has already applied, so nothing can be locked,
+//      paid out or refunded twice (utils/wallet.js).
+//   2. Each item's flags (locked / settled) are then written straight to the order in the
+//      database, not left in memory for a later save that might never happen.
+//   3. The flags are read fresh from the database first, so a stale copy of the order cannot
+//      lead to a wrong decision.
+
+const money = (n) => Number((Number(n) || 0).toFixed(2));
+const itemValue = (it) => (Number(it.price) || 0) * (Number(it.qty) || 1);
+const ownedBy = (it, sellerId) => !!it.seller && String(it.seller._id || it.seller) === String(sellerId);
+
+/** Copy the money flags of every item from the database onto this (possibly older) order object. */
+async function refreshItemFlags(order) {
+  if (!order?._id) return;
+  const fresh = await Order.findById(order._id).select('items stockSettled stockRestored').lean();
+  if (!fresh) return;
+  const byId = new Map((fresh.items || []).map((i) => [String(i._id), i]));
+  order.items.forEach((it) => {
+    const f = byId.get(String(it._id));
+    if (!f) return;
+    it.processingLocked = f.processingLocked === true;
+    it.payoutSettled = f.payoutSettled === true;
+    it.lockedAmount = f.lockedAmount || 0;
+    it.profitAmount = f.profitAmount || 0;
+    it.lockGen = f.lockGen || 0;
+    if (f.settledAt) it.settledAt = f.settledAt;
+  });
+  if (fresh.stockSettled) order.stockSettled = true;
+  if (fresh.stockRestored) order.stockRestored = true;
+}
+
+/** Write item fields straight to the order in the database (and keep the object in step). */
+async function setItemFields(order, index, fields) {
+  const it = order.items[index];
+  const $set = {};
+  for (const [k, v] of Object.entries(fields)) {
+    $set[`items.${index}.${k}`] = v;
+    it[k] = v;
+  }
+  await Order.updateOne({ _id: order._id, [`items.${index}._id`]: it._id }, { $set });
+}
+
+const ledgerLine = async (doc) => {
+  try {
+    await Withdrawal.create(doc);
+  } catch (e) {
+    // the money has already moved correctly; a missing history line must not undo or repeat it
+    console.error(`[wallet-ledger] could not write "${doc.type}" for order ${doc.orderNumber}:`, e.message);
+  }
+};
 
 /**
  * 1. Lock Order Processing Fund:
@@ -54,147 +113,237 @@ async function getSellerFromReq(req) {
  * and moves it into seller.wallet.processingFund.
  */
 export async function lockSellerOrderFund(app, sellerId, order) {
-  const seller = await Seller.findById(sellerId).select('-kycDocuments');
-  if (!seller) return { totalToLock: 0, itemsLocked: 0 };
+  await refreshItemFlags(order);
 
-  seller.wallet = seller.wallet || {};
-  let totalToLock = 0;
-  let itemsLocked = 0;
-
-  order.items.forEach((it) => {
-    if (it.seller && it.seller.toString() === sellerId.toString()) {
-      if (!it.processingLocked && !it.payoutSettled) {
-        const itemVal = (it.price || 0) * (it.qty || 1);
-        totalToLock += itemVal;
-      }
-    }
+  const mine = [];
+  order.items.forEach((it, index) => {
+    if (ownedBy(it, sellerId) && !it.processingLocked && !it.payoutSettled) mine.push(index);
   });
+  if (mine.length === 0) return { totalToLock: 0, itemsLocked: 0 };
 
-  const availableBal = seller.wallet.balance || 0;
-  if (totalToLock > 0 && availableBal < totalToLock) {
+  const totalToLock = mine.reduce((sum, i) => sum + itemValue(order.items[i]), 0);
+  const gen = Math.max(0, ...mine.map((i) => Number(order.items[i].lockGen) || 0));
+  const opId = `lock:${order._id}:${sellerId}:${gen}`;
+
+  const moved = await walletApply(sellerId, { balance: -totalToLock, processingFund: totalToLock }, { requireBalance: totalToLock, opId });
+  if (!moved) {
+    const now = await walletNow(sellerId);
+    if (!now) return { totalToLock: 0, itemsLocked: 0 }; // seller no longer exists
+    const availableBal = Number(now.wallet.balance) || 0;
     const deficit = (totalToLock - availableBal).toFixed(2);
-    throw new Error(
-      `Insufficient wallet balance ($${availableBal.toFixed(2)}). To confirm and process this order ($${totalToLock.toFixed(2)}), you must deposit at least $${deficit} into your merchant wallet.`
+    // status 400: this is something the seller has to do, not a fault of the server
+    throw Object.assign(
+      new Error(
+        `Insufficient wallet balance ($${availableBal.toFixed(2)}). To confirm and process this order ($${totalToLock.toFixed(2)}), you must deposit at least $${deficit} into your merchant wallet.`
+      ),
+      { status: 400 }
     );
   }
 
-  totalToLock = 0;
-  order.items.forEach((it) => {
-    if (it.seller && it.seller.toString() === sellerId.toString()) {
-      if (!it.processingLocked && !it.payoutSettled) {
-        const itemVal = (it.price || 0) * (it.qty || 1);
-        it.processingLocked = true;
-        it.lockedAmount = itemVal;
-        it.profitRate = 20; // 20% profit margin
-        it.profitAmount = Number((itemVal * 0.20).toFixed(2));
-        totalToLock += itemVal;
-        itemsLocked++;
-      }
-    }
-  });
+  for (const index of mine) {
+    const itemVal = itemValue(order.items[index]);
+    await setItemFields(order, index, {
+      processingLocked: true,
+      lockedAmount: itemVal,
+      profitRate: 20, // 20% profit margin
+      profitAmount: money(itemVal * 0.2),
+      lockGen: gen + 1,
+    });
+  }
+
+  if (moved.already) return { totalToLock: 0, itemsLocked: mine.length }; // a repeat of a step already done
 
   if (totalToLock > 0) {
-    // Deduct from available balance & add to processing fund
-    seller.wallet.balance = (seller.wallet.balance || 0) - totalToLock;
-    seller.wallet.processingFund = (seller.wallet.processingFund || 0) + totalToLock;
-    seller.markModified('wallet');
-    await seller.save();
-
-    // Create ledger transaction
-    await Withdrawal.create({
+    await ledgerLine({
       type: 'order_processing_lock',
-      seller: seller._id,
-      storeName: seller.storeName,
+      seller: sellerId,
+      storeName: moved.storeName,
       amount: totalToLock,
       principalAmount: totalToLock,
-      profitAmount: Number((totalToLock * 0.20).toFixed(2)),
+      profitAmount: money(totalToLock * 0.2),
       profitRate: 20,
       order: order._id,
       orderNumber: order.orderNumber,
       status: 'completed',
-      balanceAfter: seller.wallet.balance,
-      processingFundAfter: seller.wallet.processingFund,
-      adminNote: `Order #${order.orderNumber} Confirmed — $${totalToLock.toFixed(2)} moved to Processing Fund (20% Profit on Delivery: +$${(totalToLock * 0.20).toFixed(2)})`,
+      balanceAfter: moved.wallet.balance,
+      processingFundAfter: moved.wallet.processingFund,
+      adminNote: `Order #${order.orderNumber} Confirmed — $${totalToLock.toFixed(2)} moved to Processing Fund (20% Profit on Delivery: +$${(totalToLock * 0.2).toFixed(2)})`,
       processedAt: new Date(),
     });
 
     if (app) {
       notify(app, {
         recipientType: 'seller',
-        sellerId: seller._id.toString(),
+        sellerId: String(sellerId),
         type: 'order',
         title: `⚡ Order #${order.orderNumber} Confirmed`,
-        body: `$${totalToLock.toFixed(2)} moved to Processing Fund. You will earn +$${(totalToLock * 0.20).toFixed(2)} (20% profit) upon delivery! Total return: $${(totalToLock * 1.20).toFixed(2)}.`,
+        body: `$${totalToLock.toFixed(2)} moved to Processing Fund. You will earn +$${(totalToLock * 0.2).toFixed(2)} (20% profit) upon delivery! Total return: $${(totalToLock * 1.2).toFixed(2)}.`,
         link: '/seller/orders',
       });
 
-      app.get('io')?.to(`seller:${seller._id}`).emit('wallet:update', {
-        balance: seller.wallet.balance,
-        processingFund: seller.wallet.processingFund,
+      app.get('io')?.to(`seller:${sellerId}`).emit('wallet:update', {
+        balance: moved.wallet.balance,
+        processingFund: moved.wallet.processingFund,
       });
     }
   }
 
-  return { totalToLock, itemsLocked };
+  return { totalToLock, itemsLocked: mine.length };
+}
+
+/** Sales-target milestones: one more delivered order; pays the bonus once when a target is reached. */
+async function advanceSellerTargets(app, sellerId) {
+  const seller = await Seller.findById(sellerId).select('targets storeName');
+  if (!seller || !Array.isArray(seller.targets) || seller.targets.length === 0) return;
+
+  let touched = false;
+  for (let i = 0; i < seller.targets.length; i += 1) {
+    const target = seller.targets[i];
+    if (target.status !== 'active') continue;
+
+    // count this delivery (in the database, so two deliveries at once are both counted)
+    const after = await Seller.findOneAndUpdate(
+      { _id: seller._id, [`targets.${i}._id`]: target._id, [`targets.${i}.status`]: 'active' },
+      { $inc: { [`targets.${i}.currentOrders`]: 1 } },
+      { new: true, projection: { targets: 1 } }
+    ).lean();
+    if (!after) continue;
+    touched = true;
+    const now = after.targets[i];
+    if ((now.currentOrders || 0) < (now.targetOrders || 0)) continue;
+
+    // reached: only the request that flips it to "completed" pays the bonus
+    const done = await Seller.updateOne(
+      { _id: seller._id, [`targets.${i}._id`]: target._id, [`targets.${i}.status`]: 'active' },
+      { $set: { [`targets.${i}.status`]: 'completed', [`targets.${i}.completedAt`]: new Date() } }
+    );
+    if (!done.modifiedCount) continue;
+
+    const bonusAmt = Number(target.bonusAmount) || 0;
+    if (bonusAmt <= 0) continue;
+    const paid = await walletApply(sellerId, { balance: bonusAmt, totalProfitEarned: bonusAmt, totalEarned: bonusAmt }, { opId: `target:${target._id}` });
+    if (!paid || paid.already) continue;
+
+    await ledgerLine({
+      type: 'adjustment',
+      seller: seller._id,
+      storeName: seller.storeName,
+      amount: bonusAmt,
+      approvedAmount: bonusAmt,
+      balanceAfter: paid.wallet.balance,
+      isManualAdjustment: true,
+      status: 'approved',
+      adminNote: `🎯 Target Completed Bonus: "${target.title}" (${target.targetOrders} orders delivered)`,
+      processedAt: new Date(),
+      processedBy: 'Platform Growth Rewards',
+    });
+
+    // Celebrate in Seller-Admin chat
+    try {
+      const conv = await Conversation.findOne({ seller: seller._id });
+      if (conv) {
+        const bonusMsg =
+          `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `🏆 SALES TARGET COMPLETED & BONUS CREDITED!\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+          `Target: ${target.title}\n` +
+          `Goal: ${target.targetOrders} Delivered Orders\n` +
+          `Bonus Credited: +$${bonusAmt.toLocaleString('en-US')} Cash\n` +
+          `New Wallet Balance: $${Number(paid.wallet.balance || 0).toLocaleString('en-US')}\n\n` +
+          `Great performance! Your reward has been credited directly to your balance.\n` +
+          `━━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+        const msg = await Message.create({
+          conversation: conv._id,
+          seller: seller._id,
+          sender: 'admin',
+          senderName: 'Platform Rewards Desk',
+          text: bonusMsg,
+        });
+
+        conv.lastMessage = `🏆 Bonus Credited: +$${bonusAmt}`;
+        conv.lastSender = 'admin';
+        conv.lastAt = new Date();
+        conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
+        await conv.save();
+
+        app?.get('io')?.to(`seller:${seller._id}`).emit('message:new', msg);
+      }
+    } catch (targetChatErr) {
+      console.error('Target bonus chat error:', targetChatErr.message);
+    }
+
+    if (app) {
+      notify(app, {
+        recipientType: 'seller',
+        sellerId: seller._id.toString(),
+        type: 'approval',
+        title: `🏆 Target Completed: +$${bonusAmt} Bonus!`,
+        body: `You completed "${target.title}"! $${bonusAmt} cash bonus has been credited to your wallet balance.`,
+        link: '/seller/wallet',
+      });
+    }
+  }
+
+  if (touched) {
+    const latest = await Seller.findById(sellerId).select('targets').lean();
+    app?.get('io')?.to(`seller:${sellerId}`).emit('seller:targets_update', { targets: latest?.targets || [] });
+  }
 }
 
 /**
  * 2. Release Delivered Order Fund (Principal + 20% Profit):
  * When order is delivered, releases locked processing fund + 20% profit directly into available balance!
+ *
+ * An item is paid out only for funds that were really locked. If an order reaches "delivered"
+ * without ever having been confirmed, the funds are locked first (the seller needs the balance
+ * for it, exactly as when confirming). Before, such an order paid the seller the item price plus
+ * 20% although nothing had ever been taken from the wallet.
  */
 export async function releaseSellerOrderDelivered(app, sellerId, order) {
-  const seller = await Seller.findById(sellerId).select('-kycDocuments');
-  if (!seller) return { totalPrincipal: 0, totalProfit: 0, totalPayout: 0, settledItems: 0 };
+  await refreshItemFlags(order);
+  const empty = { totalPrincipal: 0, totalProfit: 0, totalPayout: 0, settledItems: 0 };
 
-  seller.wallet = seller.wallet || {};
+  const neverLocked = order.items.some((it) => ownedBy(it, sellerId) && !it.processingLocked && !it.payoutSettled);
+  if (neverLocked) await lockSellerOrderFund(app, sellerId, order); // throws when the wallet cannot cover it
+
+  const mine = [];
+  order.items.forEach((it, index) => {
+    if (ownedBy(it, sellerId) && it.processingLocked && !it.payoutSettled) mine.push(index);
+  });
+  if (mine.length === 0) return empty;
+
   let totalPrincipal = 0;
   let totalProfit = 0;
-  let totalPayout = 0;
-  let settledItems = 0;
+  const parts = mine.map((index) => {
+    const it = order.items[index];
+    const itemVal = it.lockedAmount || itemValue(it);
+    const itemProfit = it.profitAmount || money(itemVal * 0.2);
+    totalPrincipal += itemVal;
+    totalProfit += itemProfit;
+    return { index, itemVal, itemProfit };
+  });
+  const totalPayout = totalPrincipal + totalProfit;
 
-  for (const it of order.items) {
-    if (it.seller && it.seller.toString() === sellerId.toString()) {
-      if (!it.payoutSettled) {
-        const itemVal = it.lockedAmount || (it.price || 0) * (it.qty || 1);
-        const itemProfit = it.profitAmount || Number((itemVal * 0.20).toFixed(2));
-        const itemReturn = itemVal + itemProfit;
+  const moved = await walletApply(
+    sellerId,
+    { processingFund: -totalPrincipal, balance: totalPayout, totalProfitEarned: totalProfit, totalEarned: totalPayout },
+    { opId: `deliver:${order._id}:${sellerId}` }
+  );
+  if (!moved) return empty; // seller no longer exists
 
-        it.payoutSettled = true;
-        it.settledAt = new Date();
-        it.lockedAmount = itemVal;
-        it.profitAmount = itemProfit;
-
-        totalPrincipal += itemVal;
-        totalProfit += itemProfit;
-        totalPayout += itemReturn;
-        settledItems++;
-
-        // Synchronize product sold and release reservedStock
-        if (it.product) {
-          await Product.updateOne(
-            { _id: it.product._id || it.product },
-            { $inc: { reservedStock: -(it.qty || 1), sold: (it.qty || 1) } }
-          ).catch(() => {});
-        }
-      }
-    }
+  const settledAt = new Date();
+  for (const part of parts) {
+    await setItemFields(order, part.index, { payoutSettled: true, settledAt, lockedAmount: part.itemVal, profitAmount: part.itemProfit });
   }
 
-  if (totalPayout > 0) {
-    // Release from processing fund
-    seller.wallet.processingFund = Math.max(0, (seller.wallet.processingFund || 0) - totalPrincipal);
-    // Credit full payout ($100 principal + $20 profit = $120) to available balance
-    seller.wallet.balance = (seller.wallet.balance || 0) + totalPayout;
-    seller.wallet.totalProfitEarned = (seller.wallet.totalProfitEarned || 0) + totalProfit;
-    seller.wallet.totalEarned = (seller.wallet.totalEarned || 0) + totalPayout;
-    seller.markModified('wallet');
-    await seller.save();
+  if (moved.already) return { ...empty, settledItems: parts.length }; // a repeat of a step already done
 
-    // Create ledger transaction
-    await Withdrawal.create({
+  if (totalPayout > 0) {
+    await ledgerLine({
       type: 'order_delivered_release',
-      seller: seller._id,
-      storeName: seller.storeName,
+      seller: sellerId,
+      storeName: moved.storeName,
       amount: totalPayout,
       principalAmount: totalPrincipal,
       profitAmount: totalProfit,
@@ -202,198 +351,98 @@ export async function releaseSellerOrderDelivered(app, sellerId, order) {
       order: order._id,
       orderNumber: order.orderNumber,
       status: 'completed',
-      balanceAfter: seller.wallet.balance,
-      processingFundAfter: seller.wallet.processingFund,
+      balanceAfter: moved.wallet.balance,
+      processingFundAfter: moved.wallet.processingFund,
       adminNote: `Order #${order.orderNumber} Delivered — $${totalPrincipal.toFixed(2)} Processing Fund released + $${totalProfit.toFixed(2)} Profit (20%) credited! Total: +$${totalPayout.toFixed(2)}`,
       processedAt: new Date(),
     });
 
     // Check & Advance Performance Target Milestones
-    if (Array.isArray(seller.targets) && seller.targets.length > 0) {
-      let targetUpdated = false;
-      for (const target of seller.targets) {
-        if (target.status === 'active') {
-          target.currentOrders = (target.currentOrders || 0) + 1;
-          targetUpdated = true;
-
-          if (target.currentOrders >= target.targetOrders) {
-            target.status = 'completed';
-            target.completedAt = new Date();
-            const bonusAmt = target.bonusAmount || 0;
-
-            if (bonusAmt > 0) {
-              seller.wallet.balance = (seller.wallet.balance || 0) + bonusAmt;
-              seller.wallet.totalProfitEarned = (seller.wallet.totalProfitEarned || 0) + bonusAmt;
-              seller.wallet.totalEarned = (seller.wallet.totalEarned || 0) + bonusAmt;
-
-              // Create transaction record
-              await Withdrawal.create({
-                type: 'adjustment',
-                seller: seller._id,
-                storeName: seller.storeName,
-                amount: bonusAmt,
-                approvedAmount: bonusAmt,
-                balanceAfter: seller.wallet.balance,
-                isManualAdjustment: true,
-                status: 'approved',
-                adminNote: `🎯 Target Completed Bonus: "${target.title}" (${target.targetOrders} orders delivered)`,
-                processedAt: new Date(),
-                processedBy: 'Platform Growth Rewards',
-              });
-
-              // Celebrate in Seller-Admin chat
-              try {
-                let conv = await Conversation.findOne({ seller: seller._id });
-                if (conv) {
-                  const bonusMsg =
-                    `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                    `🏆 SALES TARGET COMPLETED & BONUS CREDITED!\n` +
-                    `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-                    `Target: ${target.title}\n` +
-                    `Goal: ${target.targetOrders} Delivered Orders\n` +
-                    `Bonus Credited: +$${bonusAmt.toLocaleString('en-US')} Cash\n` +
-                    `New Wallet Balance: $${seller.wallet.balance.toLocaleString('en-US')}\n\n` +
-                    `Great performance! Your reward has been credited directly to your balance.\n` +
-                    `━━━━━━━━━━━━━━━━━━━━━━━━━`;
-
-                  const msg = await Message.create({
-                    conversation: conv._id,
-                    seller: seller._id,
-                    sender: 'admin',
-                    senderName: 'Platform Rewards Desk',
-                    text: bonusMsg,
-                  });
-
-                  conv.lastMessage = `🏆 Bonus Credited: +$${bonusAmt}`;
-                  conv.lastSender = 'admin';
-                  conv.lastAt = new Date();
-                  conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
-                  await conv.save();
-
-                  app?.get('io')?.to(`seller:${seller._id}`).emit('message:new', msg);
-                }
-              } catch (targetChatErr) {
-                console.error('Target bonus chat error:', targetChatErr.message);
-              }
-
-              notify(app, {
-                recipientType: 'seller',
-                sellerId: seller._id.toString(),
-                type: 'approval',
-                title: `🏆 Target Completed: +$${bonusAmt} Bonus!`,
-                body: `You completed "${target.title}"! $${bonusAmt} cash bonus has been credited to your wallet balance.`,
-                link: '/seller/wallet',
-              });
-            }
-          }
-        }
-      }
-
-      if (targetUpdated) {
-        seller.markModified('targets');
-        seller.markModified('wallet');
-        await seller.save();
-        app?.get('io')?.to(`seller:${seller._id}`).emit('seller:targets_update', { targets: seller.targets });
-      }
+    try {
+      await advanceSellerTargets(app, sellerId);
+    } catch (targetErr) {
+      console.error('Seller target update error:', targetErr.message);
     }
 
     if (app) {
+      const latest = (await walletNow(sellerId)) || moved;
       notify(app, {
         recipientType: 'seller',
-        sellerId: seller._id.toString(),
+        sellerId: String(sellerId),
         type: 'order',
         title: `🎉 Order #${order.orderNumber} Delivered & Settled!`,
         body: `+$${totalPayout.toFixed(2)} credited to your wallet! ($${totalPrincipal.toFixed(2)} processing release + $${totalProfit.toFixed(2)} 20% profit).`,
         link: '/seller/wallet',
       });
 
-      app.get('io')?.to(`seller:${seller._id}`).emit('wallet:update', {
-        balance: seller.wallet.balance,
-        processingFund: seller.wallet.processingFund,
-        totalProfitEarned: seller.wallet.totalProfitEarned,
+      app.get('io')?.to(`seller:${sellerId}`).emit('wallet:update', {
+        balance: latest.wallet.balance,
+        processingFund: latest.wallet.processingFund,
+        totalProfitEarned: latest.wallet.totalProfitEarned,
       });
     }
   }
 
-  return { totalPrincipal, totalProfit, totalPayout, settledItems };
+  return { totalPrincipal, totalProfit, totalPayout, settledItems: parts.length };
 }
 
 /**
  * 3. Release Cancelled Order Fund:
  * Returns locked processing fund back to available balance without profit/loss.
+ * (Putting the items back in stock is done once for the whole order by restockOrder,
+ * see utils/orderStock.js.)
  */
 export async function releaseSellerOrderCancelled(app, sellerId, order) {
-  const seller = await Seller.findById(sellerId).select('-kycDocuments');
-  if (!seller) return;
+  await refreshItemFlags(order);
 
-  seller.wallet = seller.wallet || {};
-  let totalToRefund = 0;
+  const mine = [];
+  order.items.forEach((it, index) => {
+    if (ownedBy(it, sellerId) && it.processingLocked && !it.payoutSettled) mine.push(index);
+  });
+  if (mine.length === 0) return;
 
-  for (const it of order.items) {
-    if (it.seller && it.seller.toString() === sellerId.toString()) {
-      if (it.processingLocked && !it.payoutSettled) {
-        totalToRefund += it.lockedAmount || (it.price || 0) * (it.qty || 1);
-        it.processingLocked = false;
-        it.lockedAmount = 0;
-        it.profitAmount = 0;
+  const totalToRefund = mine.reduce((sum, i) => sum + (order.items[i].lockedAmount || itemValue(order.items[i])), 0);
+  const gen = Math.max(0, ...mine.map((i) => Number(order.items[i].lockGen) || 0));
 
-        // Restore product stock and release reservedStock
-        if (it.product) {
-          const prodToRestore = await Product.findById(it.product._id || it.product);
-          if (prodToRestore) {
-            prodToRestore.stock = (prodToRestore.stock || 0) + (it.qty || 1);
-            prodToRestore.reservedStock = Math.max(0, (prodToRestore.reservedStock || 0) - (it.qty || 1));
-            await prodToRestore.save();
-            if (prodToRestore.treasuryProduct) {
-              await adjustTreasuryStock(prodToRestore.treasuryProduct, (it.qty || 1), {
-                releaseReserved: true,
-                reason: 'seller_order_cancelled',
-                note: `Order #${order.orderNumber} cancelled by seller`,
-              });
-            }
-          }
-        }
-      }
-    }
+  const moved = await walletApply(sellerId, { processingFund: -totalToRefund, balance: totalToRefund }, { opId: `cancel:${order._id}:${sellerId}:${gen}` });
+  if (!moved) return; // seller no longer exists
+
+  for (const index of mine) {
+    await setItemFields(order, index, { processingLocked: false, lockedAmount: 0, profitAmount: 0 });
   }
 
-  if (totalToRefund > 0) {
-    seller.wallet.processingFund = Math.max(0, (seller.wallet.processingFund || 0) - totalToRefund);
-    seller.wallet.balance = (seller.wallet.balance || 0) + totalToRefund;
-    seller.markModified('wallet');
-    await seller.save();
+  if (moved.already || totalToRefund <= 0) return; // a repeat of a step already done
 
-    await Withdrawal.create({
-      type: 'order_cancelled_refund',
-      seller: seller._id,
-      storeName: seller.storeName,
-      amount: totalToRefund,
-      principalAmount: totalToRefund,
-      profitAmount: 0,
-      order: order._id,
-      orderNumber: order.orderNumber,
-      status: 'completed',
-      balanceAfter: seller.wallet.balance,
-      processingFundAfter: seller.wallet.processingFund,
-      adminNote: `Order #${order.orderNumber} Cancelled — $${totalToRefund.toFixed(2)} Processing Fund returned to Available Balance`,
-      processedAt: new Date(),
+  await ledgerLine({
+    type: 'order_cancelled_release',
+    seller: sellerId,
+    storeName: moved.storeName,
+    amount: totalToRefund,
+    principalAmount: totalToRefund,
+    profitAmount: 0,
+    order: order._id,
+    orderNumber: order.orderNumber,
+    status: 'completed',
+    balanceAfter: moved.wallet.balance,
+    processingFundAfter: moved.wallet.processingFund,
+    adminNote: `Order #${order.orderNumber} Cancelled — $${totalToRefund.toFixed(2)} Processing Fund returned to Available Balance`,
+    processedAt: new Date(),
+  });
+
+  if (app) {
+    notify(app, {
+      recipientType: 'seller',
+      sellerId: String(sellerId),
+      type: 'order',
+      title: `↩️ Order #${order.orderNumber} Cancelled`,
+      body: `$${totalToRefund.toFixed(2)} processing fund returned to your available balance.`,
+      link: '/seller/wallet',
     });
 
-    if (app) {
-      notify(app, {
-        recipientType: 'seller',
-        sellerId: seller._id.toString(),
-        type: 'order',
-        title: `↩️ Order #${order.orderNumber} Cancelled`,
-        body: `$${totalToRefund.toFixed(2)} processing fund returned to your available balance.`,
-        link: '/seller/wallet',
-      });
-
-      app.get('io')?.to(`seller:${seller._id}`).emit('wallet:update', {
-        balance: seller.wallet.balance,
-        processingFund: seller.wallet.processingFund,
-      });
-    }
+    app.get('io')?.to(`seller:${sellerId}`).emit('wallet:update', {
+      balance: moved.wallet.balance,
+      processingFund: moved.wallet.processingFund,
+    });
   }
 }
 
@@ -536,6 +585,13 @@ router.post('/orders/:id/confirm', authSellerOrAdmin, async (req, res) => {
       });
     }
 
+    // Only an order that is still waiting can be confirmed. A cancelled, refunded, shipped or
+    // delivered order is never pulled back to "confirmed" (and its funds are never locked again).
+    const waiting = (it) => !it.itemStatus || it.itemStatus === 'pending';
+    if (['cancelled', 'refunded'].includes(order.status) || (myItems.length > 0 && !myItems.some(waiting))) {
+      return res.status(400).json({ message: `This order is already "${String(order.status).replace(/_/g, ' ')}" and cannot be confirmed again.` });
+    }
+
     let updatedAny = false;
     order.items.forEach((it) => {
       const itProdId = it.product?._id ? it.product._id.toString() : (it.product ? it.product.toString() : '');
@@ -544,7 +600,7 @@ router.post('/orders/:id/confirm', authSellerOrAdmin, async (req, res) => {
       // Strictly verify ownership: either it has this sellerId, or if unassigned, matches seller's catalog
       const isMyItem = itSellerId === sellerId || (!itSellerId && sellerProdIds.includes(itProdId));
 
-      if (isMyItem || req.admin) {
+      if ((isMyItem || req.admin) && waiting(it)) {
         if (!it.seller && isMyItem) {
           it.seller = seller._id;
           it.sellerName = seller.storeName || 'Verified Store';
@@ -602,7 +658,7 @@ router.post('/orders/:id/confirm', authSellerOrAdmin, async (req, res) => {
 
     res.json({ ok: true, order, lockedAmount: fundResult?.totalToLock || 0 });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(err.status || 500).json({ message: err.message });
   }
 });
 
@@ -628,6 +684,13 @@ export const handleStatusUpdate = async (req, res) => {
     const order = await Order.findById(req.params.id).populate('items.product');
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
+    // A seller can confirm an order that is still waiting, nothing else. Sending "confirmed" for
+    // an order that has already moved on (shipped, delivered, cancelled...) used to pull its
+    // status backwards.
+    if (isSeller && order.status !== 'pending' && !order.items.some((it) => !it.itemStatus || it.itemStatus === 'pending')) {
+      return res.status(400).json({ message: `This order is already "${String(order.status).replace(/_/g, ' ')}" and cannot be confirmed again.` });
+    }
+
     let sellerProducts = [];
     if (seller) {
       sellerProducts = await Product.find({
@@ -649,7 +712,9 @@ export const handleStatusUpdate = async (req, res) => {
       const isOwnedBySeller = itSellerId === sellerId || (!itSellerId && sellerProdIds.includes(itProdId)) || (!itSellerId && ordSellerId === sellerId);
       const isAdmin = Boolean(req.admin);
 
-      if (isOwnedBySeller || isAdmin) {
+      // for a seller, only items that are still waiting move to "confirmed"
+      const sellerMayChange = !isSeller || !it.itemStatus || it.itemStatus === 'pending';
+      if ((isOwnedBySeller || isAdmin) && sellerMayChange) {
         if (seller && isOwnedBySeller && !it.seller) {
           it.seller = seller._id;
           it.sellerName = seller.storeName;
@@ -679,6 +744,10 @@ export const handleStatusUpdate = async (req, res) => {
         await releaseSellerOrderCancelled(req.app, sId, order);
       }
     }
+
+    // Stock follows the order once, however many sellers or clicks are involved
+    if (status === 'delivered' && order.items.every((it) => it.itemStatus === 'delivered')) await settleDeliveredStock(order);
+    if (status === 'cancelled' && order.items.every((it) => it.itemStatus === 'cancelled')) await restockOrder(order, 'order_cancelled', storeName);
 
     // If all items share same status, update parent order status
     const allStatuses = order.items.map((it) => it.itemStatus || order.status);
@@ -737,7 +806,7 @@ export const handleStatusUpdate = async (req, res) => {
 
     res.json({ ok: true, order });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(err.status || 500).json({ message: err.message });
   }
 };
 

@@ -163,13 +163,35 @@ async function computeLedger() {
   const entries = [];
   const pending = [];
   const skipped = [];
+  // Money movements of TEST accounts: never counted, but listed so that nothing can be hidden
+  // by switching a seller to "test".
+  const excludedMap = new Map();
 
   for (const doc of docs) {
     const when = new Date(doc.processedAt || doc.createdAt);
     if (when < FINANCE_START) continue;
 
     const seller = sellerMap.get(sid(doc.seller));
-    if (!isRealSeller(seller)) continue; // test accounts and deleted sellers are fully out
+    if (!isRealSeller(seller)) {
+      // test accounts and deleted sellers are fully out
+      if (seller) {
+        const key = sid(doc.seller);
+        if (!excludedMap.has(key)) {
+          excludedMap.set(key, { sellerId: key, storeName: seller.storeName || doc.storeName || 'Store', deposits: 0, depositUSD: 0, withdrawals: 0, withdrawalUSD: 0, usdt: 0, lastDate: when });
+        }
+        const x = excludedMap.get(key);
+        if (doc.type === 'deposit') {
+          x.deposits += 1;
+          x.depositUSD += grossOf(doc);
+        } else {
+          x.withdrawals += 1;
+          x.withdrawalUSD += grossOf(doc);
+        }
+        x.usdt += num(doc.usdtAmount);
+        if (when > x.lastDate) x.lastDate = when;
+      }
+      continue;
+    }
 
     const kind = doc.type === 'deposit' ? 'deposit' : 'seller_withdrawal';
     const id = sid(doc._id);
@@ -211,6 +233,8 @@ async function computeLedger() {
       isManual: doc.isManualAdjustment === true,
       owner,
       ref: doc.depositRef || doc.transactionRef || '',
+      editedBy: doc.finEditedBy || '',
+      editedAt: doc.finEditedAt || null,
     };
 
     if (doc.finSkip === true) {
@@ -313,6 +337,8 @@ async function computeLedger() {
       isManual: false,
       owner: { id: sid(m._id), name: m.name, role: m.role, deal: m.commissionLabel || 'pkr_1to1' },
       ref: claim.rewardType || '',
+      editedBy: claim.finEditedBy || '',
+      editedAt: claim.finEditedAt || null,
     };
 
     if (claim.finSkip === true) {
@@ -548,6 +574,9 @@ async function computeLedger() {
     entries,
     pending,
     skipped,
+    excludedTest: [...excludedMap.values()]
+      .map((x) => ({ ...x, depositUSD: r2(x.depositUSD), withdrawalUSD: r2(x.withdrawalUSD), usdt: r6(x.usdt) }))
+      .sort((a, b) => new Date(b.lastDate) - new Date(a.lastDate)),
     payouts,
     sellerLiability: {
       totalUSD: r2(liabilityUSD),
@@ -601,6 +630,7 @@ async function computeLedger() {
     entries.map((e) => [e.id, e.kind, e.usdt, e.inr, e.pkrRate, e.owner ? e.owner.id : '', new Date(e.date).getTime(), e.storeName]),
     pending.map((e) => [e.id, e.reason, e.usdt, e.inr, e.owner ? e.owner.id : '']),
     skipped.map((e) => e.id),
+    data.excludedTest.map((x) => [x.sellerId, x.deposits, x.withdrawals, x.depositUSD, x.withdrawalUSD]),
     payouts.map((p) => [p.id, p.amountUSDT]),
     unassignedSellers.map((x) => x.id),
   ]);
@@ -650,7 +680,7 @@ export async function createManualEntry({ kind, sellerId, ownerId, inrAmount, us
   const split = computeSplit({ kind, usdt, inr, pkrRate: rate, owner, partners, previousStore });
   if (!split.ok) {
     const why = {
-      partners: 'Exactly 2 active admins are required',
+      partners: 'Exactly 2 finance partners are required',
       pkr_rate: 'For a 1:1 PKR member enter the INR amount and that day’s PKR rate',
       usdt: 'Enter the real USDT amount',
     };

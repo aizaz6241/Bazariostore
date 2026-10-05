@@ -97,40 +97,7 @@ export default function SellerTreasury() {
     }
   };
 
-  // 1-Click Remove from Store with synchronous lock
-  const handleRemoveFromStore = async (p, e) => {
-    if (e) e.stopPropagation();
-    if (inFlightRef.current.has(p._id)) return;
-    if (!window.confirm(`Remove "${p.name}" from your store catalog?`)) return;
 
-    inFlightRef.current.add(p._id);
-    setActionLoadingIds((prev) => new Set(prev).add(p._id));
-    try {
-      await sapi(`/sellers/treasury/${p._id}/remove`, { method: 'POST' });
-      setProducts((prev) =>
-        prev.map((item) =>
-          item._id === p._id
-            ? {
-                ...item,
-                isAddedToStore: false,
-                sellerProductId: null,
-                totalSellersCarrying: Math.max(0, (item.totalSellersCarrying || 1) - 1),
-              }
-            : item
-        )
-      );
-      showToast(`Removed "${p.name}" from your store.`);
-    } catch (err) {
-      alert('Could not remove product: ' + err.message);
-    } finally {
-      inFlightRef.current.delete(p._id);
-      setActionLoadingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(p._id);
-        return next;
-      });
-    }
-  };
 
   // Filter products by search and store status; preserve balanced mix without artificial segregation
   const filteredProducts = useMemo(() => {
@@ -436,23 +403,13 @@ export default function SellerTreasury() {
                         {isLoading ? 'Adding…' : 'Add to Store'}
                       </button>
                     ) : (
-                      <>
-                        <Link
-                          to="/seller/products"
-                          className="btn-hover-view-store"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          ✓ View in Store
-                        </Link>
-                        <button
-                          type="button"
-                          className="btn-hover-remove-store"
-                          onClick={(e) => handleRemoveFromStore(p, e)}
-                          disabled={isLoading}
-                        >
-                          {isLoading ? 'Removing…' : 'Remove from Store'}
-                        </button>
-                      </>
+                      <Link
+                        to="/seller/products"
+                        className="btn-hover-view-store"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        ✓ View in Store
+                      </Link>
                     )}
                   </div>
                 </div>
@@ -500,15 +457,6 @@ export default function SellerTreasury() {
                       >
                         ✓ In Store
                       </Link>
-                      <button
-                        type="button"
-                        className="treasury-btn-bottom-remove"
-                        onClick={(e) => handleRemoveFromStore(p, e)}
-                        disabled={isLoading}
-                        title="Remove product from your store"
-                      >
-                        {isLoading ? '…' : 'Remove'}
-                      </button>
                     </div>
                   )}
                 </div>

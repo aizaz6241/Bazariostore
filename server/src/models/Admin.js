@@ -13,6 +13,13 @@ const adminSchema = new mongoose.Schema(
     // empty array => fall back to role defaults (utils/permissions.js)
     permissions: { type: [String], default: [] },
     active: { type: Boolean, default: true },
+    // Finance partner: shares the Binance money (the ledger divides between the finance partners)
+    // and approves the other partner's sensitive actions on the team portal.
+    // Not set (older accounts) = partner when the role is super_admin / admin, as it always was.
+    // A staff account (support, orders, ...) is created with false: no share, no team portal.
+    financePartner: { type: Boolean },
+    // When the password was last changed: logins made before this moment stop working.
+    pwdAt: { type: Date, default: null },
     lastLoginAt: Date,
   },
   { timestamps: true }

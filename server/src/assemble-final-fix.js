@@ -1,3 +1,4 @@
+import './_script-guard.js';
 import dns from 'dns';
 try { dns.setServers(['8.8.8.8', '1.1.1.1']); } catch (_) {}
 import mongoose from 'mongoose';
@@ -7,7 +8,7 @@ import Category from './models/Category.js';
 import { checkUrl } from './image-curator.js';
 import fs from 'fs';
 
-const URI = 'mongodb+srv://aizazkhan6241_db_user:98av24298@cluster0.ijpphlb.mongodb.net/bazario?retryWrites=true&w=majority&appName=Cluster0';
+const URI = process.env.MONGO_URI;
 
 // ─── 1. COMPLETE MASTER MAP OF ACCURATE, DEDICATED, UNIQUE IMAGES ───
 // Every SKU has its own UNIQUE Unsplash image matching the exact product!

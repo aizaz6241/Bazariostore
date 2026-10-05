@@ -4,6 +4,7 @@ import RewardClaim from '@/lib/models/RewardClaim';
 import Member from '@/lib/models/Member';
 import ChatMessage from '@/lib/models/ChatMessage';
 import { sendPushToUser, sendPushToAllExcept } from '@/lib/utils/push';
+import { logFinance, flushFinanceAlertsSoon } from '@/lib/utils/financeLog';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,6 +41,16 @@ export async function POST(req) {
       approvedBy: session._id,
       approvedAt: new Date(),
     });
+
+    await logFinance({
+      session,
+      action: 'bonus.granted',
+      summary: `Gave a bonus of Rs ${numAmount.toLocaleString('en-US')} PKR to ${targetMember.name} (${cleanReason}). It is paid 50 / 50 by the partners once it is counted.`,
+      entity: 'bonus',
+      entityId: claim._id,
+      after: { member: targetMember.name, amountPKR: numAmount, reason: cleanReason },
+    });
+    await flushFinanceAlertsSoon();
 
     // 2. Credit Member Wallet in PKR
     targetMember.wallet = targetMember.wallet || {};

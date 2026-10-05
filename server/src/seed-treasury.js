@@ -1,3 +1,4 @@
+import './_script-guard.js';
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import TreasuryProduct from './models/TreasuryProduct.js';
@@ -242,11 +243,11 @@ if (process.argv[1]?.endsWith('seed-treasury.js')) {
     !mongoUri ||
     mongoUri.includes('<db_username>') ||
     mongoUri.includes('<db_password>') ||
-    mongoUri.includes('aizaz6241_db_user:') ||
-    mongoUri.includes('u2IODhWhiXehEOy8')
+    false ||
+    false
   ) {
     mongoUri =
-      'mongodb+srv://aizazkhan6241_db_user:98av24298@cluster0.ijpphlb.mongodb.net/bazario?retryWrites=true&w=majority&appName=Cluster0';
+      process.env.MONGO_URI;
   }
 
   mongoose

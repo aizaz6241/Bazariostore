@@ -1,3 +1,5 @@
+// First: makes a failed async route answer with an error instead of hanging (see the file)
+import { guardErrorDetails, finalErrorHandler } from './utils/asyncErrors.js';
 import dns from 'dns';
 try { dns.setServers(['8.8.8.8', '1.1.1.1']); } catch (_) {}
 import dotenv from 'dotenv';
@@ -10,7 +12,13 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config();
 
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'bazario_super_secure_jwt_secret_2026_xyz';
+// Secrets come only from the environment (see utils/secrets.js). Nothing secret lives in the code.
+import { ensureJwtSecret, mongoUri as readMongoUri } from './utils/secrets.js';
+try {
+  ensureJwtSecret();
+} catch (e) {
+  console.error('❌', e.message);
+}
 import http from 'http';
 import fs from 'fs';
 import express from 'express';
@@ -18,7 +26,9 @@ import cors from 'cors';
 import compression from 'compression';
 import mongoose from 'mongoose';
 import { Server } from 'socket.io';
-import jwt from 'jsonwebtoken';
+import { verifySocketToken } from './middleware/auth.js';
+import { sanitizeRequest, asText } from './middleware/sanitize.js';
+import { limit } from './utils/rateLimit.js';
 
 import productRoutes from './routes/products.js';
 import categoryRoutes from './routes/categories.js';
@@ -49,11 +59,45 @@ import Seller from './models/Seller.js';
 import { notify } from './utils/notify.js';
 import { processOrderPenalties } from './routes/sellers/orders.routes.js';
 import { processAutoProgressOrders } from './services/orderProgressionService.js';
+import { finishStuckWalletRequests } from './utils/walletRequests.js';
+import { encryptStoredPasswords, encryptionOn } from './utils/sellerPassword.js';
 
 const app = express();
+app.disable('x-powered-by');
+// Render / Vercel sit behind one proxy: this makes req.ip the visitor's real address (rate limits)
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS) > 0 ? Number(process.env.TRUST_PROXY_HOPS) : 1);
 app.use(compression());
-app.use(cors());
+
+// Which websites may call this API from a browser.
+// Set CORS_ORIGINS on the server to a comma-separated list (for example
+// "https://yourstore.com,https://admin.yourstore.com") to allow only those. While it is not set,
+// every origin is allowed, exactly as before, so nothing stops working on deploy.
+const allowedOrigins = String(process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((o) => o.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+const originAllowed = (origin) => {
+  if (!origin || allowedOrigins.length === 0) return true; // no Origin header = not a browser page
+  const clean = origin.replace(/\/$/, '');
+  if (allowedOrigins.includes(clean)) return true;
+  return /^(https?|capacitor|ionic):\/\/localhost(:\d+)?$/.test(clean) || /^https?:\/\/127\.0\.0\.1(:\d+)?$/.test(clean);
+};
+if (allowedOrigins.length === 0) console.warn('⚠️  CORS_ORIGINS is not set: the API accepts browser requests from any website.');
+app.use(cors({ origin: (origin, cb) => cb(null, originAllowed(origin)) }));
+
+// Basic browser safety headers
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  // uploaded files (a PDF preview in chat) are shown inside the admin / seller site, which is
+  // on another address than this API, so they are left out of the frame rule
+  if (!req.path.startsWith('/uploads/')) res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  next();
+});
+
 app.use(express.json({ limit: '5mb' }));
+app.use(sanitizeRequest);
+app.use(guardErrorDetails);
 
 // Background order penalties scheduler (runs only in long-running standalone server)
 if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
@@ -88,12 +132,30 @@ if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
     }
   };
 
+  // Deposit / withdrawal decisions interrupted by a restart are completed (every 2 minutes)
+  setInterval(() => {
+    if (mongoose.connection.readyState === 1) finishStuckWalletRequests({ force: true }).catch(() => {});
+  }, 2 * 60 * 1000);
+
   setInterval(runHourlyBackupJob, 60 * 60 * 1000);
   // Initial check 30 seconds after server startup
   setTimeout(runHourlyBackupJob, 30 * 1000);
 }
 
-app.get(['/api/health', '/health'], (req, res) => res.json({ ok: true, name: 'Bazario Multi-Vendor Marketplace API' }));
+// Health check. Until the database has connected ONCE after a start, this answers 503. A host
+// with a health check (Render: healthCheckPath) then does not switch visitors to a new deploy
+// whose database address is missing or wrong; the previous working version keeps serving.
+// After the first connection it always answers 200, so a short database hiccup never restarts
+// the server.
+let dbConnectedOnce = false;
+mongoose.connection.on('connected', () => {
+  dbConnectedOnce = true;
+});
+app.get(['/api/health', '/health'], (req, res) => {
+  const connected = mongoose.connection.readyState === 1;
+  if (connected) dbConnectedOnce = true;
+  res.status(dbConnectedOnce ? 200 : 503).json({ ok: dbConnectedOnce, name: 'Bazario Multi-Vendor Marketplace API', db: connected ? 'connected' : 'not connected' });
+});
 app.use(['/api/products', '/products'], productRoutes);
 app.use(['/api/categories', '/categories'], categoryRoutes);
 app.use(['/api/orders', '/orders'], orderRoutes);
@@ -122,8 +184,17 @@ const serverUploadsDir = path.resolve(__dirname, '../uploads');
 const rootUploadsDir = path.resolve(__dirname, '../../uploads');
 try { if (!fs.existsSync(serverUploadsDir)) fs.mkdirSync(serverUploadsDir, { recursive: true }); } catch {}
 try { if (!fs.existsSync(rootUploadsDir)) fs.mkdirSync(rootUploadsDir, { recursive: true }); } catch {}
-app.use('/uploads', express.static(serverUploadsDir));
-app.use('/uploads', express.static(rootUploadsDir));
+// Uploaded files are never allowed to run as a web page on this domain: no scripts, and anything
+// that is not a plain image / PDF is offered as a download.
+const INLINE_UPLOAD = /\.(png|jpe?g|gif|webp|avif|bmp|pdf|mp3|wav|ogg|webm|mp4|m4a)$/i;
+const uploadHeaders = {
+  setHeaders: (res, filePath) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (!INLINE_UPLOAD.test(filePath)) res.setHeader('Content-Disposition', 'attachment');
+  },
+};
+app.use('/uploads', express.static(serverUploadsDir, uploadHeaders));
+app.use('/uploads', express.static(rootUploadsDir, uploadHeaders));
 
 // Production: serve built React frontend from same single port (only in persistent node server)
 const clientDist = path.join(__dirname, '..', '..', 'client', 'dist');
@@ -198,31 +269,38 @@ app.use((req, res, next) => {
 });
 
 // Global Express error handler
-app.use((err, req, res, next) => {
-  console.error('[server-error]', err);
-  if (!res.headersSent) {
-    res.status(err.status || 500).json({
-      ok: false,
-      message: err.message || 'Internal Server Error',
-    });
-  }
-});
+app.use(finalErrorHandler);
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+const io = new Server(server, { cors: { origin: (origin, cb) => cb(null, originAllowed(origin)) } });
 app.set('io', io);
 
 io.on('connection', (socket) => {
   // Seller joins their support room (requires valid seller or admin JWT token)
-  socket.on('seller:join', ({ token, sellerId }) => {
+  // A chat id handed out by the storefront (random, 36 characters). Knowing it is what gives
+  // access to that one chat, so it must be real text of a sensible length, never an object.
+  const goodGuestId = (v) => typeof v === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(v);
+  // At most 30 chat messages a minute from one connection
+  const sentAt = [];
+  const tooFast = () => {
+    const now = Date.now();
+    while (sentAt.length && now - sentAt[0] > 60000) sentAt.shift();
+    if (sentAt.length >= 30) return true;
+    sentAt.push(now);
+    return false;
+  };
+
+  socket.on('seller:join', async ({ token, sellerId } = {}) => {
     try {
       if (!token) return;
-      const payload = jwt.verify(token, process.env.JWT_SECRET);
+      // checks the signature AND that the account is still active (not just the token)
+      const payload = await verifySocketToken(token);
+      if (!payload) return;
       let id = null;
       if (payload.t === 'seller') {
         id = payload.id;
-      } else if (payload.t === 'admin' && sellerId) {
-        id = sellerId;
+      } else if (payload.t === 'admin' && sellerId && mongoose.Types.ObjectId.isValid(String(sellerId))) {
+        id = String(sellerId);
       }
       if (id) {
         socket.join(`seller:${id}`);
@@ -236,19 +314,19 @@ io.on('connection', (socket) => {
   });
 
   // Guest joins their support room
-  socket.on('guest:join', ({ guestId }) => {
-    if (guestId) {
+  socket.on('guest:join', ({ guestId } = {}) => {
+    if (goodGuestId(guestId)) {
       socket.join(`guest:${guestId}`);
       socket.data.guestId = guestId;
     }
   });
 
   // Admin or Staff joins the admin room
-  socket.on('admin:join', ({ token }) => {
+  socket.on('admin:join', async ({ token } = {}) => {
     try {
       if (!token) return;
-      const payload = jwt.verify(token, process.env.JWT_SECRET);
-      if (payload.t === 'admin') {
+      const payload = await verifySocketToken(token);
+      if (payload && payload.t === 'admin') {
         socket.data.isAdmin = true;
         socket.data.adminId = payload.id;
         socket.join('admins');
@@ -260,8 +338,8 @@ io.on('connection', (socket) => {
   });
 
   // Customer / Guest joins their support room
-  socket.on('customer:join', ({ guestId, user }) => {
-    if (guestId) {
+  socket.on('customer:join', ({ guestId } = {}) => {
+    if (goodGuestId(guestId)) {
       socket.join(`guest:${guestId}`);
       socket.join(`customer:${guestId}`);
       socket.data.guestId = guestId;
@@ -271,9 +349,11 @@ io.on('connection', (socket) => {
   // Real-time message exchange between Seller and Admin
   socket.on('seller:message', async (payload, cb) => {
     try {
-      const { sellerId, text, attachment } = payload || {};
-      const clean = (text || '').trim().slice(0, 2000);
-      if (!sellerId || (!clean && !attachment)) return;
+      const { sellerId, attachment: rawAttachment } = payload || {};
+      const clean = asText(payload?.text, 4000).trim().slice(0, 2000);
+      const attachment = asText(rawAttachment, 2000) || null;
+      if (!sellerId || !mongoose.Types.ObjectId.isValid(String(sellerId)) || (!clean && !attachment)) return;
+      if (tooFast()) return cb?.({ error: 'You are sending messages too fast. Please wait a moment.' });
 
       // Socket authentication check: must be verified seller matching sellerId or admin
       if (!socket.data?.isAdmin && (!socket.data?.isSeller || String(socket.data?.sellerId) !== String(sellerId))) {
@@ -345,9 +425,16 @@ io.on('connection', (socket) => {
   // Customer / Storefront Live Chat Message
   socket.on('message:send', async (payload, cb) => {
     try {
-      const { guestId, sender, text, attachment, name, email, phone } = payload || {};
-      const clean = (text || '').trim().slice(0, 2000);
-      if (!guestId || (!clean && !attachment)) return;
+      const guestId = payload?.guestId;
+      // Whoever writes on this channel is a customer. The browser cannot choose to be "admin".
+      const sender = 'customer';
+      const clean = asText(payload?.text, 4000).trim().slice(0, 2000);
+      const attachment = asText(payload?.attachment, 2000) || null;
+      const name = asText(payload?.name, 80).trim();
+      const email = asText(payload?.email, 120).trim();
+      const phone = asText(payload?.phone, 40).trim();
+      if (!goodGuestId(guestId) || (!clean && !attachment)) return;
+      if (tooFast()) return cb?.({ error: 'You are sending messages too fast. Please wait a moment.' });
 
       let conv = await Conversation.findOne({ guestId });
       if (!conv) {
@@ -368,7 +455,7 @@ io.on('connection', (socket) => {
       if (phone) conv.phone = phone;
 
       conv.lastMessage = clean || 'Sent an attachment';
-      conv.lastSender = sender || 'customer';
+      conv.lastSender = sender;
       conv.lastAt = new Date();
       conv.unreadForAdmin = (conv.unreadForAdmin || 0) + 1;
       conv.status = 'open';
@@ -377,7 +464,7 @@ io.on('connection', (socket) => {
       const msg = new Message({
         conversation: conv._id,
         guestId,
-        sender: sender || 'customer',
+        sender,
         senderName: name || conv.name || 'Customer',
         text: clean,
         attachment: attachment || null,
@@ -421,11 +508,12 @@ io.on('connection', (socket) => {
   });
 
   // Real-time Seen / Read status update from seller
-  socket.on('seller:read', async ({ sellerId, conversationId }) => {
+  socket.on('seller:read', async ({ sellerId } = {}) => {
     try {
       const now = new Date();
-      const targetSellerId = sellerId || socket.data?.sellerId;
-      if (!targetSellerId) return;
+      // Only the seller's own connection (or an admin looking at that seller) may mark it read
+      const targetSellerId = socket.data?.isAdmin && sellerId ? sellerId : socket.data?.sellerId;
+      if (!targetSellerId || !mongoose.Types.ObjectId.isValid(String(targetSellerId))) return;
 
       const conv = await Conversation.findOne({ seller: targetSellerId, type: { $ne: 'internal' } });
       if (conv) {
@@ -454,14 +542,13 @@ io.on('connection', (socket) => {
   });
 
   // Real-time Seen / Read status update from guest
-  socket.on('guest:read', async ({ guestId, conversationId }) => {
+  socket.on('guest:read', async ({ guestId } = {}) => {
     try {
       const now = new Date();
-      const targetGuestId = guestId || socket.data?.guestId;
-      if (!targetGuestId && !conversationId) return;
+      const targetGuestId = goodGuestId(guestId) ? guestId : socket.data?.guestId;
+      if (!goodGuestId(targetGuestId)) return;
 
-      const query = targetGuestId ? { guestId: targetGuestId } : { _id: conversationId };
-      const conv = await Conversation.findOne(query);
+      const conv = await Conversation.findOne({ guestId: targetGuestId });
       if (conv) {
         conv.unreadForCustomer = 0;
         await conv.save();
@@ -508,9 +595,10 @@ if (!process.env.VERCEL) {
   });
 }
 
-const DEFAULT_ATLAS_URI = 'mongodb+srv://aizazkhan6241_db_user:98av24298@cluster0.ijpphlb.mongodb.net/bazario?retryWrites=true&w=majority&appName=Cluster0';
-
-// Serverless-friendly cached MongoDB connection
+// Serverless-friendly cached MongoDB connection.
+// The address comes ONLY from the environment (MONGO_URI). There is no built-in address or
+// password in the code any more, so if MONGO_URI is missing or wrong the server says so clearly
+// instead of quietly using a hard-coded one.
 let connPromise = null;
 export async function connectDB() {
   if (mongoose.connection.readyState === 1) {
@@ -521,9 +609,9 @@ export async function connectDB() {
   }
 
   connPromise = (async () => {
-    let mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || DEFAULT_ATLAS_URI;
-    if (!mongoUri || mongoUri.includes('<db_username>') || mongoUri.includes('<db_password>') || mongoUri.includes('aizaz6241_db_user:') || mongoUri.includes('u2IODhWhiXehEOy8')) {
-      mongoUri = DEFAULT_ATLAS_URI;
+    const mongoUri = readMongoUri();
+    if (!mongoUri) {
+      throw new Error('MONGO_URI is not set. Add the database address in the server environment (Render → Environment) and redeploy.');
     }
 
     try {
@@ -535,22 +623,8 @@ export async function connectDB() {
       console.log('✅ MongoDB connected successfully to database');
       return mongoose.connection;
     } catch (err) {
-      console.error('MongoDB primary connection error:', err.message);
-      if (mongoUri !== DEFAULT_ATLAS_URI) {
-        try {
-          console.log('🔄 Retrying MongoDB with default Atlas cluster URI...');
-          await mongoose.connect(DEFAULT_ATLAS_URI, {
-            serverSelectionTimeoutMS: 15000,
-            connectTimeoutMS: 15000,
-            maxPoolSize: 10,
-          });
-          console.log('✅ MongoDB connected successfully via fallback URI');
-          return mongoose.connection;
-        } catch (fallbackErr) {
-          console.error('MongoDB fallback connection error:', fallbackErr.message);
-          throw fallbackErr;
-        }
-      }
+      console.error('❌ MongoDB connection error:', err.message);
+      console.error('   Check MONGO_URI (user, password, cluster) in the server environment.');
       throw err;
     } finally {
       connPromise = null;
@@ -560,7 +634,34 @@ export async function connectDB() {
   return await connPromise;
 }
 
-connectDB().catch(() => {});
+// Keep trying in the background: a short database or network hiccup at start must not leave the
+// server running without a database until someone restarts it.
+// Small one-time jobs after the database is reachable
+let startupJobsDone = false;
+async function runStartupJobs() {
+  if (startupJobsDone) return;
+  startupJobsDone = true;
+  try {
+    await finishStuckWalletRequests({ force: true });
+    if (encryptionOn()) {
+      const { changed } = await encryptStoredPasswords(mongoose.connection.db);
+      if (changed > 0) console.log(`🔐 ${changed} saved seller password${changed === 1 ? '' : 's'} moved from plain text to the encrypted copy.`);
+    } else {
+      console.warn('⚠️  SELLER_PASSWORD_KEY is not set: the look-up copy of seller passwords is still stored as plain text in the database (it is no longer sent to any browser). Set the key to encrypt it.');
+    }
+  } catch (e) {
+    console.error('Startup jobs failed:', e.message);
+  }
+}
+
+(function connectWithRetry(attempt = 1) {
+  connectDB().then(runStartupJobs).catch((err) => {
+    const wait = Math.min(60000, 5000 * attempt);
+    console.error(`❌ Database not connected (${err.message}). Trying again in ${Math.round(wait / 1000)}s.`);
+    setTimeout(() => connectWithRetry(attempt + 1), wait).unref?.();
+  });
+})();
+
 
 export { app, server };
 export default app;

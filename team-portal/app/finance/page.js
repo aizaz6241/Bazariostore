@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { computeSplit } from '@/lib/utils/financeSplit';
 import { useLiveRefresh, LiveBadge } from '@/components/LiveProvider';
+import { useApprovals, ApprovalsPanel, WaitingTag, HiddenEntries, ExcludedTestSellers, ActivityLog } from '@/components/FinanceControls';
 
 const fmt = (n, d = 2) =>
   Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -32,7 +33,7 @@ const REASONS = {
   usdt: 'Real Binance USDT not entered yet',
   auto_default: 'USDT was auto-filled (90 rate) — enter the real amount',
   pkr_rate: 'PKR member: INR amount and that day’s PKR rate are needed',
-  partners: 'Exactly 2 active admins are required before this can be split',
+  partners: 'Exactly 2 finance partners are required before this can be split',
   bonus_rate: 'Milestone bonus: enter that day’s PKR rate to convert it to USDT',
   unassigned: 'This seller is not assigned to anyone. Assign it and it will be divided automatically',
 };
@@ -256,7 +257,9 @@ function AddEntryModal({ data, onClose, onSaved }) {
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
           <div>
             <h2 className="text-base font-extrabold text-slate-900">Add finance entry</h2>
-            <p className="text-[11px] text-slate-500 mt-0.5">Adds to the Binance ledger only. The seller’s store wallet is not changed.</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Adds to the Binance ledger only. The seller’s store wallet is not changed. It is counted after the other partner approves it.
+            </p>
           </div>
           <button type="button" onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-500">
             <X className="w-4 h-4" />
@@ -373,7 +376,7 @@ function AddEntryModal({ data, onClose, onSaved }) {
             ) : (
               <p className="text-xs text-slate-400 mt-2">
                 {!data.partnersOk
-                  ? 'Exactly 2 active admins are required.'
+                  ? 'Exactly 2 finance partners are required.'
                   : preview && preview.reason === 'pkr_rate'
                   ? 'Enter the INR amount and the PKR rate for this 1:1 PKR member.'
                   : 'Choose the seller, who it belongs to and the USDT amount.'}
@@ -391,7 +394,7 @@ function AddEntryModal({ data, onClose, onSaved }) {
             disabled={saving || !(preview && preview.ok)}
             className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-50"
           >
-            {saving ? 'Adding…' : 'Add entry'}
+            {saving ? 'Sending…' : 'Send for approval'}
           </button>
         </div>
       </form>
@@ -408,6 +411,9 @@ export default function FinancePage() {
   const [busyId, setBusyId] = useState('');
   const [editId, setEditId] = useState('');
   const [showAdd, setShowAdd] = useState(false);
+  const [notice, setNotice] = useState('');
+  // Goes up whenever the approvals list and the activity log should be read again
+  const [tick, setTick] = useState(0);
 
   // Table filters
   const [q, setQ] = useState('');
@@ -444,9 +450,15 @@ export default function FinancePage() {
     if (isAdminUser) load();
   }, [isAdminUser, load]);
 
-  // A deposit approved, funds added or adjusted on the seller website: the ledger reloads by itself
+  const { approvals, setApprovals } = useApprovals(isAdminUser, tick);
+
+  // A deposit approved, funds added or adjusted on the seller website, or a request asked /
+  // approved by the other partner: everything reloads by itself
   useLiveRefresh(() => {
-    if (isAdminUser) load(false, true);
+    if (isAdminUser) {
+      load(false, true);
+      setTick((n) => n + 1);
+    }
   });
 
   const act = async (id, action, values = {}, kind = '') => {
@@ -464,6 +476,8 @@ export default function FinancePage() {
       requestNo.current += 1; // anything still loading in the background is older than this
       setData(json);
       setEditId('');
+      setNotice(json.notice || '');
+      setTick((n) => n + 1);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -482,6 +496,12 @@ export default function FinancePage() {
   const mismatch = Math.abs(t.diffUSDT || 0) > 0.01;
   const short = (liability.totalUSD || 0) > (t.balanceUSDT || 0);
   const unassigned = data?.unassignedSellers || [];
+
+  // Requests that are waiting, by the ledger entry they are about
+  const waitingByEntry = new Map();
+  (approvals?.pending || []).forEach((a) => {
+    if (a.entryId && !waitingByEntry.has(a.entryId)) waitingByEntry.set(a.entryId, a);
+  });
 
   // ── Filtered transactions (newest first) ──
   const allEntries = data ? [...data.entries].reverse() : [];
@@ -579,14 +599,35 @@ export default function FinancePage() {
 
       {error && <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-xs font-semibold text-red-700">{error}</div>}
 
+      {notice && (
+        <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-2xl text-xs font-semibold text-indigo-900 flex items-start justify-between gap-3">
+          <span>{notice}</span>
+          <button onClick={() => setNotice('')} className="text-indigo-700 shrink-0" title="Close">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {isAdminUser && (
+        <ApprovalsPanel
+          approvals={approvals}
+          onChanged={(next) => {
+            if (next) setApprovals(next);
+            load(true, true);
+            setTick((n) => n + 1);
+          }}
+        />
+      )}
+
       {data && !data.partnersOk && (
         <div className="p-4 bg-red-50 border border-red-300 rounded-2xl text-xs text-red-800 flex gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
           <div>
-            <b>Splits are paused: exactly 2 active admins are required, found {data.partners.length}.</b>
+            <b>Splits are paused: exactly 2 finance partners are required, found {data.partners.length}.</b>
             <div className="mt-1">
-              Active admins: {data.partners.map((p) => `${p.name}${p.email ? ` (${p.email})` : ''}`).join(', ') || 'none'}. Remove or deactivate the extra
-              account in the store admin panel (Staff), then refresh.
+              Finance partners: {data.partners.map((p) => `${p.name}${p.email ? ` (${p.email})` : ''}`).join(', ') || 'none'}. In the store admin panel
+              (Staff), switch “Finance partner” off for accounts that should only be staff. The deals are written for two partners: money is not
+              divided for any other number.
             </div>
           </div>
         </div>
@@ -745,15 +786,22 @@ export default function FinancePage() {
                       {row.reason !== 'unassigned' && <span className="text-slate-500">• {ownerText(row.owner, row.previousStore, row.kind)}</span>}
                     </div>
                     <div className="text-[11px] text-amber-800 mt-1">{REASONS[row.reason] || row.reason}</div>
+                    {waitingByEntry.has(row.id) && (
+                      <div className="mt-1.5">
+                        <WaitingTag approval={waitingByEntry.get(row.id)} />
+                      </div>
+                    )}
                     {row.reason !== 'partners' && row.reason !== 'unassigned' && (
                       <div className="flex flex-wrap items-end gap-2">
                         <EntryForm row={row} busy={busyId === row.id} onSave={(v) => act(row.id, 'save', v, row.kind)} />
                         <button
                           type="button"
-                          disabled={busyId === row.id}
-                          onClick={() => act(row.id, 'skip', {}, row.kind)}
-                          className="px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-600 text-xs font-bold flex items-center gap-1"
-                          title="Do not count this (for example a helping-only credit or an old bonus already settled)"
+                          disabled={busyId === row.id || waitingByEntry.has(row.id)}
+                          onClick={() => {
+                            if (window.confirm('Ask the other partner to approve that no real money moved for this entry?\n\nIt stays in this list until they approve.')) act(row.id, 'skip', {}, row.kind);
+                          }}
+                          className="px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-600 text-xs font-bold flex items-center gap-1 disabled:opacity-50"
+                          title="Ask the other partner to approve that this is not real money (for example a helping-only credit or an old bonus already settled)"
                         >
                           <EyeOff className="w-3.5 h-3.5" /> {row.kind === 'bonus' ? 'Do not count' : 'No real money'}
                         </button>
@@ -869,6 +917,11 @@ export default function FinancePage() {
                             <b className="text-slate-900">{e.storeName}</b>
                             {e.manual && <span className="ml-1.5 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[9px] font-bold uppercase">Manual</span>}
                             {e.note && <div className="text-[10px] text-slate-400 mt-0.5">{e.note}</div>}
+                            {waitingByEntry.has(e.id) && (
+                              <div className="mt-1">
+                                <WaitingTag approval={waitingByEntry.get(e.id)} />
+                              </div>
+                            )}
                           </td>
                           <td className="px-3 py-3 whitespace-nowrap">
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${KIND_STYLE[e.kind]}`}>{KIND_LABEL[e.kind]}</span>
@@ -916,7 +969,7 @@ export default function FinancePage() {
                                 <button
                                   disabled={busyId === e.id}
                                   onClick={() => {
-                                    if (window.confirm(`Delete this manual entry for ${e.storeName}?`)) act(e.id, 'delete', {}, 'manual');
+                                    if (window.confirm(`Ask the other partner to approve deleting this manual entry for ${e.storeName}?`)) act(e.id, 'delete', {}, 'manual');
                                   }}
                                   className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600"
                                   title="Delete this manual entry"
@@ -928,14 +981,14 @@ export default function FinancePage() {
                                   <button
                                     onClick={() => setEditId(editId === e.id ? '' : e.id)}
                                     className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"
-                                    title="Correct the amounts"
+                                    title="Correct the amounts (a change needs the other partner’s approval)"
                                   >
                                     <Pencil className="w-3.5 h-3.5" />
                                   </button>
                                   <button
                                     disabled={busyId === e.id}
                                     onClick={() => {
-                                      if (window.confirm('Divide this entry again using the seller’s current assignment?')) act(e.id, 'resplit', {}, e.kind);
+                                      if (window.confirm('Ask the other partner to approve dividing this entry again using the seller’s current assignment?')) act(e.id, 'resplit', {}, e.kind);
                                     }}
                                     className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600"
                                     title="Divide again using the current assignment"
@@ -1012,6 +1065,10 @@ export default function FinancePage() {
               </div>
             </div>
           )}
+
+          <HiddenEntries rows={data.skipped} busyId={busyId} onBringBack={(row) => act(row.id, 'unskip', {}, row.kind)} />
+          <ExcludedTestSellers rows={data.excludedTest} />
+          <ActivityLog tick={tick} />
         </>
       )}
 
@@ -1023,6 +1080,8 @@ export default function FinancePage() {
             requestNo.current += 1;
             setData(json);
             setShowAdd(false);
+            setNotice(json.notice || '');
+            setTick((n) => n + 1);
           }}
         />
       )}

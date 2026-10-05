@@ -80,6 +80,9 @@ export default function SplitDepositModal({ isOpen, onClose, deposit, onSuccess 
         },
       });
 
+      // Changing the USDT of a deposit that is already counted waits for the other partner
+      if (res.pendingApproval) alert(res.message);
+
       if (onSuccess) {
         onSuccess(res.transaction || res.request || { ...deposit, helpingAmount: parsedHelping, binanceRate: bRate, inrAmount: inrVal, usdtAmount: usdtVal, adminNote });
       }

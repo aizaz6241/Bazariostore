@@ -2,6 +2,7 @@ import Order from '../models/Order.js';
 import Product from '../models/Product.js';
 import { releaseSellerOrderDelivered } from '../routes/sellers/orders.routes.js';
 import { notify } from '../utils/notify.js';
+import { settleDeliveredStock } from '../utils/orderStock.js';
 
 // Configuration: Realistic 5 to 7 days progression schedule
 export const PROGRESSION_STEPS = {
@@ -157,15 +158,16 @@ export async function processAutoProgressOrders(app) {
 
         // If newly reached 'delivered', execute complete delivery & settlement lifecycle!
         if (newStatus === 'delivered') {
-          // A. Product sold counter and reserved stock release
-          for (const it of order.items) {
-            if (it.product) {
-              await Product.updateOne(
-                { _id: it.product._id || it.product },
-                { $inc: { reservedStock: -(it.qty || 1), sold: it.qty || 1 } }
-              ).catch(() => {});
-            }
+          // A. Release locked processing fund + 20% profit payout to each seller.
+          //    First, and before anything is saved: if a seller's funds were never locked and the
+          //    wallet cannot cover the order, this throws and the order simply stays where it is.
+          const payoutSellerIds = [...new Set(order.items.map((i) => i.seller?.toString()).filter(Boolean))];
+          for (const sId of payoutSellerIds) {
+            await releaseSellerOrderDelivered(app, sId, order);
           }
+
+          // A2. Product sold counter and reserved stock release (once per order)
+          await settleDeliveredStock(order);
 
           // B. Cash on delivery payment status marked paid
           if (order.paymentMethod === 'cod' && order.paymentStatus !== 'paid') {
@@ -183,12 +185,6 @@ export async function processAutoProgressOrders(app) {
                 link: `/admin/orders/${order._id}`,
               });
             }
-          }
-
-          // C. Release locked processing fund + 20% profit payout to each seller
-          const sellerIds = [...new Set(order.items.map((i) => i.seller?.toString()).filter(Boolean))];
-          for (const sId of sellerIds) {
-            await releaseSellerOrderDelivered(app, sId, order);
           }
 
           // Completed lifecycle: clear next timers

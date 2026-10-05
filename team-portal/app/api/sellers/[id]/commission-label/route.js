@@ -25,7 +25,8 @@ export async function PUT(req, { params }) {
     const seller = await Seller.findByIdAndUpdate(
       sellerId,
       { $set: { commissionLabel } },
-      { new: true }
+      // only what the screen needs: never the whole seller record (it holds login secrets)
+      { new: true, select: 'storeName ownerName email commissionLabel status' }
     );
 
     if (!seller) {

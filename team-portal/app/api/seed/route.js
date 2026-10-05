@@ -8,6 +8,12 @@ import { getAuthSession, hashPassword } from '@/lib/auth';
 
 export async function POST(req) {
   try {
+    // Demo data (a default admin, a sample member with a known password, sample sellers handed to
+    // that member). Never on the live site unless it is switched on by hand for a moment.
+    if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PORTAL_SEED !== 'yes') {
+      return NextResponse.json({ message: 'Seeding is switched off on the live site.' }, { status: 403 });
+    }
+
     await connectDB();
 
     // 0. Security Guard: If admin already exists, require authenticated admin session

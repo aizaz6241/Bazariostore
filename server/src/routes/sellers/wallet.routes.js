@@ -7,6 +7,10 @@ import { Conversation, Message } from '../../models/Chat.js';
 import { authSeller, authAdmin, authSellerOrAdmin } from '../../middleware/auth.js';
 import { notify } from '../../utils/notify.js';
 import { audit } from '../../utils/audit.js';
+import { finLog, requestApproval, isLedgerCounted } from '../../utils/financeLog.js';
+import { walletApply, walletNow } from '../../utils/wallet.js';
+import { applyDecisionToWallet, requestFieldsFor, finishStuckWalletRequests } from '../../utils/walletRequests.js';
+import { asText } from '../../middleware/sanitize.js';
 
 const router = express.Router();
 
@@ -189,8 +193,13 @@ router.post('/wallet/deposit', authSellerOrAdmin, async (req, res) => {
     const seller = await getSellerFromReq(req);
     if (!seller) return res.status(404).json({ message: 'Seller not found. Please log in again.' });
 
-    const { amount, depositRef, depositNote, method, depositedFrom } = req.body;
-    if (!amount || Number(amount) < 1) return res.status(400).json({ message: 'Minimum deposit amount is $1' });
+    const amount = Number(req.body?.amount);
+    const depositRef = asText(req.body?.depositRef, 200);
+    const depositNote = asText(req.body?.depositNote, 500);
+    const method = asText(req.body?.method, 20);
+    const depositedFrom = asText(req.body?.depositedFrom, 200);
+    if (!Number.isFinite(amount) || amount < 1) return res.status(400).json({ message: 'Minimum deposit amount is $1' });
+    if (amount > 10000000) return res.status(400).json({ message: 'Deposit amount is too large' });
 
     // Check if already pending deposit
     const hasPending = await Withdrawal.findOne({ seller: seller._id, type: 'deposit', status: 'pending' });
@@ -209,10 +218,10 @@ router.post('/wallet/deposit', authSellerOrAdmin, async (req, res) => {
       status: 'pending',
     });
 
-    // Lock pending deposit
+    // Lock pending deposit (one database step, see utils/wallet.js)
+    const afterRequest = await walletApply(seller._id, { pendingDeposit: Number(amount) });
     seller.wallet = seller.wallet || {};
-    seller.wallet.pendingDeposit = (seller.wallet.pendingDeposit || 0) + Number(amount);
-    await seller.save();
+    if (afterRequest) seller.wallet.pendingDeposit = afterRequest.wallet.pendingDeposit; // for the messages below; not saved
 
     // Auto-send chat notification
     const chatMsgId = await sendWalletChatNotification(req.app, seller, reqDoc);
@@ -670,6 +679,8 @@ router.post('/wallet/limit-offer-response', authSellerOrAdmin, async (req, res) 
 // GET /api/sellers/withdrawals/all — admin sees ALL requests (deposit + withdrawal)
 router.get('/withdrawals/all', authAdmin('finance'), async (req, res) => {
   try {
+    // a decision interrupted by a server restart is completed before the list is shown
+    await finishStuckWalletRequests();
     const { status, type, excludeTest, accountType } = req.query;
     const filter = {};
     if (status && status !== 'all') filter.status = status;
@@ -718,16 +729,24 @@ router.get('/withdrawals/all', authAdmin('finance'), async (req, res) => {
 
 // PUT /api/sellers/withdrawals/:id — admin approves or rejects
 router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
+  // true once the wallet step is done: from then on the request is never handed back as "pending"
+  let moneyMoved = false;
   try {
-    const { status, adminNote, transactionRef, approvedAmount, helpingAmount, binanceRate, inrAmount, usdtAmount } = req.body;
+    const { status, approvedAmount, helpingAmount, binanceRate, inrAmount, usdtAmount } = req.body;
+    const adminNote = asText(req.body?.adminNote, 1000);
+    const transactionRef = asText(req.body?.transactionRef, 200);
     if (!['approved', 'rejected'].includes(status)) {
       return res.status(400).json({ message: 'Invalid status. Use: approved or rejected' });
     }
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Request not found' });
+
+    // A request interrupted earlier (server stopped half-way) is completed first
+    await finishStuckWalletRequests();
 
     // Atomically transition status from 'pending' to 'processing' to prevent race conditions & double-approvals
     const reqDoc = await Withdrawal.findOneAndUpdate(
       { _id: req.params.id, status: 'pending' },
-      { $set: { status: 'processing' } },
+      { $set: { status: 'processing', processingAt: new Date(), pendingDecision: null } },
       { new: true }
     ).populate('seller');
 
@@ -735,7 +754,11 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
       return res.status(400).json({ message: 'Request is already processed or currently being processed by another action.' });
     }
 
-    const seller = await Seller.findById(reqDoc.seller._id || reqDoc.seller);
+    if (!reqDoc.seller) {
+      await Withdrawal.updateOne({ _id: req.params.id, status: 'processing' }, { $set: { status: 'pending' } }).catch(() => {});
+      return res.status(404).json({ message: 'Seller not found' });
+    }
+    let seller = await Seller.findById(reqDoc.seller._id || reqDoc.seller);
     if (!seller) {
       await Withdrawal.updateOne({ _id: req.params.id, status: 'processing' }, { $set: { status: 'pending' } }).catch(() => {});
       return res.status(404).json({ message: 'Seller not found' });
@@ -800,61 +823,40 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
       }
     }
 
-    reqDoc.status = status;
-    reqDoc.approvedAmount = status === 'approved' ? finalAmount : 0;
-    reqDoc.adminNote = adminNote || '';
-    reqDoc.transactionRef = transactionRef || '';
-    reqDoc.processedAt = new Date();
-    reqDoc.processedBy = req.admin.name || 'Admin';
+    const balanceBefore = seller.wallet?.balance || 0;
 
-    seller.wallet = seller.wallet || {};
+    // 1. Write the decision on the request, so that it is finished exactly like this even if the
+    //    server stops before the last step.
+    const decision = {
+      status,
+      finalAmount,
+      helpingAmount: reqDoc.helpingAmount || 0,
+      binanceRate: reqDoc.binanceRate || 0,
+      inrAmount: reqDoc.inrAmount || 0,
+      usdtAmount: reqDoc.usdtAmount || 0,
+      adminNote,
+      transactionRef,
+      by: req.admin.name || 'Admin',
+      byId: req.admin.id ? String(req.admin.id) : '',
+      at: new Date().toISOString(),
+    };
+    await Withdrawal.updateOne({ _id: reqDoc._id, status: 'processing' }, { $set: { pendingDecision: decision } });
 
-    if (reqDoc.type === 'deposit') {
-      // Release pending deposit (always the original requested amount)
-      seller.wallet.pendingDeposit = Math.max(0, (seller.wallet.pendingDeposit || 0) - reqDoc.amount);
-      if (status === 'approved') {
-        // Add the actually approved/credited amount to balance
-        seller.wallet.balance = (seller.wallet.balance || 0) + finalAmount;
-        seller.wallet.totalDeposited = (seller.wallet.totalDeposited || 0) + finalAmount;
-        if (reqDoc.helpingAmount > 0) {
-          seller.wallet.totalHelpingAmount = (seller.wallet.totalHelpingAmount || 0) + reqDoc.helpingAmount;
-        }
-      }
-    } else {
-      // Withdrawal
-      seller.wallet.pendingWithdrawal = Math.max(0, (seller.wallet.pendingWithdrawal || 0) - reqDoc.amount);
-      if (status === 'approved') {
-        seller.wallet.totalWithdrawn = (seller.wallet.totalWithdrawn || 0) + finalAmount;
-
-        // Increment successful withdrawal count towards tier upgrade
-        if (!seller.withdrawalLimit) {
-          seller.withdrawalLimit = {
-            maxAmount: 500,
-            minAmount: 10,
-            requiredWithdrawalsForIncrease: 10,
-            successfulWithdrawalCount: 0,
-            upgradeFee: 50,
-            currentTierName: 'Tier 1 - Standard ($500 Max)',
-          };
-        }
-        seller.withdrawalLimit.successfulWithdrawalCount = (seller.withdrawalLimit.successfulWithdrawalCount || 0) + 1;
-
-        // Partial Payout: If admin approved less than requested (e.g. $300 out of $500), refund remainder ($200) to balance
-        if (finalAmount < reqDoc.amount) {
-          const refundRemainder = reqDoc.amount - finalAmount;
-          seller.wallet.balance = (seller.wallet.balance || 0) + refundRemainder;
-        }
-      } else if (status === 'rejected') {
-        // Refund full requested amount back to balance on rejection
-        seller.wallet.balance = (seller.wallet.balance || 0) + reqDoc.amount;
-      }
+    // 2. The wallet, in one database step named after this request (it can never be applied twice)
+    const moved = await applyDecisionToWallet(reqDoc, decision);
+    if (!moved) {
+      await Withdrawal.updateOne({ _id: reqDoc._id, status: 'processing' }, { $set: { status: 'pending', pendingDecision: null } }).catch(() => {});
+      return res.status(404).json({ message: 'Seller not found' });
     }
+    moneyMoved = true;
 
-    reqDoc.balanceAfter = seller.wallet.balance;
+    // 3. The request itself
+    reqDoc.set(requestFieldsFor(decision, moved.wallet.balance));
     await reqDoc.save();
-    seller.markModified('wallet');
-    seller.markModified('withdrawalLimit');
-    await seller.save();
+
+    // The wallet as it is now, for the messages below (a plain copy: nothing here is saved again)
+    const limitNow = await Seller.findById(seller._id).select('withdrawalLimit').lean();
+    seller = { _id: seller._id, storeName: seller.storeName, wallet: moved.wallet, withdrawalLimit: limitNow?.withdrawalLimit || {} };
 
     // Send chat notification about result
     try {
@@ -926,7 +928,11 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
           : `$${finalAmount.toLocaleString('en-US')} withdrawal approved. Balance: $${seller.wallet.balance.toLocaleString('en-US')}`;
       }
     } else {
-      notifyBody = `Your ${reqDoc.type} request was rejected. Full amount refunded to balance. ${adminNote || ''}`;
+      // a rejected WITHDRAWAL returns the money to the balance; a rejected DEPOSIT never added any
+      notifyBody =
+        reqDoc.type === 'deposit'
+          ? `Your deposit request was rejected. Nothing was added to your wallet. ${adminNote || ''}`
+          : `Your withdrawal request was rejected. The full amount is back in your balance. ${adminNote || ''}`;
     }
 
     // Send live notification to seller portal
@@ -959,11 +965,49 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
     }
 
     audit(req, 'update', 'wallet_request', reqDoc._id, `${reqDoc.type} ${status} for ${reqDoc.storeName} — $${finalAmount}`);
+    {
+      const isDep = reqDoc.type === 'deposit';
+      const bits = [];
+      if (status === 'approved') {
+        if (finalAmount !== reqDoc.amount) bits.push(`asked $${reqDoc.amount}`);
+        if (isDep && reqDoc.helpingAmount > 0) bits.push(`helping $${reqDoc.helpingAmount}`);
+        bits.push(reqDoc.usdtAmount > 0 ? `real USDT ₮${reqDoc.usdtAmount}` : 'no USDT entered');
+        if (reqDoc.inrAmount > 0) bits.push(`INR ₹${reqDoc.inrAmount}`);
+        if (reqDoc.transactionRef) bits.push(`ref ${reqDoc.transactionRef}`);
+      }
+      await finLog(req, {
+        action: `wallet.${isDep ? 'deposit' : 'withdrawal'}_${status}`,
+        summary: `${status === 'approved' ? 'Approved' : 'Rejected'} a seller ${isDep ? 'deposit' : 'withdrawal'} of $${status === 'approved' ? finalAmount : reqDoc.amount} for ${reqDoc.storeName}${bits.length ? ` (${bits.join(', ')})` : ''}`,
+        entity: 'wallet_request',
+        entityId: reqDoc._id,
+        sellerId: seller._id,
+        storeName: reqDoc.storeName,
+        before: { status: 'pending', requested: reqDoc.amount, walletBalance: balanceBefore },
+        after: {
+          status,
+          approved: reqDoc.approvedAmount,
+          helping: reqDoc.helpingAmount || 0,
+          usdt: reqDoc.usdtAmount || 0,
+          inr: reqDoc.inrAmount || 0,
+          rate: reqDoc.binanceRate || 0,
+          ref: reqDoc.transactionRef || reqDoc.depositRef || '',
+          note: reqDoc.adminNote || '',
+          walletBalance: seller.wallet.balance || 0,
+        },
+      });
+    }
     res.json({ message: `Request ${status} successfully`, request: reqDoc, wallet: seller.wallet });
   } catch (err) {
-    // If an error occurred while status was locked in 'processing', safely restore to 'pending'
-    await Withdrawal.updateOne({ _id: req.params.id, status: 'processing' }, { $set: { status: 'pending' } }).catch(() => {});
-    res.status(500).json({ message: err.message });
+    // If an error occurred while status was locked in 'processing', safely restore to 'pending'.
+    // Not when the wallet step is already done: then the request keeps its recorded decision and
+    // is completed the same way on the next sweep (see utils/walletRequests.js).
+    if (!moneyMoved) {
+      await Withdrawal.updateOne({ _id: req.params.id, status: 'processing' }, { $set: { status: 'pending', pendingDecision: null } }).catch(() => {});
+    } else {
+      finishStuckWalletRequests({ force: true }).catch(() => {});
+    }
+    if (res.headersSent) return;
+    res.status(500).json({ message: moneyMoved ? 'The decision was saved and the wallet was updated, but a follow-up step failed. Refresh the list.' : err.message });
   }
 });
 
@@ -988,36 +1032,63 @@ const handleSplitHelping = async (req, res) => {
     }
 
     const oldHelping = reqDoc.helpingAmount || 0;
-    reqDoc.helpingAmount = parsedHelping;
-    if (adminNote !== undefined) reqDoc.adminNote = adminNote;
+    const oldMoney = { usdt: reqDoc.usdtAmount || 0, inr: reqDoc.inrAmount || 0, rate: reqDoc.binanceRate || 0 };
 
+    // What the amounts would become (same rules as before), worked out without touching the record yet
+    let nextRate = oldMoney.rate;
+    let nextInr = oldMoney.inr;
+    let nextUsdt = oldMoney.usdt;
     if (binanceRate !== undefined && binanceRate !== null && binanceRate !== '') {
       const parsedBRate = Number(binanceRate);
-      if (!isNaN(parsedBRate) && parsedBRate > 0) reqDoc.binanceRate = parsedBRate;
+      if (!isNaN(parsedBRate) && parsedBRate > 0) nextRate = parsedBRate;
     }
     if (inrAmount !== undefined && inrAmount !== null && inrAmount !== '') {
       const parsedInr = Number(inrAmount);
-      if (!isNaN(parsedInr) && parsedInr >= 0) reqDoc.inrAmount = parsedInr;
+      if (!isNaN(parsedInr) && parsedInr >= 0) nextInr = parsedInr;
     }
     if (usdtAmount !== undefined && usdtAmount !== null && usdtAmount !== '') {
       const parsedUsdt = Number(usdtAmount);
-      if (!isNaN(parsedUsdt) && parsedUsdt >= 0) reqDoc.usdtAmount = parsedUsdt;
-    } else if (reqDoc.binanceRate > 0 && reqDoc.inrAmount > 0) {
-      reqDoc.usdtAmount = Number((reqDoc.inrAmount / reqDoc.binanceRate).toFixed(2));
+      if (!isNaN(parsedUsdt) && parsedUsdt >= 0) nextUsdt = parsedUsdt;
+    } else if (nextRate > 0 && nextInr > 0) {
+      nextUsdt = Number((nextInr / nextRate).toFixed(2));
     }
+
+    // A deposit that is already counted in the finance ledger: its real USDT / INR cannot be
+    // rewritten by one person. The change is sent to the other partner; everything else is saved.
+    const moneyChanged = Math.abs(nextUsdt - oldMoney.usdt) > 0.005 || Math.abs(nextInr - oldMoney.inr) > 0.005;
+    const counted = isLedgerCounted(reqDoc);
+    let approvalNote = '';
+    if (counted && moneyChanged) {
+      if (!(nextUsdt > 0)) {
+        return res.status(400).json({
+          message: 'This deposit is counted in the finance ledger. To take its USDT out, use “No real money” on the team portal Finance screen (the other partner approves it).',
+        });
+      }
+      const asked = await requestApproval(req, {
+        action: 'edit_usdt',
+        targetId: reqDoc._id,
+        summary: `Change the real amount of a deposit (${reqDoc.storeName}): USDT ₮${oldMoney.usdt} → ₮${nextUsdt}${Math.abs(nextInr - oldMoney.inr) > 0.005 ? `, INR ₹${oldMoney.inr} → ₹${nextInr}` : ''}`,
+        details: [`Deposit — ${reqDoc.storeName} • store wallet $${gross}${parsedHelping > 0 ? ` • helping $${parsedHelping}` : ''}`],
+        payload: { id: String(reqDoc._id), kind: 'deposit', usdtAmount: nextUsdt, inrAmount: nextInr },
+        sellerId: reqDoc.seller?._id || reqDoc.seller,
+        storeName: reqDoc.storeName,
+      });
+      approvalNote = asked.message;
+    } else if (!counted) {
+      reqDoc.binanceRate = nextRate;
+      reqDoc.inrAmount = nextInr;
+      reqDoc.usdtAmount = nextUsdt;
+    }
+    // counted and unchanged: the stored amounts stay exactly as they are
+
+    reqDoc.helpingAmount = parsedHelping;
+    if (adminNote !== undefined) reqDoc.adminNote = adminNote;
 
     await reqDoc.save();
 
-    // Adjust seller.wallet.totalHelpingAmount if seller exists
-    if (reqDoc.seller) {
-      const seller = await Seller.findById(reqDoc.seller._id || reqDoc.seller);
-      if (seller) {
-        seller.wallet = seller.wallet || {};
-        const currentTotal = seller.wallet.totalHelpingAmount || 0;
-        seller.wallet.totalHelpingAmount = Math.max(0, currentTotal - oldHelping + parsedHelping);
-        seller.markModified('wallet');
-        await seller.save();
-      }
+    // Adjust seller.wallet.totalHelpingAmount if seller exists (one database step)
+    if (reqDoc.seller && parsedHelping !== oldHelping) {
+      await walletApply(reqDoc.seller._id || reqDoc.seller, { totalHelpingAmount: parsedHelping - oldHelping });
     }
 
     const netDeposit = Math.max(0, gross - parsedHelping);
@@ -1030,9 +1101,22 @@ const handleSplitHelping = async (req, res) => {
     }
 
     audit(req, 'update', 'deposit_split', reqDoc._id, `Split deposit for ${reqDoc.storeName}: Gross $${gross}, Helping $${parsedHelping}, Real Deposit $${netDeposit}`);
+    await finLog(req, {
+      action: 'wallet.deposit_edited',
+      summary: `Edited a deposit of ${reqDoc.storeName}: helping $${oldHelping} → $${parsedHelping}, real USDT ₮${oldMoney.usdt} → ₮${reqDoc.usdtAmount || 0}${approvalNote ? ` (USDT change to ₮${nextUsdt} waits for approval)` : ''}`,
+      entity: 'wallet_request',
+      entityId: reqDoc._id,
+      sellerId: reqDoc.seller?._id || reqDoc.seller,
+      storeName: reqDoc.storeName,
+      before: { helping: oldHelping, usdt: oldMoney.usdt, inr: oldMoney.inr, rate: oldMoney.rate },
+      after: { helping: parsedHelping, usdt: reqDoc.usdtAmount || 0, inr: reqDoc.inrAmount || 0, rate: reqDoc.binanceRate || 0, walletAmount: gross, note: reqDoc.adminNote || '' },
+    });
 
     res.json({
-      message: `Deposit split updated successfully! Real deposit: $${netDeposit.toLocaleString('en-US')}, Helping amount: $${parsedHelping.toLocaleString('en-US')}`,
+      message: approvalNote
+        ? `Helping amount saved. The USDT / INR change was not applied yet. ${approvalNote}`
+        : `Deposit split updated successfully! Real deposit: $${netDeposit.toLocaleString('en-US')}, Helping amount: $${parsedHelping.toLocaleString('en-US')}`,
+      pendingApproval: Boolean(approvalNote),
       request: reqDoc,
       transaction: reqDoc,
       split: {
@@ -1062,10 +1146,12 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
       return res.status(400).json({ message: 'Type must be either credit or debit' });
     }
 
-    const seller = await Seller.findById(req.params.id);
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Seller not found' });
+    let seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
     seller.wallet = seller.wallet || {};
+    const balanceBeforeAdjust = seller.wallet.balance || 0;
 
     let parsedHelping = 0;
     if (type === 'credit' && helpingAmount !== undefined && helpingAmount !== null && helpingAmount !== '') {
@@ -1101,21 +1187,21 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
       parsedUsdt = Number((parsedInr / parsedBRate).toFixed(2));
     }
 
+    // One database step (see utils/wallet.js): nothing else happening to this wallet at the same
+    // moment can be overwritten, and a debit only goes through while the balance covers it.
+    let moved;
     if (type === 'credit') {
-      seller.wallet.balance = (seller.wallet.balance || 0) + amt;
-      seller.wallet.totalDeposited = (seller.wallet.totalDeposited || 0) + amt;
-      if (parsedHelping > 0) {
-        seller.wallet.totalHelpingAmount = (seller.wallet.totalHelpingAmount || 0) + parsedHelping;
-      }
+      moved = await walletApply(seller._id, { balance: amt, totalDeposited: amt, ...(parsedHelping > 0 ? { totalHelpingAmount: parsedHelping } : {}) });
     } else {
-      if (amt > (seller.wallet.balance || 0)) {
-        return res.status(400).json({ message: `Insufficient balance to debit. Available: $${seller.wallet.balance || 0}` });
+      moved = await walletApply(seller._id, { balance: -amt, totalWithdrawn: amt }, { requireBalance: amt });
+      if (!moved) {
+        const now = await walletNow(seller._id);
+        return res.status(400).json({ message: `Insufficient balance to debit. Available: $${now?.wallet?.balance || 0}` });
       }
-      seller.wallet.balance = Math.max(0, (seller.wallet.balance || 0) - amt);
-      seller.wallet.totalWithdrawn = (seller.wallet.totalWithdrawn || 0) + amt;
     }
-
-    await seller.save();
+    if (!moved) return res.status(404).json({ message: 'Seller not found' });
+    // a plain copy for the messages below (nothing here is saved again)
+    seller = { _id: seller._id, storeName: seller.storeName, ownerName: seller.ownerName, email: seller.email, wallet: moved.wallet };
 
     // Create a transaction / withdrawal history entry
     const rec = await Withdrawal.create({
@@ -1135,6 +1221,7 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
       transactionRef: reference || '',
       processedAt: new Date(),
       processedBy: req.admin.name || 'Super Admin',
+      processedById: req.admin.id ? String(req.admin.id) : '',
     });
 
     // Auto send chat notification to seller
@@ -1211,6 +1298,34 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
     }
 
     audit(req, 'create', 'wallet_adjustment', rec._id, `Direct wallet ${type} $${amt} for ${seller.storeName}`);
+    {
+      const bits = [];
+      if (type === 'credit' && parsedHelping > 0) bits.push(`helping $${parsedHelping}`);
+      bits.push(parsedUsdt > 0 ? `real USDT ₮${parsedUsdt}` : 'no USDT entered');
+      if (parsedInr > 0) bits.push(`INR ₹${parsedInr}`);
+      if (reference) bits.push(`ref ${reference}`);
+      if (reason) bits.push(`reason: ${reason}`);
+      await finLog(req, {
+        action: type === 'credit' ? 'wallet.direct_credit' : 'wallet.direct_debit',
+        summary: `Direct ${type === 'credit' ? 'add funds' : 'debit'} of $${amt} ${type === 'credit' ? 'to' : 'from'} the store wallet of ${seller.storeName} (${bits.join(', ')})`,
+        entity: 'wallet_request',
+        entityId: rec._id,
+        sellerId: seller._id,
+        storeName: seller.storeName,
+        before: { walletBalance: balanceBeforeAdjust },
+        after: {
+          type,
+          amount: amt,
+          helping: type === 'credit' ? parsedHelping : 0,
+          usdt: parsedUsdt,
+          inr: parsedInr,
+          rate: parsedBRate,
+          ref: reference || '',
+          reason: reason || '',
+          walletBalance: seller.wallet.balance || 0,
+        },
+      });
+    }
 
     res.json({
       message: `Successfully ${type === 'credit' ? 'credited' : 'debited'} $${amt} to ${seller.storeName}'s wallet`,
@@ -1395,13 +1510,11 @@ router.post('/:id/limit-finalize', authAdmin('finance'), async (req, res) => {
     const feeToCharge = pending.offeredFee !== undefined ? pending.offeredFee : (seller.withdrawalLimit?.upgradeFee || 50);
     const tierName = pending.offeredTierName || `Tier Upgraded ($${newLimit} Max)`;
 
-    // Check seller wallet balance before deducting
-    seller.wallet = seller.wallet || {};
-    const currentBal = seller.wallet.balance || 0;
-
-    // Deduct Upgrade Fee from Seller Wallet (if fee > 0)
+    // Deduct Upgrade Fee from Seller Wallet (if fee > 0), in one database step (utils/wallet.js)
+    let balanceAfterFee = seller.wallet?.balance || 0;
     if (feeToCharge > 0) {
-      seller.wallet.balance = currentBal - feeToCharge;
+      const charged = await walletApply(seller._id, { balance: -feeToCharge });
+      if (charged) balanceAfterFee = charged.wallet.balance || 0;
 
       // Record in ledger as an adjustment
       await Withdrawal.create({
@@ -1409,7 +1522,7 @@ router.post('/:id/limit-finalize', authAdmin('finance'), async (req, res) => {
         seller: seller._id,
         storeName: seller.storeName,
         amount: -feeToCharge,
-        balanceAfter: seller.wallet.balance,
+        balanceAfter: balanceAfterFee,
         isManualAdjustment: true,
         status: 'completed',
         adminNote: `Withdrawal Limit Upgrade Fee: Upgraded from $${prevLimit} to $${newLimit}`,
@@ -1433,8 +1546,7 @@ router.post('/:id/limit-finalize', authAdmin('finance'), async (req, res) => {
     };
 
     seller.markModified('withdrawalLimit');
-    seller.markModified('wallet');
-    await seller.save();
+    await seller.save(); // only the limit settings; the wallet was changed above and is not rewritten
 
     // Official Celebratory Chat Announcement
     try {
@@ -1449,7 +1561,7 @@ router.post('/:id/limit-finalize', authAdmin('finance'), async (req, res) => {
           `Tier: ${tierName}\n` +
           `Next Upgrade Requirement: ${nextTarget} Completed Withdrawals\n` +
           (feeToCharge > 0 ? `Upgrade Fee Deducted: $${feeToCharge.toLocaleString('en-US')}\n` : '') +
-          `New Available Balance: $${(seller.wallet?.balance || 0).toLocaleString('en-US')}\n` +
+          `New Available Balance: $${Number(balanceAfterFee || 0).toLocaleString('en-US')}\n` +
           `Status: ACTIVE & VERIFIED\n` +
           `━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
@@ -1572,7 +1684,7 @@ router.post('/:id/limit-increase-decision', authAdmin('finance'), async (req, re
 });
 
 // POST /api/sellers/:id/withdrawal-limit (Admin directly updates withdrawal limit settings)
-router.post('/:id/withdrawal-limit', authAdmin(), async (req, res) => {
+router.post('/:id/withdrawal-limit', authAdmin('finance'), async (req, res) => {
   try {
     const { maxAmount, minAmount, requiredWithdrawalsForIncrease, successfulWithdrawalCount, upgradeFee, currentTierName } = req.body;
     const seller = await Seller.findById(req.params.id);
@@ -1596,9 +1708,11 @@ router.post('/:id/withdrawal-limit', authAdmin(), async (req, res) => {
     if (io) {
       io.to(`seller:${seller._id}`).emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
       io.to(`seller:${seller._id}`).emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.emit('limit:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      // only this seller and the admins are told (it used to go to every connected visitor)
+      io.to(`seller:${seller._id}`).emit('limit:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.to('admins').emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.to('admins').emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.to('admins').emit('limit:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
     }
 
     notify(req.app, {

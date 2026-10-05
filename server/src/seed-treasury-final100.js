@@ -1,3 +1,4 @@
+import './_script-guard.js';
 import 'dotenv/config';
 import dns from 'dns';
 try { dns.setServers(['8.8.8.8', '1.1.1.1']); } catch (_) {}
@@ -10,7 +11,7 @@ import { ensureCategories } from './seed-treasury-categories.js';
 import { FINAL_100_PRODUCTS } from './data/batch8-final-100.js';
 
 const DEFAULT_ATLAS_URI =
-  'mongodb+srv://aizazkhan6241_db_user:98av24298@cluster0.ijpphlb.mongodb.net/bazario?retryWrites=true&w=majority&appName=Cluster0';
+  process.env.MONGO_URI;
 
 async function main() {
   console.log('⚡ Starting Product Treasury Batch 8 Seeding (Final 100 Products)...');
@@ -21,8 +22,8 @@ async function main() {
     !mongoUri ||
     mongoUri.includes('<db_username>') ||
     mongoUri.includes('<db_password>') ||
-    mongoUri.includes('aizaz6241_db_user:') ||
-    mongoUri.includes('u2IODhWhiXehEOy8')
+    false ||
+    false
   ) {
     mongoUri = DEFAULT_ATLAS_URI;
   }

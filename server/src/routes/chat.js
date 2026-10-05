@@ -1,10 +1,21 @@
 import { Router } from 'express';
-import multer from 'multer';
+import mongoose from 'mongoose';
 import { Conversation, Message, ChatSettings } from '../models/Chat.js';
 import Seller from '../models/Seller.js';
 import Admin from '../models/Admin.js';
 import { authAdmin, authSeller, authSellerOrAdmin } from '../middleware/auth.js';
 import { notify } from '../utils/notify.js';
+import { audit } from '../utils/audit.js';
+import { deleteAttachmentFiles, attachmentLocation } from '../services/uploads.js';
+import { asText } from '../middleware/sanitize.js';
+import { limit } from '../utils/rateLimit.js';
+
+// A guest chat is opened with the random id the storefront keeps in the browser (36 characters).
+// Knowing that id is what gives access to that one chat, so it must be real text of a sensible
+// length. An object such as {"$ne": ""} sent in its place used to match OTHER people's chats.
+const goodGuestId = (v) => typeof v === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(v);
+const guestSendLimit = limit({ name: 'guest-chat-send', max: 40, windowMs: 60 * 1000, message: 'You are sending messages too fast. Please wait a moment.' });
+const guestReadLimit = limit({ name: 'guest-chat-read', max: 240, windowMs: 60 * 1000 });
 
 const router = Router();
 
@@ -703,6 +714,174 @@ router.post('/admin/team/:targetAdminId/send', authAdmin('chat'), async (req, re
 });
 
 // ----------------------------------------------------
+// CLEARING CHATS (and freeing the storage used by their pictures / PDFs)
+// ----------------------------------------------------
+
+// Every message that belongs to a conversation (same rule the message list uses)
+function conversationScope(conv) {
+  const sellerId = conv.seller?._id || conv.seller;
+  if (conv.type !== 'internal' && sellerId) return { $or: [{ conversation: conv._id }, { seller: sellerId }] };
+  if (conv.type !== 'internal' && conv.guestId) return { $or: [{ conversation: conv._id }, { guestId: conv.guestId }] };
+  return { conversation: conv._id };
+}
+
+// A file is removed from storage only when no remaining message still points to it
+async function deleteUnreferencedAttachments(urls) {
+  const unique = [...new Set((urls || []).filter(Boolean))];
+  if (!unique.length) return { requested: 0, deleted: 0, failed: 0, error: '' };
+  const stillUsed = new Set(await Message.distinct('attachment', { attachment: { $in: unique } }));
+  return deleteAttachmentFiles(unique.filter((u) => !stillUsed.has(u)));
+}
+
+function parseClearRange(body) {
+  const mode = ['all', 'before', 'range'].includes(body?.mode) ? body.mode : null;
+  if (!mode) return { error: 'Choose what to clear: all, before a date, or a date range' };
+  const asDate = (v) => {
+    const d = v ? new Date(v) : null;
+    return d && !isNaN(d.getTime()) ? d : null;
+  };
+  if (mode === 'all') return { mode, createdAt: null, from: null, to: null };
+  if (mode === 'before') {
+    const before = asDate(body.before);
+    if (!before) return { error: 'A valid date is required' };
+    return { mode, createdAt: { $lt: before }, from: null, to: before };
+  }
+  const from = asDate(body.from);
+  const to = asDate(body.to);
+  if (!from || !to) return { error: 'Both dates are required' };
+  if (from > to) return { error: 'The first date must be before the second date' };
+  return { mode, createdAt: { $gte: from, $lte: to }, from, to };
+}
+
+/**
+ * Permanently removes the messages of one conversation (all of them, or only a date range)
+ * together with their uploaded pictures / PDFs. With `dryRun` it only counts.
+ */
+async function clearConversation(req, conv, body) {
+  const range = parseClearRange(body);
+  if (range.error) return { status: 400, json: { message: range.error } };
+
+  const scope = conversationScope(conv);
+  const filter = range.createdAt ? { $and: [scope, { createdAt: range.createdAt }] } : scope;
+
+  const docs = await Message.find(filter).select('_id attachment').lean();
+  const ids = docs.map((d) => d._id);
+  const urls = [...new Set(docs.map((d) => d.attachment).filter(Boolean))];
+  const fileCount = urls.filter((u) => attachmentLocation(u)).length;
+
+  if (body?.dryRun) {
+    return { status: 200, json: { ok: true, dryRun: true, messages: ids.length, files: fileCount } };
+  }
+  if (!ids.length) {
+    return { status: 200, json: { ok: true, deleted: 0, files: { requested: 0, deleted: 0, failed: 0, error: '' }, message: 'There were no messages to clear' } };
+  }
+
+  await Message.deleteMany({ _id: { $in: ids } });
+  const files = await deleteUnreferencedAttachments(urls);
+
+  // Conversation preview: latest message that is still there, or an empty chat
+  const latest = await Message.findOne(scope).sort({ createdAt: -1 }).lean();
+  if (latest) {
+    conv.lastMessage = latest.isDeleted
+      ? '🚫 Message deleted'
+      : (latest.text || (latest.attachmentType === 'pdf' ? `📄 ${latest.attachmentName || 'PDF Document'}` : '📷 Image Attachment')).slice(0, 70);
+    conv.lastSender = latest.sender;
+    conv.lastAt = latest.createdAt;
+  } else {
+    conv.lastMessage = '🧹 Chat cleared';
+    conv.unreadForAdmin = 0;
+    conv.unreadForSeller = 0;
+    conv.unreadForCustomer = 0;
+    conv.unreadForAdminA = 0;
+    conv.unreadForAdminB = 0;
+  }
+  await conv.save();
+
+  // Tell the people who have this chat open, so the messages disappear without a reload
+  const sellerId = conv.seller?._id ? conv.seller._id.toString() : conv.seller ? conv.seller.toString() : null;
+  const payload = {
+    conversationId: conv._id,
+    sellerId,
+    guestId: conv.guestId || null,
+    internal: conv.type === 'internal',
+    mode: range.mode,
+    from: range.from,
+    to: range.to,
+    lastMessage: conv.lastMessage,
+  };
+  const io = req.app.get('io');
+  if (io) {
+    if (conv.type === 'internal') {
+      if (conv.adminA) io.to(`admin:${conv.adminA}`).emit('chat:cleared', payload);
+      if (conv.adminB) io.to(`admin:${conv.adminB}`).emit('chat:cleared', payload);
+    } else {
+      io.to('admins').emit('chat:cleared', payload);
+      if (sellerId) io.to(`seller:${sellerId}`).emit('chat:cleared', payload);
+      if (conv.guestId) {
+        io.to(`guest:${conv.guestId}`).emit('chat:cleared', payload);
+        io.to(`customer:${conv.guestId}`).emit('chat:cleared', payload);
+      }
+    }
+  }
+
+  await audit(req, 'chat_cleared', 'conversation', conv._id, {
+    with: conv.storeName || conv.name || conv.adminBName || '',
+    mode: range.mode,
+    from: range.from,
+    to: range.to,
+    messages: ids.length,
+    filesDeleted: files.deleted,
+    filesFailed: files.failed,
+  });
+
+  return {
+    status: 200,
+    json: {
+      ok: true,
+      deleted: ids.length,
+      files,
+      message:
+        files.failed > 0
+          ? `${ids.length} messages cleared, but ${files.failed} file(s) could not be removed from storage: ${files.error}`
+          : `${ids.length} messages and ${files.deleted} file(s) deleted`,
+    },
+  };
+}
+
+// POST /api/chat/admin/conversations/:id/clear (Admin clears a seller / guest chat: all of it, or a date range)
+router.post('/admin/conversations/:id/clear', authAdmin('chat'), async (req, res) => {
+  try {
+    const conv = await Conversation.findById(req.params.id);
+    if (!conv) return res.status(404).json({ message: 'Conversation not found' });
+    if (conv.type === 'internal') return res.status(400).json({ message: 'Use the team chat to clear a team conversation' });
+    const out = await clearConversation(req, conv, req.body || {});
+    res.status(out.status).json(out.json);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/chat/admin/team/:targetAdminId/clear (Admin clears their own 1-on-1 chat with a team member)
+router.post('/admin/team/:targetAdminId/clear', authAdmin('chat'), async (req, res) => {
+  try {
+    const myId = req.admin.id;
+    const targetAdminId = req.params.targetAdminId;
+    const conv = await Conversation.findOne({
+      type: 'internal',
+      $or: [
+        { adminA: myId, adminB: targetAdminId },
+        { adminA: targetAdminId, adminB: myId },
+      ],
+    });
+    if (!conv) return res.json({ ok: true, deleted: 0, messages: 0, files: req.body?.dryRun ? 0 : { requested: 0, deleted: 0, failed: 0, error: '' }, dryRun: Boolean(req.body?.dryRun) });
+    const out = await clearConversation(req, conv, req.body || {});
+    res.status(out.status).json(out.json);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ----------------------------------------------------
 // 4. CHAT SETTINGS & AUTO-REPLY ENDPOINTS
 // ----------------------------------------------------
 
@@ -762,239 +941,8 @@ router.post('/settings/auto-reply', authAdmin('chat'), async (req, res) => {
   }
 });
 
-// Helper: Clean chat message output from any robotic headers, email sign-offs, or think tokens
-function cleanChatRewrittenOutput(raw) {
-  if (!raw) return '';
-  let text = String(raw).trim();
-  text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-
-  // If output leaked reasoning, analysis, or checklists
-  if (
-    text.includes("thinking process") ||
-    text.includes("**Analyze") ||
-    text.includes("The user wants me to") ||
-    text.includes("Issues in draft:") ||
-    text.includes("Constraint Checklist")
-  ) {
-    const finalMatch = text.match(/(?:\*\*Final(?:\s+Response|\s+Output|\s+Message)?:\*\*|\*\*Output:\*\*|Final Message:|Output:)\s*([\s\S]+)$/i);
-    if (finalMatch && finalMatch[1]) {
-      text = finalMatch[1].trim();
-    } else {
-      const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
-      for (let i = lines.length - 1; i >= 0; i--) {
-        const line = lines[i];
-        if (
-          !line.startsWith('**') &&
-          !line.startsWith('-') &&
-          !line.startsWith('1.') &&
-          !line.startsWith('2.') &&
-          !line.startsWith('3.') &&
-          !line.startsWith('4.') &&
-          !line.startsWith('5.') &&
-          !line.includes('thinking process') &&
-          !line.includes('Constraint Checklist') &&
-          !line.includes('The user wants') &&
-          line.length > 5
-        ) {
-          text = line;
-          break;
-        }
-      }
-    }
-  }
-
-  text = text.replace(/^(draft|rewritten|response|chat message|polished|output):\s*/i, '').trim();
-  text = text.replace(/^(dear\s+(seller|merchant|customer|user|partner|sir|madam|team|all)[,\n\r\s\-:]*)/i, '').trim();
-  text = text.replace(/\n*(regards|best regards|warm regards|sincerely|thanks and regards|support team|bazario support|bazario team)[,\s\S]*$/i, '').trim();
-  if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith('“') && text.endsWith('”')) || (text.startsWith("'") && text.endsWith("'"))) {
-    text = text.slice(1, -1).trim();
-  }
-  return text;
-}
-
-// POST /api/chat/admin/ai-rewrite (AI-assisted message rewrite for Admin support)
-router.post('/admin/ai-rewrite', authAdmin('chat'), async (req, res) => {
-  try {
-    const { text, tone = 'auto' } = req.body || {};
-    if (!text || !text.trim()) {
-      return res.status(400).json({ ok: false, message: 'Message text is required for AI rewrite' });
-    }
-
-    const DEFAULT_KEY_B64 = 'c2stb3ItdjEtMTVkZTYwOTJjMjFiODMyNWFkNTJjMTNhMThkNTZkNDc2NGVhYjM4YTUwYjQzZWIwYWE2MWY5Y2I0NmUwMTQzZg==';
-    const apiKey = process.env.OPENROUTER_API_KEY || Buffer.from(DEFAULT_KEY_B64, 'base64').toString('utf8');
-    const model = process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3-ultra-550b-a55b:free';
-
-    let modeInstruction = 'Convert rough speech/draft into clean, polite, professional Roman Urdu (Urdu in English letters) or English. If input is in Hindi/Devanagari script or broken voice words, ALWAYS convert into clean Roman Urdu. NEVER output Hindi/Devanagari script.';
-    if (tone === 'concise' || tone === 'short') {
-      modeInstruction = 'Keep it very short, crisp, and direct (1 simple sentence) in Roman Urdu or English.';
-    } else if (tone === 'roman_urdu') {
-      modeInstruction = 'Rewrite or polish in natural, clean, respectful Roman Urdu (Urdu written in English alphabet).';
-    } else if (tone === 'urdu') {
-      modeInstruction = 'Rewrite or polish in clean, respectful, formal Urdu script (اردو رسم الخط).';
-    } else if (tone === 'english') {
-      modeInstruction = 'Rewrite or polish in clear, polite, and professional business English.';
-    }
-
-    const messages = [
-      {
-        role: 'system',
-        content: `You are a real-time instant chat message polisher (like WhatsApp / Live Support) helping an e-commerce admin.
-Task: Polish the user's draft message into natural, professional, human-like chat wording.
-Mode: ${modeInstruction}
-
-CRITICAL RULES:
-1. THIS IS LIVE INSTANT CHAT, NOT AN EMAIL.
-2. NEVER write in Hindi/Devanagari script.
-3. NEVER write email greetings ("Dear Seller", "Hello there! I hope you are having a wonderful day").
-4. NEVER write email signatures ("Regards, Bazario Support Team", "Best regards", "Sincerely").
-5. NEVER output analysis, reasoning, checklists, notes, or explanations.
-6. Output ONLY the final rewritten chat message text.`
-      },
-      {
-        role: 'user',
-        content: 'Draft: apka parcel return aya h address sahi kr k kal dobara bhejo'
-      },
-      {
-        role: 'assistant',
-        content: 'Aapka parcel return ho gaya hai. Kindly address check kar ke kal dobara bhej dein.'
-      },
-      {
-        role: 'user',
-        content: 'Draft: please send your bank details for payment'
-      },
-      {
-        role: 'assistant',
-        content: 'Please share your bank details so we can process your payment.'
-      },
-      {
-        role: 'user',
-        content: `Draft: ${text.trim()}`
-      }
-    ];
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000);
-
-    try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://bazario.pk',
-          'X-Title': 'Bazario Marketplace Admin Chat',
-        },
-        body: JSON.stringify({
-          model,
-          messages,
-          temperature: 0.2,
-          max_tokens: 350,
-        }),
-        signal: controller.signal,
-      });
-
-      clearTimeout(timeout);
-
-      if (!response.ok) {
-        const errText = await response.text().catch(() => '');
-        console.error('OpenRouter API error response:', response.status, errText);
-        return res.status(502).json({
-          ok: false,
-          message: `AI service error (${response.status}). Please try again shortly.`,
-          details: errText,
-        });
-      }
-
-      const data = await response.json();
-      let rawRewritten = data.choices?.[0]?.message?.content?.trim() || '';
-      let rewritten = cleanChatRewrittenOutput(rawRewritten);
-
-      if (!rewritten) {
-        return res.status(500).json({ ok: false, message: 'AI returned an empty response. Please try again.' });
-      }
-
-      return res.json({
-        ok: true,
-        original: text.trim(),
-        rewritten,
-        tone,
-        model,
-      });
-    } catch (fetchErr) {
-      clearTimeout(timeout);
-      if (fetchErr.name === 'AbortError') {
-        return res.status(504).json({ ok: false, message: 'AI rewrite request timed out. Please try again.' });
-      }
-      throw fetchErr;
-    }
-  } catch (err) {
-    console.error('AI Rewrite route error:', err);
-    res.status(500).json({ ok: false, message: err.message || 'Failed to rewrite message with AI' });
-  }
-});
-
-const audioUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 },
-});
-
-// POST /api/chat/admin/transcribe (Transcribe audio strictly into English)
-router.post('/admin/transcribe', authAdmin('chat'), audioUpload.single('audio'), async (req, res) => {
-  try {
-    if (!req.file || !req.file.buffer) {
-      return res.status(400).json({ ok: false, message: 'Audio file is required for transcription' });
-    }
-
-    const _gk_codes = [103,115,107,95,87,113,121,90,78,105,81,82,73,108,78,78,84,109,88,51,97,117,79,119,87,71,100,121,98,51,70,89,75,71,73,51,68,80,51,88,118,111,84,49,86,76,67,50,100,110,51,101,81,90,52,75];
-    const groqKey = process.env.GROQ_API_KEY || String.fromCharCode(..._gk_codes);
-
-    const fileName = req.file.originalname || 'audio.webm';
-    const mimeType = req.file.mimetype || 'audio/webm';
-    const audioBlob = new Blob([req.file.buffer], { type: mimeType });
-
-    const formData = new FormData();
-    formData.append('file', audioBlob, fileName);
-    formData.append('model', 'whisper-large-v3-turbo');
-    formData.append('language', 'en');
-    formData.append('prompt', 'Transcribe clear English speech accurately.');
-    formData.append('response_format', 'json');
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
-
-    const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${groqKey}`,
-      },
-      body: formData,
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      console.error('Groq Whisper error response:', response.status, errText);
-      return res.status(502).json({
-        ok: false,
-        message: `Voice transcription error (${response.status})`,
-        details: errText,
-      });
-    }
-
-    const data = await response.json();
-    const rawTranscribedText = (data?.text || '').trim();
-
-    return res.json({
-      ok: true,
-      text: rawTranscribedText,
-    });
-  } catch (err) {
-    console.error('Transcription route error:', err);
-    res.status(500).json({ ok: false, message: err.message || 'Failed to transcribe audio' });
-  }
-});
+// The AI helpers that used to live here (message rewrite through OpenRouter, voice-to-text through
+// Groq) were removed together with their API keys. Nothing in this app calls an AI service now.
 
 // ----------------------------------------------------
 // 5. MESSAGE EDIT & DELETE (ADMIN & PARTICIPANTS)
@@ -1003,8 +951,9 @@ router.post('/admin/transcribe', authAdmin('chat'), audioUpload.single('audio'),
 // PUT /api/chat/messages/:id (Edit a message — requires Admin or author Seller)
 router.put('/messages/:id', authSellerOrAdmin, async (req, res) => {
   try {
-    const { text } = req.body || {};
+    const text = asText(req.body?.text, 4000);
     if (!text || !text.trim()) return res.status(400).json({ message: 'Text is required to edit message' });
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Message not found' });
 
     const msg = await Message.findById(req.params.id);
     if (!msg) return res.status(404).json({ message: 'Message not found' });
@@ -1040,8 +989,9 @@ router.put('/messages/:id', authSellerOrAdmin, async (req, res) => {
     if (io) {
       if (msg.seller) io.to(`seller:${msg.seller}`).emit('message:edit', editPayload);
       if (msg.guestId) io.to(`guest:${msg.guestId}`).emit('message:edit', editPayload);
+      if (msg.guestId) io.to(`customer:${msg.guestId}`).emit('message:edit', editPayload);
       io.to('admins').emit('message:edit', editPayload);
-      io.emit('message:edit', editPayload);
+      // (no broadcast to everyone: only the people in this conversation and the admins are told)
     }
 
     res.json({ message: 'Message updated successfully', msg, text: msg.text, isEdited: true, editedAt: msg.editedAt });
@@ -1053,6 +1003,7 @@ router.put('/messages/:id', authSellerOrAdmin, async (req, res) => {
 // DELETE /api/chat/messages/:id (Delete a message — requires Admin or author Seller)
 router.delete('/messages/:id', authSellerOrAdmin, async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Message not found' });
     const msg = await Message.findById(req.params.id);
     if (!msg) return res.status(404).json({ message: 'Message not found' });
 
@@ -1063,6 +1014,8 @@ router.delete('/messages/:id', authSellerOrAdmin, async (req, res) => {
       return res.status(403).json({ message: 'You do not have permission to delete this message' });
     }
 
+    const attachmentUrl = msg.attachment;
+
     msg.isDeleted = true;
     msg.deletedAt = new Date();
     msg.text = '';
@@ -1070,6 +1023,11 @@ router.delete('/messages/:id', authSellerOrAdmin, async (req, res) => {
     msg.attachmentName = '';
     msg.attachmentType = null;
     await msg.save();
+
+    // Remove the picture / PDF from storage too (not only its link), unless another message still uses it
+    if (attachmentUrl) {
+      await deleteUnreferencedAttachments([attachmentUrl]);
+    }
 
     // If conversation lastMessage was this, update it
     if (msg.conversation) {
@@ -1093,8 +1051,9 @@ router.delete('/messages/:id', authSellerOrAdmin, async (req, res) => {
     if (io) {
       if (msg.seller) io.to(`seller:${msg.seller}`).emit('message:delete', deletePayload);
       if (msg.guestId) io.to(`guest:${msg.guestId}`).emit('message:delete', deletePayload);
+      if (msg.guestId) io.to(`customer:${msg.guestId}`).emit('message:delete', deletePayload);
       io.to('admins').emit('message:delete', deletePayload);
-      io.emit('message:delete', deletePayload);
+      // (no broadcast to everyone: only the people in this conversation and the admins are told)
     }
 
     res.json({ message: 'Message deleted successfully', msg, isDeleted: true, deletedAt: msg.deletedAt });
@@ -1108,10 +1067,14 @@ router.delete('/messages/:id', authSellerOrAdmin, async (req, res) => {
 // ----------------------------------------------------
 
 // POST /api/chat/guest/thread (Guest / Pre-login gets or creates inquiry thread)
-router.post('/guest/thread', async (req, res) => {
+router.post('/guest/thread', guestReadLimit, async (req, res) => {
   try {
-    const { guestId, name, email, phone, subject } = req.body || {};
-    if (!guestId) return res.status(400).json({ message: 'Guest ID is required' });
+    const guestId = req.body?.guestId;
+    const name = asText(req.body?.name, 80).trim();
+    const email = asText(req.body?.email, 120).trim();
+    const phone = asText(req.body?.phone, 40).trim();
+    const subject = asText(req.body?.subject, 150).trim();
+    if (!goodGuestId(guestId)) return res.status(400).json({ message: 'Guest ID is required' });
 
     let conv = await Conversation.findOne({ guestId, type: 'guest' });
     if (!conv) {
@@ -1140,12 +1103,19 @@ router.post('/guest/thread', async (req, res) => {
 });
 
 // POST /api/chat/guest/send (Guest sends message to admin)
-router.post('/guest/send', async (req, res) => {
+router.post('/guest/send', guestSendLimit, async (req, res) => {
   try {
-    const { guestId, text, name, email, phone, attachment, attachmentType, attachmentName, attachmentSize } = req.body || {};
-    const cleanText = (text || '').trim();
+    const guestId = req.body?.guestId;
+    const name = asText(req.body?.name, 80).trim();
+    const email = asText(req.body?.email, 120).trim();
+    const phone = asText(req.body?.phone, 40).trim();
+    const attachment = asText(req.body?.attachment, 2000) || null;
+    const attachmentType = ['image', 'pdf'].includes(req.body?.attachmentType) ? req.body.attachmentType : null;
+    const attachmentName = asText(req.body?.attachmentName, 200);
+    const attachmentSize = Number(req.body?.attachmentSize) > 0 ? Number(req.body.attachmentSize) : 0;
+    const cleanText = asText(req.body?.text, 4000).trim().slice(0, 2000);
     if (!cleanText && !attachment) return res.status(400).json({ message: 'Message is required' });
-    if (!guestId) return res.status(400).json({ message: 'Guest ID is required' });
+    if (!goodGuestId(guestId)) return res.status(400).json({ message: 'Guest ID is required' });
 
     let conv = await Conversation.findOne({ guestId, type: 'guest' });
     if (!conv) {
@@ -1213,10 +1183,10 @@ router.post('/guest/send', async (req, res) => {
 });
 
 // GET /api/chat/guest/:guestId (Get conversation & messages for guest or customer)
-router.get('/guest/:guestId', async (req, res) => {
+router.get('/guest/:guestId', guestReadLimit, async (req, res) => {
   try {
     const { guestId } = req.params;
-    if (!guestId) return res.status(400).json({ message: 'Guest ID is required' });
+    if (!goodGuestId(guestId)) return res.status(400).json({ message: 'Guest ID is required' });
 
     let conv = await Conversation.findOne({ guestId });
     if (!conv) {
@@ -1235,10 +1205,10 @@ router.get('/guest/:guestId', async (req, res) => {
 });
 
 // GET /api/chat/messages/:guestId (Storefront widget messages fetch)
-router.get('/messages/:guestId', async (req, res) => {
+router.get('/messages/:guestId', guestReadLimit, async (req, res) => {
   try {
     const { guestId } = req.params;
-    if (!guestId) return res.json([]);
+    if (!goodGuestId(guestId)) return res.json([]);
 
     const { limit, before } = req.query;
     const { messages } = await fetchConversationMessages({ guestId }, { limit, before });
@@ -1249,10 +1219,10 @@ router.get('/messages/:guestId', async (req, res) => {
 });
 
 // POST /api/chat/read/:guestId (Mark messages as read for guest)
-router.post('/read/:guestId', async (req, res) => {
+router.post('/read/:guestId', guestReadLimit, async (req, res) => {
   try {
     const { guestId } = req.params;
-    if (guestId) {
+    if (goodGuestId(guestId)) {
       const conv = await Conversation.findOne({ guestId });
       const now = new Date();
       if (conv) {

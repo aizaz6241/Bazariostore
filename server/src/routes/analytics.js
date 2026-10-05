@@ -167,7 +167,7 @@ router.get('/dashboard', authAdmin(), async (req, res) => {
 });
 
 // GET /api/analytics/usdt-wallet-history — Detailed USDT Wallet transactions breakdown
-router.get('/usdt-wallet-history', authAdmin(), async (req, res) => {
+router.get('/usdt-wallet-history', authAdmin('finance'), async (req, res) => {
   try {
     const { period = 'all', search = '' } = req.query;
 
@@ -309,7 +309,7 @@ router.get('/usdt-wallet-history', authAdmin(), async (req, res) => {
 });
 
 // GET /api/analytics/reports — Super Admin Analytics & Visual Reports
-router.get('/reports', authAdmin(), async (req, res) => {
+router.get('/reports', authAdmin('reports'), async (req, res) => {
   try {
     let since = null;
     let until = new Date();

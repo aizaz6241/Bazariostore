@@ -1,8 +1,9 @@
+import './_script-guard.js';
 import dns from 'dns';
 dns.setServers(['8.8.8.8', '1.1.1.1']);
 import mongoose from 'mongoose';
 
-const DEFAULT_ATLAS_URI = 'mongodb+srv://aizazkhan6241_db_user:98av24298@cluster0.ijpphlb.mongodb.net/bazario?retryWrites=true&w=majority&appName=Cluster0';
+const DEFAULT_ATLAS_URI = process.env.MONGO_URI;
 const uri = process.env.MONGO_URI || process.env.MONGODB_URI || DEFAULT_ATLAS_URI;
 
 async function run() {

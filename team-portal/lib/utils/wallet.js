@@ -373,8 +373,17 @@ export async function recordWalletPayout({
     date: new Date(),
   });
 
+  // Two payouts written at the very same moment both pass the check above (each sees the balance
+  // before the other). So the balance is looked at once more AFTER saving: if this payout took
+  // the wallet below zero, it is taken back and refused.
   invalidateLedger();
-  await getWalletData({ userId: user._id });
+  const after = await getWalletData({ userId: user._id });
+  if ((after?.balances?.balanceUSDT ?? 0) < -0.005 && available >= 0) {
+    await WalletTransaction.deleteOne({ _id: transaction._id });
+    invalidateLedger();
+    await getWalletData({ userId: user._id });
+    throw new Error('Another payout for this wallet was recorded at the same moment. Please check the balance and try again.');
+  }
 
   return transaction;
 }

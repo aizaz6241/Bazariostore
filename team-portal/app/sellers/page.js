@@ -110,9 +110,12 @@ export default function SellersPage() {
       });
 
       if (res.ok) {
+        const okData = await res.json().catch(() => ({}));
         setAssignModalSeller(null);
         setSelectedMemberId('');
         fetchData();
+        // Moving a seller that already has an owner waits for the other partner
+        if (okData.pendingApproval) alert(okData.message);
       } else {
         const data = await res.json();
         alert(data.message || 'Assignment failed');

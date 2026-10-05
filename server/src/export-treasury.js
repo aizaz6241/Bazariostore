@@ -1,3 +1,4 @@
+import './_script-guard.js';
 import dns from 'dns';
 try { dns.setServers(['8.8.8.8', '1.1.1.1']); } catch (_) {}
 import mongoose from 'mongoose';
@@ -5,7 +6,7 @@ import fs from 'fs';
 import './models/Category.js';
 import TreasuryProduct from './models/TreasuryProduct.js';
 
-const URI = 'mongodb+srv://aizazkhan6241_db_user:98av24298@cluster0.ijpphlb.mongodb.net/bazario?retryWrites=true&w=majority&appName=Cluster0';
+const URI = process.env.MONGO_URI;
 
 async function exportAll() {
   try {

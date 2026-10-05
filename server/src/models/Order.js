@@ -43,6 +43,8 @@ const orderSchema = new mongoose.Schema(
         profitRate: { type: Number, default: 20 }, // 20% profit margin
         profitAmount: { type: Number, default: 0 },
         payoutSettled: { type: Boolean, default: false },
+        // how many times this item's funds were locked (a new lock after a cancel is a new step)
+        lockGen: { type: Number, default: 0 },
         settledAt: { type: Date, default: null },
       },
     ],
@@ -83,6 +85,8 @@ const orderSchema = new mongoose.Schema(
     statusHistory: [{ status: String, note: String, at: { type: Date, default: Date.now }, by: String }],
     refundId: { type: mongoose.Schema.Types.ObjectId, ref: 'Refund', default: null },
     stockRestored: { type: Boolean, default: false },
+    // delivered: reservation released and sale counted (done once, see utils/orderStock.js)
+    stockSettled: { type: Boolean, default: false },
     adminNotes: { type: String, default: '' },
     warning24hSent: { type: Boolean, default: false },
     penalty48hApplied: { type: Boolean, default: false },

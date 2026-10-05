@@ -143,7 +143,10 @@ export async function POST(req) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
 
-    const { chatType, targetMemberId, messageType, text, mediaUrl, audioDuration } = await req.json();
+    const { chatType, targetMemberId, messageType: askedType, text, mediaUrl, audioDuration } = await req.json();
+    // Only ordinary messages can be sent from the chat box. "System" messages (bonus announcements
+    // and the like) are written by the server itself, never by whoever is typing.
+    const messageType = ['text', 'image', 'voice'].includes(askedType) ? askedType : 'text';
 
     let conversationId = 'main_group';
     let target = null;

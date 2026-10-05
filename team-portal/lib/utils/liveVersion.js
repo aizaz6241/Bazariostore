@@ -48,7 +48,7 @@ async function readParts() {
   await connectDB();
   const db = mongoose.connection.db;
 
-  const [withdrawals, sellers, splits, payouts, claims, assignments, members] = await Promise.all([
+  const [withdrawals, sellers, splits, payouts, claims, assignments, members, approvals, logs] = await Promise.all([
     // Seller deposits / withdrawals: status changes, direct "add funds", adjustments, edited amounts
     db
       .collection('withdrawals')
@@ -112,6 +112,16 @@ async function readParts() {
       .toArray(),
     // Not `updatedAt` here: the ledger writes wallet numbers onto members, and a login touches them too.
     Member.find({}).select('name role active commissionLabel').lean(),
+    // Two-person approvals (asked / approved / rejected) and the activity log, so the Finance
+    // screen of the other partner shows a new request without a reload
+    db
+      .collection('portalfinanceapprovals')
+      .aggregate([{ $group: { _id: '$status', n: { $sum: 1 }, updated: { $max: '$updatedAt' } } }])
+      .toArray(),
+    db
+      .collection('portalfinancelogs')
+      .aggregate([{ $group: { _id: null, n: { $sum: 1 }, last: { $max: '$at' } } }])
+      .toArray(),
   ]);
 
   const stableParts = {
@@ -152,6 +162,8 @@ async function readParts() {
     members: members
       .map((m) => `${m._id}:${m.role}:${m.active !== false}:${m.commissionLabel || ''}:${m.name || ''}`)
       .sort(),
+    approvals: ordered(approvals.map((r) => [r._id || '', r.n, stamp(r.updated)])),
+    logs: logs.map((r) => [r.n, stamp(r.last)]),
   };
 
   const splitParts = ordered(splits.map((r) => [r._id === true, r.n, Math.round((Number(r.usdt) || 0) * 1e6), stamp(r.updated)]));

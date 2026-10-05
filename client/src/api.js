@@ -154,6 +154,21 @@ export const fmtDate = (d) =>
 export const fmtDay = (d) => new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
 
 // UploadThing url -> key (urls look like https://<app>.ufs.sh/f/<key> or utfs.io/f/<key>)
+// Admin cleared a chat (all of it, or a date range): drop those messages from an open chat screen.
+// `cleared` is the 'chat:cleared' socket payload: { mode: 'all' | 'before' | 'range', from, to }.
+export function dropClearedMessages(list, cleared) {
+  if (!Array.isArray(list) || !cleared) return list;
+  if (cleared.mode === 'all') return [];
+  const from = cleared.from ? new Date(cleared.from).getTime() : null;
+  const to = cleared.to ? new Date(cleared.to).getTime() : null;
+  return list.filter((m) => {
+    const t = new Date(m.createdAt).getTime();
+    if (Number.isNaN(t)) return true;
+    if (cleared.mode === 'before') return !(to !== null && t < to);
+    return !(from !== null && to !== null && t >= from && t <= to);
+  });
+}
+
 export const utKeyFromUrl = (url) => (url && url.includes('/f/') ? url.split('/f/')[1].split('?')[0] : null);
 
 /**

@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import { EJSON } from 'bson';
 import { authAdmin } from '../middleware/auth.js';
 import { audit } from '../utils/audit.js';
+import { finLog } from '../utils/financeLog.js';
 import {
   createBackup,
   listBackups,
@@ -25,6 +26,16 @@ const upload = multer({
 
 // All backup operations require admin 'settings' or 'backup' permission
 const checkBackupAuth = authAdmin('backup');
+
+// Restoring replaces the whole database (accounts, finance log, everything) with an older copy,
+// so only the Super Admin / Owner may do it.
+const superAdminOnly = (req, res, next) => {
+  if (req.admin?.role !== 'super_admin') {
+    finLog(req, { action: 'backup.restore_blocked', summary: `Tried to ${req.method === 'GET' ? 'download a backup file' : req.method === 'DELETE' ? 'delete a backup file' : 'restore the database from a backup'}, refused (Super Admin only)`, entity: 'system' });
+    return res.status(403).json({ message: 'Only the Super Admin can restore, download or delete database backups.' });
+  }
+  next();
+};
 
 /**
  * GET /stats - Returns database health & backup overview
@@ -103,7 +114,8 @@ router.post('/create', checkBackupAuth, async (req, res) => {
 /**
  * GET /download/:filename - Streams backup file directly to admin
  */
-router.get('/download/:filename', checkBackupAuth, (req, res) => {
+// A backup file holds the whole database (every account, every record): Super Admin only
+router.get('/download/:filename', checkBackupAuth, superAdminOnly, (req, res) => {
   try {
     const filename = req.params.filename;
     const filePath = getSafeBackupPath(filename);
@@ -116,11 +128,12 @@ router.get('/download/:filename', checkBackupAuth, (req, res) => {
 /**
  * DELETE /:filename - Deletes an old backup file
  */
-router.delete('/:filename', checkBackupAuth, async (req, res) => {
+router.delete('/:filename', checkBackupAuth, superAdminOnly, async (req, res) => {
   try {
     const filename = req.params.filename;
     await deleteBackupFile(filename);
     await audit(req, 'backup_deleted', 'system', filename);
+    await finLog(req, { action: 'backup.deleted', summary: `Deleted the backup file “${filename}”`, entity: 'system', before: { file: filename } });
     res.json({ ok: true, message: `Backup '${filename}' deleted.` });
   } catch (err) {
     res.status(400).json({ message: err.message });
@@ -130,13 +143,19 @@ router.delete('/:filename', checkBackupAuth, async (req, res) => {
 /**
  * POST /restore/:filename - Restores database from a server-side backup snapshot
  */
-router.post('/restore/:filename', checkBackupAuth, async (req, res) => {
+router.post('/restore/:filename', checkBackupAuth, superAdminOnly, async (req, res) => {
   try {
     const filename = req.params.filename;
     const result = await restoreFromLocalFile(filename);
     await audit(req, 'database_restored', 'system', filename, {
       collectionsRestored: result.collectionsRestored,
       documentsRestored: result.documentsRestored,
+    });
+    await finLog(req, {
+      action: 'backup.restored',
+      summary: `Restored the whole database from the backup “${filename}” (${result.documentsRestored} records)`,
+      entity: 'system',
+      after: { file: filename, collections: result.collectionsRestored, documents: result.documentsRestored },
     });
     res.json({ ok: true, message: 'Database restored successfully!', result });
   } catch (err) {
@@ -147,7 +166,7 @@ router.post('/restore/:filename', checkBackupAuth, async (req, res) => {
 /**
  * POST /upload-restore - Restores database from an uploaded JSON backup file
  */
-router.post('/upload-restore', checkBackupAuth, upload.single('backupFile'), async (req, res) => {
+router.post('/upload-restore', checkBackupAuth, superAdminOnly, upload.single('backupFile'), async (req, res) => {
   try {
     if (!req.file || !req.file.buffer) {
       return res.status(400).json({ message: 'No backup file uploaded.' });
@@ -165,6 +184,12 @@ router.post('/upload-restore', checkBackupAuth, upload.single('backupFile'), asy
     await audit(req, 'database_restored_upload', 'system', req.file.originalname, {
       collectionsRestored: result.collectionsRestored,
       documentsRestored: result.documentsRestored,
+    });
+    await finLog(req, {
+      action: 'backup.restored',
+      summary: `Restored the whole database from an uploaded file “${req.file.originalname}” (${result.documentsRestored} records)`,
+      entity: 'system',
+      after: { file: req.file.originalname, collections: result.collectionsRestored, documents: result.documentsRestored },
     });
 
     res.json({ ok: true, message: 'Database restored from uploaded file successfully!', result });

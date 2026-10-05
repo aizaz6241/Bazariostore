@@ -8,26 +8,27 @@ import bcrypt from 'bcryptjs';
 const INVISIBLE = /[​-‏⁠﻿]/g;
 const NBSP = / /g;
 
+// At most 4 spellings are tried (it used to be up to ten, each one a full bcrypt check):
+//   1. exactly as typed
+//   2. cleaned: invisible characters removed, odd spaces normalised, ends trimmed
+//   3. cleaned with the spaces a keyboard's autocomplete put in the middle removed
+//   4. cleaned with the first letter's case flipped (phones capitalise the first letter)
+// Guessing is stopped by the login rate limit, not by being strict about a stray capital.
 export function passwordCandidates(raw) {
-  const s = String(raw || '');
-  const set = new Set();
+  const s = String(raw || '').slice(0, 200);
+  const out = [];
   const add = (v) => {
-    if (v) set.add(v);
+    if (v && !out.includes(v) && out.length < 4) out.push(v);
   };
   add(s);
-  add(s.trim());
-  const cleaned = s.normalize('NFKC').replace(INVISIBLE, '').replace(NBSP, ' ');
+  const cleaned = s.normalize('NFKC').replace(INVISIBLE, '').replace(NBSP, ' ').trim();
   add(cleaned);
-  add(cleaned.trim());
-  add(cleaned.replace(/\s+/g, '')); // autocomplete ki beech wali spaces
-  // Android keyboards kabhi pehla harf khud capital kar dete hain — dono case try karo
-  for (const v of [...set]) {
-    if (v[0]) {
-      add(v[0].toLowerCase() + v.slice(1));
-      add(v[0].toUpperCase() + v.slice(1));
-    }
+  add(cleaned.replace(/\s+/g, ''));
+  if (cleaned[0]) {
+    const flipped = cleaned[0] === cleaned[0].toLowerCase() ? cleaned[0].toUpperCase() : cleaned[0].toLowerCase();
+    add(flipped + cleaned.slice(1));
   }
-  return [...set];
+  return out;
 }
 
 export async function comparePassword(raw, hash) {

@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import Member from '@/lib/models/Member';
+import { isActivePartner } from '@/lib/partners';
 
 /**
  * Synchronizes all administrators from the ecommerce platform's `admins` collection
@@ -56,14 +57,17 @@ async function runAdminSync() {
       const hasValidId = validEcommerceAdminIds.includes(pAdmin.ecommerceAdminId.toString());
       const hasValidEmail = pAdmin.email && validEcommerceEmails.includes(pAdmin.email.toLowerCase().trim());
 
-      // If this synced ecommerce admin no longer exists in the main ecommerce database, remove them!
-      if (!hasValidId && !hasValidEmail) {
-        console.log(`[adminSync] Deleting removed ecommerce admin from portal: ${pAdmin.name} (${pAdmin.username})`);
-        await Member.deleteOne({ _id: pAdmin._id });
+      // If this synced ecommerce admin no longer exists in the main ecommerce database, switch the
+      // portal account off. It is not deleted: its wallet history and old entries keep their name.
+      if (!hasValidId && !hasValidEmail && pAdmin.active !== false) {
+        console.log(`[adminSync] Switching off portal account of removed ecommerce admin: ${pAdmin.name} (${pAdmin.username})`);
+        await Member.updateOne({ _id: pAdmin._id }, { $set: { active: false } });
       }
     }
 
-    // ─── 3. Sync & Update Active Ecommerce Admins ───
+    // ─── 3. Sync & Update Ecommerce Admins ───
+    // Only FINANCE PARTNERS are portal admins. A staff admin account (support, orders, ...) gets
+    // no portal account; one that used to be a partner is switched off here (its history stays).
     const syncedAdmins = [];
 
     for (const eAdmin of ecommerceAdmins) {
@@ -71,11 +75,12 @@ async function runAdminSync() {
       const cleanEmail = eAdmin.email.toLowerCase().trim();
       const cleanUsername = cleanEmail.split('@')[0].toLowerCase().trim().replace(/[^a-z0-9]/g, '');
       const adminName = eAdmin.name || cleanUsername;
+      const partner = isActivePartner(eAdmin);
 
       // Match by ecommerceAdminId first, then by email or username
       let portalAdmin = await Member.findOne({ ecommerceAdminId: eAdmin._id });
 
-      if (!portalAdmin) {
+      if (!portalAdmin && partner) {
         portalAdmin = await Member.findOne({
           $or: [
             { email: cleanEmail },
@@ -92,10 +97,10 @@ async function runAdminSync() {
         portalAdmin.role = 'admin';
         portalAdmin.passwordHash = eAdmin.passwordHash;
         if (eAdmin.phone !== undefined) portalAdmin.phone = eAdmin.phone || '';
-        if (eAdmin.active !== undefined) portalAdmin.active = eAdmin.active;
+        portalAdmin.active = partner;
         if (portalAdmin.isModified()) await portalAdmin.save(); // write only when something really changed
-        syncedAdmins.push(portalAdmin);
-      } else {
+        if (partner) syncedAdmins.push(portalAdmin);
+      } else if (partner) {
         // Create new synced admin
         let finalUsername = cleanUsername;
         const exists = await Member.findOne({ username: finalUsername });
@@ -111,7 +116,7 @@ async function runAdminSync() {
           passwordHash: eAdmin.passwordHash,
           role: 'admin',
           phone: eAdmin.phone || '',
-          active: eAdmin.active !== false,
+          active: true,
           wallet: { balancePKR: 0, totalDepositsPKR: 0, totalWithdrawalsPKR: 0, totalBonusesPKR: 0 },
         });
         syncedAdmins.push(portalAdmin);

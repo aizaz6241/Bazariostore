@@ -141,8 +141,17 @@ router.put('/products/:id', authSeller, async (req, res) => {
 // DELETE /api/sellers/products/:id
 router.delete('/products/:id', authSeller, async (req, res) => {
   try {
-    const product = await Product.findOneAndDelete({ _id: req.params.id, seller: req.seller.id });
+    const product = await Product.findOne({ _id: req.params.id, seller: req.seller.id });
     if (!product) return res.status(404).json({ message: 'Product not found or access denied' });
+
+    if (product.treasuryProduct) {
+      return res.status(403).json({
+        ok: false,
+        message: 'Products imported from Product Treasury cannot be removed from your store.',
+      });
+    }
+
+    await Product.deleteOne({ _id: product._id });
     res.json({ ok: true, message: 'Product deleted' });
   } catch (err) {
     res.status(500).json({ message: err.message });

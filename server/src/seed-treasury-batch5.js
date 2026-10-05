@@ -1,3 +1,4 @@
+import './_script-guard.js';
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import TreasuryProduct from './models/TreasuryProduct.js';
@@ -723,7 +724,7 @@ const BATCH_5_PRODUCTS = [
 
 export async function runBatch5() {
   console.log('🚀 Starting Batch 5 Master Products seeding...');
-  const URI = 'mongodb+srv://aizazkhan6241_db_user:98av24298@cluster0.ijpphlb.mongodb.net/bazario?retryWrites=true&w=majority&appName=Cluster0';
+  const URI = process.env.MONGO_URI;
 
   await mongoose.connect(URI, {
     serverSelectionTimeoutMS: 20000,

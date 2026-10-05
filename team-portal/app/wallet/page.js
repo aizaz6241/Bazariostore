@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useLiveRefresh, LiveBadge } from '@/components/LiveProvider';
+import { PayoutConfirmations } from '@/components/FinanceControls';
 import {
   Wallet,
   ArrowDownLeft,
@@ -81,7 +82,11 @@ export default function WalletPage() {
   }, [period]);
 
   // New deposit shares, seller withdrawals and payouts appear by themselves
-  useLiveRefresh(() => fetchWallet(period, customStart, customEnd, true));
+  const [confirmTick, setConfirmTick] = useState(0);
+  useLiveRefresh(() => {
+    fetchWallet(period, customStart, customEnd, true);
+    setConfirmTick((n) => n + 1);
+  });
 
   const handlePeriodChange = (newPeriod) => {
     setPeriod(newPeriod);
@@ -122,10 +127,12 @@ export default function WalletPage() {
       });
 
       if (res.ok) {
-        setPayoutMsg({ text: 'Payout recorded successfully!', type: 'success' });
+        const okData = await res.json().catch(() => ({}));
+        // A payout written for someone else waits for a second person: say so instead of "recorded"
+        setPayoutMsg({ text: okData.pendingApproval ? okData.message : 'Payout recorded successfully!', type: 'success' });
         setPayoutAmount('');
         setPayoutNote('');
-        setTimeout(() => setShowPayoutForm(false), 1500);
+        setTimeout(() => setShowPayoutForm(false), okData.pendingApproval ? 4000 : 1500);
         fetchWallet();
       } else {
         const errData = await res.json();
@@ -384,6 +391,9 @@ export default function WalletPage() {
           </div>
         </div>
       </div>
+
+      {/* ── A payout someone else wrote in my name: I confirm it before it is deducted ── */}
+      <PayoutConfirmations tick={confirmTick} onChanged={() => fetchWallet(period, customStart, customEnd, true)} />
 
       {/* ── Record Payout Drawer Form ── */}
       {showPayoutForm && (

@@ -6,6 +6,8 @@ import { Seller, Order, CLIENT_SELLER_FILTER } from '@/lib/models/SharedModels';
 import RewardClaim from '@/lib/models/RewardClaim';
 import { syncEcommerceAdmins } from '@/lib/adminSync';
 import { loadTeamStats } from '@/lib/utils/teamStats';
+import { logFinance, flushFinanceAlertsSoon } from '@/lib/utils/financeLog';
+import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,7 +65,13 @@ export async function POST(req) {
     // Auto-generate username and password if not provided
     const cleanName = name.trim();
     const cleanUsername = (username || cleanName.toLowerCase().replace(/[^a-z0-9]/g, '') + Math.floor(100 + Math.random() * 900)).trim();
-    const cleanPassword = password || 'member123';
+    // No shared default password any more: when none is typed, a random one is made and shown once.
+    const typedPassword = typeof password === 'string' ? password.trim() : '';
+    if (typedPassword && typedPassword.length < 6) {
+      return NextResponse.json({ message: 'Password must be at least 6 characters long' }, { status: 400 });
+    }
+    const generatedPassword = typedPassword ? '' : crypto.randomBytes(9).toString('base64').replace(/[^A-Za-z0-9]/g, '').slice(0, 10);
+    const cleanPassword = typedPassword || generatedPassword;
     const cleanCommissionLabel = ['inr_50', 'pkr_1to1'].includes(commissionLabel) ? commissionLabel : 'pkr_1to1';
 
     const existing = await Member.findOne({ username: cleanUsername });
@@ -78,7 +86,9 @@ export async function POST(req) {
       username: cleanUsername,
       passwordHash,
       phone: phone || '',
-      role: role || 'member',
+      // Partners (admins) come only from the store admin panel's Staff list. Anyone created here
+      // is a team member: an extra admin would pause every finance split.
+      role: 'member',
       commissionLabel: cleanCommissionLabel,
       wallet: {
         balancePKR: 0,
@@ -88,12 +98,25 @@ export async function POST(req) {
       },
     });
 
+    await logFinance({
+      session,
+      action: 'member.created',
+      summary: `Created member “${cleanName}” (${cleanCommissionLabel === 'inr_50' ? '50% member' : '1:1 PKR member'})`,
+      entity: 'member',
+      entityId: newMember._id,
+      after: { name: cleanName, username: cleanUsername, deal: cleanCommissionLabel },
+    });
+    await flushFinanceAlertsSoon();
+
     const safeMember = newMember.toObject();
     delete safeMember.passwordHash;
 
     return NextResponse.json({
-      message: 'Member created successfully',
+      message: generatedPassword
+        ? `Member created. Username: ${cleanUsername} — Password: ${generatedPassword} (shown only once, note it down now).`
+        : 'Member created successfully',
       member: safeMember,
+      generatedPassword,
     }, { status: 201 });
   } catch (err) {
     console.error('Create member error:', err);

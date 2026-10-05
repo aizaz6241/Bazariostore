@@ -29,13 +29,26 @@ export async function getPaymentConfig() {
   return cfg;
 }
 
-export async function publicPaymentMethods() {
-  const cfg = await getPaymentConfig();
-  return PAYMENT_METHODS.map((m) => ({ ...m, enabled: !!cfg[m.key]?.enabled }));
+function hasCreds(cfg) {
+  return Object.entries(cfg || {}).some(([k, v]) => k !== 'enabled' && typeof v === 'string' && v.trim());
 }
 
-function hasCreds(cfg) {
-  return Object.entries(cfg).some(([k, v]) => k !== 'enabled' && typeof v === 'string' && v.trim());
+/**
+ * Can a customer really pay with this method right now?
+ * It must be switched on, the server must know how to start it, and (except cash on delivery) a
+ * gateway must be configured. A card option that is only "switched on" with no gateway behind it
+ * is not offered: it used to create orders that waited for a payment nobody could make.
+ */
+export function paymentMethodUsable(key, cfg) {
+  const c = cfg?.[key];
+  if (!c?.enabled) return false;
+  if (!Object.prototype.hasOwnProperty.call(providers, key)) return false;
+  return key === 'cod' || hasCreds(c);
+}
+
+export async function publicPaymentMethods() {
+  const cfg = await getPaymentConfig();
+  return PAYMENT_METHODS.map((m) => ({ ...m, enabled: paymentMethodUsable(m.key, cfg) }));
 }
 
 const providers = {
@@ -100,7 +113,7 @@ const providers = {
 export async function initiatePayment(methodKey, order, extra = {}) {
   const cfg = await getPaymentConfig();
   const provider = providers[methodKey];
-  if (!provider || !cfg[methodKey]?.enabled) throw new Error('Selected payment method is not available');
+  if (!provider || !paymentMethodUsable(methodKey, cfg)) throw new Error('Selected payment method is not available');
   const result = await provider(order, cfg[methodKey], extra);
   return { provider: methodKey, ...result };
 }

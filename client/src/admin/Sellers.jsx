@@ -53,6 +53,10 @@ export default function Sellers() {
   const [accSuccess, setAccSuccess] = useState('');
   const [accError, setAccError] = useState('');
   const [copiedPw, setCopiedPw] = useState(false);
+  // the saved password as loaded from the server (to tell a real change from just looking)
+  const [revealedPw, setRevealedPw] = useState('');
+  const [revealBusy, setRevealBusy] = useState(false);
+  const [revealNote, setRevealNote] = useState('');
 
   // Section 2: Documents Full-Screen Viewer Modal
   const [docPreviewModal, setDocPreviewModal] = useState(null); // { url, title, type }
@@ -116,6 +120,8 @@ export default function Sellers() {
   // ─── OPEN PROFILE HANDLER ───
   const handleOpenProfile = (seller, initialTab = 'account', initialSubTab = 'compliance') => {
     setProfileSeller(seller);
+    setRevealedPw('');
+    setRevealNote('');
     setProfileTab(initialTab);
     setProfileUpgradeSubTab(initialSubTab);
     setDashboardSubTab('products');
@@ -131,7 +137,7 @@ export default function Sellers() {
       email: seller.email || '',
       phone: seller.phone || '',
       commissionRate: seller.commissionRate !== undefined ? seller.commissionRate : 10,
-      plainPassword: seller.plainPassword || '',
+      plainPassword: '',
       city: seller.address?.city || '',
       street: seller.address?.street || '',
       isTestAccount: Boolean(seller.isTestAccount),
@@ -184,7 +190,7 @@ export default function Sellers() {
             email: liveSeller.email || prev.email,
             phone: liveSeller.phone || prev.phone,
             commissionRate: liveSeller.commissionRate !== undefined ? liveSeller.commissionRate : prev.commissionRate,
-            plainPassword: liveSeller.plainPassword !== undefined ? (liveSeller.plainPassword || '') : (prev.plainPassword || ''),
+            plainPassword: prev.plainPassword || '',
             city: liveSeller.address?.city || prev.city,
             street: liveSeller.address?.street || prev.street,
           }));
@@ -235,7 +241,9 @@ export default function Sellers() {
         isPreviousStoreSeller: Boolean(accForm.isPreviousStoreSeller),
       };
 
-      if (accForm.plainPassword) {
+      // Only when the admin typed / generated a NEW password. Looking at the saved one and then
+      // saving the form must not "change" it (that would sign the seller out everywhere).
+      if (accForm.plainPassword && accForm.plainPassword !== revealedPw) {
         payload.password = accForm.plainPassword;
       }
 
@@ -244,14 +252,43 @@ export default function Sellers() {
         body: payload,
       });
 
-      setAccSuccess('✅ Merchant account details updated successfully!');
-      setProfileSeller((prev) => ({ ...prev, ...updated, plainPassword: accForm.plainPassword }));
+      // A test / previous-store change on an approved seller waits for the other partner
+      const approvalNotice = updated?._approvalNotice || '';
+      setAccSuccess(approvalNotice ? `✅ Details saved. 🔐 ${approvalNotice}` : '✅ Merchant account details updated successfully!');
+      setProfileSeller((prev) => ({ ...prev, ...updated }));
+      if (accForm.plainPassword) setRevealedPw(accForm.plainPassword);
+      if (approvalNotice) {
+        // show the type as it really is until the request is approved
+        setAccForm((prev) => ({ ...prev, isTestAccount: Boolean(updated.isTestAccount), isPreviousStoreSeller: Boolean(updated.isPreviousStoreSeller) }));
+      }
       loadSellers();
-      setTimeout(() => setAccSuccess(''), 3000);
+      setTimeout(() => setAccSuccess(''), approvalNotice ? 9000 : 3000);
     } catch (err) {
       setAccError(err.message || 'Failed to update account details');
     } finally {
       setSavingAccount(false);
+    }
+  };
+
+  // The saved password is no longer sent with the seller list. It is fetched here, for one
+  // seller, when the admin asks for it (the look is written to the activity log).
+  const handleRevealPassword = async () => {
+    if (!profileSeller?._id) return;
+    setRevealBusy(true);
+    setRevealNote('');
+    try {
+      const res = await api(`/sellers/${profileSeller._id}/password`);
+      if (res.available) {
+        setRevealedPw(res.password);
+        setAccForm((prev) => ({ ...prev, plainPassword: res.password }));
+        setShowAccPassword(true);
+      } else {
+        setRevealNote(res.message || 'No saved password for this seller.');
+      }
+    } catch (err) {
+      setRevealNote(err.message || 'Could not load the saved password.');
+    } finally {
+      setRevealBusy(false);
     }
   };
 
@@ -379,8 +416,8 @@ export default function Sellers() {
   // ─── STANDALONE RESET PASSWORD SUBMIT ───
   const handleOpenResetPassword = (seller) => {
     setResetSeller(seller);
-    setNewSellerPassword(seller.plainPassword || '');
-    setConfirmSellerPassword(seller.plainPassword || '');
+    setNewSellerPassword('');
+    setConfirmSellerPassword('');
     setResetSuccess('');
     setResetError('');
     setShowAdminSellerPw(true);
@@ -485,6 +522,12 @@ export default function Sellers() {
   const handleToggleTest = async (sellerId) => {
     try {
       const res = await api(`/sellers/${sellerId}/toggle-test`, { method: 'PATCH' });
+      // On an approved seller this change waits for the other partner: nothing changed yet
+      if (res.pendingApproval) {
+        setToggleToast(`🔐 ${res.message}`);
+        setTimeout(() => setToggleToast(''), 7000);
+        return;
+      }
       setSellers((prev) =>
         prev.map((s) => (s._id === sellerId ? { ...s, isTestAccount: res.seller?.isTestAccount, accountType: res.seller?.accountType } : s))
       );
@@ -503,6 +546,12 @@ export default function Sellers() {
   const handleTogglePreviousStore = async (sellerId) => {
     try {
       const res = await api(`/sellers/${sellerId}/toggle-previous-store`, { method: 'PATCH' });
+      // On an approved seller this change waits for the other partner: nothing changed yet
+      if (res.pendingApproval) {
+        setToggleToast(`🔐 ${res.message}`);
+        setTimeout(() => setToggleToast(''), 7000);
+        return;
+      }
       setSellers((prev) =>
         prev.map((s) => (s._id === sellerId ? { ...s, isPreviousStoreSeller: res.seller?.isPreviousStoreSeller } : s))
       );
@@ -1550,7 +1599,7 @@ export default function Sellers() {
                           type={showAccPassword ? 'text' : 'password'}
                           value={accForm.plainPassword}
                           onChange={(e) => setAccForm({ ...accForm, plainPassword: e.target.value })}
-                          placeholder={accForm.plainPassword ? 'Enter password...' : '🔒 Encrypted with Bcrypt (will reveal on next login, or enter new password)'}
+                          placeholder="🔒 Hidden — click “Show saved” to view it, or type a new password"
                         />
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <button
@@ -1572,6 +1621,25 @@ export default function Sellers() {
                           </button>
                           <button
                             type="button"
+                            onClick={handleRevealPassword}
+                            disabled={revealBusy}
+                            style={{
+                              background: '#eef2ff',
+                              border: '1px solid #c7d2fe',
+                              borderRadius: 6,
+                              padding: '5px 9px',
+                              cursor: revealBusy ? 'wait' : 'pointer',
+                              fontSize: 12,
+                              fontWeight: 700,
+                              color: '#3730a3',
+                              whiteSpace: 'nowrap',
+                            }}
+                            title="Load this seller’s saved password (the look is recorded in the activity log)"
+                          >
+                            {revealBusy ? 'Loading…' : '🔑 Show saved'}
+                          </button>
+                          <button
+                            type="button"
                             onClick={handleCopyPassword}
                             disabled={!accForm.plainPassword}
                             style={{
@@ -1590,11 +1658,12 @@ export default function Sellers() {
                           </button>
                         </div>
                       </div>
-                      {!accForm.plainPassword && (
+                      {(revealNote || !accForm.plainPassword) && (
                         <div style={{ marginTop: 6, fontSize: 11.5, color: '#64748b', display: 'flex', alignItems: 'center', gap: 6, background: '#f8fafc', padding: '6px 10px', borderRadius: 6, border: '1px solid #e2e8f0' }}>
                           <span>🔒</span>
                           <span>
-                            Current password is encrypted with Bcrypt. It will be recorded and displayed here automatically when the vendor logs into their account, or you can enter/generate a new password above and click <b>Save Account Changes</b>.
+                            {revealNote ||
+                              'The password is not shown until you ask for it. Click “Show saved” to see the seller’s current password (each look is recorded), or enter / generate a new one above and click Save Account Changes.'}
                           </span>
                         </div>
                       )}

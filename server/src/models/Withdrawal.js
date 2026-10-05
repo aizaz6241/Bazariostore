@@ -64,10 +64,15 @@ const withdrawalSchema = new mongoose.Schema(
     finConfirmed: { type: Boolean, default: false }, // USDT amount was confirmed by an admin
     finSkip: { type: Boolean, default: false },      // no real money moved on Binance (e.g. helping-only credit)
     // Status
-    status: { type: String, enum: ['pending', 'approved', 'rejected', 'completed'], default: 'pending' },
+    // 'processing' = an admin's decision is being applied right now (see finishWalletRequest)
+    status: { type: String, enum: ['pending', 'processing', 'approved', 'rejected', 'completed'], default: 'pending' },
+    processingAt: { type: Date, default: null },
+    // the decision being applied; kept so a request interrupted half-way is finished the same way
+    pendingDecision: { type: mongoose.Schema.Types.Mixed, default: null },
     adminNote: { type: String, default: '' },
     processedAt: { type: Date },
     processedBy: { type: String },
+    processedById: { type: String, default: '' }, // admin id of who approved / added it (finance activity log)
     // Reference for payment confirmation (UTR for withdrawal payout)
     transactionRef: { type: String, default: '' },
     // Chat message that was auto-sent

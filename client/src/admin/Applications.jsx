@@ -92,6 +92,11 @@ export default function Applications() {
   const handleToggleTest = async (sellerId) => {
     try {
       const res = await api(`/sellers/${sellerId}/toggle-test`, { method: 'PATCH' });
+      // On an approved seller this change waits for the other partner: nothing changed yet
+      if (res.pendingApproval) {
+        alert(res.message);
+        return;
+      }
       setSellers((prev) =>
         prev.map((s) => (s._id === sellerId ? { ...s, isTestAccount: res.seller?.isTestAccount, accountType: res.seller?.accountType } : s))
       );
@@ -109,7 +114,7 @@ export default function Applications() {
     }
     setApproving(true);
     try {
-      await api(`/sellers/${pendingApproveModal.seller._id}/approve`, {
+      const approveRes = await api(`/sellers/${pendingApproveModal.seller._id}/approve`, {
         method: 'POST',
         body: {
           securityDepositAmount: Number(pendingApproveModal.securityDepositAmount || 0),
@@ -122,7 +127,8 @@ export default function Applications() {
           assignedMemberId: pendingApproveModal.assignedMemberId || '',
         },
       });
-      alert(`🎉 Store "${pendingApproveModal.seller.storeName}" has been successfully approved! Notification sent.`);
+      // An owner / account-type change on an already approved seller waits for the other partner
+      alert(approveRes?.pendingApproval ? approveRes.message : `🎉 Store "${pendingApproveModal.seller.storeName}" has been successfully approved! Notification sent.`);
       setPendingApproveModal(null);
       loadSellers();
     } catch (err) {

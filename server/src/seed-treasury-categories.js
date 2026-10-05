@@ -1,11 +1,12 @@
+import './_script-guard.js';
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import TreasuryProduct from './models/TreasuryProduct.js';
 import Category from './models/Category.js';
 
-const DEFAULT_ATLAS_URI = 'mongodb+srv://aizazkhan6241_db_user:98av24298@cluster0.ijpphlb.mongodb.net/bazario?retryWrites=true&w=majority&appName=Cluster0';
+const DEFAULT_ATLAS_URI = process.env.MONGO_URI;
 let mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || DEFAULT_ATLAS_URI;
-if (!mongoUri || mongoUri.includes('<db_username>') || mongoUri.includes('<db_password>') || mongoUri.includes('aizaz6241_db_user:') || mongoUri.includes('u2IODhWhiXehEOy8')) {
+if (!mongoUri || mongoUri.includes('<db_username>') || mongoUri.includes('<db_password>') || false) {
   mongoUri = DEFAULT_ATLAS_URI;
 }
 

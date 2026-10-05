@@ -11,6 +11,9 @@ import { getSetting, setSetting } from '../../models/System.js';
 import { authAdmin } from '../../middleware/auth.js';
 import { notify } from '../../utils/notify.js';
 import { audit } from '../../utils/audit.js';
+import { finLog, requestApproval, sellerMoneyHistory } from '../../utils/financeLog.js';
+import { rememberPassword, readPassword, encryptionOn } from '../../utils/sellerPassword.js';
+import { forgetAuthCache } from '../../middleware/auth.js';
 import { slugify, calculateHealthStatus } from './helpers.js';
 
 const router = express.Router();
@@ -27,6 +30,39 @@ const SELLER_LIST_SELECT = ['-passwordHash', ...KYC_FILE_FIELDS.map((f) => `-kyc
 const portalMembersCol = () => mongoose.connection.db.collection('portalmembers');
 const portalAssignmentsCol = () => mongoose.connection.db.collection('portalsellerassignments');
 const toObjectId = (v) => (v && mongoose.Types.ObjectId.isValid(String(v)) ? new mongoose.Types.ObjectId(String(v)) : null);
+
+// ─── Two-person rule for the seller type ───
+// "Test" takes every deposit and withdrawal of a seller out of the finance count, and
+// "previous store" changes who pays its withdrawals. On a seller that is already approved, such a
+// change is not applied here: it is sent to the other partner and applied by the team portal
+// once approved. (A seller still waiting for registration approval has no money history, so its
+// type can be set freely.)
+async function isApprovedSeller(seller) {
+  if (seller.status !== 'pending_approval') return true;
+  // put back to "pending" by hand but it already has money history: still two people
+  const history = await sellerMoneyHistory(seller._id);
+  return !history || history.deposits > 0 || history.withdrawals > 0;
+}
+
+async function askSellerFlagChange(req, seller, field, value) {
+  const what =
+    field === 'isTestAccount'
+      ? value
+        ? 'a TEST account (all its deposits and withdrawals leave the finance count)'
+        : 'a CLIENT account (its deposits and withdrawals are counted)'
+      : value
+      ? 'a PREVIOUS-STORE seller'
+      : 'a CURRENT-STORE seller';
+  return requestApproval(req, {
+    action: 'seller_flag',
+    targetId: `${seller._id}:${field}`,
+    summary: `Make seller “${seller.storeName}” ${what}`,
+    details: [],
+    payload: { sellerId: String(seller._id), field, value: Boolean(value) },
+    sellerId: seller._id,
+    storeName: seller.storeName,
+  });
+}
 
 // GET /api/sellers/team/members?sellerId=... — people a seller can be assigned to (+ current owner)
 router.get('/team/members', authAdmin('sellers'), async (req, res) => {
@@ -123,7 +159,8 @@ router.get('/', authAdmin('sellers'), async (req, res) => {
       const agg = statsMap.get(id) || { orderCount: 0, pendingOrders: 0, sales: 0 };
       return {
         ...s.toObject(),
-        plainPassword: s.plainPassword || '',
+        // never sent with a list; an admin looks one up with GET /api/sellers/:id/password
+        plainPassword: '',
         // Tells the UI which documents exist without shipping the files themselves
         kycAvailable: {
           idCard: kycIdSet.has(id),
@@ -184,7 +221,6 @@ router.post('/', authAdmin('sellers'), async (req, res) => {
       ownerName,
       email: email.toLowerCase().trim(),
       passwordHash,
-      plainPassword: password,
       phone: phone || '',
       storeSlug,
       commissionRate: commissionRate !== undefined ? Number(commissionRate) : 10,
@@ -196,13 +232,56 @@ router.post('/', authAdmin('sellers'), async (req, res) => {
       verified: true,
     });
 
+    rememberPassword(seller, password);
     await seller.save();
 
     audit(req, 'create', 'seller', seller._id, `Created seller: ${storeName} (${email})`);
+    await finLog(req, {
+      action: 'seller.created',
+      summary: `Created seller “${storeName}” as a ${isTest ? 'TEST' : 'client'} account${isPrev ? ' (previous store)' : ''}`,
+      entity: 'seller',
+      entityId: seller._id,
+      sellerId: seller._id,
+      storeName,
+      after: { isTestAccount: isTest, isPreviousStoreSeller: isPrev, email: seller.email },
+    });
 
     const safeSeller = seller.toObject();
     delete safeSeller.passwordHash;
     res.status(201).json(safeSeller);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/sellers/:id/password — the saved copy of ONE seller's password, for telling a seller
+// who forgot it. Passwords are no longer sent with seller lists or profiles; they are looked up
+// here one at a time, by a full admin, and every look is written to the audit log and the
+// finance activity log (both partners can see who looked at whose password, and when).
+router.get('/:id/password', authAdmin('sellers'), async (req, res) => {
+  try {
+    if (!['super_admin', 'admin'].includes(req.admin.role)) {
+      return res.status(403).json({ message: 'Only an Administrator or the Super Admin can view a seller password.' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Seller not found' });
+    const raw = await Seller.collection.findOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { projection: { storeName: 1, email: 1, plainPassword: 1, passwordEnc: 1 } }
+    );
+    if (!raw) return res.status(404).json({ message: 'Seller not found' });
+
+    const found = readPassword(raw);
+    audit(req, 'view_password', 'seller', raw._id, `Viewed the saved password of ${raw.storeName} (${raw.email})`);
+    await finLog(req, { action: 'seller.password_viewed', summary: `Looked at the saved password of seller “${raw.storeName}”`, entity: 'seller', entityId: raw._id, sellerId: raw._id, storeName: raw.storeName });
+
+    const why = {
+      none: 'No copy is saved for this seller yet. It is saved the next time the seller logs in, or you can set a new password.',
+      no_key: 'The saved copy is encrypted and SELLER_PASSWORD_KEY is not set on the server, so it cannot be shown. You can set a new password.',
+      other_key: 'The saved copy was encrypted with a different SELLER_PASSWORD_KEY, so it cannot be shown. You can set a new password.',
+      damaged: 'The saved copy could not be read. You can set a new password.',
+      format: 'The saved copy could not be read. You can set a new password.',
+    };
+    res.json({ password: found.password, available: Boolean(found.password), encrypted: encryptionOn(), message: found.password ? '' : why[found.note] || why.none });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -219,10 +298,13 @@ router.post('/:id/reset-password', authAdmin('sellers'), async (req, res) => {
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
     seller.passwordHash = await bcrypt.hash(newPassword, 10);
-    seller.plainPassword = newPassword;
+    rememberPassword(seller, newPassword);
+    seller.pwdAt = new Date(); // the seller's older logins stop working
     await seller.save();
+    forgetAuthCache('seller', seller._id);
 
     audit(req, 'reset_password', 'seller', seller._id, `Admin reset password for vendor: ${seller.storeName} (${seller.email})`);
+    await finLog(req, { action: 'seller.password_reset', summary: `Set a new password for seller “${seller.storeName}”`, entity: 'seller', entityId: seller._id, sellerId: seller._id, storeName: seller.storeName });
     res.json({ ok: true, message: `Password reset successfully for ${seller.storeName}!` });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -755,6 +837,9 @@ router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
       isPreviousStoreSeller,
     } = req.body;
 
+    // Checked before anything is changed below (the status can be edited in this same request)
+    const twoPeopleForType = await isApprovedSeller(seller);
+
     if (storeName) seller.storeName = storeName;
     if (ownerName) seller.ownerName = ownerName;
     if (email) seller.email = email.toLowerCase().trim();
@@ -763,16 +848,27 @@ router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
     if (status) seller.status = status;
     if (address) seller.address = { ...seller.address, ...address };
 
-    if (isTestAccount !== undefined) {
-      seller.isTestAccount = Boolean(isTestAccount);
-      seller.accountType = seller.isTestAccount ? 'test' : 'client';
-    } else if (accountType !== undefined) {
-      seller.accountType = accountType === 'test' ? 'test' : 'client';
-      seller.isTestAccount = seller.accountType === 'test';
+    // Seller type (test / previous store): on an approved seller a change waits for the other partner
+    const approvalNotices = [];
+    const typeAtStart = { isTestAccount: Boolean(seller.isTestAccount), isPreviousStoreSeller: Boolean(seller.isPreviousStoreSeller) };
+    const wantsTest = isTestAccount !== undefined ? Boolean(isTestAccount) : accountType !== undefined ? accountType === 'test' : undefined;
+    if (wantsTest !== undefined) {
+      if (wantsTest !== Boolean(seller.isTestAccount) && twoPeopleForType) {
+        const asked = await askSellerFlagChange(req, seller, 'isTestAccount', wantsTest);
+        approvalNotices.push(`Account type (test / client) was not changed yet. ${asked.message}`);
+      } else {
+        seller.isTestAccount = wantsTest;
+        seller.accountType = wantsTest ? 'test' : 'client';
+      }
     }
 
     if (isPreviousStoreSeller !== undefined) {
-      seller.isPreviousStoreSeller = Boolean(isPreviousStoreSeller);
+      if (Boolean(isPreviousStoreSeller) !== Boolean(seller.isPreviousStoreSeller) && twoPeopleForType) {
+        const asked = await askSellerFlagChange(req, seller, 'isPreviousStoreSeller', Boolean(isPreviousStoreSeller));
+        approvalNotices.push(`Previous-store setting was not changed yet. ${asked.message}`);
+      } else {
+        seller.isPreviousStoreSeller = Boolean(isPreviousStoreSeller);
+      }
     }
 
     if (securityDepositAmount !== undefined || securityDepositPaid !== undefined || referralCode !== undefined) {
@@ -805,12 +901,28 @@ router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
     }
 
     if (password) {
+      if (typeof password !== 'string' || password.length < 6) return res.status(400).json({ message: 'Password must be at least 6 characters long' });
       seller.passwordHash = await bcrypt.hash(password, 10);
-      seller.plainPassword = password;
+      rememberPassword(seller, password);
+      seller.pwdAt = new Date(); // the seller's older logins stop working
+      forgetAuthCache('seller', seller._id);
+      await finLog(req, { action: 'seller.password_reset', summary: `Set a new password for seller “${seller.storeName}”`, entity: 'seller', entityId: seller._id, sellerId: seller._id, storeName: seller.storeName });
     }
 
     await seller.save();
     audit(req, 'update', 'seller', seller._id, `Updated seller: ${seller.storeName}`);
+    if (approvalNotices.length === 0 && (wantsTest !== undefined || isPreviousStoreSeller !== undefined) && (typeAtStart.isTestAccount !== Boolean(seller.isTestAccount) || typeAtStart.isPreviousStoreSeller !== Boolean(seller.isPreviousStoreSeller))) {
+      await finLog(req, {
+        action: 'seller.type_set',
+        summary: `Set the type of seller “${seller.storeName}” (still waiting for registration approval): ${seller.isTestAccount ? 'TEST' : 'client'}${seller.isPreviousStoreSeller ? ', previous store' : ''}`,
+        entity: 'seller',
+        entityId: seller._id,
+        sellerId: seller._id,
+        storeName: seller.storeName,
+        before: typeAtStart,
+        after: { isTestAccount: Boolean(seller.isTestAccount), isPreviousStoreSeller: Boolean(seller.isPreviousStoreSeller) },
+      });
+    }
 
     const safeSeller = seller.toObject();
     delete safeSeller.passwordHash;
@@ -823,6 +935,9 @@ router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
       io.to('sellers').emit('seller:status_update', { seller: safeSeller });
     }
 
+    // Only for the admin screen: tells it that a type change is waiting for the other partner
+    if (approvalNotices.length > 0) safeSeller._approvalNotice = approvalNotices.join(' ');
+
     res.json(safeSeller);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -830,7 +945,7 @@ router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
 });
 
 // POST /api/sellers/:id/withdrawal-limit (Admin updates withdrawal limits and banking tier)
-router.post('/:id/withdrawal-limit', authAdmin(), async (req, res) => {
+router.post('/:id/withdrawal-limit', authAdmin('finance'), async (req, res) => {
   try {
     const { maxAmount, minAmount, requiredWithdrawalsForIncrease, successfulWithdrawalCount, upgradeFee, currentTierName } = req.body || {};
     const seller = await Seller.findById(req.params.id);
@@ -852,9 +967,11 @@ router.post('/:id/withdrawal-limit', authAdmin(), async (req, res) => {
     if (io) {
       io.to(`seller:${seller._id}`).emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
       io.to(`seller:${seller._id}`).emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.emit('limit:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      // only this seller and the admins are told (it used to go to every connected visitor)
+      io.to(`seller:${seller._id}`).emit('limit:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.to('admins').emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.to('admins').emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.to('admins').emit('limit:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
     }
 
     notify(req.app, {
@@ -884,13 +1001,20 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
+    // Was this seller already approved before? Then this is an edit, not a first approval: its
+    // type and its owner cannot be changed here by one person (see the two-person rule above).
+    const wasApproved = await isApprovedSeller(seller);
+    const approvalNotices = [];
+    const typeBefore = { isTestAccount: Boolean(seller.isTestAccount), isPreviousStoreSeller: Boolean(seller.isPreviousStoreSeller) };
+
     // A client seller must belong to a partner or a team member, otherwise its money cannot be divided.
     // (Test accounts are outside the finance ledger, so they do not need an owner.)
-    const willBeTest = isTestAccount !== undefined
+    const askedTest = isTestAccount !== undefined
       ? Boolean(isTestAccount)
       : accountType !== undefined
       ? accountType === 'test'
       : Boolean(seller.isTestAccount);
+    const willBeTest = wasApproved ? Boolean(seller.isTestAccount) : askedTest;
 
     let ownerMember = null;
     const ownerOid = toObjectId(assignedMemberId);
@@ -912,16 +1036,27 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
     seller.verified = true;
     if (commissionRate !== undefined) seller.commissionRate = Number(commissionRate);
 
-    if (isTestAccount !== undefined) {
-      seller.isTestAccount = Boolean(isTestAccount);
-      seller.accountType = seller.isTestAccount ? 'test' : 'client';
-    } else if (accountType !== undefined) {
-      seller.accountType = accountType === 'test' ? 'test' : 'client';
-      seller.isTestAccount = seller.accountType === 'test';
-    }
+    if (wasApproved) {
+      if (askedTest !== typeBefore.isTestAccount) {
+        const asked = await askSellerFlagChange(req, seller, 'isTestAccount', askedTest);
+        approvalNotices.push(`Account type (test / client) was not changed yet. ${asked.message}`);
+      }
+      if (isPreviousStoreSeller !== undefined && Boolean(isPreviousStoreSeller) !== typeBefore.isPreviousStoreSeller) {
+        const asked = await askSellerFlagChange(req, seller, 'isPreviousStoreSeller', Boolean(isPreviousStoreSeller));
+        approvalNotices.push(`Previous-store setting was not changed yet. ${asked.message}`);
+      }
+    } else {
+      if (isTestAccount !== undefined) {
+        seller.isTestAccount = Boolean(isTestAccount);
+        seller.accountType = seller.isTestAccount ? 'test' : 'client';
+      } else if (accountType !== undefined) {
+        seller.accountType = accountType === 'test' ? 'test' : 'client';
+        seller.isTestAccount = seller.accountType === 'test';
+      }
 
-    if (isPreviousStoreSeller !== undefined) {
-      seller.isPreviousStoreSeller = Boolean(isPreviousStoreSeller);
+      if (isPreviousStoreSeller !== undefined) {
+        seller.isPreviousStoreSeller = Boolean(isPreviousStoreSeller);
+      }
     }
 
     seller.securityDeposit = {
@@ -941,7 +1076,20 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
     if (ownerMember) {
       const assignments = portalAssignmentsCol();
       const current = await assignments.findOne({ sellerId: seller._id, status: 'active' });
-      if (!current || String(current.memberId) !== String(ownerMember._id)) {
+      if (current && String(current.memberId) !== String(ownerMember._id) && wasApproved) {
+        // Moving an approved seller to another owner changes who earns from it: two people
+        const previousOwner = await portalMembersCol().findOne({ _id: current.memberId }).catch(() => null);
+        const asked = await requestApproval(req, {
+          action: 'reassign',
+          targetId: String(seller._id),
+          summary: `Move seller “${seller.storeName}” from ${previousOwner ? previousOwner.name : 'its current owner'} to ${ownerMember.name}`,
+          details: ['New deposits and withdrawals of this seller will be divided for the new owner.'],
+          payload: { sellerId: String(seller._id), memberId: String(ownerMember._id) },
+          sellerId: seller._id,
+          storeName: seller.storeName,
+        });
+        approvalNotices.push(`The owner (Assigned To) was not changed yet. ${asked.message}`);
+      } else if (!current || String(current.memberId) !== String(ownerMember._id)) {
         const now = new Date();
         const deal = ownerMember.commissionLabel || 'pkr_1to1';
         const adminOid = toObjectId(req.admin.id);
@@ -973,6 +1121,16 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
         });
         await Seller.collection.updateOne({ _id: seller._id }, { $set: { commissionLabel: deal } });
         audit(req, 'update', 'seller', seller._id, `Assigned ${seller.storeName} to ${ownerMember.name}`);
+        await finLog(req, {
+          action: 'seller.assigned',
+          summary: `Assigned seller “${seller.storeName}” to ${ownerMember.name} (seller approval screen)`,
+          entity: 'seller',
+          entityId: seller._id,
+          sellerId: seller._id,
+          storeName: seller.storeName,
+          before: { ownerId: current ? String(current.memberId) : '' },
+          after: { owner: ownerMember.name, ownerId: String(ownerMember._id), deal },
+        });
       }
     }
 
@@ -1066,10 +1224,24 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
     });
 
     audit(req, 'approve', 'seller_registration', seller._id, `Approved seller ${seller.storeName} (Security Deposit: $${depAmt}, Referral: ${finalReferral || 'None'})`);
+    await finLog(req, {
+      action: wasApproved ? 'seller.updated' : 'seller.approved',
+      summary: `${wasApproved ? 'Saved the approval details of' : 'Approved'} seller “${seller.storeName}” as a ${seller.isTestAccount ? 'TEST' : 'client'} account${seller.isPreviousStoreSeller ? ' (previous store)' : ''}${ownerMember && !approvalNotices.some((n) => n.startsWith('The owner')) ? `, owner ${ownerMember.name}` : ''}, security deposit $${depAmt}`,
+      entity: 'seller',
+      entityId: seller._id,
+      sellerId: seller._id,
+      storeName: seller.storeName,
+      before: typeBefore,
+      after: { isTestAccount: Boolean(seller.isTestAccount), isPreviousStoreSeller: Boolean(seller.isPreviousStoreSeller), securityDeposit: depAmt, securityDepositPaid: isPaid },
+    });
 
     const safe = seller.toObject();
     delete safe.passwordHash;
-    res.json({ message: `Seller ${seller.storeName} approved and activated successfully! ✅`, seller: safe });
+    res.json({
+      message: `Seller ${seller.storeName} approved and activated successfully! ✅${approvalNotices.length ? ` ${approvalNotices.join(' ')}` : ''}`,
+      pendingApproval: approvalNotices.length > 0,
+      seller: safe,
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -1082,15 +1254,20 @@ router.post('/:id/reject', authAdmin('sellers'), async (req, res) => {
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
+    // The account type of a seller that was already approved is never changed from here
+    const wasApproved = await isApprovedSeller(seller);
+
     seller.status = 'suspended';
     seller.freezeReason = reason || 'KYC verification or document review rejected by platform administrator.';
 
-    if (isTestAccount !== undefined) {
-      seller.isTestAccount = Boolean(isTestAccount);
-      seller.accountType = seller.isTestAccount ? 'test' : 'client';
-    } else if (accountType !== undefined) {
-      seller.accountType = accountType === 'test' ? 'test' : 'client';
-      seller.isTestAccount = seller.accountType === 'test';
+    if (!wasApproved) {
+      if (isTestAccount !== undefined) {
+        seller.isTestAccount = Boolean(isTestAccount);
+        seller.accountType = seller.isTestAccount ? 'test' : 'client';
+      } else if (accountType !== undefined) {
+        seller.accountType = accountType === 'test' ? 'test' : 'client';
+        seller.isTestAccount = seller.accountType === 'test';
+      }
     }
 
     await seller.save();
@@ -1109,11 +1286,27 @@ router.patch('/:id/toggle-test', authAdmin('sellers'), async (req, res) => {
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
+    if (await isApprovedSeller(seller)) {
+      const asked = await askSellerFlagChange(req, seller, 'isTestAccount', !seller.isTestAccount);
+      const unchanged = seller.toObject();
+      delete unchanged.passwordHash;
+      return res.json({ ok: true, pendingApproval: true, message: asked.message, seller: unchanged });
+    }
+
     seller.isTestAccount = !seller.isTestAccount;
     seller.accountType = seller.isTestAccount ? 'test' : 'client';
     await seller.save();
 
     audit(req, 'update', 'seller', seller._id, `Toggled account type to ${seller.accountType} (${seller.isTestAccount ? 'Test' : 'Client'}) for ${seller.storeName}`);
+    await finLog(req, {
+      action: 'seller.type_set',
+      summary: `Set seller “${seller.storeName}” (still waiting for registration approval) to a ${seller.isTestAccount ? 'TEST' : 'client'} account`,
+      entity: 'seller',
+      entityId: seller._id,
+      sellerId: seller._id,
+      storeName: seller.storeName,
+      after: { isTestAccount: Boolean(seller.isTestAccount) },
+    });
 
     const safe = seller.toObject();
     delete safe.passwordHash;
@@ -1139,10 +1332,26 @@ router.patch('/:id/toggle-previous-store', authAdmin('sellers'), async (req, res
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
+    if (await isApprovedSeller(seller)) {
+      const asked = await askSellerFlagChange(req, seller, 'isPreviousStoreSeller', !seller.isPreviousStoreSeller);
+      const unchanged = seller.toObject();
+      delete unchanged.passwordHash;
+      return res.json({ ok: true, pendingApproval: true, message: asked.message, seller: unchanged });
+    }
+
     seller.isPreviousStoreSeller = !seller.isPreviousStoreSeller;
     await seller.save();
 
     audit(req, 'update', 'seller', seller._id, `Toggled previous store seller status to ${seller.isPreviousStoreSeller} for ${seller.storeName}`);
+    await finLog(req, {
+      action: 'seller.type_set',
+      summary: `Set seller “${seller.storeName}” (still waiting for registration approval) to a ${seller.isPreviousStoreSeller ? 'PREVIOUS-STORE' : 'current-store'} seller`,
+      entity: 'seller',
+      entityId: seller._id,
+      sellerId: seller._id,
+      storeName: seller.storeName,
+      after: { isPreviousStoreSeller: Boolean(seller.isPreviousStoreSeller) },
+    });
 
     const safe = seller.toObject();
     delete safe.passwordHash;
@@ -1331,6 +1540,26 @@ router.delete('/:id', authAdmin('sellers'), async (req, res, next) => {
     const storeName = seller.storeName;
     const email = seller.email;
 
+    // A seller that has approved deposits or withdrawals is part of the accounts: deleting it
+    // would also delete those records. It can be suspended instead; the history stays.
+    const history = await sellerMoneyHistory(seller._id);
+    if (!history || history.deposits > 0 || history.withdrawals > 0) {
+      await finLog(req, {
+        action: 'seller.delete_blocked',
+        summary: `Tried to delete seller “${storeName}”, refused because it has wallet history`,
+        entity: 'seller',
+        entityId: seller._id,
+        sellerId: seller._id,
+        storeName,
+        before: history,
+      });
+      return res.status(400).json({
+        message: history
+          ? `“${storeName}” has ${history.deposits} approved deposit(s) and ${history.withdrawals} withdrawal(s). A seller with wallet history cannot be deleted, because its records are part of the accounts. Suspend the account instead.`
+          : 'Could not check this seller’s wallet history. Please try again.',
+      });
+    }
+
     await Seller.findByIdAndDelete(req.params.id);
 
     // Also remove or clean up products, transactions, and chat conversations associated with deleted seller
@@ -1339,6 +1568,22 @@ router.delete('/:id', authAdmin('sellers'), async (req, res, next) => {
     await Conversation.deleteMany({ seller: req.params.id }).catch(() => {});
 
     audit(req, 'delete', 'seller', req.params.id, `Deleted seller: ${storeName} (${email})`);
+    await finLog(req, {
+      action: 'seller.deleted',
+      summary: `Deleted seller “${storeName}” (${email}). It had no approved deposits or withdrawals.`,
+      entity: 'seller',
+      entityId: req.params.id,
+      sellerId: req.params.id,
+      storeName,
+      before: {
+        email,
+        status: seller.status,
+        isTestAccount: Boolean(seller.isTestAccount),
+        isPreviousStoreSeller: Boolean(seller.isPreviousStoreSeller),
+        walletBalance: seller.wallet?.balance || 0,
+        totalDeposited: seller.wallet?.totalDeposited || 0,
+      },
+    });
 
     const io = req.app.get('io');
     if (io) {

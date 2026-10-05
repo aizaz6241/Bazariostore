@@ -178,6 +178,8 @@ export default function SellerSettings() {
           newPassword: pwForm.newPassword,
         },
       });
+      // Changing the password ends every older login; the server sends a fresh one for this browser
+      if (res.token) localStorage.setItem('ng_seller_token', res.token);
       setPwMsg({ type: 'success', text: res.message || 'Password changed successfully! ✅' });
       setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
       setTimeout(() => setPwMsg({ type: '', text: '' }), 5000);

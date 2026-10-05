@@ -33,7 +33,7 @@ git push -u origin main
 
 | Variable | Value |
 |---|---|
-| `MONGO_URI` | Atlas wali URI — **`&tlsAllowInvalidCertificates=true` hata kar** (woh sirf aap ke PC ki clock ke liye tha):<br>`mongodb+srv://USER:PASS@cluster0.x6nrwka.mongodb.net/nayab-glow?retryWrites=true&w=majority&appName=Cluster0` |
+| `MONGO_URI` | Atlas wali URI — **`&tlsAllowInvalidCertificates=true` hata kar** (woh sirf aap ke PC ki clock ke liye tha):<br>`mongodb+srv://<user>:<password>@<cluster>/<database>` |
 | `UPLOADTHING_TOKEN` | wohi token jo `server/.env` mein hai |
 | `ADMIN_PASSWORD` | admin panel ka naya strong password |
 | `JWT_SECRET` | Render khud generate kar dega |

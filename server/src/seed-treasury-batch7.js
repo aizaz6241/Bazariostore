@@ -1,3 +1,4 @@
+import './_script-guard.js';
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import TreasuryProduct from './models/TreasuryProduct.js';
@@ -14,7 +15,7 @@ const ALL_NEW_PRODUCTS = [
 ];
 
 const DEFAULT_ATLAS_URI =
-  'mongodb+srv://aizazkhan6241_db_user:98av24298@cluster0.ijpphlb.mongodb.net/bazario?retryWrites=true&w=majority&appName=Cluster0';
+  process.env.MONGO_URI;
 
 export async function runBatch7() {
   console.log('⚡ Starting Product Treasury Batch 7 Import...');
@@ -25,8 +26,8 @@ export async function runBatch7() {
     !mongoUri ||
     mongoUri.includes('<db_username>') ||
     mongoUri.includes('<db_password>') ||
-    mongoUri.includes('aizaz6241_db_user:') ||
-    mongoUri.includes('u2IODhWhiXehEOy8')
+    false ||
+    false
   ) {
     mongoUri = DEFAULT_ATLAS_URI;
   }

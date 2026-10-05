@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import { buildLedger } from '@/lib/utils/finance';
 import { getLiveVersion, hashOf } from '@/lib/utils/liveVersion';
+import { flushFinanceAlerts } from '@/lib/utils/financeLog';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +26,10 @@ export async function GET(req) {
     // the screens that reload right after get the new numbers immediately.
     const ledger = await buildLedger();
     const version = await getLiveVersion();
+
+    // Alerts for finance actions done on the store admin panel are sent from here (it has no
+    // push of its own). At most one small query every few seconds; never holds the reply long.
+    await Promise.race([flushFinanceAlerts(), new Promise((resolve) => setTimeout(resolve, 1500))]).catch(() => 0);
 
     return NextResponse.json(
       { v: hashOf([ledger.sig, version.stable]), at: Date.now() },

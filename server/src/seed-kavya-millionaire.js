@@ -1,3 +1,4 @@
+import './_script-guard.js';
 import dns from 'dns';
 try {
   dns.setServers(['8.8.8.8', '1.1.1.1']);
@@ -8,7 +9,7 @@ import bcrypt from 'bcryptjs';
 
 const MONGO_URI =
   process.env.MONGO_URI ||
-  'mongodb+srv://aizazkhan6241_db_user:98av24298@cluster0.ijpphlb.mongodb.net/bazario?retryWrites=true&w=majority&appName=Cluster0&tlsAllowInvalidCertificates=true';
+  process.env.MONGO_URI;
 
 // Category IDs found in database
 const CAT_FASHION = new mongoose.Types.ObjectId('6a88faa687b7b84a343930ca');

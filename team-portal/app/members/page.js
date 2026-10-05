@@ -159,9 +159,12 @@ export default function MembersPage() {
       });
 
       if (res.ok) {
+        const created = await res.json().catch(() => ({}));
         setIsCreateModalOpen(false);
         setCreateForm({ name: '', username: '', password: '', phone: '', role: 'member', commissionLabel: 'pkr_1to1' });
         fetchData();
+        // No password typed: a random one was made. It is shown only this once.
+        if (created.generatedPassword) alert(created.message);
       } else {
         const data = await res.json();
         alert(data.message || 'Failed to create member');

@@ -3,7 +3,9 @@ import { api, fmtDate } from '../api.js';
 import { Modal, Toggle, ErrorBox, F } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
 
-const EMPTY = { name: '', email: '', password: '', role: 'admin', permissions: [] };
+// New accounts are staff by default: no share of the money, no team portal
+const EMPTY = { name: '', email: '', password: '', role: 'support', permissions: [], financePartner: false };
+const PARTNER_ROLES = ['super_admin', 'admin'];
 
 const ROLE_COLORS = {
   super_admin: { bg: '#f3e8ff', color: '#7e22ce', border: '#d8b4fe' },
@@ -21,6 +23,8 @@ export default function Staff() {
   const [error, setError] = useState('');
   const [q, setQ] = useState('');
   const [saving, setSaving] = useState(false);
+  // Shown when a change was sent to the other partner instead of being applied
+  const [notice, setNotice] = useState('');
 
   const load = () => api('/admins').then(setAdmins).catch((e) => setError(e.message));
 
@@ -33,8 +37,11 @@ export default function Staff() {
     e.preventDefault();
     setSaving(true);
     try {
-      if (edit._id) await api(`/admins/${edit._id}`, { method: 'PUT', body: edit });
-      else await api('/admins', { method: 'POST', body: edit });
+      setError('');
+      const res = edit._id ? await api(`/admins/${edit._id}`, { method: 'PUT', body: edit }) : await api('/admins', { method: 'POST', body: edit });
+      // changing your own password ends older logins; keep this browser signed in
+      if (res?.token) localStorage.setItem('ng_admin_token', res.token);
+      setNotice(res?.pendingApproval ? `🔐 ${res.message}` : res?.warning || res?.message || '');
       setEdit(null);
       load();
     } catch (err) {
@@ -46,7 +53,8 @@ export default function Staff() {
 
   const toggleActive = async (a) => {
     try {
-      await api(`/admins/${a._id}`, { method: 'PUT', body: { active: !a.active } });
+      const res = await api(`/admins/${a._id}`, { method: 'PUT', body: { active: !a.active } });
+      setNotice(res?.pendingApproval ? `🔐 ${res.message}` : res?.message || '');
       load();
     } catch (err) {
       setError(err.message);
@@ -56,7 +64,8 @@ export default function Staff() {
   const del = async (a) => {
     if (!window.confirm(`Are you sure you want to delete administrator "${a.name}"?`)) return;
     try {
-      await api(`/admins/${a._id}`, { method: 'DELETE' });
+      const res = await api(`/admins/${a._id}`, { method: 'DELETE' });
+      setNotice(res?.pendingApproval ? `🔐 ${res.message}` : res?.warning || '');
       load();
     } catch (err) {
       setError(err.message);
@@ -96,6 +105,17 @@ export default function Staff() {
 
       <ErrorBox error={error} />
 
+      {notice && (
+        <div
+          style={{ background: '#eef2ff', border: '1px solid #c7d2fe', color: '#312e81', padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 600, margin: '10px 0', display: 'flex', justifyContent: 'space-between', gap: 12 }}
+        >
+          <span>{notice}</span>
+          <button type="button" onClick={() => setNotice('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4338ca', fontWeight: 800 }}>
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Summary KPI Bar */}
       <div className="admin-staff-stats-bar">
         <div className="stat-box">
@@ -103,8 +123,8 @@ export default function Staff() {
           <b className="val">{admins.length}</b>
         </div>
         <div className="stat-box">
-          <span className="lbl">Super Admins</span>
-          <b className="val text-purple">{admins.filter((a) => a.role === 'super_admin').length}</b>
+          <span className="lbl">Finance Partners</span>
+          <b className="val text-purple">{admins.filter((a) => a.financePartner && a.active).length}</b>
         </div>
         <div className="stat-box">
           <span className="lbl">Active Accounts</span>
@@ -165,6 +185,9 @@ export default function Staff() {
                           <b>{a.name}</b>
                           {a.role === 'super_admin' && (
                             <small className="super-crown-tag">👑 Full Access</small>
+                          )}
+                          {a.financePartner && (
+                            <small style={{ display: 'block', color: '#047857', fontWeight: 700, fontSize: 11 }}>💰 Finance partner</small>
                           )}
                         </div>
                       </div>
@@ -263,7 +286,8 @@ export default function Staff() {
                   type="password"
                   value={edit.password}
                   onChange={(e) => setEdit({ ...edit, password: e.target.value })}
-                  placeholder={edit._id ? '••••••••' : 'Min 6 characters'}
+                  placeholder={edit._id ? '••••••••' : 'Min 8 characters'}
+                  minLength={8}
                   required={!edit._id}
                 />
               </F>
@@ -271,7 +295,9 @@ export default function Staff() {
               <F label="Role Assignment">
                 <select
                   value={edit.role}
-                  onChange={(e) => setEdit({ ...edit, role: e.target.value, permissions: [] })}
+                  onChange={(e) =>
+                    setEdit({ ...edit, role: e.target.value, permissions: [], financePartner: PARTNER_ROLES.includes(e.target.value) ? edit.financePartner : false })
+                  }
                 >
                   {meta.roles.map((r) => (
                     <option key={r} value={r}>
@@ -280,6 +306,30 @@ export default function Staff() {
                   ))}
                 </select>
               </F>
+            </div>
+
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '12px 14px', margin: '4px 0 12px' }}>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: PARTNER_ROLES.includes(edit.role) ? 'pointer' : 'not-allowed', opacity: PARTNER_ROLES.includes(edit.role) ? 1 : 0.6 }}>
+                <input
+                  type="checkbox"
+                  checked={Boolean(edit.financePartner) && PARTNER_ROLES.includes(edit.role)}
+                  disabled={!PARTNER_ROLES.includes(edit.role)}
+                  onChange={(e) => setEdit({ ...edit, financePartner: e.target.checked })}
+                  style={{ marginTop: 3 }}
+                />
+                <span>
+                  <b style={{ fontSize: 13, color: '#0f172a' }}>💰 Finance partner</b>
+                  <span className="muted-sm" style={{ display: 'block', marginTop: 2 }}>
+                    Shares the Binance money and can use the team portal. Leave this off for support, orders or other staff: they work only in this
+                    admin panel with the permissions of their role. Needs the Administrator or Super Admin role. The finance ledger divides money
+                    only while there are exactly 2 finance partners.
+                  </span>
+                </span>
+              </label>
+              <p className="muted-sm" style={{ margin: '8px 0 0' }}>
+                🔐 Creating an admin, deleting one, or changing a role, permissions, status, this setting or someone else’s password is applied only
+                after the other finance partner approves it on the team portal (Finance).
+              </p>
             </div>
 
             {edit.role !== 'super_admin' && (

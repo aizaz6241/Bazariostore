@@ -8,11 +8,21 @@ import { authUser } from '../middleware/auth.js';
 import { notify } from '../utils/notify.js';
 import { comparePassword, cleanEmail } from '../utils/password.js';
 import { sendVerificationOtpEmail, sendPasswordResetEmail, sendWelcomeEmail } from '../services/email.service.js';
+import { jwtSecret } from '../utils/secrets.js';
+import { limit, failureLimiter } from '../utils/rateLimit.js';
+import { asText } from '../middleware/sanitize.js';
+import { publicOrder } from '../utils/publicOrder.js';
+
+const loginGuard = failureLimiter({ name: 'user-login', max: 8, windowMs: 15 * 60 * 1000 });
+const MAX_OTP_TRIES = 5;
+const RESET_VALID_MS = 20 * 60 * 1000;
+const signupLimit = limit({ name: 'user-signup', max: 10, windowMs: 60 * 60 * 1000 });
+const recoveryLimit = limit({ name: 'user-recovery', max: 6, windowMs: 15 * 60 * 1000 });
 
 const router = Router();
 
 const signUser = (u) =>
-  jwt.sign({ t: 'user', id: u._id, name: u.name, email: u.email }, process.env.JWT_SECRET, { expiresIn: '365d' });
+  jwt.sign({ t: 'user', id: u._id, name: u.name, email: u.email }, jwtSecret(), { expiresIn: '365d' });
 
 const publicUser = (u) => ({
   id: u._id,
@@ -25,14 +35,14 @@ const publicUser = (u) => ({
 
 // Helper: Generate random 6-digit OTP
 function generateOtp() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return crypto.randomInt(100000, 1000000).toString();
 }
 
 // POST /api/user/send-otp (Send / Resend OTP to customer email)
-router.post('/send-otp', async (req, res) => {
+router.post('/send-otp', signupLimit, async (req, res) => {
   try {
-    const email = cleanEmail(req.body?.email);
-    const name = (req.body?.name || 'Customer').trim();
+    const email = cleanEmail(asText(req.body?.email, 200));
+    const name = (asText(req.body?.name, 80) || 'Customer').trim();
     if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
       return res.status(400).json({ message: 'A valid email address is required' });
     }
@@ -111,9 +121,12 @@ router.post('/verify-otp', async (req, res) => {
 });
 
 // POST /api/user/register (Customer Registration)
-router.post('/register', async (req, res) => {
+router.post('/register', signupLimit, async (req, res) => {
   try {
-    const { name, email, phone, password } = req.body || {};
+    const name = asText(req.body?.name, 80);
+    const email = asText(req.body?.email, 200);
+    const phone = asText(req.body?.phone, 40);
+    const password = asText(req.body?.password, 200);
     if (!name?.trim() || !/^\S+@\S+\.\S+$/.test(email || '')) {
       return res.status(400).json({ message: 'Valid name and email required' });
     }
@@ -178,11 +191,13 @@ router.post('/register', async (req, res) => {
 // POST /api/user/login
 router.post('/login', async (req, res) => {
   try {
-    const email = cleanEmail(req.body?.email);
-    const password = String(req.body?.password || '');
+    const email = cleanEmail(asText(req.body?.email, 200));
+    const password = asText(req.body?.password, 200);
     if (!email || !password) {
       return res.status(400).json({ message: 'Email and password are required' });
     }
+    const blocked = loginGuard.check(req, email);
+    if (blocked.blocked) return res.status(429).json({ message: blocked.message });
 
     const user = await User.findOne({
       $or: [{ email }, { email: { $regex: new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }],
@@ -190,8 +205,10 @@ router.post('/login', async (req, res) => {
     const ok = user && user.active !== false && (await comparePassword(password, user.passwordHash));
     if (!ok) {
       console.log(`[user-login-failed] email="${email}"`);
+      loginGuard.fail(req, email);
       return res.status(401).json({ message: 'Invalid email or password' });
     }
+    loginGuard.ok(req, email);
     res.json({ token: signUser(user), user: publicUser(user) });
   } catch (err) {
     console.error('[user-login-error]', err);
@@ -200,22 +217,23 @@ router.post('/login', async (req, res) => {
 });
 
 // POST /api/user/forgot (Password recovery with real email link & 6-digit OTP)
-router.post('/forgot', async (req, res) => {
+router.post('/forgot', recoveryLimit, async (req, res) => {
   try {
-    const email = cleanEmail(req.body?.email);
+    const email = cleanEmail(asText(req.body?.email, 200));
     if (!email) return res.status(400).json({ message: 'Please provide your registered email address' });
 
+    // Same answer whether or not the email is registered
+    const sameAnswer = {
+      ok: true,
+      message: 'If an account with this email exists, password reset instructions have been sent.',
+    };
+
     const user = await User.findOne({ email });
-    if (!user) {
-      return res.json({
-        ok: true,
-        message: 'If an account with this email exists, password reset instructions have been sent.',
-      });
-    }
+    if (!user) return res.json(sameAnswer);
 
     const token = crypto.randomBytes(24).toString('hex');
     const otp = generateOtp();
-    const expires = new Date(Date.now() + 60 * 60 * 1000); // 60 mins
+    const expires = new Date(Date.now() + RESET_VALID_MS); // 20 minutes
 
     user.resetToken = token;
     user.resetExpires = expires;
@@ -233,39 +251,49 @@ router.post('/forgot', async (req, res) => {
       role: 'user',
     });
 
-    res.json({
-      ok: true,
-      message: `Password reset instructions and 6-digit recovery code have been sent to ${email}.`,
-    });
+    res.json(sameAnswer);
   } catch (err) {
     console.error('[forgot-password-error]', err);
-    res.status(500).json({ message: 'Failed to process password reset request. ' + err.message });
+    res.status(500).json({ message: 'Failed to process password reset request. Please try again.' });
   }
 });
 
 // POST /api/user/reset (Reset password with token OR OTP)
-router.post('/reset', async (req, res) => {
+router.post('/reset', recoveryLimit, async (req, res) => {
   try {
-    const { token, otp, email, password } = req.body || {};
-    if ((password || '').length < 6) {
+    // Plain text only: an object sent as "token" used to match any account with a reset in progress
+    const token = asText(req.body?.token, 200).trim();
+    const otp = asText(req.body?.otp, 12).trim();
+    const email = cleanEmail(asText(req.body?.email, 200));
+    const password = asText(req.body?.password, 200);
+    if (password.length < 6) {
       return res.status(400).json({ message: 'Password must be at least 6 characters long' });
     }
 
+    const invalid = () => res.status(400).json({ message: 'Password reset link or verification code is invalid or has expired.' });
+    const now = new Date();
+
     let user = null;
-    if (token) {
-      user = await User.findOne({ resetToken: token, resetExpires: { $gt: new Date() } });
-    } else if (otp && email) {
-      const clean = cleanEmail(email);
-      user = await User.findOne({
-        email: clean,
-        'resetOtp.code': String(otp).trim(),
-        'resetOtp.expiresAt': { $gt: new Date() },
-      });
+    if (token.length >= 32) {
+      user = await User.findOne({ resetToken: token, resetExpires: { $gt: now } });
+    } else if (/^\d{6}$/.test(otp) && email) {
+      const candidate = await User.findOne({ email });
+      const saved = candidate?.resetOtp;
+      if (!candidate || !saved?.code || !saved.expiresAt || new Date(saved.expiresAt) <= now) return invalid();
+      if ((saved.attempts || 0) >= MAX_OTP_TRIES) {
+        await User.updateOne({ _id: candidate._id }, { $unset: { resetOtp: 1, resetToken: 1, resetExpires: 1 } });
+        return res.status(400).json({ message: 'Too many wrong codes. Please request a new recovery code.' });
+      }
+      const a = Buffer.from(String(saved.code));
+      const b = Buffer.from(otp);
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        await User.updateOne({ _id: candidate._id }, { $inc: { 'resetOtp.attempts': 1 } });
+        return invalid();
+      }
+      user = candidate;
     }
 
-    if (!user) {
-      return res.status(400).json({ message: 'Password reset link or verification code is invalid or has expired.' });
-    }
+    if (!user) return invalid();
 
     user.passwordHash = await bcrypt.hash(password, 10);
     user.resetToken = undefined;
@@ -292,8 +320,10 @@ router.get('/me', authUser, async (req, res) => {
 });
 
 router.put('/me', authUser, async (req, res) => {
-  const { name, phone } = req.body || {};
+  const name = asText(req.body?.name, 80);
+  const phone = asText(req.body?.phone, 40);
   const user = await User.findById(req.user.id);
+  if (!user) return res.status(404).json({ message: 'Account not found' });
   if (name?.trim()) user.name = name.trim();
   user.phone = (phone || '').trim();
   await user.save();
@@ -301,8 +331,10 @@ router.put('/me', authUser, async (req, res) => {
 });
 
 router.put('/me/password', authUser, async (req, res) => {
-  const { current, next } = req.body || {};
+  const current = asText(req.body?.current, 200);
+  const next = asText(req.body?.next, 200);
   const user = await User.findById(req.user.id);
+  if (!user) return res.status(404).json({ message: 'Account not found' });
   if (!(await bcrypt.compare(current || '', user.passwordHash))) return res.status(400).json({ message: 'Current password ghalat hai' });
   if ((next || '').length < 6) return res.status(400).json({ message: 'Naya password kam az kam 6 characters ka hona chahiye' });
   user.passwordHash = await bcrypt.hash(next, 10);
@@ -313,6 +345,7 @@ router.put('/me/password', authUser, async (req, res) => {
 // --- addresses ---
 router.post('/me/addresses', authUser, async (req, res) => {
   const user = await User.findById(req.user.id);
+  if (!user) return res.status(404).json({ message: 'Account not found' });
   const addr = req.body || {};
   if (addr.isDefault) user.addresses.forEach((a) => (a.isDefault = false));
   user.addresses.push(addr);
@@ -322,6 +355,7 @@ router.post('/me/addresses', authUser, async (req, res) => {
 
 router.put('/me/addresses/:addrId', authUser, async (req, res) => {
   const user = await User.findById(req.user.id);
+  if (!user) return res.status(404).json({ message: 'Account not found' });
   const a = user.addresses.id(req.params.addrId);
   if (!a) return res.status(404).json({ message: 'Address not found' });
   if (req.body.isDefault) user.addresses.forEach((x) => (x.isDefault = false));
@@ -332,6 +366,7 @@ router.put('/me/addresses/:addrId', authUser, async (req, res) => {
 
 router.delete('/me/addresses/:addrId', authUser, async (req, res) => {
   const user = await User.findById(req.user.id);
+  if (!user) return res.status(404).json({ message: 'Account not found' });
   user.addresses.id(req.params.addrId)?.deleteOne();
   await user.save();
   res.json({ addresses: user.addresses });
@@ -340,12 +375,13 @@ router.delete('/me/addresses/:addrId', authUser, async (req, res) => {
 // --- order history ---
 router.get('/me/orders', authUser, async (req, res) => {
   const user = await User.findById(req.user.id);
+  if (!user) return res.status(404).json({ message: 'Account not found' });
   const orders = await Order.find({
     $or: [{ user: req.user.id }, { 'contact.email': user.email }],
   })
     .sort({ createdAt: -1 })
     .limit(50);
-  res.json(orders);
+  res.json(orders.map(publicOrder));
 });
 
 export default router;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { sapi, api, fmtDate, compressImage } from '../api.js';
+import { sapi, api, fmtDate, compressImage, dropClearedMessages } from '../api.js';
 import { getSocket, getGuestId } from '../socket.js';
 import Ic from './Icons.jsx';
 import ChatAttachment from './ChatAttachment.jsx';
@@ -413,11 +413,19 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
       );
     };
 
+
+    // Admin cleared this chat (or part of it): remove those messages here too
+    const onChatCleared = (payload) => {
+      if (!payload) return;
+      setMessages((prev) => dropClearedMessages(prev, payload));
+    };
+
     if (socket) {
       socket.on('message:new', onNewMsg);
       socket.on('messages:seen', onMessagesSeen);
       socket.on('message:edit', onMessageEdit);
       socket.on('message:delete', onMessageDelete);
+      socket.on('chat:cleared', onChatCleared);
     }
     return () => {
       if (socket) {
@@ -426,6 +434,7 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
         socket.off('messages:seen', onMessagesSeen);
         socket.off('message:edit', onMessageEdit);
         socket.off('message:delete', onMessageDelete);
+        socket.off('chat:cleared', onChatCleared);
       }
     };
   }, [role, isOpen, selectedConvoId, conv?._id]);

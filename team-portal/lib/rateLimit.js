@@ -24,9 +24,15 @@ if (typeof setInterval !== 'undefined') {
  * @param {number} windowMs - Time window in milliseconds
  * @returns {{ allowed: boolean, remaining: number, resetTime: number }}
  */
-export function checkRateLimit(key, limit = 15, windowMs = 60 * 1000) {
+export function checkRateLimit(key, limit = 15, windowMs = 60 * 1000, { peek = false } = {}) {
   const now = Date.now();
   const entry = rateLimitMap.get(key);
+
+  // peek: only look (used to count FAILED logins: the count goes up on a wrong password only)
+  if (peek) {
+    if (!entry || now > entry.resetTime) return { allowed: true, remaining: limit, resetTime: now + windowMs };
+    return { allowed: entry.count < limit, remaining: Math.max(0, limit - entry.count), resetTime: entry.resetTime };
+  }
 
   if (!entry || now > entry.resetTime) {
     rateLimitMap.set(key, {
