@@ -44,7 +44,7 @@ export default function AppNavbar() {
   const navLinks = [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/chat', label: 'Chats', icon: MessageSquare },
-    { href: '/sellers', label: 'Sellers', icon: Users },
+    ...(isAdmin ? [] : [{ href: '/sellers', label: 'Sellers', icon: Users }]),
     { href: '/models', label: 'Models', icon: ImageIcon },
     { href: '/rewards', label: 'Rewards', icon: Award },
     { href: '/wallet', label: 'Wallet', icon: Wallet },
@@ -167,8 +167,7 @@ export default function AppNavbar() {
                   <span className="text-[9px] uppercase font-bold text-amber-600 block leading-none">Admin Balance</span>
                   <span className="font-extrabold text-slate-900 leading-tight">
                     ₮{((user.wallet?.balanceUSDT != null ? user.wallet?.balanceUSDT : (user.wallet?.balanceINR || 0) / 90)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
-                    <span className="text-[10px] text-slate-500 font-normal">USDT</span>{' '}
-                    <span className="text-[10px] text-purple-700 font-semibold">(₹{(user.wallet?.balanceINR || 0).toLocaleString()})</span>
+                    <span className="text-[10px] text-slate-500 font-normal">USDT</span>
                   </span>
                 </div>
               </button>
@@ -188,9 +187,6 @@ export default function AppNavbar() {
                     <span>
                       ₮{((user.wallet?.balanceUSDT != null ? user.wallet?.balanceUSDT : ((user.wallet?.balancePKR || 0) / 280) + ((user.wallet?.balanceINR || 0) / 90))).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
                       <span className="text-[10px] text-slate-500 font-normal">USDT</span>
-                    </span>
-                    <span className="text-[10px] text-emerald-700 font-semibold">
-                      {user.commissionLabel === 'inr_50' ? `(₹${(user.wallet?.balanceINR || 0).toLocaleString()})` : `(Rs ${(user.wallet?.balancePKR || 0).toLocaleString()})`}
                     </span>
                   </div>
                 </div>

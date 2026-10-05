@@ -59,10 +59,10 @@ export async function POST(req) {
     // Notify the member via 1-on-1 personal chat system message
     const personalConvId = [targetMember._id.toString(), session._id.toString()].sort().join('_');
     const labelDesc = targetMember.role === 'admin'
-      ? '🛡️ Admin Handler Deal (50% Personal Handler + 25% Admin Pool Split)'
+      ? '🛡️ Partner Deal (75% of this store’s deposits; the other partner gets 25%)'
       : chosenLabel === 'inr_50'
-      ? '🇮🇳 50% INR Commission'
-      : '🇵🇰 1:1 INR to PKR Commission';
+      ? '50% of every deposit, in real USDT'
+      : '🇵🇰 1:1 INR to PKR, paid in USDT at that day’s rate';
     await ChatMessage.create({
       chatType: 'personal',
       conversationId: `personal_${personalConvId}`,

@@ -26,7 +26,7 @@ export default function MobileBottomNav() {
   const navItems = [
     { href: '/dashboard', label: 'Home', icon: LayoutDashboard },
     { href: '/chat', label: 'Chats', icon: MessageSquare },
-    { href: '/sellers', label: 'Sellers', icon: Users },
+    ...(isAdmin ? [] : [{ href: '/sellers', label: 'Sellers', icon: Users }]),
     { href: '/wallet', label: 'Wallet', icon: Wallet },
     { href: '/rewards', label: 'Rewards', icon: Award },
     ...(isAdmin ? [{ href: '/members', label: 'Members', icon: UserCheck }] : []),

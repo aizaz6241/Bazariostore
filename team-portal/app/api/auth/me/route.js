@@ -40,9 +40,9 @@ export async function GET(req) {
 
     // Recalculate live financial balances based on commission rules and pool shares (Admins & Members)
     try {
-      const { getWalletData } = await import('@/lib/utils/wallet');
-      const walletData = await getWalletData({ userId: member._id });
-      member.wallet = walletData.balances;
+      const { getWalletBalancesMap, EMPTY_WALLET } = await import('@/lib/utils/wallet');
+      const wallets = await getWalletBalancesMap();
+      member.wallet = wallets.get(member._id.toString()) || { ...EMPTY_WALLET };
     } catch (wErr) {
       console.error('Wallet refresh error in auth/me:', wErr);
     }

@@ -12,7 +12,28 @@ import Member from '@/lib/models/Member';
  *    is automatically removed from the team management system.
  * 3. NEW ADMIN ONBOARDING: Any new admin added to ecommerce platform is automatically created here.
  */
-export async function syncEcommerceAdmins() {
+// The sync used to run (and write) on every dashboard / members / chat request, including the
+// chat poll every few seconds. Admin accounts change rarely, so once a minute is plenty.
+const SYNC_EVERY_MS = 60 * 1000;
+
+export async function syncEcommerceAdmins({ force = false } = {}) {
+  if (!global.__adminSyncState) global.__adminSyncState = { at: 0, running: null };
+  const state = global.__adminSyncState;
+  if (!force && Date.now() - state.at < SYNC_EVERY_MS) return [];
+  if (state.running) return state.running;
+
+  state.running = runAdminSync()
+    .then((res) => {
+      state.at = Date.now();
+      return res;
+    })
+    .finally(() => {
+      state.running = null;
+    });
+  return state.running;
+}
+
+async function runAdminSync() {
   try {
     const db = mongoose.connection.db;
     if (!db) return [];
@@ -72,7 +93,7 @@ export async function syncEcommerceAdmins() {
         portalAdmin.passwordHash = eAdmin.passwordHash;
         if (eAdmin.phone !== undefined) portalAdmin.phone = eAdmin.phone || '';
         if (eAdmin.active !== undefined) portalAdmin.active = eAdmin.active;
-        await portalAdmin.save();
+        if (portalAdmin.isModified()) await portalAdmin.save(); // write only when something really changed
         syncedAdmins.push(portalAdmin);
       } else {
         // Create new synced admin

@@ -96,5 +96,6 @@ const chatMessageSchema = new mongoose.Schema(
 );
 
 chatMessageSchema.index({ conversationId: 1, createdAt: -1 });
+chatMessageSchema.index({ conversationId: 1, updatedAt: -1 }); // fast "did anything change?" check for chat polling
 
 export default mongoose.models.PortalChatMessage || mongoose.model('PortalChatMessage', chatMessageSchema);

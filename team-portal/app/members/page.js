@@ -434,7 +434,7 @@ export default function MembersPage() {
                         Deposited
                       </span>
                       <span className="text-sm font-extrabold text-emerald-600">
-                        ₹{(member.totalDepositsINR || 0).toLocaleString()}
+                        ${(member.totalDepositsINR || 0).toLocaleString()}
                       </span>
                     </div>
 
@@ -443,7 +443,7 @@ export default function MembersPage() {
                         Withdrawn
                       </span>
                       <span className="text-sm font-extrabold text-slate-600">
-                        ₹{(member.totalWithdrawalsINR || 0).toLocaleString()}
+                        ${(member.totalWithdrawalsINR || 0).toLocaleString()}
                       </span>
                     </div>
 
@@ -460,15 +460,6 @@ export default function MembersPage() {
                       <span className="text-sm font-black text-slate-900 block">
                         ₮{((member.wallet?.balanceUSDT != null ? member.wallet?.balanceUSDT : (((member.wallet?.balancePKR || member.netBalancePKR || 0) / 280) + ((member.wallet?.balanceINR || 0) / 90)))).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
-                      {member.role === 'admin' || member.commissionLabel === 'inr_50' ? (
-                        <span className="text-[10px] text-purple-700 font-bold block">
-                          ₹{(member.wallet?.balanceINR || 0).toLocaleString()} INR
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-emerald-700 font-bold block">
-                          Rs. {(member.wallet?.balancePKR ?? member.netBalancePKR ?? 0).toLocaleString()} PKR
-                        </span>
-                      )}
                       {member.totalBonusesPKR > 0 && (
                         <span className="text-[9px] text-amber-700 block font-semibold">
                           +{member.totalBonusesPKR.toLocaleString()} bonus
@@ -598,7 +589,7 @@ export default function MembersPage() {
                                   Deposit
                                 </span>
                                 <span className="font-bold text-emerald-600">
-                                  ₹{(seller.wallet?.totalDeposited || 0).toLocaleString()}
+                                  ${(seller.wallet?.totalDeposited || 0).toLocaleString()}
                                 </span>
                               </div>
 
@@ -607,7 +598,7 @@ export default function MembersPage() {
                                   Withdraw
                                 </span>
                                 <span className="font-bold text-slate-600">
-                                  ₹{(seller.wallet?.totalWithdrawn || 0).toLocaleString()}
+                                  ${(seller.wallet?.totalWithdrawn || 0).toLocaleString()}
                                 </span>
                               </div>
 
@@ -616,7 +607,7 @@ export default function MembersPage() {
                                   Remaining
                                 </span>
                                 <span className="font-bold text-brand-700">
-                                  ₹{(seller.wallet?.netRemaining || 0).toLocaleString()}
+                                  ${(seller.wallet?.netRemaining || 0).toLocaleString()}
                                 </span>
                               </div>
 
@@ -874,13 +865,13 @@ export default function MembersPage() {
                   onChange={(e) => setCreateForm({ ...createForm, commissionLabel: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
                 >
-                  <option value="pkr_1to1">🇵🇰 1:1 PKR Fixed Deal (₹100k INR Deposit = 100,000 PKR to Member)</option>
-                  <option value="inr_50">🇮🇳 50% INR Split Deal (₹100k INR Deposit = ₹50,000 INR to Member)</option>
+                  <option value="pkr_1to1">🇵🇰 1:1 PKR Deal (₹100k INR deposit = Rs 100,000 to member, paid in USDT)</option>
+                  <option value="inr_50">50% Deal (member gets 50% of the USDT received)</option>
                 </select>
                 <p className="text-[11px] text-slate-500 mt-1">
                   {createForm.commissionLabel === 'inr_50'
-                    ? 'Member earns 50% in Indian Rupees directly from every client deposit. The other 50% INR goes to the Admin pool.'
-                    : 'Member receives 1 Pakistani Rupee for every 1 Indian Rupee deposited. 100% of the deposit INR goes to the Admin pool.'}
+                    ? 'Member gets 50% of the real USDT of every client deposit. The other 50% is shared equally by the two partners.'
+                    : 'Member gets 1 Pakistani Rupee for every Indian Rupee deposited, paid in USDT at that day’s rate. The rest is shared equally by the two partners.'}
                 </p>
               </div>
 

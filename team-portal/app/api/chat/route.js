@@ -41,13 +41,29 @@ export async function GET(req) {
       console.error('Mark read error:', readErr);
     }
 
-    const messages = await ChatMessage.find({ conversationId })
+    // Cheap fingerprint of the conversation. The chat page polls every few seconds and sends the
+    // fingerprint it already has; when nothing changed we answer without re-sending the messages
+    // (which carry base64 voice notes and images).
+    const [count, latest] = await Promise.all([
+      ChatMessage.countDocuments({ conversationId }),
+      ChatMessage.findOne({ conversationId }).sort({ updatedAt: -1 }).select('updatedAt').lean(),
+    ]);
+    const sig = `${count}:${latest?.updatedAt ? new Date(latest.updatedAt).getTime() : 0}`;
+    if (searchParams.get('sig') === sig) {
+      return NextResponse.json({ conversationId, unchanged: true, sig });
+    }
+
+    // Newest 300 messages, returned oldest-first (it used to return the FIRST 300 ever sent,
+    // so in a long conversation new messages stopped appearing).
+    const newest = await ChatMessage.find({ conversationId })
       .populate('readBy', 'name username avatar role')
-      .sort({ createdAt: 1 })
+      .sort({ createdAt: -1 })
       .limit(300);
+    const messages = newest.reverse();
 
     return NextResponse.json({
       conversationId,
+      sig,
       messages,
     });
   } catch (err) {

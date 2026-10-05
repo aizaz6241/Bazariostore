@@ -73,6 +73,7 @@ export default function ChatPage() {
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const prevMessagesLengthRef = useRef(0);
+  const messagesSigRef = useRef(''); // fingerprint of the messages already on screen
 
   const isAdmin = user?.role === 'admin';
 
@@ -95,8 +96,18 @@ export default function ChatPage() {
 
   useEffect(() => {
     fetchContacts();
-    const interval = setInterval(fetchContacts, 4000);
-    return () => clearInterval(interval);
+    // Poll only while the tab is visible; refresh at once when the user comes back.
+    const interval = setInterval(() => {
+      if (!document.hidden) fetchContacts();
+    }, 6000);
+    const onVisible = () => {
+      if (!document.hidden) fetchContacts();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   // ─── 2. Fetch Messages for Current Active Chat ───
@@ -110,6 +121,8 @@ export default function ChatPage() {
         if (!activeChat.contact?._id) return;
         url += `&targetMemberId=${activeChat.contact._id}`;
       }
+      // Background polls send what we already have, so an unchanged chat costs almost nothing.
+      if (quiet && messagesSigRef.current) url += `&sig=${encodeURIComponent(messagesSigRef.current)}`;
 
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
@@ -117,6 +130,8 @@ export default function ChatPage() {
 
       if (res.ok) {
         const data = await res.json();
+        if (data.unchanged) return;
+        messagesSigRef.current = data.sig || '';
         const incoming = data.messages || [];
 
         // Check if new messages arrived while user was scrolled up
@@ -146,14 +161,22 @@ export default function ChatPage() {
   useEffect(() => {
     setMessages([]);
     prevMessagesLengthRef.current = 0;
+    messagesSigRef.current = '';
     setUnreadWhileScrolled(0);
     fetchMessages(false);
 
     const interval = setInterval(() => {
-      fetchMessages(true);
+      if (!document.hidden) fetchMessages(true);
     }, 2500);
+    const onVisible = () => {
+      if (!document.hidden) fetchMessages(true);
+    };
+    document.addEventListener('visibilitychange', onVisible);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [activeChat.type, activeChat.contact?._id]);
 
   // Auto-scroll on initial load or when at bottom

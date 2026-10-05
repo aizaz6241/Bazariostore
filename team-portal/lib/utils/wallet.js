@@ -196,21 +196,6 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
   const totalWithdrawnPKR = 0;
   const balancePKR = 0; // bonuses are paid in USDT now; PKR is shown for reference only
 
-  try {
-    await Member.updateOne(
-      { _id: user._id },
-      {
-        $set: {
-          'wallet.balancePKR': balancePKR,
-          'wallet.totalEarnedPKR': totalEarnedPKR,
-          'wallet.totalWithdrawnPKR': totalWithdrawnPKR,
-        },
-      }
-    );
-  } catch (syncErr) {
-    console.error('Wallet sync error:', syncErr);
-  }
-
   // ─── Filter by selected time period ───
   const filteredTransactions = rawTransactions.filter((t) => {
     if (!from && !to) return true;
@@ -289,6 +274,54 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
     activeAdminsCount: ledger.partners.length,
   };
 }
+
+/**
+ * Wallet balances for many people at once, straight from the cached ledger.
+ * Used by the dashboard, members list and navbar: one ledger read instead of several
+ * database queries per person.
+ * @returns {Promise<Map<string, object>>} userId -> balances (same shape as getWalletData().balances)
+ */
+export async function getWalletBalancesMap() {
+  const ledger = await buildLedger();
+
+  const bonusPKR = new Map();
+  for (const e of ledger.entries) {
+    if (e.kind !== 'bonus' || !e.owner) continue;
+    bonusPKR.set(e.owner.id, (bonusPKR.get(e.owner.id) || 0) + (e.amountPKR || 0));
+  }
+
+  const map = new Map();
+  for (const w of ledger.wallets) {
+    map.set(String(w.userId), {
+      ...EMPTY_WALLET,
+      balanceUSDT: r2(w.balanceUSDT),
+      totalEarnedUSDT: r2(w.earnedUSDT + w.bonusUSDT),
+      totalWithdrawnUSDT: r2(w.sellerWithdrawUSDT + w.bonusCostUSDT + w.payoutUSDT),
+      totalSellerWithdrawUSDT: r2(w.sellerWithdrawUSDT),
+      totalPayoutUSDT: r2(w.payoutUSDT),
+      totalBonusUSDT: r2(w.bonusUSDT),
+      totalBonusCostUSDT: r2(w.bonusCostUSDT),
+      totalEarnedPKR: bonusPKR.get(String(w.userId)) || 0,
+    });
+  }
+  return map;
+}
+
+export const EMPTY_WALLET = {
+  balanceUSDT: 0,
+  totalEarnedUSDT: 0,
+  totalWithdrawnUSDT: 0,
+  totalSellerWithdrawUSDT: 0,
+  totalPayoutUSDT: 0,
+  totalBonusUSDT: 0,
+  totalBonusCostUSDT: 0,
+  balancePKR: 0,
+  totalEarnedPKR: 0,
+  totalWithdrawnPKR: 0,
+  balanceINR: 0,
+  totalEarnedINR: 0,
+  totalWithdrawnINR: 0,
+};
 
 /**
  * Record a payout taken from a wallet.

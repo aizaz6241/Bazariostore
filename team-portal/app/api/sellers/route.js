@@ -46,16 +46,19 @@ export async function GET(req) {
       assignmentMap.set(a.sellerId.toString(), a);
     });
 
-    // Populate pending orders and analytics for each seller
+    // Pending orders for every listed seller in ONE query (was one query per seller)
+    const pendingAgg = sellerIds.length
+      ? await Order.aggregate([
+          { $match: { seller: { $in: sellerIds }, status: { $in: ['pending', 'processing', 'unfulfilled', 'payment_pending'] } } },
+          { $group: { _id: '$seller', n: { $sum: 1 } } },
+        ])
+      : [];
+    const pendingBySeller = new Map(pendingAgg.map((o) => [String(o._id), o.n]));
+
     const enrichedSellers = await Promise.all(
       sellers.map(async (s) => {
         const assignment = assignmentMap.get(s._id.toString());
-
-        // Pending orders for this seller
-        const pendingOrders = await Order.countDocuments({
-          seller: s._id,
-          status: { $in: ['pending', 'processing', 'unfulfilled', 'payment_pending'] },
-        });
+        const pendingOrders = pendingBySeller.get(s._id.toString()) || 0;
 
         const totalDeposited = Number(s.wallet?.totalDeposited || 0);
         const totalWithdrawn = Number(s.wallet?.totalWithdrawn || 0);

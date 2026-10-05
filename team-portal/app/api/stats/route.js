@@ -5,6 +5,8 @@ import SellerAssignment from '@/lib/models/SellerAssignment';
 import { Seller, Order, CLIENT_SELLER_FILTER } from '@/lib/models/SharedModels';
 import RewardClaim from '@/lib/models/RewardClaim';
 import { syncEcommerceAdmins } from '@/lib/adminSync';
+import { loadTeamStats, OPEN_ORDER_STATUSES } from '@/lib/utils/teamStats';
+import { getWalletBalancesMap, EMPTY_WALLET } from '@/lib/utils/wallet';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,95 +20,47 @@ export async function GET(req) {
     if (session.role === 'admin') {
       await syncEcommerceAdmins();
 
-      const [
-        totalMembers,
-        totalSellers,
-        sellersWithWallet,
-        pendingClaimsCount,
-        pendingOrdersCount,
-        allMembers,
-      ] = await Promise.all([
-        Member.countDocuments({ role: 'member', active: true }),
+      const [totalSellers, sellersWithWallet, pendingClaimsCount, pendingOrdersCount, allMembers] = await Promise.all([
         Seller.countDocuments(CLIENT_SELLER_FILTER),
-        Seller.find(CLIENT_SELLER_FILTER).select('wallet'),
+        Seller.find(CLIENT_SELLER_FILTER).select('wallet.totalDeposited wallet.totalWithdrawn').lean(),
         RewardClaim.countDocuments({ status: 'pending' }),
-        Order.countDocuments({ status: { $in: ['pending', 'processing', 'unfulfilled'] } }),
-        Member.find({ role: 'member', active: true }).select('-passwordHash'),
+        Order.countDocuments({ status: { $in: OPEN_ORDER_STATUSES } }),
+        Member.find({ role: 'member', active: true }).select('name username phone avatar').lean(),
       ]);
 
       let totalDepositsINR = 0;
       let totalWithdrawalsINR = 0;
-
       sellersWithWallet.forEach((s) => {
         totalDepositsINR += Number(s.wallet?.totalDeposited || 0);
         totalWithdrawalsINR += Number(s.wallet?.totalWithdrawn || 0);
       });
-
       const netFundsINR = totalDepositsINR - totalWithdrawalsINR;
 
-      // ─── Calculate Comprehensive Staff Analytics for Admin ───
-      const staffList = await Promise.all(
-        allMembers.map(async (m) => {
-          const assignments = await SellerAssignment.find({ memberId: m._id, status: 'active' });
-          const sellerIds = assignments.map((a) => a.sellerId);
-          const assignedSellers = await Seller.find({ _id: { $in: sellerIds }, ...CLIENT_SELLER_FILTER }).select('-kycDocuments');
+      // One batch for the whole team (was several queries per member)
+      const [team, wallets] = await Promise.all([loadTeamStats(allMembers), getWalletBalancesMap().catch(() => new Map())]);
 
-          let memberDepositsINR = 0;
-          let memberWithdrawalsINR = 0;
+      const staffList = allMembers.map((m) => {
+        const t = team.get(String(m._id));
+        const mWallet = t.wallet;
+        return {
+          _id: m._id,
+          name: m.name,
+          username: m.username,
+          phone: m.phone,
+          avatar: m.avatar,
+          assignedSellersCount: t.sellers.length,
+          totalDepositsINR: t.totalDeposits,
+          totalWithdrawalsINR: t.totalWithdrawals,
+          netVolumeINR: t.totalDeposits - t.totalWithdrawals,
+          totalBonusesPKR: t.totalBonusesPKR,
+          walletBalanceUSDT: mWallet.balanceUSDT || 0,
+          walletBalancePKR: mWallet.balancePKR,
+          walletBalanceINR: mWallet.balanceINR,
+          wallet: mWallet,
+          pendingOrdersCount: t.pendingOrdersCount,
+        };
+      });
 
-          for (const s of assignedSellers) {
-            memberDepositsINR += Number(s.wallet?.totalDeposited || 0);
-            memberWithdrawalsINR += Number(s.wallet?.totalWithdrawn || 0);
-          }
-
-          const bonusAgg = await RewardClaim.aggregate([
-            { $match: { memberId: m._id, status: 'approved' } },
-            { $group: { _id: null, total: { $sum: '$amountPKR' } } },
-          ]);
-          const totalBonusesPKR = bonusAgg[0]?.total || 0;
-
-          const pendingOrders = await Order.countDocuments({
-            seller: { $in: sellerIds },
-            status: { $in: ['pending', 'processing', 'unfulfilled'] },
-          });
-
-          // Compute exact dual-currency balances using wallet engine
-          let mWallet = {
-            balanceINR: 0,
-            balancePKR: Math.max(0, memberDepositsINR - memberWithdrawalsINR + totalBonusesPKR),
-            totalEarnedINR: 0,
-            totalEarnedPKR: Math.max(0, memberDepositsINR + totalBonusesPKR),
-          };
-
-          try {
-            const { getWalletData } = await import('@/lib/utils/wallet');
-            const wData = await getWalletData({ userId: m._id });
-            mWallet = wData.balances;
-          } catch (wErr) {
-            // fallback to default
-          }
-
-          return {
-            _id: m._id,
-            name: m.name,
-            username: m.username,
-            phone: m.phone,
-            avatar: m.avatar,
-            assignedSellersCount: assignedSellers.length,
-            totalDepositsINR: memberDepositsINR,
-            totalWithdrawalsINR: memberWithdrawalsINR,
-            netVolumeINR: memberDepositsINR - memberWithdrawalsINR,
-            totalBonusesPKR,
-            walletBalanceUSDT: mWallet.balanceUSDT || 0,
-            walletBalancePKR: mWallet.balancePKR,
-            walletBalanceINR: mWallet.balanceINR,
-            wallet: mWallet,
-            pendingOrdersCount: pendingOrders,
-          };
-        })
-      );
-
-      // Find top performers across categories
       let topDepositor = null;
       let topWithdrawer = null;
       let topEarner = null;
@@ -114,32 +68,26 @@ export async function GET(req) {
       let totalStaffEarningsPKR = 0;
       let totalStaffEarningsINR = 0;
       let totalStaffBonusesPKR = 0;
+      let totalStaffEarningsUSDT = 0;
 
       if (staffList.length > 0) {
         topDepositor = [...staffList].sort((a, b) => b.totalDepositsINR - a.totalDepositsINR)[0];
         topWithdrawer = [...staffList].sort((a, b) => b.totalWithdrawalsINR - a.totalWithdrawalsINR)[0];
-        topEarner = [...staffList].sort((a, b) => (b.walletBalancePKR + b.walletBalanceINR) - (a.walletBalancePKR + a.walletBalanceINR))[0];
+        topEarner = [...staffList].sort((a, b) => b.walletBalanceUSDT - a.walletBalanceUSDT)[0];
         topSellerManager = [...staffList].sort((a, b) => b.assignedSellersCount - a.assignedSellersCount)[0];
 
         staffList.forEach((s) => {
-          totalStaffEarningsPKR += s.walletBalancePKR;
-          totalStaffEarningsINR += (s.walletBalanceINR || 0);
+          totalStaffEarningsPKR += s.walletBalancePKR || 0;
+          totalStaffEarningsINR += s.walletBalanceINR || 0;
           totalStaffBonusesPKR += s.totalBonusesPKR;
+          totalStaffEarningsUSDT += s.walletBalanceUSDT || 0;
         });
       }
 
-      // Fetch live admin wallet share
-      let adminWallet = null;
-      try {
-        const { getWalletData } = await import('@/lib/utils/wallet');
-        const wData = await getWalletData({ userId: session._id });
-        adminWallet = wData.balances;
-      } catch (wErr) {
-        console.error('Error fetching admin wallet:', wErr);
-      }
+      const adminWallet = wallets.get(String(session._id)) || { ...EMPTY_WALLET };
 
       return NextResponse.json({
-        totalMembers,
+        totalMembers: allMembers.length,
         totalSellers,
         totalDepositsINR,
         totalWithdrawalsINR,
@@ -155,65 +103,33 @@ export async function GET(req) {
           topSellerManager,
           totalStaffEarningsPKR,
           totalStaffEarningsINR,
+          totalStaffEarningsUSDT,
           totalStaffBonusesPKR,
         },
       });
-    } else {
-      // Member specific dashboard stats
-      const myAssignments = await SellerAssignment.find({ memberId: session._id, status: 'active' });
-      const sellerIds = myAssignments.map((a) => a.sellerId);
-      const mySellers = await Seller.find({ _id: { $in: sellerIds }, ...CLIENT_SELLER_FILTER }).select('-kycDocuments');
-
-      let totalDepositsINR = 0;
-      let totalWithdrawalsINR = 0;
-
-      mySellers.forEach((s) => {
-        totalDepositsINR += Number(s.wallet?.totalDeposited || 0);
-        totalWithdrawalsINR += Number(s.wallet?.totalWithdrawn || 0);
-      });
-
-      const pendingOrdersCount = await Order.countDocuments({
-        seller: { $in: sellerIds },
-        status: { $in: ['pending', 'processing', 'unfulfilled'] },
-      });
-
-      const bonusAgg = await RewardClaim.aggregate([
-        { $match: { memberId: session._id, status: 'approved' } },
-        { $group: { _id: null, total: { $sum: '$amountPKR' } } },
-      ]);
-      const totalBonusesPKR = bonusAgg[0]?.total || 0;
-
-      const pendingClaimsCount = await RewardClaim.countDocuments({
-        memberId: session._id,
-        status: 'pending',
-      });
-
-      let memberWallet = null;
-      try {
-        const { getWalletData } = await import('@/lib/utils/wallet');
-        const wData = await getWalletData({ userId: session._id });
-        memberWallet = wData.balances;
-      } catch (wErr) {
-        console.error('Error fetching member wallet in stats:', wErr);
-      }
-
-      const walletBalanceUSDT = memberWallet?.balanceUSDT ?? 0;
-      const walletBalancePKR = memberWallet?.balancePKR ?? Math.max(0, totalDepositsINR - totalWithdrawalsINR + totalBonusesPKR);
-      const walletBalanceINR = memberWallet?.balanceINR ?? 0;
-
-      return NextResponse.json({
-        totalAssignedSellers: mySellers.length,
-        totalDepositsINR,
-        totalWithdrawalsINR,
-        walletBalanceUSDT,
-        walletBalancePKR,
-        walletBalanceINR,
-        memberWallet,
-        totalBonusesPKR,
-        pendingOrdersCount,
-        pendingClaimsCount,
-      });
     }
+
+    // ─── Member dashboard ───
+    const me = { _id: session._id };
+    const [team, pendingClaimsCount] = await Promise.all([
+      loadTeamStats([me]),
+      RewardClaim.countDocuments({ memberId: session._id, status: 'pending' }),
+    ]);
+    const mine = team.get(String(session._id));
+    const memberWallet = mine.wallet;
+
+    return NextResponse.json({
+      totalAssignedSellers: mine.sellers.length,
+      totalDepositsINR: mine.totalDeposits,
+      totalWithdrawalsINR: mine.totalWithdrawals,
+      walletBalanceUSDT: memberWallet.balanceUSDT ?? 0,
+      walletBalancePKR: memberWallet.balancePKR ?? 0,
+      walletBalanceINR: memberWallet.balanceINR ?? 0,
+      memberWallet,
+      totalBonusesPKR: mine.totalBonusesPKR,
+      pendingOrdersCount: mine.pendingOrdersCount,
+      pendingClaimsCount,
+    });
   } catch (err) {
     console.error('Fetch stats error:', err);
     return NextResponse.json({ message: err.message }, { status: 500 });

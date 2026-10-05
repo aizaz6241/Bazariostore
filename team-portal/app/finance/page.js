@@ -33,7 +33,7 @@ const REASONS = {
   pkr_rate: 'PKR member: INR amount and that day’s PKR rate are needed',
   partners: 'Exactly 2 active admins are required before this can be split',
   bonus_rate: 'Milestone bonus: enter that day’s PKR rate to convert it to USDT',
-  unassigned: 'This seller is not assigned to anyone. Assign it on the Sellers page and it will be divided automatically',
+  unassigned: 'This seller is not assigned to anyone. Assign it and it will be divided automatically',
 };
 
 const KIND_LABEL = { deposit: 'Deposit', seller_withdrawal: 'Seller withdrawal', bonus: 'Milestone bonus' };
@@ -311,7 +311,7 @@ function AddEntryModal({ data, onClose, onSaved }) {
                 ))}
               </select>
               {seller && !seller.assignedTo && (
-                <span className="text-[10px] text-amber-700 mt-1 block">This seller is not assigned yet — pick the owner here and also assign it on the Sellers page.</span>
+                <span className="text-[10px] text-amber-700 mt-1 block">This seller is not assigned yet — pick the owner here and also assign the seller itself.</span>
               )}
             </div>
           </div>
@@ -583,7 +583,8 @@ export default function FinancePage() {
             <b>
               {unassigned.length} client {unassigned.length === 1 ? 'seller has' : 'sellers have'} no owner.
             </b>{' '}
-            Every client seller must be assigned to a partner or a member. Their deposits and withdrawals are not divided until you assign them on the Sellers page.
+            Every client seller must be assigned to a partner or a member. Their deposits and withdrawals are not divided until you assign them:{' '}
+            <a href="/sellers" className="underline font-bold">open the Sellers page</a>, or use Assigned To in the admin panel’s seller approval screen.
             <div className="flex flex-wrap gap-1.5 mt-2">
               {unassigned.map((x) => (
                 <span key={x.id} className="px-2 py-0.5 rounded-full bg-white border border-amber-300 font-bold text-[11px]">

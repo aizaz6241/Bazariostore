@@ -33,7 +33,7 @@ export const FINANCE_START = new Date(process.env.FINANCE_START_DATE || '2026-09
 const OLD_DEFAULT_RATE = 90;
 const OLD_DEFAULT_INR_PER_USD = 83.5;
 
-const CACHE_MS = 8000;
+const CACHE_MS = 15000;
 
 function cacheStore() {
   if (!global.__financeLedgerCache) global.__financeLedgerCache = { at: 0, data: null };
@@ -80,7 +80,7 @@ export async function buildLedger({ fresh = false } = {}) {
 
   const [partnerDocs, memberDocs, sellers, assignments, docs, splitDocs, payoutDocs, claimDocs] = await Promise.all([
     Member.find({ role: 'admin', active: true }).sort({ createdAt: 1 }).select('name username email').lean(),
-    Member.find({}).select('name username role commissionLabel active').lean(),
+    Member.find({}).select('name username role commissionLabel active wallet').lean(),
     Seller.find({}).select('storeName ownerName wallet isTestAccount accountType isPreviousStoreSeller').lean(),
     SellerAssignment.find({ status: 'active' }).select('sellerId memberId').lean(),
     Withdrawal.find({
@@ -498,9 +498,20 @@ export async function buildLedger({ fresh = false } = {}) {
   };
 
   // Keep the small wallet numbers on each member document in step (dashboard cards read them).
+  // Written only when a number really changed, so an ordinary page load does no writes.
   try {
+    const changed = wallets.filter((w) => {
+      const cur = memberMap.get(w.userId)?.wallet || {};
+      return (
+        num(cur.balanceUSDT) !== r2(w.balanceUSDT) ||
+        num(cur.totalEarnedUSDT) !== r2(w.earnedUSDT + w.bonusUSDT) ||
+        num(cur.totalWithdrawnUSDT) !== r2(w.sellerWithdrawUSDT + w.bonusCostUSDT + w.payoutUSDT) ||
+        num(cur.balanceINR) !== 0 ||
+        num(cur.balancePKR) !== 0
+      );
+    });
     await Promise.all(
-      wallets.map((w) =>
+      changed.map((w) =>
         Member.updateOne(
           { _id: w.userId },
           {
@@ -511,6 +522,7 @@ export async function buildLedger({ fresh = false } = {}) {
               'wallet.balanceINR': 0,
               'wallet.totalEarnedINR': 0,
               'wallet.totalWithdrawnINR': 0,
+              'wallet.balancePKR': 0,
             },
           }
         )

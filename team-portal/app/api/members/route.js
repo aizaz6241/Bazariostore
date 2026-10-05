@@ -5,6 +5,7 @@ import SellerAssignment from '@/lib/models/SellerAssignment';
 import { Seller, Order, CLIENT_SELLER_FILTER } from '@/lib/models/SharedModels';
 import RewardClaim from '@/lib/models/RewardClaim';
 import { syncEcommerceAdmins } from '@/lib/adminSync';
+import { loadTeamStats } from '@/lib/utils/teamStats';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,68 +20,24 @@ export async function GET(req) {
     // Keep all ecommerce admins synchronized
     await syncEcommerceAdmins();
 
-    const members = await Member.find().select('-passwordHash -plainPassword').sort({ role: 1, createdAt: -1 });
+    const members = await Member.find().select('-passwordHash -plainPassword').sort({ role: 1, createdAt: -1 }).lean();
 
-    // Aggregate statistics and live multi-currency wallet for each member
-    const { getWalletData } = await import('@/lib/utils/wallet');
+    // One batch for the whole team (was several queries per member)
+    const team = await loadTeamStats(members);
 
-    const memberStats = await Promise.all(
-      members.map(async (m) => {
-        const assignments = await SellerAssignment.find({ memberId: m._id, status: 'active' });
-        const sellerIds = assignments.map((a) => a.sellerId);
-
-        const sellers = await Seller.find({ _id: { $in: sellerIds }, ...CLIENT_SELLER_FILTER }).select('-kycDocuments');
-
-        let totalDepositsINR = 0;
-        let totalWithdrawalsINR = 0;
-
-        for (const s of sellers) {
-          totalDepositsINR += Number(s.wallet?.totalDeposited || 0);
-          totalWithdrawalsINR += Number(s.wallet?.totalWithdrawn || 0);
-        }
-
-        // Pending orders for assigned sellers
-        const pendingOrdersCount = await Order.countDocuments({
-          seller: { $in: sellerIds },
-          status: { $in: ['pending', 'processing', 'unfulfilled'] },
-        });
-
-        // Total approved bonuses in PKR
-        const bonusAgg = await RewardClaim.aggregate([
-          { $match: { memberId: m._id, status: 'approved' } },
-          { $group: { _id: null, total: { $sum: '$amountPKR' } } },
-        ]);
-        const totalBonusesPKR = bonusAgg[0]?.total || 0;
-
-        // Get exact calculated wallet (INR + PKR) including 50% split rules and payouts
-        let walletBalances = {
-          balanceINR: 0,
-          balancePKR: 0,
-          totalEarnedINR: 0,
-          totalEarnedPKR: 0,
-          totalWithdrawnINR: 0,
-          totalWithdrawnPKR: 0,
-        };
-
-        try {
-          const wData = await getWalletData({ userId: m._id });
-          walletBalances = wData.balances;
-        } catch (wErr) {
-          console.error(`Error computing wallet for member ${m._id}:`, wErr);
-        }
-
-        return {
-          ...m.toObject(),
-          totalClients: sellers.length,
-          totalDepositsINR,
-          totalWithdrawalsINR,
-          totalBonusesPKR,
-          netBalancePKR: walletBalances.balancePKR,
-          wallet: walletBalances,
-          pendingOrdersCount,
-        };
-      })
-    );
+    const memberStats = members.map((m) => {
+      const t = team.get(String(m._id));
+      return {
+        ...m,
+        totalClients: t.sellers.length,
+        totalDepositsINR: t.totalDeposits,
+        totalWithdrawalsINR: t.totalWithdrawals,
+        totalBonusesPKR: t.totalBonusesPKR,
+        netBalancePKR: t.wallet.balancePKR,
+        wallet: t.wallet,
+        pendingOrdersCount: t.pendingOrdersCount,
+      };
+    });
 
     return NextResponse.json({ members: memberStats });
   } catch (err) {

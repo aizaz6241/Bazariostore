@@ -131,7 +131,7 @@ export default function DashboardPage() {
                   <span>Admin Profit Pool & Personal Share</span>
                 </span>
                 <span className="text-xs bg-amber-950/40 border border-amber-300/30 text-amber-200 px-2 py-0.5 rounded-full">
-                  50-50 Active Admins Split Active
+                  75% own sellers • 25% others
                 </span>
               </div>
 
@@ -141,7 +141,7 @@ export default function DashboardPage() {
                 </h2>
                 <span className="text-lg font-bold text-emerald-300">USDT</span>
                 <span className="text-xs text-amber-100/90 ml-1">
-                  (≈ ₹{(stats?.adminWallet?.balanceINR ?? user?.wallet?.balanceINR ?? 0).toLocaleString()} INR)
+                  real Binance USDT
                 </span>
               </div>
 
@@ -149,19 +149,19 @@ export default function DashboardPage() {
                 <div>
                   <p className="text-amber-100/80 text-[10px] uppercase font-bold">Total Earned (Gross)</p>
                   <p className="text-base font-extrabold text-white">
-                    ₹{(stats?.adminWallet?.totalEarnedINR ?? user?.wallet?.totalEarnedINR ?? 0).toLocaleString()} INR
+                    ₮{(stats?.adminWallet?.totalEarnedUSDT ?? user?.wallet?.totalEarnedUSDT ?? 0).toLocaleString()} USDT
                   </p>
                 </div>
                 <div>
                   <p className="text-amber-100/80 text-[10px] uppercase font-bold">Total Payouts / Withdrawn</p>
                   <p className="text-base font-extrabold text-white">
-                    ₹{(stats?.adminWallet?.totalWithdrawnINR ?? user?.wallet?.totalWithdrawnINR ?? 0).toLocaleString()} INR
+                    ₮{(stats?.adminWallet?.totalWithdrawnUSDT ?? user?.wallet?.totalWithdrawnUSDT ?? 0).toLocaleString()} USDT
                   </p>
                 </div>
                 <div>
                   <p className="text-amber-100/80 text-[10px] uppercase font-bold">Platform Total Deposits</p>
                   <p className="text-base font-extrabold text-white">
-                    ₹{(stats?.totalDepositsINR || 0).toLocaleString()} INR
+                    ${(stats?.totalDepositsINR || 0).toLocaleString()}
                   </p>
                 </div>
                 <div>
@@ -222,9 +222,9 @@ export default function DashboardPage() {
                 <TrendingUp className="w-4 h-4 text-emerald-600" />
               </div>
               <p className="text-xl sm:text-2xl font-extrabold text-emerald-600">
-                ₹{(stats?.totalDepositsINR || 0).toLocaleString()}
+                ${(stats?.totalDepositsINR || 0).toLocaleString()}
               </p>
-              <p className="text-[11px] text-slate-400 mt-1">INR volume credited</p>
+              <p className="text-[11px] text-slate-400 mt-1">Store wallet deposits ($)</p>
             </div>
 
             <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-sm">
@@ -249,7 +249,7 @@ export default function DashboardPage() {
                     <span>My Wallet Balance</span>
                   </span>
                   <span className="text-[11px] bg-white/20 px-2 py-0.5 rounded-full text-white font-medium">
-                    1 INR = 1 PKR / 50% Split
+                    Real Binance USDT
                   </span>
                 </div>
 
@@ -259,11 +259,7 @@ export default function DashboardPage() {
                     <span className="text-base sm:text-lg font-normal opacity-90 ml-1.5">USDT</span>
                   </h2>
                   <div className="bg-white/20 border border-white/25 rounded-2xl px-3 py-1 flex items-baseline gap-1 text-white text-xs">
-                    {user?.commissionLabel === 'inr_50' ? (
-                      <span>≈ ₹{(stats?.walletBalanceINR || user?.wallet?.balanceINR || 0).toLocaleString()} INR</span>
-                    ) : (
-                      <span>≈ Rs {(stats?.walletBalancePKR || user?.wallet?.balancePKR || 0).toLocaleString()} PKR</span>
-                    )}
+                    <span>Real Binance USDT</span>
                   </div>
                 </div>
 
@@ -272,13 +268,13 @@ export default function DashboardPage() {
                   <div>
                     <p className="text-emerald-100/80 text-[10px]">Deposits (+)</p>
                     <p className="font-bold text-white text-xs sm:text-sm">
-                      Rs {(stats?.totalDepositsINR || 0).toLocaleString()}
+                      ${(stats?.totalDepositsINR || 0).toLocaleString()}
                     </p>
                   </div>
                   <div>
                     <p className="text-emerald-100/80 text-[10px]">Withdrawals (-)</p>
                     <p className="font-bold text-white text-xs sm:text-sm">
-                      Rs {(stats?.totalWithdrawalsINR || 0).toLocaleString()}
+                      ${(stats?.totalWithdrawalsINR || 0).toLocaleString()}
                     </p>
                   </div>
                   <div>
@@ -383,7 +379,7 @@ export default function DashboardPage() {
                 {stats.staffAnalytics.topDepositor?.name || 'No members yet'}
               </p>
               <p className="text-lg font-black text-emerald-600">
-                ₹{(stats.staffAnalytics.topDepositor?.totalDepositsINR || 0).toLocaleString()} INR
+                ${(stats.staffAnalytics.topDepositor?.totalDepositsINR || 0).toLocaleString()}
               </p>
               <p className="text-[11px] text-slate-500 mt-0.5">
                 {stats.staffAnalytics.topDepositor?.assignedSellersCount || 0} stores assigned
@@ -405,7 +401,7 @@ export default function DashboardPage() {
                 {stats.staffAnalytics.topWithdrawer?.name || 'No members yet'}
               </p>
               <p className="text-lg font-black text-slate-700">
-                ₹{(stats.staffAnalytics.topWithdrawer?.totalWithdrawalsINR || 0).toLocaleString()} INR
+                ${(stats.staffAnalytics.topWithdrawer?.totalWithdrawalsINR || 0).toLocaleString()}
               </p>
               <p className="text-[11px] text-slate-500 mt-0.5">
                 Processed client payouts
@@ -511,15 +507,15 @@ export default function DashboardPage() {
                         </td>
 
                         <td className="py-3 px-4 text-right font-bold text-emerald-600">
-                          ₹{(staff.totalDepositsINR || 0).toLocaleString()}
+                          ${(staff.totalDepositsINR || 0).toLocaleString()}
                         </td>
 
                         <td className="py-3 px-4 text-right text-slate-600">
-                          ₹{(staff.totalWithdrawalsINR || 0).toLocaleString()}
+                          ${(staff.totalWithdrawalsINR || 0).toLocaleString()}
                         </td>
 
                         <td className="py-3 px-4 text-right font-semibold text-slate-800">
-                          ₹{(staff.netVolumeINR || 0).toLocaleString()}
+                          ${(staff.netVolumeINR || 0).toLocaleString()}
                         </td>
 
                         <td className="py-3 px-4 text-right font-semibold text-amber-600">

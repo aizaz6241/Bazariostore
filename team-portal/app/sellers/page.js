@@ -383,15 +383,15 @@ export default function SellersPage() {
                       )}
 
                       <td className="py-3 px-4 text-right font-bold text-emerald-600">
-                        ₹{(seller.wallet?.totalDeposited || 0).toLocaleString()}
+                        ${(seller.wallet?.totalDeposited || 0).toLocaleString()}
                       </td>
 
                       <td className="py-3 px-4 text-right text-slate-600">
-                        ₹{(seller.wallet?.totalWithdrawn || 0).toLocaleString()}
+                        ${(seller.wallet?.totalWithdrawn || 0).toLocaleString()}
                       </td>
 
                       <td className="py-3 px-4 text-right font-bold text-brand-700">
-                        ₹{(seller.wallet?.netRemaining || 0).toLocaleString()}
+                        ${(seller.wallet?.netRemaining || 0).toLocaleString()}
                       </td>
 
                       <td className="py-3 px-4 text-center">
@@ -490,7 +490,7 @@ export default function SellersPage() {
 
                   <div className="flex items-center justify-between text-[11px] bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-100">
                     <span className="text-slate-500">
-                      Rem: <strong className="text-brand-700">₹{(seller.wallet?.netRemaining || 0).toLocaleString()}</strong>
+                      Rem: <strong className="text-brand-700">${(seller.wallet?.netRemaining || 0).toLocaleString()}</strong>
                     </span>
                     <span className="text-slate-500">
                       Orders: <strong className="text-amber-600">{seller.pendingOrdersCount}</strong>
@@ -591,21 +591,21 @@ export default function SellersPage() {
                     <div>
                       <span className="text-[10px] text-slate-400 block font-medium">Deposited</span>
                       <span className="text-xs sm:text-sm font-bold text-emerald-600">
-                        ₹{(seller.wallet?.totalDeposited || 0).toLocaleString()}
+                        ${(seller.wallet?.totalDeposited || 0).toLocaleString()}
                       </span>
                     </div>
 
                     <div>
                       <span className="text-[10px] text-slate-400 block font-medium">Withdrawn</span>
                       <span className="text-xs sm:text-sm font-bold text-slate-700">
-                        ₹{(seller.wallet?.totalWithdrawn || 0).toLocaleString()}
+                        ${(seller.wallet?.totalWithdrawn || 0).toLocaleString()}
                       </span>
                     </div>
 
                     <div>
                       <span className="text-[10px] text-slate-400 block font-medium">Remaining</span>
                       <span className="text-xs sm:text-sm font-bold text-brand-700">
-                        ₹{(seller.wallet?.netRemaining || 0).toLocaleString()}
+                        ${(seller.wallet?.netRemaining || 0).toLocaleString()}
                       </span>
                     </div>
                   </div>
@@ -724,7 +724,7 @@ export default function SellersPage() {
               <p className="font-bold text-slate-800">{assignModalSeller.storeName}</p>
               <p className="text-slate-500 mt-0.5">Owner: {assignModalSeller.ownerName}</p>
               <p className="text-slate-500">
-                Deposits: ₹{(assignModalSeller.wallet?.totalDeposited || 0).toLocaleString()} INR
+                Deposits: ${(assignModalSeller.wallet?.totalDeposited || 0).toLocaleString()}
               </p>
             </div>
 
@@ -780,10 +780,10 @@ export default function SellersPage() {
                   </div>
                   <p className="text-[11px] text-slate-600 leading-snug">
                     {isTargetAdmin
-                      ? '50% INR from all store deposits directly credits to this Admin as managing handler share. The remaining 50% INR platform pool is split 50-50 across both Admins (25% each).'
+                      ? 'This partner gets 75% of the real USDT of every deposit from this store; the other partner gets 25%.'
                       : is50Inr
-                      ? '50% in Indian Rupees from all store deposits directly credits to this member. The other 50% INR goes to the Admin platform pool.'
-                      : 'Member earns 1 Pakistani Rupee for every 1 Indian Rupee deposited. 100% of the deposit INR flows to Admin pool.'}
+                      ? 'This member gets 50% of the real USDT of every deposit from this store. The two partners share the other 50% equally.'
+                      : 'Member gets 1 Pakistani Rupee for every Indian Rupee deposited, paid in USDT at that day’s rate. The two partners share the rest equally.'}
                   </p>
                   <p className="text-[10px] text-slate-400 italic">
                     * Note: Deal agreements are configured on the Member account under &quot;Team Members&quot;.
