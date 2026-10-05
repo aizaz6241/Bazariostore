@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { api, money, fmtDate } from '../api.js';
+import { api, money, fmtDate, getCurrencyRate } from '../api.js';
 import { STATUS_LABELS, ALL_STATUSES, PAYMENT_LABELS } from '../data.js';
 import { ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
@@ -619,7 +619,7 @@ export default function Orders() {
                   const curSeller = sellers.find((s) => s._id === selectedSellerId);
                   if (!curSeller) return null;
                   const curBal = curSeller.wallet?.balance || 0;
-                  const curInr = Math.round(curBal * 83.5);
+                  const curInr = Math.round(curBal * getCurrencyRate('INR')); // same live rate the seller sees
                   const curLocked = curSeller.wallet?.processingFund || 0;
 
                   return (

@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { api, money } from '../api.js';
 import Ic from '../components/Icons.jsx';
+import { useCurrency } from '../context/CurrencyContext.jsx';
 
-const INR_RATE = 83.50; // Standard USD to INR rate for wallet conversion
+const FALLBACK_INR_RATE = 83.5; // used only if the live rate has not loaded
 const BINANCE_RATE_PRESETS = ['89.50', '90.00', '90.50', '91.00', '91.50'];
 const INR_PRESETS = [5000, 10000, 25000, 50000, 100000];
 const REASON_PRESETS = [
@@ -19,6 +20,10 @@ export default function AddFundsModal({
   preselectedSellerId = '',
   onSuccess,
 }) {
+  // Same live USD → INR rate the seller sees in the deposit calculator, so both sides match.
+  const { rates } = useCurrency();
+  const INR_RATE = Number(rates?.INR) > 0 ? Number(rates.INR) : FALLBACK_INR_RATE;
+
   const [sellersList, setSellersList] = useState(sellers);
   const [selectedSellerId, setSelectedSellerId] = useState('');
   const [type, setType] = useState('credit'); // 'credit' | 'debit'
@@ -30,6 +35,7 @@ export default function AddFundsModal({
 
   // Binance & Helping (Admin Internal)
   const [usdtReceived, setUsdtReceived] = useState(''); // real USDT that reached Binance (empty = no real money)
+  const [binanceInr, setBinanceInr] = useState(''); // real INR the seller sent for this credit
   const [helpingAmount, setHelpingAmount] = useState('');
 
   // Reason & Reference
@@ -127,7 +133,8 @@ export default function AddFundsModal({
   // The admin types the REAL USDT received on Binance; the rate is only worked out for reference.
   const parsedUsdt = parseFloat(usdtReceived) || 0;
   const calcUsdt = parsedUsdt > 0 ? parsedUsdt.toFixed(2) : null;
-  const parsedBRate = (parsedInr > 0 && parsedUsdt > 0) ? Number((parsedInr / parsedUsdt).toFixed(2)) : 0;
+  const parsedBinanceInr = parseFloat(binanceInr) || 0;
+  const parsedBRate = (parsedBinanceInr > 0 && parsedUsdt > 0) ? Number((parsedBinanceInr / parsedUsdt).toFixed(2)) : 0;
 
   // Helping amount calculation
   const parsedHelping = parseFloat(helpingAmount) || 0;
@@ -155,7 +162,8 @@ export default function AddFundsModal({
 
     setSubmitting(true);
     try {
-      const inrVal = parsedInr > 0 ? Number(parsedInr.toFixed(2)) : undefined;
+      // Only the INR the admin really typed in the Binance box is saved (never a converted guess)
+      const inrVal = (!isDebit && parsedBinanceInr > 0) ? Number(parsedBinanceInr.toFixed(2)) : undefined;
       const bRate = (!isDebit && parsedBRate > 0) ? parsedBRate : undefined;
       const usdtVal = (!isDebit && parsedUsdt > 0) ? parsedUsdt : undefined;
       const hAmt = (!isDebit && parsedHelping > 0) ? parsedHelping : 0;
@@ -191,6 +199,7 @@ export default function AddFundsModal({
       setUsdAmount('');
       setHelpingAmount('');
       setUsdtReceived('');
+      setBinanceInr('');
       setReference('');
 
       setTimeout(() => {
@@ -394,7 +403,7 @@ export default function AddFundsModal({
                 <div className="afm-binance-header-left">
                   <span className="afm-binance-icon">🟡</span>
                   <div>
-                    <b className="afm-binance-title">Binance USDT Rate &amp; Real-Time Conversion</b>
+                    <b className="afm-binance-title">Binance USDT Received</b>
                     <span className="afm-binance-badge">Admin Internal • Hidden from Seller</span>
                   </div>
                 </div>
@@ -407,6 +416,33 @@ export default function AddFundsModal({
               </div>
 
               <div className="afm-binance-grid">
+                {/* Real INR received */}
+                <div>
+                  <label className="afm-sublabel">
+                    🇮🇳 Indian Rupees Received (₹ INR):
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    placeholder="e.g. 5000"
+                    value={binanceInr}
+                    onChange={(e) => setBinanceInr(e.target.value)}
+                    className="afm-subinput binance-rate-input"
+                  />
+                  {parseFloat(inrAmount) > 0 && String(parseFloat(inrAmount)) !== String(parsedBinanceInr) ? (
+                    <button
+                      type="button"
+                      onClick={() => setBinanceInr(String(parseFloat(inrAmount)))}
+                      style={{ marginTop: 4, padding: 0, border: 'none', background: 'none', color: '#b45309', fontSize: 11.5, fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}
+                    >
+                      Upar wali amount use karein (₹{Number(parseFloat(inrAmount)).toLocaleString('en-IN')})
+                    </button>
+                  ) : (
+                    <small className="afm-binance-hint">Asli INR likhein jo seller ne bheje.</small>
+                  )}
+                </div>
+
                 {/* Real USDT received */}
                 <div>
                   <label className="afm-sublabel">
@@ -427,7 +463,7 @@ export default function AddFundsModal({
                 </div>
 
                 {/* Worked-out rate (reference only) */}
-                <div>
+                <div style={{ gridColumn: '1 / -1' }}>
                   <label className="afm-sublabel">
                     🟡 Rate (khud nikalta hai):
                   </label>
@@ -437,7 +473,7 @@ export default function AddFundsModal({
                     </span>
                     {parsedBRate > 0 && (
                       <span className="afm-usdt-calc">
-                        ₹{Number(parsedInr).toFixed(0)} ÷ {calcUsdt}
+                        ₹{Number(parsedBinanceInr).toFixed(0)} ÷ {calcUsdt}
                       </span>
                     )}
                   </div>
