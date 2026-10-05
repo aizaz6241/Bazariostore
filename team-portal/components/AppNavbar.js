@@ -129,7 +129,7 @@ export default function AppNavbar() {
           </div>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden md:flex items-center space-x-1 lg:space-x-2">
+          <nav className="hidden xl:flex items-center space-x-1 2xl:space-x-2">
             {navLinks.map((item) => {
               const Icon = item.icon;
               const isActive = pathname === item.href;

@@ -3,7 +3,7 @@ import { getAuthSession } from '@/lib/auth';
 import RewardClaim from '@/lib/models/RewardClaim';
 import SellerAssignment from '@/lib/models/SellerAssignment';
 import { Seller, Withdrawal } from '@/lib/models/SharedModels';
-import { evaluateMemberMilestones } from '@/lib/utils/milestones';
+import { evaluateMemberMilestones, getRealInrDeposits } from '@/lib/utils/milestones';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,30 +34,8 @@ export async function GET(req) {
       const assignments = await SellerAssignment.find({ memberId: session._id, status: 'active' });
       const sellerIds = assignments.map((a) => a.sellerId);
 
-      const now = new Date();
-      const weekStart = new Date(now);
-      const day = weekStart.getDay();
-      const diff = weekStart.getDate() - day + (day === 0 ? -6 : 1);
-      weekStart.setDate(diff);
-      weekStart.setHours(0, 0, 0, 0);
-
-      const weeklyDeposits = await Withdrawal.aggregate([
-        {
-          $match: {
-            seller: { $in: sellerIds },
-            type: 'deposit',
-            status: { $in: ['approved', 'completed'] },
-            createdAt: { $gte: weekStart },
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            total: { $sum: '$amount' },
-          },
-        },
-      ]);
-      const currentTotalDepositedINR = weeklyDeposits[0]?.total || 0;
+      // Real INR from the finance ledger (the store wallet is in dollars)
+      const { weekTotal: currentTotalDepositedINR } = await getRealInrDeposits(sellerIds);
 
       const targetINR = 500000; // 5 Lakh INR
       const progressPercent = Math.min(100, Math.round((currentTotalDepositedINR / targetINR) * 100));

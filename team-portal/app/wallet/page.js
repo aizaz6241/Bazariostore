@@ -355,7 +355,7 @@ export default function WalletPage() {
           <Building2 className="w-5 h-5 text-slate-500" />
           <span className="text-sm font-bold text-slate-800">Assigned Stores Volume Overview:</span>
         </div>
-        <div className="flex items-center space-x-6 text-xs sm:text-sm">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs sm:text-sm min-w-0">
           <div className="flex items-center space-x-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
             <span className="text-slate-500">Client Deposits:</span>
@@ -470,12 +470,12 @@ export default function WalletPage() {
             ))}
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
             <span className="text-xs font-bold text-slate-500">View:</span>
             <select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
-              className="p-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 focus:outline-none"
+              className="max-w-full min-w-0 p-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 focus:outline-none"
             >
               <option value="all">All Statements & Activity</option>
               <option value="earnings">Commissions & Pool Shares</option>
@@ -483,7 +483,7 @@ export default function WalletPage() {
               <option value="payouts">Payout Withdrawals Only</option>
             </select>
 
-            <span className="text-xs font-bold text-slate-500 ml-2">Currency:</span>
+            <span className="text-xs font-bold text-slate-500">Currency:</span>
             <select
               value={currencyFilter}
               onChange={(e) => setCurrencyFilter(e.target.value)}

@@ -40,7 +40,7 @@ export default function RootLayout({ children }) {
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
-      <body className="bg-slate-50 text-slate-900 antialiased min-h-screen flex flex-col pb-16 md:pb-0">
+      <body className="bg-slate-50 text-slate-900 antialiased min-h-screen flex flex-col pb-16 xl:pb-0">
         <AuthProvider>
           <AppNavbar />
           <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">

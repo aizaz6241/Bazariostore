@@ -252,9 +252,9 @@ export default function RewardsPage() {
           </div>
           <h4 className="font-bold text-slate-900 text-sm">Individual Seller Milestones</h4>
           <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-            • 1 Lakh INR deposit $\rightarrow$ <strong>1,000 PKR</strong><br />
-            • 2 Lakh INR deposit $\rightarrow$ <strong>2,000 PKR</strong><br />
-            • 3 Lakh INR deposit $\rightarrow$ <strong>3,000 PKR</strong>
+            • 1 Lakh INR deposit → <strong>1,000 PKR</strong><br />
+            • 2 Lakh INR deposit → <strong>2,000 PKR</strong><br />
+            • 3 Lakh INR deposit → <strong>3,000 PKR</strong>
           </p>
         </div>
 

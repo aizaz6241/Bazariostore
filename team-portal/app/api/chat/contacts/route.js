@@ -29,26 +29,9 @@ export async function GET(req) {
     const convIdFor = (contactId) => `personal_${[myId, contactId.toString()].sort().join('_')}`;
     const conversationIds = ['main_group', ...contacts.map((c) => convIdFor(c._id))];
 
-    // Last message and unread count of every conversation, in two queries for the whole list.
-    // The message body (base64 voice notes / images) is never loaded here.
-    const [lastAgg, unreadAgg] = await Promise.all([
-      ChatMessage.aggregate([
-        { $match: { conversationId: { $in: conversationIds } } },
-        {
-          $project: {
-            conversationId: 1,
-            messageType: 1,
-            text: 1,
-            createdAt: 1,
-            senderId: 1,
-            senderName: 1,
-            isDeleted: 1,
-            isEdited: 1,
-          },
-        },
-        { $sort: { createdAt: -1 } },
-        { $group: { _id: '$conversationId', doc: { $first: '$$ROOT' } } },
-      ]),
+    // Unread counts for every conversation in one query; the newest message of each
+    // conversation through the (conversationId, createdAt) index, without loading media.
+    const [unreadAgg, lastDocs] = await Promise.all([
       ChatMessage.aggregate([
         {
           $match: {
@@ -59,9 +42,17 @@ export async function GET(req) {
         },
         { $group: { _id: '$conversationId', n: { $sum: 1 } } },
       ]),
+      Promise.all(
+        conversationIds.map((conversationId) =>
+          ChatMessage.findOne({ conversationId })
+            .sort({ createdAt: -1 })
+            .select('conversationId messageType text createdAt senderId senderName isDeleted isEdited')
+            .lean()
+        )
+      ),
     ]);
 
-    const lastByConv = new Map(lastAgg.map((x) => [x._id, x.doc]));
+    const lastByConv = new Map(lastDocs.filter(Boolean).map((d) => [d.conversationId, d]));
     const unreadByConv = new Map(unreadAgg.map((x) => [x._id, x.n]));
 
     const enrichedContacts = contacts.map((contact) => {

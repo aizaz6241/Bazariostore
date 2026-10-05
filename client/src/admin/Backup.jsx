@@ -364,7 +364,7 @@ export default function Backup() {
             </p>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 14, fontWeight: 600 }}>Hourly Scheduler:</span>
               <Toggle on={autoEnabled} onChange={() => setAutoEnabled(!autoEnabled)} />

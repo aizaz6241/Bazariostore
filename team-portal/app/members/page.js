@@ -408,7 +408,7 @@ export default function MembersPage() {
                           )
                         ) : (
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
-                            🛡️ Admin (50% Personal + 25% Pool)
+                            🛡️ Partner (75% own • 25% others)
                           </span>
                         )}
                       </div>

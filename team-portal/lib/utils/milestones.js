@@ -1,6 +1,37 @@
 import RewardClaim from '../models/RewardClaim.js';
 import { Seller, Order, Withdrawal, CLIENT_SELLER_FILTER } from '../models/SharedModels.js';
 import SellerAssignment from '../models/SellerAssignment.js';
+import { buildLedger } from './finance.js';
+
+/** Monday 00:00 of the current week. */
+export function currentWeekStart(now = new Date()) {
+  const weekStart = new Date(now);
+  const day = weekStart.getDay();
+  weekStart.setDate(weekStart.getDate() - day + (day === 0 ? -6 : 1));
+  weekStart.setHours(0, 0, 0, 0);
+  return weekStart;
+}
+
+/**
+ * Real INR deposited by a set of sellers, taken from the finance ledger (the INR an admin
+ * enters when approving a deposit). The store wallet is in US dollars, so it must not be
+ * compared with rupee milestones.
+ * @returns {{ bySeller: Map<string, number>, weekTotal: number }}
+ */
+export async function getRealInrDeposits(sellerIds) {
+  const wanted = new Set(sellerIds.map((x) => String(x)));
+  const ledger = await buildLedger();
+  const weekStart = currentWeekStart();
+  const bySeller = new Map();
+  let weekTotal = 0;
+  for (const e of ledger.entries) {
+    if (e.kind !== 'deposit' || !wanted.has(String(e.sellerId))) continue;
+    const inr = Number(e.inr || 0);
+    bySeller.set(String(e.sellerId), (bySeller.get(String(e.sellerId)) || 0) + inr);
+    if (new Date(e.date) >= weekStart) weekTotal += inr;
+  }
+  return { bySeller, weekTotal };
+}
 
 /**
  * Evaluates pending milestones for a member and generates pending reward claims.
@@ -14,10 +45,11 @@ export async function evaluateMemberMilestones(memberId) {
   const sellers = await Seller.find({ _id: { $in: sellerIds }, ...CLIENT_SELLER_FILTER });
 
   const generatedClaims = [];
+  const realInr = await getRealInrDeposits(sellerIds);
 
   // ─── 1. Check Individual Seller Deposit Milestones ───
   for (const seller of sellers) {
-    const totalDepositedINR = Number(seller.wallet?.totalDeposited || 0);
+    const totalDepositedINR = realInr.bySeller.get(String(seller._id)) || 0;
 
     // Milestone 1: 1 Lakh INR (100,000) -> 1,000 PKR
     if (totalDepositedINR >= 100000) {
@@ -89,24 +121,8 @@ export async function evaluateMemberMilestones(memberId) {
   const weekNumber = Math.ceil(((now - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
   const weekKey = `${weekStart.getFullYear()}_W${weekNumber}`;
 
-  // Fetch approved deposits for assigned sellers during the current week
-  const weeklyDeposits = await Withdrawal.aggregate([
-    {
-      $match: {
-        seller: { $in: sellerIds },
-        type: 'deposit',
-        status: { $in: ['approved', 'completed'] },
-        createdAt: { $gte: weekStart },
-      },
-    },
-    {
-      $group: {
-        _id: null,
-        total: { $sum: '$amount' },
-      },
-    },
-  ]);
-  const currentWeekDepositsINR = weeklyDeposits[0]?.total || 0;
+  // Real INR deposited this week by this member's sellers
+  const currentWeekDepositsINR = realInr.weekTotal;
 
   if (currentWeekDepositsINR >= 500000) {
     const claimKey = `weekly_5lakh_${memberId}_${weekKey}`;

@@ -1,0 +1,194 @@
+/* ==========================================================================
+   RESPONSIVE FIXES (loaded last)
+   Targeted corrections found by opening every admin and seller page at phone
+   (390px) and tablet (820px) widths with real data.
+   ========================================================================== */
+
+/* 1. Legacy admin pages (Products, Audit Logs): the search toolbar had no styles at all,
+      so the browser's raw input and select showed on every screen size. */
+.admin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+.admin-toolbar .admin-search {
+  flex: 1 1 220px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 12px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+}
+.admin-toolbar .admin-search svg,
+.admin-toolbar .admin-search i {
+  flex-shrink: 0;
+  color: #94a3b8;
+}
+.admin-toolbar .admin-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  color: #0f172a;
+}
+.admin-toolbar select {
+  height: 42px;
+  max-width: 100%;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 14px;
+  color: #0f172a;
+}
+
+/* 2. Tables that sat in a plain card could not scroll sideways on small screens */
+.seller-page > .card,
+.admin-page-container > .card {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 768px) {
+  /* 3. Analytics / Reports filter bar ran off the right edge */
+  .analytics-toolbar-wrap {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .analytics-filter-group {
+    width: 100%;
+    min-width: 0;
+  }
+  .analytics-filter-group .period-tabs {
+    flex: 1 1 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .analytics-filter-group .analytics-filter-label {
+    margin-left: 0 !important;
+  }
+  .timeline-dropdown-wrap,
+  .timeline-select {
+    width: 100%;
+  }
+  .custom-range-inputs {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  .custom-range-inputs .custom-date-input {
+    flex: 1 1 120px;
+    min-width: 0;
+  }
+
+  /* 4. Seller inventory: four summary cards were pushed off screen */
+  .inv-summary-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .inv-card {
+    min-width: 0;
+    padding: 12px;
+  }
+  .inv-search-bar input {
+    min-width: 0;
+    background: transparent;
+  }
+}
+
+@media (max-width: 520px) {
+  /* 5. Complaints: Suspend / Warn / Adjust buttons were cut off inside the alert card */
+  .ahab-item {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .ahab-item > .flex {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  /* 6. Seller top bar: wallet, health and profile were pushed off the right edge.
+        Keep the essentials (menu, brand, currency, wallet, profile). */
+  .seller-top-bar {
+    gap: 6px;
+  }
+  .seller-top-left {
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  .seller-top-bar .seller-topbar-store-display,
+  .seller-top-bar .seller-live-shoppers-pill,
+  .seller-top-bar .seller-topbar-health-pill {
+    display: none !important;
+  }
+  .seller-top-right {
+    gap: 6px !important;
+    min-width: 0;
+    margin-left: auto;
+  }
+  .seller-topbar-curr-select .currency-select-trigger.compact {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  .seller-topbar-curr-select .curr-symbol {
+    display: none;
+  }
+  .seller-topbar-wallet-pill {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 430px) {
+  .seller-top-bar .smb-sub {
+    display: none;
+  }
+}
+
+/* 7. Seller top bar on tablets / small laptops (sidebar is docked, so the bar is narrow):
+      the wallet and profile were pushed off the right edge. */
+@media (min-width: 769px) and (max-width: 1150px) {
+  .seller-top-bar .seller-live-shoppers-pill,
+  .seller-top-bar .seller-topbar-store-display .verified-store-pill {
+    display: none !important;
+  }
+  .seller-top-left,
+  .seller-top-right {
+    min-width: 0;
+  }
+  .seller-top-right {
+    gap: 8px !important;
+  }
+}
+
+/* 8. Seller top bar on laptops: the live-shoppers pill pushed the profile off the edge */
+@media (min-width: 1151px) and (max-width: 1599px) {
+  .seller-top-bar .seller-live-shoppers-pill {
+    display: none !important;
+  }
+  .seller-top-left,
+  .seller-top-right {
+    min-width: 0;
+  }
+}
+
+/* 9. Small spills inside cards, at every width */
+.ahab-item {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+.treasury-card-pricing {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.treasury-card-body {
+  min-width: 0;
+}

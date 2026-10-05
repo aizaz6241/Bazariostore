@@ -74,7 +74,7 @@ export default function DashboardPage() {
               <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-white/10 text-emerald-400 border border-white/10 uppercase tracking-wider">
                 {isAdmin ? 'Management Control' : 'Agent Operations'}
               </span>
-              <span className="text-xs text-slate-400">1:1 INR → PKR Currency Rule Active</span>
+              <span className="text-xs text-slate-400">All wallets in real Binance USDT</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold mt-2 tracking-tight">
               Welcome back, {user?.name}! 👋
@@ -167,7 +167,7 @@ export default function DashboardPage() {
                 <div>
                   <p className="text-amber-100/80 text-[10px] uppercase font-bold">Commission Rules</p>
                   <p className="text-xs font-semibold text-amber-100">
-                    50% Split + 1:1 Margin Share
+                    75% own sellers • 25% others
                   </p>
                 </div>
               </div>
@@ -357,7 +357,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 self-start sm:self-auto">
               <span className="text-xs px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold flex items-center gap-1">
                 <Wallet className="w-3.5 h-3.5" />
-                <span>Total Staff Wallets: Rs. {(stats.staffAnalytics.totalStaffEarningsPKR || 0).toLocaleString()} PKR</span>
+                <span>Total Staff Wallets: ₮{(stats.staffAnalytics.totalStaffEarningsUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT</span>
               </span>
             </div>
           </div>
@@ -423,7 +423,7 @@ export default function DashboardPage() {
                 {stats.staffAnalytics.topEarner?.name || 'No members yet'}
               </p>
               <p className="text-lg font-black text-amber-600">
-                Rs. {(stats.staffAnalytics.topEarner?.walletBalancePKR || 0).toLocaleString()} PKR
+                ₮{(stats.staffAnalytics.topEarner?.walletBalanceUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT
               </p>
               <p className="text-[11px] text-slate-500 mt-0.5">
                 Includes Rs. {(stats.staffAnalytics.topEarner?.totalBonusesPKR || 0).toLocaleString()} bonus
@@ -479,7 +479,7 @@ export default function DashboardPage() {
                       <th className="py-3 px-4 text-right">Withdrawn</th>
                       <th className="py-3 px-4 text-right">Net Volume</th>
                       <th className="py-3 px-4 text-right">Bonuses</th>
-                      <th className="py-3 px-4 text-right">Member Wallet (Earned PKR)</th>
+                      <th className="py-3 px-4 text-right">Member Wallet (USDT)</th>
                       <th className="py-3 px-4 text-center">Orders</th>
                     </tr>
                   </thead>
@@ -535,7 +535,7 @@ export default function DashboardPage() {
                             className="inline-flex flex-col items-end px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-extrabold text-xs transition group cursor-pointer"
                             title="Click to view full financial statement & transactions"
                           >
-                            <span>Rs. {(staff.walletBalancePKR || 0).toLocaleString()} PKR</span>
+                            <span>₮{(staff.walletBalanceUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT</span>
                             {(staff.walletBalanceINR || 0) > 0 && (
                               <span className="text-[10px] text-emerald-700 font-bold">
                                 + ₹{(staff.walletBalanceINR || 0).toLocaleString()} INR (50% Split)
@@ -672,9 +672,9 @@ export default function DashboardPage() {
         <div className="space-y-1">
           <p className="font-semibold text-slate-800">Operational Currency Rule:</p>
           <p>
-            Whenever a client seller deposits funds in Indian Rupees (INR), the identical numerical value is
-            credited to the agent's account in Pakistani Rupees (PKR) for 1:1 stores. For stores labeled with 50% INR Split,
-            the member earns 50% in INR directly, and the remaining 50% is shared equally among active admins.
+            Every deposit is counted in the real USDT that reached Binance. A 50% member gets half of it; a 1:1 PKR
+            member gets one Pakistani Rupee for every Indian Rupee deposited, paid in USDT at that day's rate. The rest is
+            shared by the two partners. Seller withdrawals are taken from the same shares.
           </p>
         </div>
       </div>

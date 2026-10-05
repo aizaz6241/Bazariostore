@@ -475,7 +475,7 @@ export default function AdminWithdrawals() {
       </div>
 
       {/* Main View Tab Switcher */}
-      <div style={{ display: 'flex', gap: 10, margin: '20px 0 16px', borderBottom: '2px solid #e2e8f0', paddingBottom: 10 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, margin: '20px 0 16px', borderBottom: '2px solid #e2e8f0', paddingBottom: 10 }}>
         <button
           type="button"
           onClick={() => setActiveTab('requests')}
