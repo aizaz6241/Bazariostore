@@ -37,7 +37,27 @@ export default function AppNavbar() {
   // Wallet Statement Modal State
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
 
-  if (!user || pathname === '/login') return null;
+  if (pathname === '/login') return null;
+
+  // Not known yet who is signed in: keep the top bar in place (logo only) so the page does not
+  // jump when the navigation arrives.
+  if (!user) {
+    return (
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center">
+          <div className="flex items-center space-x-2">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-emerald-400 flex items-center justify-center text-white font-bold shadow-md shadow-brand-500/20">
+              BZ
+            </div>
+            <div>
+              <span className="font-bold text-slate-900 text-lg leading-tight block">Bazario</span>
+              <span className="text-xs font-medium text-slate-500 block -mt-1">Operations Hub</span>
+            </div>
+          </div>
+        </div>
+      </header>
+    );
+  }
 
   const isAdmin = user.role === 'admin';
 
@@ -113,7 +133,7 @@ export default function AppNavbar() {
               </div>
               <div>
                 <span className="font-bold text-slate-900 text-lg leading-tight block">Bazario</span>
-                <span className="text-xs font-medium text-slate-500 block -mt-1">Operations Hub</span>
+                <span className="text-xs font-medium text-slate-500 block lg:hidden xl:block -mt-1 whitespace-nowrap">Operations Hub</span>
               </div>
             </Link>
 
@@ -129,7 +149,7 @@ export default function AppNavbar() {
           </div>
 
           {/* Desktop Navigation Links */}
-          <nav className="hidden xl:flex items-center space-x-1 2xl:space-x-2">
+          <nav className="hidden lg:flex items-center space-x-0.5 xl:space-x-1 2xl:space-x-2">
             {navLinks.map((item) => {
               const Icon = item.icon;
               const isActive = pathname === item.href;
@@ -137,7 +157,7 @@ export default function AppNavbar() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex items-center space-x-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                  className={`flex items-center space-x-1 xl:space-x-1.5 px-2 xl:px-3 py-2 rounded-lg text-[13px] xl:text-sm font-medium whitespace-nowrap transition-all ${
                     isActive
                       ? 'bg-slate-900 text-white shadow-sm'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -157,7 +177,7 @@ export default function AppNavbar() {
               <button
                 type="button"
                 onClick={() => setIsWalletModalOpen(true)}
-                className="hidden sm:flex items-center space-x-2 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 px-3 py-1.5 rounded-full hover:border-amber-300 hover:shadow-sm transition-all text-left group"
+                className="hidden sm:flex lg:hidden xl:flex items-center space-x-2 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 px-3 py-1.5 rounded-full hover:border-amber-300 hover:shadow-sm transition-all text-left group"
                 title="Click to view Admin Wallet & Transaction History"
               >
                 <div className="w-5 h-5 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-700 group-hover:scale-110 transition-transform">
@@ -175,7 +195,7 @@ export default function AppNavbar() {
               <button
                 type="button"
                 onClick={() => setIsWalletModalOpen(true)}
-                className="hidden sm:flex items-center space-x-2 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-full hover:border-emerald-300 hover:shadow-sm transition-all text-left group"
+                className="hidden sm:flex lg:hidden xl:flex items-center space-x-2 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-full hover:border-emerald-300 hover:shadow-sm transition-all text-left group"
                 title="Click to view Wallet Statement & Transaction History"
               >
                 <div className="w-5 h-5 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-700 group-hover:scale-110 transition-transform">
@@ -198,7 +218,7 @@ export default function AppNavbar() {
               <div className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 font-semibold text-sm">
                 {user.name?.charAt(0).toUpperCase() || 'U'}
               </div>
-              <div className="hidden lg:block text-left">
+              <div className="hidden xl:block text-left">
                 <p className="text-xs font-semibold text-slate-800 leading-tight">{user.name}</p>
                 <p className="text-[10px] text-slate-400">@{user.username}</p>
               </div>

@@ -23,19 +23,21 @@ import {
   Calendar,
 } from 'lucide-react';
 import WalletModal from '@/components/WalletModal';
+import { readCache, writeCache } from '@/lib/clientCache';
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const [stats, setStats] = useState(null);
-  const [weeklyProgress, setWeeklyProgress] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // Start from the numbers this device saw last time; fresh ones replace them a moment later
+  const cacheKey = `dashboard_${user?._id || ''}`;
+  const [stats, setStats] = useState(() => readCache(cacheKey)?.stats || null);
+  const [weeklyProgress, setWeeklyProgress] = useState(() => readCache(cacheKey)?.weeklyProgress || null);
+  const [loading, setLoading] = useState(() => !readCache(cacheKey));
   const [walletModalConfig, setWalletModalConfig] = useState(null);
 
   const isAdmin = user?.role === 'admin';
 
   const fetchDashboardData = async () => {
     try {
-      setLoading(true);
       const token = localStorage.getItem('portal_token');
       const headers = { Authorization: `Bearer ${token}` };
 
@@ -44,15 +46,21 @@ export default function DashboardPage() {
         fetch('/api/rewards', { headers }),
       ]);
 
+      const saved = { ...(readCache(cacheKey) || {}) };
+
       if (statsRes.ok) {
         const statsData = await statsRes.json();
         setStats(statsData);
+        saved.stats = statsData;
       }
 
       if (rewardsRes.ok) {
         const rewardsData = await rewardsRes.json();
         setWeeklyProgress(rewardsData.weeklyProgress);
+        saved.weeklyProgress = rewardsData.weeklyProgress;
       }
+
+      if (saved.stats) writeCache(cacheKey, saved);
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
     } finally {

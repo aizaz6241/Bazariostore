@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import VoiceRecorder from '@/components/VoiceRecorder';
 import AudioPlayer from '@/components/AudioPlayer';
+import { readCache, writeCache, dropCache } from '@/lib/clientCache';
 import {
   Send,
   Mic,
@@ -28,14 +29,37 @@ import {
   ZoomIn,
 } from 'lucide-react';
 
+// Pictures / voice notes already downloaded in this visit (message id -> data), so opening a
+// chat again never downloads them twice.
+const mediaStore = new Map();
+const MEDIA_STORE_MAX = 120;
+const rememberMedia = (id, data) => {
+  mediaStore.set(id, data);
+  if (mediaStore.size > MEDIA_STORE_MAX) mediaStore.delete(mediaStore.keys().next().value);
+};
+const isMediaMessage = (m) => m.messageType === 'voice' || m.messageType === 'image';
+const needsMedia = (m) =>
+  isMediaMessage(m) && !m.isDeleted && !m.mediaUrl && !m.pending && !m.failed && !String(m._id).startsWith('tmp_');
+// What is kept on the device between visits: the latest messages as text (media is re-fetched)
+const SAVED_MESSAGES = 40;
+const lightCopy = (list) =>
+  list.slice(-SAVED_MESSAGES).map((m) => (isMediaMessage(m) ? { ...m, mediaUrl: '' } : m));
+
 export default function ChatPage() {
   const { user } = useAuth();
+  const uid = user?._id || '';
+  const contactsKey = `chat_contacts_${uid}`;
+  const chatCacheKey = (chatKey) => `chat_msgs_${uid}_${chatKey}`;
 
   // Unified Active Chat State:
   // { type: 'group' } OR { type: 'personal', contact: contactObject }
   const [activeChat, setActiveChat] = useState({ type: 'group' });
-  const [contacts, setContacts] = useState([]);
-  const [groupMeta, setGroupMeta] = useState({ unreadCount: 0, lastMessage: null });
+  // The chat list starts from what this device saw last time and is refreshed right after
+  const [contacts, setContacts] = useState(() => readCache(contactsKey)?.contacts || []);
+  const [groupMeta, setGroupMeta] = useState(
+    () => readCache(contactsKey)?.group || { unreadCount: 0, lastMessage: null }
+  );
+  const [contactsLoaded, setContactsLoaded] = useState(() => !!readCache(contactsKey));
 
   // Mobile View Flow (WhatsApp Style): 'list' (shows all chats) or 'chat' (inside active conversation)
   const [mobileView, setMobileView] = useState('list');
@@ -44,7 +68,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
-  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(true);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [pendingImagePreview, setPendingImagePreview] = useState(null); // { file, previewUrl, caption: '' }
   const [fullscreenImage, setFullscreenImage] = useState(null); // Image URL for lightbox viewer
@@ -79,14 +103,101 @@ export default function ChatPage() {
   const chatKeyRef = useRef(''); // which conversation the refs above belong to
   const activeKeyRef = useRef(''); // the conversation that is open right now
   const [clearingChat, setClearingChat] = useState(false);
+  const [hasMoreOlder, setHasMoreOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const hasMoreRef = useRef(false);
+  const firstScrollRef = useRef(true); // the first paint of a chat jumps to the end (no slow glide)
+  const skipAutoScrollRef = useRef(false);
+  const keepScrollRef = useRef(null); // scroll position to restore after older messages are added
+  const mediaBusyRef = useRef(false);
+  const mediaMissRef = useRef(new Set()); // media the server could not give us: do not ask again
+  const showScrollBottomRef = useRef(false);
+  const [, setMediaTick] = useState(0); // redraw when a picture / voice note turns out to be unavailable
 
   const isAdmin = user?.role === 'admin';
 
   activeKeyRef.current = `${activeChat.type}:${activeChat.contact?._id || ''}`;
 
+  showScrollBottomRef.current = showScrollBottom;
+
   useEffect(() => {
     messagesRef.current = messages;
+    // Remember this chat: the full list for this visit, a light text copy for the next one
+    const key = chatKeyRef.current;
+    if (key && key === activeKeyRef.current) {
+      const real = messages.filter((m) => !m.pending && !m.failed);
+      const entry = {
+        messages: real,
+        sig: messagesSigRef.current,
+        cursor: messagesCursorRef.current,
+        hasMore: hasMoreRef.current,
+      };
+      writeCache(chatCacheKey(key), entry, {
+        ...entry,
+        sig: '',
+        messages: lightCopy(real),
+        hasMore: entry.hasMore || real.length > SAVED_MESSAGES,
+      });
+    }
+    pumpMedia();
   }, [messages]);
+
+  // ─── Pictures & voice notes are downloaded after the text, newest first ───
+  const applyMedia = (found) => {
+    const next = messagesRef.current.map((m) =>
+      found[m._id] && !m.mediaUrl && !m.isDeleted ? { ...m, mediaUrl: found[m._id] } : m
+    );
+    messagesRef.current = next;
+    setMessages(next);
+  };
+
+  const pumpMedia = async () => {
+    if (mediaBusyRef.current) return;
+    mediaBusyRef.current = true;
+    try {
+      for (let round = 0; round < 200; round++) {
+        const waiting = messagesRef.current.filter((m) => needsMedia(m) && !mediaMissRef.current.has(m._id));
+        if (waiting.length === 0) break;
+
+        // already downloaded earlier in this visit
+        const local = {};
+        waiting.forEach((m) => {
+          if (mediaStore.has(m._id)) local[m._id] = mediaStore.get(m._id);
+        });
+        if (Object.keys(local).length > 0) {
+          applyMedia(local);
+          continue;
+        }
+
+        const ids = waiting.slice(-2).map((m) => m._id);
+        const token = localStorage.getItem('portal_token');
+        const res = await fetch(`/api/chat/media?ids=${ids.join(',')}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) break;
+        const data = await res.json();
+        const found = data.media || {};
+        (data.missing || []).forEach((id) => mediaMissRef.current.add(id));
+        if ((data.missing || []).length > 0) setMediaTick((n) => n + 1);
+        Object.entries(found).forEach(([id, value]) => rememberMedia(id, value));
+        // nothing usable came back: stop instead of asking for the same ids forever
+        if (Object.keys(found).length === 0 && (data.missing || []).length === 0) break;
+        applyMedia(found);
+      }
+    } catch (err) {
+      console.error('Chat media load failed:', err);
+    } finally {
+      mediaBusyRef.current = false;
+    }
+  };
+
+  // A picture finished drawing: stay at the end of the chat if the user was there
+  const handleMediaShown = () => {
+    if (!showScrollBottomRef.current) {
+      const el = messagesContainerRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }
+  };
 
   const sortByTime = (list) => [...list].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
@@ -99,11 +210,15 @@ export default function ChatPage() {
       });
       if (res.ok) {
         const data = await res.json();
+        const group = data.group || { unreadCount: 0, lastMessage: null };
         setContacts(data.contacts || []);
-        setGroupMeta(data.group || { unreadCount: 0, lastMessage: null });
+        setGroupMeta(group);
+        writeCache(contactsKey, { contacts: data.contacts || [], group });
       }
     } catch (err) {
       console.error('Fetch chat contacts error:', err);
+    } finally {
+      setContactsLoaded(true);
     }
   };
 
@@ -137,8 +252,8 @@ export default function ChatPage() {
       // Background polls send what we already have: an unchanged chat answers "unchanged",
       // and a changed one sends back only the new / edited messages.
       const chatKey = `${activeChat.type}:${activeChat.contact?._id || ''}`;
-      const isDelta = quiet && chatKeyRef.current === chatKey && messagesCursorRef.current > 0;
-      if (quiet && messagesSigRef.current) url += `&sig=${encodeURIComponent(messagesSigRef.current)}`;
+      const isDelta = chatKeyRef.current === chatKey && messagesCursorRef.current > 0;
+      if (messagesSigRef.current) url += `&sig=${encodeURIComponent(messagesSigRef.current)}`;
       if (isDelta) url += `&after=${messagesCursorRef.current}`;
 
       const res = await fetch(url, {
@@ -161,7 +276,7 @@ export default function ChatPage() {
             const old = byId.get(inc._id);
             if (old) {
               // edited / deleted / read update of a message we already show (media is kept locally)
-              byId.set(inc._id, inc.partial ? { ...old, ...inc, mediaUrl: inc.isDeleted ? '' : old.mediaUrl } : inc);
+              byId.set(inc._id, { ...old, ...inc, mediaUrl: inc.isDeleted ? '' : inc.mediaUrl || old.mediaUrl || '' });
             } else if (!inc.partial) {
               byId.set(inc._id, inc);
             }
@@ -176,6 +291,7 @@ export default function ChatPage() {
             } else {
               messagesSigRef.current = '';
               messagesCursorRef.current = 0;
+              chatKeyRef.current = '';
               fetchMessages(true);
               return;
             }
@@ -184,6 +300,8 @@ export default function ChatPage() {
           // full load: keep messages that are still being sent
           const sending = current.filter((m) => m.pending || m.failed);
           next = sortByTime([...incoming, ...sending]);
+          hasMoreRef.current = !!data.hasMore;
+          setHasMoreOlder(!!data.hasMore);
         }
 
         chatKeyRef.current = chatKey;
@@ -194,7 +312,7 @@ export default function ChatPage() {
         const known = new Set(current.map((m) => m._id));
         const arrived = next.filter((m) => !known.has(m._id) && !m.pending && m.senderId !== user?._id);
         if (prevMessagesLengthRef.current > 0 && arrived.length > 0) {
-          if (showScrollBottom) {
+          if (showScrollBottomRef.current) {
             setUnreadWhileScrolled((prev) => prev + arrived.length);
           }
           const latest = arrived[arrived.length - 1];
@@ -215,14 +333,39 @@ export default function ChatPage() {
 
   // Immediate message fetch when activeChat changes, plus light polling every 2 seconds
   useEffect(() => {
-    setMessages([]);
-    prevMessagesLengthRef.current = 0;
-    messagesSigRef.current = '';
-    messagesCursorRef.current = 0;
-    chatKeyRef.current = '';
-    messagesRef.current = [];
+    const chatKey = `${activeChat.type}:${activeChat.contact?._id || ''}`;
+    // Seen before (this visit or an earlier one): show it at once, then fetch only what is new
+    const saved = readCache(chatCacheKey(chatKey));
+    const known = saved && Array.isArray(saved.messages) && saved.messages.length > 0 ? saved : null;
+
+    firstScrollRef.current = true;
+    keepScrollRef.current = null;
+    setShowScrollBottom(false);
     setUnreadWhileScrolled(0);
-    fetchMessages(false);
+    setLoadingOlder(false);
+
+    if (known) {
+      chatKeyRef.current = chatKey;
+      messagesSigRef.current = known.sig || '';
+      messagesCursorRef.current = known.cursor || 0;
+      hasMoreRef.current = !!known.hasMore;
+      prevMessagesLengthRef.current = known.messages.length;
+      messagesRef.current = known.messages;
+      setHasMoreOlder(!!known.hasMore);
+      setMessages(known.messages);
+      setLoadingMessages(false);
+      fetchMessages(true);
+    } else {
+      chatKeyRef.current = '';
+      messagesSigRef.current = '';
+      messagesCursorRef.current = 0;
+      hasMoreRef.current = false;
+      prevMessagesLengthRef.current = 0;
+      messagesRef.current = [];
+      setHasMoreOlder(false);
+      setMessages([]);
+      fetchMessages(false);
+    }
 
     const interval = setInterval(() => {
       if (!document.hidden) fetchMessages(true);
@@ -238,12 +381,76 @@ export default function ChatPage() {
     };
   }, [activeChat.type, activeChat.contact?._id]);
 
+  // Older messages were added above: keep the message the user was reading in place
+  useLayoutEffect(() => {
+    const keep = keepScrollRef.current;
+    const el = messagesContainerRef.current;
+    if (keep && el) {
+      el.scrollTop = el.scrollHeight - keep.height + keep.top;
+      keepScrollRef.current = null;
+    }
+  }, [messages]);
+
   // Auto-scroll on initial load or when at bottom
   useEffect(() => {
+    if (skipAutoScrollRef.current) {
+      skipAutoScrollRef.current = false;
+      return;
+    }
+    if (messages.length === 0) return;
+    const el = messagesContainerRef.current;
+    if (firstScrollRef.current) {
+      // opening a chat: be at the newest message immediately
+      if (el) el.scrollTop = el.scrollHeight;
+      firstScrollRef.current = false;
+      return;
+    }
     if (!showScrollBottom) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, showScrollBottom]);
+
+  // Phone: the conversation becomes visible only now, so place it at the newest message
+  useEffect(() => {
+    if (mobileView !== 'chat') return;
+    const el = messagesContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [mobileView]);
+
+  // ─── "Load earlier messages" ───
+  const loadOlderMessages = async () => {
+    if (loadingOlder || !hasMoreRef.current) return;
+    const chatKey = activeKeyRef.current;
+    const oldest = messagesRef.current.find((m) => !m.pending && !m.failed);
+    if (!oldest) return;
+
+    try {
+      setLoadingOlder(true);
+      const token = localStorage.getItem('portal_token');
+      let url = `/api/chat?chatType=${activeChat.type}&before=${new Date(oldest.createdAt).getTime()}`;
+      if (activeChat.type === 'personal') url += `&targetMemberId=${activeChat.contact?._id}`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok || chatKey !== activeKeyRef.current) return;
+      const data = await res.json();
+
+      const have = new Set(messagesRef.current.map((m) => m._id));
+      const older = (data.messages || []).filter((m) => !have.has(m._id));
+      const el = messagesContainerRef.current;
+      if (el) keepScrollRef.current = { height: el.scrollHeight, top: el.scrollTop };
+      skipAutoScrollRef.current = true;
+
+      const next = sortByTime([...older, ...messagesRef.current]);
+      hasMoreRef.current = !!data.hasMore;
+      setHasMoreOlder(!!data.hasMore);
+      prevMessagesLengthRef.current = next.length;
+      messagesRef.current = next;
+      setMessages(next);
+    } catch (err) {
+      console.error('Load earlier messages failed:', err);
+    } finally {
+      setLoadingOlder(false);
+    }
+  };
 
   // Scroll detection for floating Down Arrow button
   const handleScroll = () => {
@@ -381,7 +588,9 @@ export default function ChatPage() {
 
       if (res.ok) {
         const data = await res.json();
-        settle(data.chatMessage);
+        // the server does not echo the picture / voice note back: keep the copy we just sent
+        if (optimistic.mediaUrl && data.chatMessage?._id) rememberMedia(data.chatMessage._id, optimistic.mediaUrl);
+        settle({ ...data.chatMessage, mediaUrl: data.chatMessage?.mediaUrl || optimistic.mediaUrl });
         fetchContacts();
       } else {
         const errData = await res.json().catch(() => ({}));
@@ -421,6 +630,9 @@ export default function ChatPage() {
       messagesSigRef.current = '';
       messagesCursorRef.current = 0;
       prevMessagesLengthRef.current = 0;
+      hasMoreRef.current = false;
+      setHasMoreOlder(false);
+      dropCache(chatCacheKey(`${activeChat.type}:${activeChat.contact?._id || ''}`));
       setMessages([]);
       fetchContacts();
     } catch (err) {
@@ -960,7 +1172,19 @@ export default function ChatPage() {
           </div>
 
           {/* ── 2. Direct Contacts (Admins & Members alike) ── */}
-          {filteredContacts.length === 0 ? (
+          {!contactsLoaded && contacts.length === 0 ? (
+            <div className="divide-y divide-slate-100" aria-label="Loading chats">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} className="p-3.5 flex items-start space-x-3 animate-pulse">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-200 shrink-0" />
+                  <div className="flex-1 space-y-2 pt-1">
+                    <div className="h-3 w-1/2 rounded bg-slate-200" />
+                    <div className="h-2.5 w-3/4 rounded bg-slate-100" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : filteredContacts.length === 0 ? (
             <div className="p-6 text-center text-xs text-slate-400">
               No contacts available
             </div>
@@ -1217,7 +1441,28 @@ export default function ChatPage() {
           onScroll={handleScroll}
           className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3.5"
         >
-          {messages.length === 0 ? (
+          {messages.length > 0 && hasMoreOlder && (
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={loadOlderMessages}
+                disabled={loadingOlder}
+                className="px-3.5 py-1.5 rounded-full bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 text-[11px] font-bold shadow-xs flex items-center space-x-1.5 disabled:opacity-60"
+              >
+                {loadingOlder ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Clock className="w-3.5 h-3.5" />}
+                <span>{loadingOlder ? 'Loading…' : 'Load earlier messages'}</span>
+              </button>
+            </div>
+          )}
+          {messages.length === 0 && loadingMessages ? (
+            <div className="space-y-3.5 animate-pulse" aria-label="Loading messages">
+              {[52, 38, 64, 44, 58, 36].map((w, i) => (
+                <div key={i} className={`flex ${i % 2 ? 'justify-end' : 'justify-start'}`}>
+                  <div className="h-10 rounded-2xl bg-slate-200/80" style={{ width: `${w}%` }} />
+                </div>
+              ))}
+            </div>
+          ) : messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
               <div className="w-12 h-12 rounded-2xl bg-slate-200/80 text-slate-600 flex items-center justify-center mb-2">
                 <MessageSquare className="w-6 h-6" />
@@ -1374,7 +1619,19 @@ export default function ChatPage() {
                               )}
 
                               {/* Voice Note Player */}
-                              {msg.messageType === 'voice' && (
+                              {msg.messageType === 'voice' && !msg.mediaUrl && (
+                                <div className="flex items-center space-x-2 text-xs opacity-80 py-1 min-w-[150px]">
+                                  {mediaMissRef.current.has(msg._id) ? (
+                                    <span>🎤 Voice note not available</span>
+                                  ) : (
+                                    <>
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                      <span>Loading voice note…</span>
+                                    </>
+                                  )}
+                                </div>
+                              )}
+                              {msg.messageType === 'voice' && msg.mediaUrl && (
                                 <AudioPlayer
                                   src={msg.mediaUrl}
                                   duration={msg.audioDuration}
@@ -1383,7 +1640,26 @@ export default function ChatPage() {
                               )}
 
                               {/* Image Attachment */}
-                              {msg.messageType === 'image' && (
+                              {msg.messageType === 'image' && !msg.mediaUrl && (
+                                <div className="space-y-1.5 my-1">
+                                  <div className="w-56 max-w-full h-40 rounded-2xl bg-black/10 flex flex-col items-center justify-center text-xs opacity-80 gap-1.5">
+                                    {mediaMissRef.current.has(msg._id) ? (
+                                      <span>📷 Photo not available</span>
+                                    ) : (
+                                      <>
+                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                        <span>Loading photo…</span>
+                                      </>
+                                    )}
+                                  </div>
+                                  {msg.text && (
+                                    <p className="text-xs sm:text-sm whitespace-pre-wrap leading-relaxed break-words px-1">
+                                      {msg.text}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                              {msg.messageType === 'image' && msg.mediaUrl && (
                                 <div className="space-y-1.5 my-1">
                                   <div
                                     className="relative rounded-2xl overflow-hidden cursor-pointer group/img max-w-xs sm:max-w-sm bg-black/5"
@@ -1393,8 +1669,8 @@ export default function ChatPage() {
                                     <img
                                       src={msg.mediaUrl}
                                       alt="Shared photo"
+                                      onLoad={handleMediaShown}
                                       className="max-h-72 w-auto object-contain rounded-2xl border border-black/10 group-hover/img:scale-[1.01] transition duration-200 mx-auto"
-                                      loading="lazy"
                                     />
                                     <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/30 transition flex items-center justify-center opacity-0 group-hover/img:opacity-100">
                                       <span className="px-3 py-1.5 rounded-xl bg-black/75 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-md backdrop-blur-xs">

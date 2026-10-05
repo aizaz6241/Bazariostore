@@ -15,6 +15,12 @@ export async function GET(req) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
 
+    // "Who am I" only (the app asks this first when it opens): the session lookup above already
+    // loaded the account, so answer straight away without the admin sync and wallet maths.
+    if (new URL(req.url).searchParams.get('lite') === '1') {
+      return NextResponse.json({ member: session, lite: true });
+    }
+
     const member = await Member.findById(session._id).select('-passwordHash -plainPassword');
     if (!member) {
       return NextResponse.json({ message: 'User not found' }, { status: 404 });

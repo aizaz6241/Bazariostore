@@ -5,6 +5,9 @@ import Member from '@/lib/models/Member';
 
 export const dynamic = 'force-dynamic';
 
+const FIRST_PAGE = 50; // messages sent when a chat is opened
+const OLDER_PAGE = 60; // messages per "Load earlier messages"
+
 // GET /api/chat — fetch messages
 export async function GET(req) {
   try {
@@ -26,6 +29,26 @@ export async function GET(req) {
 
       const parts = [session._id.toString(), targetMemberId.toString()].sort();
       conversationId = `personal_${parts.join('_')}`;
+    }
+
+    // Older page ("Load earlier messages"): the messages just before the oldest one on screen.
+    // Text only; pictures and voice notes are fetched separately by /api/chat/media.
+    const beforeMs = Number(searchParams.get('before'));
+    if (Number.isFinite(beforeMs) && beforeMs > 0) {
+      const pageSize = Math.min(Math.max(parseInt(searchParams.get('limit'), 10) || OLDER_PAGE, 1), 100);
+      const page = await ChatMessage.find({ conversationId, createdAt: { $lt: new Date(beforeMs) } })
+        .select('-mediaUrl')
+        .populate('readBy', 'name username avatar role')
+        .sort({ createdAt: -1 })
+        .limit(pageSize + 1)
+        .lean();
+      const hasMore = page.length > pageSize;
+      return NextResponse.json({
+        conversationId,
+        older: true,
+        hasMore,
+        messages: page.slice(0, pageSize).reverse(),
+      });
     }
 
     // Mark unread messages in this conversation as read by the current user
@@ -55,21 +78,24 @@ export async function GET(req) {
 
     // Delta: the page tells us the newest change it already has (`after`). We send only what is
     // new or changed since then, so a new message arrives in a tiny response instead of the
-    // whole history (which carries base64 voice notes and pictures).
+    // whole history. Pictures and voice notes are never part of it (see /api/chat/media).
     const afterMs = Number(searchParams.get('after'));
     if (Number.isFinite(afterMs) && afterMs > 0) {
       const afterDate = new Date(afterMs);
       const [fresh, changed] = await Promise.all([
         ChatMessage.find({ conversationId, createdAt: { $gt: afterDate } })
+          .select('-mediaUrl')
           .populate('readBy', 'name username avatar role')
           .sort({ createdAt: 1 })
-          .limit(300),
+          .limit(300)
+          .lean(),
         // Older messages that were edited, deleted or read: sent without their media
         ChatMessage.find({ conversationId, createdAt: { $lte: afterDate }, updatedAt: { $gt: afterDate } })
           .select('-mediaUrl')
           .populate('readBy', 'name username avatar role')
           .sort({ createdAt: 1 })
-          .limit(300),
+          .limit(300)
+          .lean(),
       ]);
 
       return NextResponse.json({
@@ -78,15 +104,20 @@ export async function GET(req) {
         sig,
         cursor,
         count,
-        messages: [...changed.map((m) => ({ ...m.toObject(), partial: true })), ...fresh],
+        messages: [...changed.map((m) => ({ ...m, partial: true })), ...fresh],
       });
     }
 
-    // Full load: newest 300 messages, returned oldest-first
+    // First load of a chat: only the newest messages, and without the pictures / voice notes
+    // themselves (those are base64 and can be megabytes). The text shows at once; the page then
+    // asks /api/chat/media for the media of the messages it is showing, and "Load earlier
+    // messages" pages back through the history.
     const newest = await ChatMessage.find({ conversationId })
+      .select('-mediaUrl')
       .populate('readBy', 'name username avatar role')
       .sort({ createdAt: -1 })
-      .limit(300);
+      .limit(FIRST_PAGE)
+      .lean();
     const messages = newest.reverse();
 
     return NextResponse.json({
@@ -94,6 +125,7 @@ export async function GET(req) {
       sig,
       cursor,
       count,
+      hasMore: count > messages.length,
       messages,
     });
   } catch (err) {
@@ -154,10 +186,14 @@ export async function POST(req) {
 
     await newMsg.populate('readBy', 'name username avatar role');
 
+    // The sender already has the picture / voice note it just uploaded: do not send it back.
+    const sent = newMsg.toObject();
+    delete sent.mediaUrl;
+
     return NextResponse.json(
       {
         message: 'Message sent',
-        chatMessage: newMsg,
+        chatMessage: sent,
       },
       { status: 201 }
     );
