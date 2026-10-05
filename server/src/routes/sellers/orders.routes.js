@@ -428,15 +428,21 @@ router.get('/orders', authSellerOrAdmin, async (req, res) => {
       .populate('user', 'name email phone')
       .sort({ createdAt: -1 });
 
-    // Auto-backfill items where seller ID was missing
+    // Safely backfill items only where seller ID was genuinely missing
     for (const ord of orders) {
       let changed = false;
       for (const it of ord.items) {
         const itProdId = it.product?._id ? it.product._id.toString() : (it.product ? it.product.toString() : '');
         const matchesSellerProd = sellerProdIds.some((pid) => pid.toString() === itProdId);
 
-        if (!it.seller || it.seller.toString() !== sellerId) {
-          if (matchesSellerProd || (ord.seller && ord.seller.toString() === sellerId)) {
+        // Only fill if it.seller is completely missing/null - never overwrite an existing seller
+        if (!it.seller) {
+          if (matchesSellerProd) {
+            it.seller = seller._id;
+            it.sellerName = seller.storeName || 'Verified Store';
+            if (!it.costPrice && it.price) it.costPrice = Math.round(it.price * 0.8);
+            changed = true;
+          } else if (ord.seller && ord.seller.toString() === sellerId) {
             it.seller = seller._id;
             it.sellerName = seller.storeName || 'Verified Store';
             if (!it.costPrice && it.price) it.costPrice = Math.round(it.price * 0.8);
@@ -457,7 +463,11 @@ router.get('/orders', authSellerOrAdmin, async (req, res) => {
     const formatted = orders
       .map((ord) => {
         const sellerItems = ord.items.filter((it) => {
-          if (it.seller && it.seller.toString() === sellerId) return true;
+          // If seller is explicitly assigned, strictly verify ownership
+          if (it.seller) {
+            return it.seller.toString() === sellerId;
+          }
+          // Only fallback to product or order seller if item.seller is unassigned
           const itProdId = it.product?._id ? it.product._id.toString() : (it.product ? it.product.toString() : '');
           if (sellerProdIds.some((pid) => pid.toString() === itProdId)) return true;
           if (ord.seller && ord.seller.toString() === sellerId) return true;
@@ -509,27 +519,43 @@ router.post('/orders/:id/confirm', authSellerOrAdmin, async (req, res) => {
     }, '_id');
     const sellerProdIds = sellerProducts.map((p) => p._id.toString());
 
+    // Idempotency: If this seller's items are already confirmed/locked, return cleanly without duplicate fund actions
+    const myItems = order.items.filter((it) => {
+      const itProdId = it.product?._id ? it.product._id.toString() : (it.product ? it.product.toString() : '');
+      const itSellerId = it.seller ? it.seller.toString() : '';
+      return itSellerId === sellerId || (!itSellerId && sellerProdIds.includes(itProdId));
+    });
+
+    if (myItems.length > 0 && myItems.every((it) => it.itemStatus === 'confirmed' || it.processingLocked)) {
+      return res.json({
+        ok: true,
+        order,
+        lockedAmount: 0,
+        alreadyConfirmed: true,
+        message: 'Order is already confirmed',
+      });
+    }
+
     let updatedAny = false;
     order.items.forEach((it) => {
       const itProdId = it.product?._id ? it.product._id.toString() : (it.product ? it.product.toString() : '');
       const itSellerId = it.seller ? it.seller.toString() : '';
-      const ordSellerId = order.seller ? order.seller.toString() : '';
 
-      if (itSellerId === sellerId || sellerProdIds.includes(itProdId) || ordSellerId === sellerId || !it.seller) {
-        it.seller = seller._id;
-        it.sellerName = seller.storeName || 'Verified Store';
+      // Strictly verify ownership: either it has this sellerId, or if unassigned, matches seller's catalog
+      const isMyItem = itSellerId === sellerId || (!itSellerId && sellerProdIds.includes(itProdId));
+
+      if (isMyItem || req.admin) {
+        if (!it.seller && isMyItem) {
+          it.seller = seller._id;
+          it.sellerName = seller.storeName || 'Verified Store';
+        }
         it.itemStatus = 'confirmed';
         updatedAny = true;
       }
     });
 
-    if (!updatedAny) {
-      order.items.forEach((it) => {
-        it.seller = seller._id;
-        it.sellerName = seller.storeName || 'Verified Store';
-        it.itemStatus = 'confirmed';
-      });
-      updatedAny = true;
+    if (!updatedAny && !req.admin) {
+      return res.status(403).json({ message: 'Access denied: none of the products in this order belong to your store to confirm' });
     }
 
     // Lock processing funds into seller.wallet.processingFund
@@ -620,11 +646,11 @@ export const handleStatusUpdate = async (req, res) => {
       const itSellerId = it.seller ? it.seller.toString() : '';
       const ordSellerId = order.seller ? order.seller.toString() : '';
 
-      const isOwnedBySeller = itSellerId === sellerId || sellerProdIds.includes(itProdId) || ordSellerId === sellerId;
+      const isOwnedBySeller = itSellerId === sellerId || (!itSellerId && sellerProdIds.includes(itProdId)) || (!itSellerId && ordSellerId === sellerId);
       const isAdmin = Boolean(req.admin);
 
       if (isOwnedBySeller || isAdmin) {
-        if (seller && isOwnedBySeller) {
+        if (seller && isOwnedBySeller && !it.seller) {
           it.seller = seller._id;
           it.sellerName = seller.storeName;
         }
@@ -738,7 +764,18 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
     const lineItems = [];
 
     for (const item of items) {
+      if (!item.productId) return res.status(400).json({ message: 'Product ID is required for each line item' });
       const prod = await Product.findById(item.productId);
+      if (!prod) return res.status(404).json({ message: `Product not found: ${item.productId}` });
+
+      // Ownership validation: verify that this product belongs to the selected seller
+      const prodSellerId = prod.seller?._id ? prod.seller._id.toString() : (prod.seller ? prod.seller.toString() : '');
+      if (prodSellerId && prodSellerId !== seller._id.toString()) {
+        return res.status(400).json({
+          message: `Product "${prod.name}" belongs to seller "${prod.sellerName || 'another merchant'}" and cannot be ordered under store "${seller.storeName}".`
+        });
+      }
+
       const price = item.price !== undefined ? Number(item.price) : prod ? prod.price : 0;
       const costPrice = prod?.costs?.purchase || 0;
       const qty = Number(item.qty) || 1;

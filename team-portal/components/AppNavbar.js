@@ -19,6 +19,7 @@ import {
   Lock,
   CheckCircle2,
   AlertCircle,
+  Landmark,
 } from 'lucide-react';
 
 export default function AppNavbar() {
@@ -48,6 +49,7 @@ export default function AppNavbar() {
     { href: '/rewards', label: 'Rewards', icon: Award },
     { href: '/wallet', label: 'Wallet', icon: Wallet },
     ...(isAdmin ? [{ href: '/members', label: 'Members', icon: UserCheck }] : []),
+    ...(isAdmin ? [{ href: '/finance', label: 'Finance', icon: Landmark }] : []),
   ];
 
   const handlePasswordSubmit = async (e) => {

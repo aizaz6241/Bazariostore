@@ -21,7 +21,7 @@ export async function POST(req) {
     const tx = await recordWalletPayout({
       userId: targetUserId,
       amount: Number(amount),
-      currency: currency || 'PKR',
+      currency: currency || 'USDT',
       note: note || '',
       processedBy: session.name || session.username,
     });
@@ -32,6 +32,6 @@ export async function POST(req) {
     });
   } catch (err) {
     console.error('Wallet payout error:', err);
-    return NextResponse.json({ message: err.message || 'Failed to record payout' }, { status: 500 });
+    return NextResponse.json({ message: err.message || 'Failed to record payout' }, { status: 400 });
   }
 }

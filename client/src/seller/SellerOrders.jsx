@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { sapi, fmtDate, money } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
@@ -45,6 +45,7 @@ export default function SellerOrders() {
   const [selectedOrd, setSelectedOrd] = useState(null);
   const [confirmingId, setConfirmingId] = useState(null);
   const [actionMsg, setActionMsg] = useState('');
+  const confirmingRef = useRef(new Set());
 
   const loadOrders = () => {
     sapi('/sellers/orders')
@@ -77,6 +78,8 @@ export default function SellerOrders() {
   }, []);
 
   const handleQuickConfirm = async (ord) => {
+    if (confirmingRef.current.has(ord._id)) return;
+    confirmingRef.current.add(ord._id);
     setConfirmingId(ord._id);
     setActionMsg('');
     try {
@@ -90,6 +93,7 @@ export default function SellerOrders() {
     } catch (err) {
       alert('⚠️ Order Confirmation Failed:\n' + err.message);
     } finally {
+      confirmingRef.current.delete(ord._id);
       setConfirmingId(null);
     }
   };

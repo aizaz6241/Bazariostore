@@ -22,7 +22,14 @@ export async function PUT(req, { params }) {
     });
 
     if (!assignment) {
-      // If none found and user is admin or assigned member, create one
+      // Security guard: Members cannot auto-assign unassigned stores by creating notes
+      if (session.role !== 'admin') {
+        return NextResponse.json(
+          { message: 'Forbidden. You are not assigned to this store.' },
+          { status: 403 }
+        );
+      }
+      // If admin, create one for note keeping
       assignment = new SellerAssignment({
         sellerId,
         memberId: session._id,

@@ -14,32 +14,51 @@ export async function POST(req, { params }) {
     const { id } = params;
     const body = await req.json().catch(() => ({}));
 
-    const claim = await RewardClaim.findById(id).populate('memberId');
-    if (!claim) {
-      return NextResponse.json({ message: 'Reward claim not found' }, { status: 404 });
-    }
+    // 1. Atomic status update prevents race condition and double-crediting
+    const claim = await RewardClaim.findOneAndUpdate(
+      { _id: id, status: { $ne: 'approved' } },
+      {
+        $set: {
+          status: 'approved',
+          adminNote: body.adminNote || 'Approved by Admin',
+          approvedBy: session._id,
+          approvedAt: new Date(),
+        },
+      },
+      { new: true }
+    ).populate('memberId');
 
-    if (claim.status === 'approved') {
+    if (!claim) {
+      const existing = await RewardClaim.findById(id);
+      if (!existing) {
+        return NextResponse.json({ message: 'Reward claim not found' }, { status: 404 });
+      }
       return NextResponse.json({ message: 'This reward has already been approved' }, { status: 400 });
     }
 
-    const targetMember = await Member.findById(claim.memberId._id);
+    const memberId = claim.memberId._id || claim.memberId;
+    await Member.updateOne(
+      { _id: memberId },
+      {
+        $inc: {
+          'wallet.balancePKR': claim.amountPKR,
+          'wallet.totalBonusesPKR': claim.amountPKR,
+        },
+      }
+    );
+
+    const targetMember = await Member.findById(memberId);
     if (!targetMember) {
       return NextResponse.json({ message: 'Member not found' }, { status: 404 });
     }
 
-    // 1. Mark claim approved
-    claim.status = 'approved';
-    claim.adminNote = body.adminNote || 'Approved by Admin';
-    claim.approvedBy = session._id;
-    claim.approvedAt = new Date();
-    await claim.save();
-
-    // 2. Credit Member Wallet in PKR
-    targetMember.wallet = targetMember.wallet || {};
-    targetMember.wallet.balancePKR = (targetMember.wallet.balancePKR || 0) + claim.amountPKR;
-    targetMember.wallet.totalBonusesPKR = (targetMember.wallet.totalBonusesPKR || 0) + claim.amountPKR;
-    await targetMember.save();
+    // Refresh wallet calculation cache
+    try {
+      const { getWalletData } = await import('@/lib/utils/wallet');
+      await getWalletData({ userId: targetMember._id });
+    } catch (wErr) {
+      console.error('Wallet refresh error:', wErr);
+    }
 
     // 3. Post Automatic Public Announcement in Group Chat
     const celebrationMsg =

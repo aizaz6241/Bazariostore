@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useCart } from '../cart.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
@@ -10,10 +10,28 @@ export default function ProductCard({ p }) {
   const { add } = useCart();
   const { formatMoney } = useCurrency();
   const [liked, setLiked] = useState(false);
+  const [added, setAdded] = useState(false);
+  const addLockRef = useRef(false);
+
   const badge = badgeFor(p);
   const out = p.stock <= 0;
   const sellerName = p.sellerName || p.seller?.storeName || 'Bazario Verified';
   const discountPercent = p.oldPrice > p.price ? Math.round(((p.oldPrice - p.price) / p.oldPrice) * 100) : 0;
+
+  const handleAdd = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (out || addLockRef.current) return;
+    addLockRef.current = true;
+    add(p);
+    setAdded(true);
+    setTimeout(() => {
+      setAdded(false);
+      addLockRef.current = false;
+    }, 600);
+  };
 
   return (
     <div className={'pcard' + (out ? ' pcard-out' : '')}>
@@ -55,9 +73,9 @@ export default function ProductCard({ p }) {
         </div>
 
         <div className="pcard-actions">
-          <button className="btn-add" onClick={() => add(p)} disabled={out}>
-            <span className="btn-add-full">{out ? 'OUT OF STOCK' : 'ADD TO CART'}</span>
-            <span className="btn-add-compact">{out ? 'Out' : '+ Add'}</span>
+          <button className={'btn-add' + (added ? ' added' : '')} onClick={handleAdd} disabled={out || added}>
+            <span className="btn-add-full">{out ? 'OUT OF STOCK' : added ? '✓ ADDED' : 'ADD TO CART'}</span>
+            <span className="btn-add-compact">{out ? 'Out' : added ? '✓' : '+ Add'}</span>
           </button>
           <button
             className={'btn-wish' + (liked ? ' liked' : '')}

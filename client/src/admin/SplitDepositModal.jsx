@@ -492,6 +492,29 @@ export default function SplitDepositModal({ isOpen, onClose, deposit, onSuccess 
                   placeholder="e.g. 90.00"
                   style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1.5px solid #eab308', background: '#fff', fontSize: 13, fontWeight: 800, color: '#854d0e' }}
                 />
+                {/* Rate Presets */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 3, flexWrap: 'wrap', marginTop: 4 }}>
+                  <span style={{ fontSize: 9.5, fontWeight: 700, color: '#854d0e' }}>Presets:</span>
+                  {['89.50', '90.00', '90.50', '91.00', '91.50'].map((rate) => (
+                    <button
+                      key={rate}
+                      type="button"
+                      onClick={() => setBinanceRate(rate)}
+                      style={{
+                        padding: '1px 5px',
+                        fontSize: 9.5,
+                        fontWeight: 800,
+                        borderRadius: 3,
+                        border: '1px solid #fde047',
+                        background: binanceRate === rate ? '#eab308' : '#fefce8',
+                        color: binanceRate === rate ? '#fff' : '#854d0e',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ₹{rate}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>

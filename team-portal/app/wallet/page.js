@@ -200,7 +200,7 @@ export default function WalletPage() {
             </h1>
             {isAdmin ? (
               <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                🛡️ Admin Account (50% Personal Handler + 25% Pool)
+                🛡️ Partner Account (75% own sellers • 25% others)
               </span>
             ) : (
               <span
@@ -210,7 +210,7 @@ export default function WalletPage() {
                     : 'bg-emerald-100 text-emerald-800 border-emerald-200'
                 }`}
               >
-                {is50Inr ? '🇮🇳 50% INR Split Deal' : '🇵🇰 1:1 PKR Fixed Deal'}
+                {is50Inr ? '50% Member Deal' : '🇵🇰 1:1 PKR Fixed Deal'}
               </span>
             )}
           </div>
@@ -219,7 +219,7 @@ export default function WalletPage() {
               Real-time ledger connected with client store deposits and withdrawals.
             </span>
             <span className="text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-xs">
-              Binance Auto-Conversion: 1 USDT ≈ {USDT_INR_RATE} INR / {USDT_PKR_RATE} PKR
+              Real Binance USDT • each deposit at its actual rate
             </span>
           </p>
         </div>
@@ -277,45 +277,44 @@ export default function WalletPage() {
                 {formatUSDT(balances.balanceUSDT)}
               </h2>
               <p className="text-xs text-slate-300 mt-1 flex items-center gap-2">
-                <span>≈ ₹{formatMoney(balances.balanceINR)} INR</span>
-                {balances.balancePKR > 0 && <span>• Rs {formatMoney(balances.balancePKR)} PKR</span>}
+                <span>Your share of the USDT held in Binance. Can go below zero and settles from the next deposits.</span>
               </p>
             </div>
           </div>
 
           <div className="flex items-center justify-between text-xs text-slate-300/90 mt-5 pt-4 border-t border-white/10">
-            <span>Total Earned: <strong className="text-emerald-400">₮{formatMoney(balances.totalEarnedUSDT)}</strong></span>
-            <span>Payouts: <strong className="text-red-400">₮{formatMoney(balances.totalWithdrawnUSDT)}</strong></span>
+            <span>Earned: <strong className="text-emerald-400">₮{formatMoney(balances.totalEarnedUSDT)}</strong></span>
+            <span>Deducted: <strong className="text-red-400">₮{formatMoney(balances.totalWithdrawnUSDT)}</strong></span>
           </div>
         </div>
 
-        {/* INR Wallet Card */}
+        {/* Seller withdrawals share card */}
         <div className="bg-gradient-to-br from-purple-700 via-indigo-700 to-indigo-800 rounded-3xl p-6 text-white shadow-xl shadow-indigo-600/15 relative overflow-hidden flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-purple-200 flex items-center space-x-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-purple-300"></span>
-                <span>Available INR Balance (₹)</span>
+                <span>Your Share of Seller Withdrawals (₮)</span>
               </span>
               <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/20 text-white font-semibold">
-                {isAdmin ? '50% Direct + 25% Pool' : '50% INR Stores'}
+                {isAdmin ? '75% own • 25% others' : '50% of your sellers'}
               </span>
             </div>
 
             <div className="mt-3">
               <h2 className="text-3xl sm:text-4xl font-black tracking-tight">
-                ₹{formatMoney(balances.balanceINR)}
-                <span className="text-sm sm:text-base font-normal text-purple-200 ml-2">INR</span>
+                ₮{formatMoney(balances.totalSellerWithdrawUSDT)}
+                <span className="text-sm sm:text-base font-normal text-purple-200 ml-2">USDT</span>
               </h2>
               <p className="text-xs text-purple-200/80 mt-1">
-                Converted: ≈ ₮{formatMoney(balances.balanceINR / USDT_INR_RATE)} USDT
+                Already taken out of your balance when sellers were paid
               </p>
             </div>
           </div>
 
           <div className="flex items-center justify-between text-xs text-purple-200/90 mt-5 pt-4 border-t border-white/15">
-            <span>Total Earned: <strong>₹{formatMoney(balances.totalEarnedINR, 0)}</strong></span>
-            <span>Withdrawn / Payouts: <strong>₹{formatMoney(balances.totalWithdrawnINR, 0)}</strong></span>
+            <span>Earned from deposits: <strong>₮{formatMoney(balances.totalEarnedUSDT)}</strong></span>
+            <span>Payouts taken: <strong>₮{formatMoney(balances.totalPayoutUSDT)}</strong></span>
           </div>
         </div>
 
@@ -325,27 +324,27 @@ export default function WalletPage() {
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-emerald-200 flex items-center space-x-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-white"></span>
-                <span>Available PKR Balance (Rs)</span>
+                <span>Milestone Bonuses (Rs)</span>
               </span>
               <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/20 text-white font-semibold">
-                1 INR = 1 PKR + Bonuses
+                Reference only
               </span>
             </div>
 
             <div className="mt-3">
               <h2 className="text-3xl sm:text-4xl font-black tracking-tight">
-                Rs {formatMoney(balances.balancePKR)}
+                Rs {formatMoney(balances.totalEarnedPKR)}
                 <span className="text-sm sm:text-base font-normal text-emerald-200 ml-2">PKR</span>
               </h2>
               <p className="text-xs text-emerald-200/80 mt-1">
-                Converted: ≈ ₮{formatMoney(balances.balancePKR / USDT_PKR_RATE)} USDT
+                Paid in USDT inside your balance
               </p>
             </div>
           </div>
 
           <div className="flex items-center justify-between text-xs text-emerald-200/90 mt-5 pt-4 border-t border-white/15">
-            <span>Total Earned: <strong>Rs {formatMoney(balances.totalEarnedPKR, 0)}</strong></span>
-            <span>Withdrawn / Payouts: <strong>Rs {formatMoney(balances.totalWithdrawnPKR, 0)}</strong></span>
+            <span>In USDT: <strong>₮{formatMoney(balances.totalBonusUSDT)}</strong></span>
+            <span>Bonus cost paid: <strong>₮{formatMoney(balances.totalBonusCostUSDT)}</strong></span>
           </div>
         </div>
       </div>
@@ -371,11 +370,8 @@ export default function WalletPage() {
             <span className="w-2.5 h-2.5 rounded-full bg-red-400"></span>
             <span className="text-slate-500">Client Withdrawals:</span>
             <strong className="text-slate-800">
-              ₹{formatMoney(balances.totalClientWithdrawalsINR, 0)} INR
+              ₮{formatMoney(balances.totalClientWithdrawalsUSDT)} USDT
             </strong>
-            <span className="text-slate-400 font-medium">
-              (₮{formatMoney(balances.totalClientWithdrawalsUSDT)} USDT)
-            </span>
           </div>
         </div>
       </div>
@@ -422,8 +418,6 @@ export default function WalletPage() {
                 className="w-full p-2.5 rounded-xl bg-white border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 font-semibold"
               >
                 <option value="USDT">₮ USDT (Binance)</option>
-                <option value="PKR">Rs PKR</option>
-                <option value="INR">₹ INR</option>
               </select>
             </div>
 
@@ -497,8 +491,6 @@ export default function WalletPage() {
             >
               <option value="all">All Currencies</option>
               <option value="USDT">₮ USDT Only</option>
-              <option value="INR">₹ INR Only</option>
-              <option value="PKR">Rs PKR Only</option>
             </select>
           </div>
         </div>
@@ -548,16 +540,16 @@ export default function WalletPage() {
         </div>
 
         <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
-          <span className="text-[10px] uppercase font-bold text-slate-400 block">Period Inflow (INR)</span>
+          <span className="text-[10px] uppercase font-bold text-slate-400 block">Period Earned (USDT)</span>
           <p className="text-xl sm:text-2xl font-black text-purple-700 mt-1">
-            +₹{formatMoney(periodTotals.earnedINR)}
+            +₮{formatMoney(periodTotals.earnedUSDT)}
           </p>
         </div>
 
         <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs">
-          <span className="text-[10px] uppercase font-bold text-slate-400 block">Period Inflow (PKR)</span>
+          <span className="text-[10px] uppercase font-bold text-slate-400 block">Period Deducted (USDT)</span>
           <p className="text-xl sm:text-2xl font-black text-teal-700 mt-1">
-            +Rs {formatMoney(periodTotals.earnedPKR)}
+            -₮{formatMoney(periodTotals.withdrawnUSDT)}
           </p>
         </div>
 
@@ -727,7 +719,7 @@ export default function WalletPage() {
                       {formatMoney(tx.amount)} {tx.currency}
                     </div>
                     <span className="text-[10px] text-slate-400 capitalize">
-                      {isCredit ? 'Credit (Inflow)' : isDebit ? 'Debit (Payout)' : 'Client Store Outflow'}
+                      {isCredit ? 'Credit (Inflow)' : tx.category === 'seller_withdrawal_share' ? 'Debit (Seller withdrawal)' : isDebit ? 'Debit (Payout)' : 'Client Store Outflow'}
                     </span>
                   </div>
                 </div>

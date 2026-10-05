@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../cart.jsx';
 import { useAuth } from '../auth.jsx';
@@ -34,6 +34,7 @@ export default function Checkout() {
   const [phase, setPhase] = useState('info');
   const [placing, setPlacing] = useState(false);
   const [serverError, setServerError] = useState('');
+  const isPlacingRef = useRef(false);
 
   useEffect(() => {
     api('/shipping').then((m) => {
@@ -127,6 +128,8 @@ export default function Checkout() {
   };
 
   const placeOrder = async () => {
+    if (isPlacingRef.current) return;
+    isPlacingRef.current = true;
     setPlacing(true);
     setServerError('');
     try {
@@ -151,6 +154,7 @@ export default function Checkout() {
     } catch (e) {
       setServerError(e.message);
     } finally {
+      isPlacingRef.current = false;
       setPlacing(false);
     }
   };

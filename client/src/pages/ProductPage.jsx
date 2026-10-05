@@ -31,6 +31,8 @@ export default function ProductPage() {
   const [qty, setQty] = useState(1);
   const [tab, setTab] = useState(0);
   const [liked, setLiked] = useState(false);
+  const [added, setAdded] = useState(false);
+  const addLockRef = useRef(false);
   const relRef = useRef(null);
 
   useEffect(() => {
@@ -65,9 +67,19 @@ export default function ProductPage() {
   const variantStr = Object.entries(variantSel).map(([k, v]) => `${k}: ${v}`).join(', ');
   const sellerName = p.seller?.storeName || p.sellerName || 'Amazon Verified Store';
 
-  const doAdd = () => add(p, qty, size, variantStr);
+  const doAdd = () => {
+    if (out || addLockRef.current) return;
+    addLockRef.current = true;
+    add(p, qty, size, variantStr);
+    setAdded(true);
+    setTimeout(() => {
+      setAdded(false);
+      addLockRef.current = false;
+    }, 600);
+  };
   const buyNow = () => {
-    doAdd();
+    if (out) return;
+    add(p, qty, size, variantStr);
     navigate('/checkout');
   };
 
@@ -192,7 +204,9 @@ export default function ProductPage() {
             </div>
 
             <div className="pdp-cta">
-              <button className="btn-primary btn-block" onClick={doAdd} disabled={out}>{out ? 'OUT OF STOCK' : 'ADD TO CART'}</button>
+              <button className={'btn-primary btn-block' + (added ? ' added' : '')} onClick={doAdd} disabled={out || added}>
+                {out ? 'OUT OF STOCK' : added ? '✓ ADDED TO CART' : 'ADD TO CART'}
+              </button>
               <button className={'btn-wish-lg' + (liked ? ' liked' : '')} onClick={() => setLiked(!liked)} aria-label="Wishlist">
                 <Ic name="heart" size={19} />
               </button>

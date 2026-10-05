@@ -85,6 +85,7 @@ export function AuthProvider({ children }) {
   const logout = () => {
     localStorage.removeItem('portal_token');
     document.cookie = 'portal_token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+    fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
     setUser(null);
     router.push('/login');
   };

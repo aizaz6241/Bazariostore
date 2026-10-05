@@ -29,10 +29,6 @@ const memberSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    plainPassword: {
-      type: String,
-      default: '',
-    },
     role: {
       type: String,
       enum: ['admin', 'member'],

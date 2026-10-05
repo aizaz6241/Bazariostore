@@ -19,7 +19,7 @@ export async function GET(req) {
     // Keep all ecommerce admins synchronized
     await syncEcommerceAdmins();
 
-    const members = await Member.find().select('-passwordHash').sort({ role: 1, createdAt: -1 });
+    const members = await Member.find().select('-passwordHash -plainPassword').sort({ role: 1, createdAt: -1 });
 
     // Aggregate statistics and live multi-currency wallet for each member
     const { getWalletData } = await import('@/lib/utils/wallet');
@@ -120,7 +120,6 @@ export async function POST(req) {
       name: cleanName,
       username: cleanUsername,
       passwordHash,
-      plainPassword: cleanPassword,
       phone: phone || '',
       role: role || 'member',
       commissionLabel: cleanCommissionLabel,

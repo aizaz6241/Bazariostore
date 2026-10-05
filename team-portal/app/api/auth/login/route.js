@@ -2,12 +2,30 @@ import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import Member from '@/lib/models/Member';
 import { comparePassword, signToken } from '@/lib/auth';
+import { checkRateLimit } from '@/lib/rateLimit';
 import mongoose from 'mongoose';
 
 export const dynamic = 'force-dynamic';
 
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export async function POST(req) {
   try {
+    // ─── Rate Limiting (Prevent Brute-Force Password Guessing) ───
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+               req.headers.get('x-real-ip') ||
+               'unknown_ip';
+
+    const rl = checkRateLimit(`login_${ip}`, 12, 60 * 1000);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { message: 'Too many login attempts. Please wait a minute before trying again.' },
+        { status: 429 }
+      );
+    }
+
     await connectDB();
     const { username, password } = await req.json();
 
@@ -16,6 +34,7 @@ export async function POST(req) {
     }
 
     const cleanInput = username.trim().toLowerCase();
+    const escapedInput = escapeRegex(cleanInput);
     const db = mongoose.connection.db;
 
     // ─── 1. Check Main Ecommerce Platform 'admins' Collection First ───
@@ -25,7 +44,7 @@ export async function POST(req) {
       $or: [
         { email: cleanInput },
         { email: cleanInput.includes('@') ? cleanInput : `${cleanInput}@bazario.com` },
-        { name: new RegExp(`^${cleanInput}$`, 'i') },
+        { name: new RegExp(`^${escapedInput}$`, 'i') },
       ],
     });
 
@@ -82,6 +101,7 @@ export async function POST(req) {
 
         const safeMember = portalMember.toObject();
         delete safeMember.passwordHash;
+        delete safeMember.plainPassword;
 
         const response = NextResponse.json({
           message: `Welcome ${portalMember.name}! Logged in as Administrator.`,
@@ -90,8 +110,9 @@ export async function POST(req) {
         });
 
         response.cookies.set('portal_token', token, {
-          httpOnly: false,
+          httpOnly: true,
           secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
           maxAge: 30 * 24 * 60 * 60,
           path: '/',
         });
@@ -105,7 +126,7 @@ export async function POST(req) {
       $or: [
         { username: cleanInput },
         { email: cleanInput },
-        { name: new RegExp(`^${cleanInput}$`, 'i') },
+        { name: new RegExp(`^${escapedInput}$`, 'i') },
       ],
     });
 
@@ -135,6 +156,7 @@ export async function POST(req) {
 
     const safeMember = member.toObject();
     delete safeMember.passwordHash;
+    delete safeMember.plainPassword;
 
     const response = NextResponse.json({
       message: 'Logged in successfully',
@@ -143,8 +165,9 @@ export async function POST(req) {
     });
 
     response.cookies.set('portal_token', token, {
-      httpOnly: false,
+      httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
       maxAge: 30 * 24 * 60 * 60,
       path: '/',
     });
@@ -152,6 +175,6 @@ export async function POST(req) {
     return response;
   } catch (err) {
     console.error('Login error:', err);
-    return NextResponse.json({ message: err.message || 'Internal server error' }, { status: 500 });
+    return NextResponse.json({ message: 'Internal server error' }, { status: 500 });
   }
 }

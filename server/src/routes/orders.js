@@ -73,6 +73,25 @@ router.post('/', softUser, async (req, res) => {
       if (l.product.stock < l.qty) return res.status(400).json({ message: `"${l.product.name}" ka sirf ${Math.max(0, l.product.stock)} stock reh gaya hai` });
     }
 
+    // Idempotency: Prevent duplicate orders placed within 5 seconds due to rapid clicks or network retransmission
+    const fiveSecondsAgo = new Date(Date.now() - 5000);
+    const dupFilter = {
+      createdAt: { $gte: fiveSecondsAgo },
+      'contact.email': contact.email.trim(),
+      'contact.phone': contact.phone.trim(),
+    };
+    if (req.user?.id) dupFilter.user = req.user.id;
+    else if (guestId) dupFilter.guestId = guestId;
+
+    const recentOrder = await Order.findOne(dupFilter).sort({ createdAt: -1 });
+    if (recentOrder) {
+      const recentKeys = (recentOrder.items || []).map((i) => `${i.product?.toString() || i.product}-${i.qty}`).sort().join('|');
+      const incomingKeys = (items || []).map((i) => `${i.id}-${i.qty}`).sort().join('|');
+      if (recentKeys === incomingKeys) {
+        return res.status(200).json(recentOrder);
+      }
+    }
+
     const order = await Order.create({
       orderNumber: makeOrderNumber(),
       user: req.user?.id || null,

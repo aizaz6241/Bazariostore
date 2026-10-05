@@ -226,7 +226,7 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
                 </h3>
                 {isAdmin ? (
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                    🛡️ Admin (50% Personal Handler + 25% Pool)
+                    🛡️ Partner (75% own sellers • 25% others)
                   </span>
                 ) : (
                   <span
@@ -236,7 +236,7 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
                         : 'bg-emerald-100 text-emerald-800 border-emerald-200'
                     }`}
                   >
-                    {is50Inr ? '🇮🇳 50% INR Split Deal' : '🇵🇰 1:1 PKR Fixed Deal'}
+                    {is50Inr ? '50% Member Deal' : '🇵🇰 1:1 PKR Fixed Deal'}
                   </span>
                 )}
               </div>
@@ -244,9 +244,9 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
                 <span>@{user.username || 'user'}</span>
                 <span>•</span>
                 <span className="text-emerald-700 font-semibold flex items-center space-x-1">
-                  <span>Binance Auto-Conversion:</span>
+                  <span>Real Binance USDT:</span>
                   <span className="bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 text-[10px]">
-                    1 USDT ≈ {USDT_INR_RATE} INR / {USDT_PKR_RATE} PKR
+                    each deposit at its actual rate
                   </span>
                 </span>
               </p>
@@ -305,15 +305,14 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
                     <span>{formatUSDT(balances.balanceUSDT)}</span>
                   </h3>
                   <p className="text-[11px] text-slate-300 mt-1 flex items-center gap-1.5">
-                    <span>≈ ₹{formatMoney(balances.balanceINR)} INR</span>
-                    {balances.balancePKR > 0 && <span>• Rs {formatMoney(balances.balancePKR)} PKR</span>}
+                    <span>Share of the USDT held in Binance. Can go below zero; settles from the next deposits.</span>
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center justify-between text-[11px] text-slate-300/90 mt-4 pt-3 border-t border-white/10">
                 <span>Earned: <strong className="text-emerald-400">₮{formatMoney(balances.totalEarnedUSDT)}</strong></span>
-                <span>Payouts: <strong className="text-red-400">₮{formatMoney(balances.totalWithdrawnUSDT)}</strong></span>
+                <span>Deducted: <strong className="text-red-400">₮{formatMoney(balances.totalWithdrawnUSDT)}</strong></span>
               </div>
             </div>
 
@@ -323,27 +322,27 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-purple-200 flex items-center space-x-1.5">
                     <span className="w-2 h-2 rounded-full bg-purple-300"></span>
-                    <span>INR Pool / Split (₹)</span>
+                    <span>Seller Withdrawals Share (₮)</span>
                   </span>
                   <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/20 text-white font-semibold">
-                    {isAdmin ? '50% Direct + 25% Pool' : '50% INR Stores'}
+                    {isAdmin ? '75% own • 25% others' : '50% of own sellers'}
                   </span>
                 </div>
 
                 <div className="mt-2.5">
                   <h3 className="text-2xl sm:text-3xl font-black tracking-tight">
-                    ₹{formatMoney(balances.balanceINR)}
-                    <span className="text-xs sm:text-sm font-normal text-purple-200 ml-1.5">INR</span>
+                    ₮{formatMoney(balances.totalSellerWithdrawUSDT)}
+                    <span className="text-xs sm:text-sm font-normal text-purple-200 ml-1.5">USDT</span>
                   </h3>
                   <p className="text-[11px] text-purple-200/80 mt-0.5">
-                    Converted: ≈ ₮{formatMoney(balances.balanceINR / USDT_INR_RATE)} USDT
+                    Already taken out of the balance when sellers were paid
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center justify-between text-[11px] text-purple-200/90 mt-3 pt-3 border-t border-white/15">
-                <span>Earned: <strong>₹{formatMoney(balances.totalEarnedINR, 0)}</strong></span>
-                <span>Withdrawn: <strong>₹{formatMoney(balances.totalWithdrawnINR, 0)}</strong></span>
+                <span>Earned: <strong>₮{formatMoney(balances.totalEarnedUSDT)}</strong></span>
+                <span>Payouts: <strong>₮{formatMoney(balances.totalPayoutUSDT)}</strong></span>
               </div>
             </div>
 
@@ -353,27 +352,27 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-emerald-200 flex items-center space-x-1.5">
                     <span className="w-2 h-2 rounded-full bg-white"></span>
-                    <span>PKR Balance (Rs)</span>
+                    <span>Milestone Bonuses (Rs)</span>
                   </span>
                   <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/20 text-white font-semibold">
-                    1 INR = 1 PKR + Rewards
+                    Reference only
                   </span>
                 </div>
 
                 <div className="mt-2.5">
                   <h3 className="text-2xl sm:text-3xl font-black tracking-tight">
-                    Rs {formatMoney(balances.balancePKR)}
+                    Rs {formatMoney(balances.totalEarnedPKR)}
                     <span className="text-xs sm:text-sm font-normal text-emerald-200 ml-1.5">PKR</span>
                   </h3>
                   <p className="text-[11px] text-emerald-200/80 mt-0.5">
-                    Converted: ≈ ₮{formatMoney(balances.balancePKR / USDT_PKR_RATE)} USDT
+                    Paid in USDT inside your balance
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center justify-between text-[11px] text-emerald-200/90 mt-3 pt-3 border-t border-white/15">
-                <span>Earned: <strong>Rs {formatMoney(balances.totalEarnedPKR, 0)}</strong></span>
-                <span>Withdrawn: <strong>Rs {formatMoney(balances.totalWithdrawnPKR, 0)}</strong></span>
+                <span>In USDT: <strong>₮{formatMoney(balances.totalBonusUSDT)}</strong></span>
+                <span>Bonus cost paid: <strong>₮{formatMoney(balances.totalBonusCostUSDT)}</strong></span>
               </div>
             </div>
           </div>
@@ -399,11 +398,8 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
                 <span className="w-2 h-2 rounded-full bg-red-400"></span>
                 <span className="text-slate-500">Client Withdrawals:</span>
                 <strong className="text-slate-800">
-                  ₹{formatMoney(balances.totalClientWithdrawalsINR, 0)} INR
+                  ₮{formatMoney(balances.totalClientWithdrawalsUSDT)} USDT
                 </strong>
-                <span className="text-slate-400 font-medium">
-                  (₮{formatMoney(balances.totalClientWithdrawalsUSDT)} USDT)
-                </span>
               </div>
             </div>
           </div>
@@ -521,8 +517,6 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
                     className="w-full p-2 rounded-xl bg-white border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 font-semibold"
                   >
                     <option value="USDT">₮ USDT (Binance)</option>
-                    <option value="PKR">Rs PKR</option>
-                    <option value="INR">₹ INR</option>
                   </select>
                 </div>
 
@@ -559,16 +553,16 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
             </div>
 
             <div className="bg-white p-3 rounded-2xl border border-slate-200">
-              <span className="text-[10px] uppercase font-bold text-slate-400 block">Period Inflow (INR)</span>
+              <span className="text-[10px] uppercase font-bold text-slate-400 block">Period Earned (USDT)</span>
               <p className="text-base sm:text-lg font-black text-purple-700 mt-0.5">
-                +₹{formatMoney(periodTotals.earnedINR)}
+                +₮{formatMoney(periodTotals.earnedUSDT)}
               </p>
             </div>
 
             <div className="bg-white p-3 rounded-2xl border border-slate-200">
-              <span className="text-[10px] uppercase font-bold text-slate-400 block">Period Inflow (PKR)</span>
+              <span className="text-[10px] uppercase font-bold text-slate-400 block">Period Deducted (USDT)</span>
               <p className="text-base sm:text-lg font-black text-teal-700 mt-0.5">
-                +Rs {formatMoney(periodTotals.earnedPKR)}
+                -₮{formatMoney(periodTotals.withdrawnUSDT)}
               </p>
             </div>
 
@@ -618,8 +612,6 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
               >
                 <option value="all">All Currencies</option>
                 <option value="USDT">₮ USDT Only</option>
-                <option value="INR">₹ INR Only</option>
-                <option value="PKR">Rs PKR Only</option>
               </select>
             </div>
           </div>
@@ -773,7 +765,7 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
                           {formatMoney(tx.amount)} {tx.currency}
                         </div>
                         <span className="text-[10px] text-slate-400 capitalize">
-                          {isCredit ? 'Credit (Inflow)' : isDebit ? 'Debit (Payout)' : 'Client Store Outflow'}
+                          {isCredit ? 'Credit (Inflow)' : tx.category === 'seller_withdrawal_share' ? 'Debit (Seller withdrawal)' : isDebit ? 'Debit (Payout)' : 'Client Store Outflow'}
                         </span>
                       </div>
                     </div>
@@ -786,7 +778,7 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
 
         {/* ── Footer ── */}
         <div className="px-5 py-3 bg-white border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0">
-          <span>Real-time Binance rates: 1 USDT = {USDT_INR_RATE} INR / {USDT_PKR_RATE} PKR.</span>
+          <span>All amounts are real Binance USDT.</span>
           <button
             onClick={onClose}
             className="px-4 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition"

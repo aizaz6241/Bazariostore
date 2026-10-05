@@ -1,5 +1,5 @@
 import RewardClaim from '../models/RewardClaim.js';
-import { Seller, Order } from '../models/SharedModels.js';
+import { Seller, Order, Withdrawal } from '../models/SharedModels.js';
 import SellerAssignment from '../models/SellerAssignment.js';
 
 /**
@@ -77,18 +77,38 @@ export async function evaluateMemberMilestones(memberId) {
     }
   }
 
-  // ─── 2. Check Weekly 5 Lakh Sprint Target (500,000 INR within past 7 days) ───
-  const totalCombinedDeposits = sellers.reduce(
-    (sum, s) => sum + Number(s.wallet?.totalDeposited || 0),
-    0
-  );
-
-  // Determine current week key (e.g. YYYY-WW)
+  // ─── 2. Check Weekly 5 Lakh Sprint Target (500,000 INR in current week) ───
   const now = new Date();
-  const weekStart = new Date(now.setDate(now.getDate() - now.getDay()));
-  const weekKey = `${weekStart.getFullYear()}_W${Math.ceil((now.getDate() + 6) / 7)}`;
+  const weekStart = new Date(now);
+  const day = weekStart.getDay();
+  const diff = weekStart.getDate() - day + (day === 0 ? -6 : 1); // Monday
+  weekStart.setDate(diff);
+  weekStart.setHours(0, 0, 0, 0);
 
-  if (totalCombinedDeposits >= 500000) {
+  const startOfYear = new Date(now.getFullYear(), 0, 1);
+  const weekNumber = Math.ceil(((now - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
+  const weekKey = `${weekStart.getFullYear()}_W${weekNumber}`;
+
+  // Fetch approved deposits for assigned sellers during the current week
+  const weeklyDeposits = await Withdrawal.aggregate([
+    {
+      $match: {
+        seller: { $in: sellerIds },
+        type: 'deposit',
+        status: { $in: ['approved', 'completed'] },
+        createdAt: { $gte: weekStart },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: '$amount' },
+      },
+    },
+  ]);
+  const currentWeekDepositsINR = weeklyDeposits[0]?.total || 0;
+
+  if (currentWeekDepositsINR >= 500000) {
     const claimKey = `weekly_5lakh_${memberId}_${weekKey}`;
     const existing = await RewardClaim.findOne({ claimKey });
     if (!existing) {

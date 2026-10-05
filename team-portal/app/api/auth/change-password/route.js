@@ -36,7 +36,6 @@ export async function POST(req) {
     // Hash new password
     const newHash = await hashPassword(newPassword);
     member.passwordHash = newHash;
-    member.plainPassword = newPassword;
     await member.save();
 
     // If user is an Admin, sync new password to the specific admin record in the main ecommerce 'admins' collection

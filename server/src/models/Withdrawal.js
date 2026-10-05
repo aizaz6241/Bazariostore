@@ -58,7 +58,11 @@ const withdrawalSchema = new mongoose.Schema(
     // Binance rate & conversion for withdrawals (admin internal, hidden from seller)
     binanceRate: { type: Number, default: 0 }, // B.Rate (e.g. 90 INR/USDT)
     inrAmount: { type: Number, default: 0 },   // Indian Rupees paid out
-    usdtAmount: { type: Number, default: 0 },  // Resulting USDT amount (INR / binanceRate)
+    usdtAmount: { type: Number, default: 0 },  // REAL Binance USDT received / sent (finance ledger reads this)
+    // Finance ledger fields (set from the team portal Finance screen)
+    pkrRate: { type: Number, default: 0 },          // PKR per 1 USDT on that day (1:1 PKR members)
+    finConfirmed: { type: Boolean, default: false }, // USDT amount was confirmed by an admin
+    finSkip: { type: Boolean, default: false },      // no real money moved on Binance (e.g. helping-only credit)
     // Status
     status: { type: String, enum: ['pending', 'approved', 'rejected', 'completed'], default: 'pending' },
     adminNote: { type: String, default: '' },

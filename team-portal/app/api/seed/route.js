@@ -4,11 +4,23 @@ import Member from '@/lib/models/Member';
 import ModelProfile from '@/lib/models/ModelProfile';
 import { Seller } from '@/lib/models/SharedModels';
 import SellerAssignment from '@/lib/models/SellerAssignment';
-import { hashPassword } from '@/lib/auth';
+import { getAuthSession, hashPassword } from '@/lib/auth';
 
 export async function POST(req) {
   try {
     await connectDB();
+
+    // 0. Security Guard: If admin already exists, require authenticated admin session
+    const existingAdminCount = await Member.countDocuments({ role: 'admin' });
+    if (existingAdminCount > 0) {
+      const session = await getAuthSession(req);
+      if (!session || session.role !== 'admin') {
+        return NextResponse.json(
+          { message: 'Forbidden. Database is already seeded. Admin authentication required.' },
+          { status: 403 }
+        );
+      }
+    }
 
     // 1. Ensure Super Admin exists
     let admin = await Member.findOne({ role: 'admin' });
@@ -18,7 +30,6 @@ export async function POST(req) {
         name: 'Super Admin',
         username: 'admin',
         passwordHash: pwd,
-        plainPassword: 'admin123',
         role: 'admin',
         phone: '+92 300 1234567',
         wallet: { balancePKR: 0, totalDepositsPKR: 0, totalWithdrawalsPKR: 0, totalBonusesPKR: 0 },
@@ -33,7 +44,6 @@ export async function POST(req) {
         name: 'Ali Raza',
         username: 'member1',
         passwordHash: pwd1,
-        plainPassword: 'member123',
         role: 'member',
         phone: '+92 321 9876543',
         wallet: { balancePKR: 0, totalDepositsPKR: 0, totalWithdrawalsPKR: 0, totalBonusesPKR: 0 },

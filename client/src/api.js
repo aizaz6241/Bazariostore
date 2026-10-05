@@ -9,6 +9,11 @@ async function request(path, opts = {}, token) {
   const base = getApiBase();
   const url = (base ? `${base}/api` : '/api') + path;
   let res;
+
+  const controller = new AbortController();
+  const timeoutMs = opts.timeout || 30000; // 30s timeout to prevent UI freezes on hung requests
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
     res = await fetch(url, {
       method: opts.method || 'GET',
@@ -17,9 +22,15 @@ async function request(path, opts = {}, token) {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: opts.body instanceof FormData ? opts.body : opts.body ? JSON.stringify(opts.body) : undefined,
+      signal: opts.signal || controller.signal,
     });
   } catch (netErr) {
+    if (netErr.name === 'AbortError') {
+      throw new Error('Request timed out. Please check your network connection and try again.');
+    }
     throw new Error('Unable to connect to backend server. Please check your internet connection.');
+  } finally {
+    clearTimeout(timer);
   }
 
   let data;

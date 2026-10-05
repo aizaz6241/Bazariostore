@@ -249,7 +249,23 @@ router.post('/treasury/:id/add', authSeller, async (req, res) => {
       freeDelivery: treasury.freeDelivery,
     });
 
-    await newProduct.save();
+    try {
+      await newProduct.save();
+    } catch (saveErr) {
+      // If a concurrent request created this product just milliseconds ago
+      const concurrentExisting = await Product.findOne({ seller: seller._id, treasuryProduct: treasury._id });
+      if (concurrentExisting) {
+        concurrentExisting.active = true;
+        await concurrentExisting.save().catch(() => {});
+        return res.json({
+          ok: true,
+          message: 'Product already in your store (refreshed & activated)',
+          product: concurrentExisting,
+          alreadyExisted: true,
+        });
+      }
+      throw saveErr;
+    }
 
     res.status(201).json({
       ok: true,

@@ -50,14 +50,14 @@ export async function getAuthSession(req) {
   const decoded = verifyToken(token);
   if (!decoded || !decoded.id) return null;
 
-  let member = await Member.findById(decoded.id).select('-passwordHash');
+  let member = await Member.findById(decoded.id).select('-passwordHash -plainPassword');
 
   // Robust fallback: if token had an older ID, lookup by ecommerceAdminId or email
   if (!member && decoded.ecommerceAdminId) {
-    member = await Member.findOne({ ecommerceAdminId: decoded.ecommerceAdminId }).select('-passwordHash');
+    member = await Member.findOne({ ecommerceAdminId: decoded.ecommerceAdminId }).select('-passwordHash -plainPassword');
   }
   if (!member && decoded.email) {
-    member = await Member.findOne({ email: decoded.email.toLowerCase() }).select('-passwordHash');
+    member = await Member.findOne({ email: decoded.email.toLowerCase() }).select('-passwordHash -plainPassword');
   }
 
   if (!member || !member.active) return null;

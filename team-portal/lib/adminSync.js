@@ -27,15 +27,15 @@ export async function syncEcommerceAdmins() {
     const existingPortalAdmins = await Member.find({ role: 'admin' });
 
     for (const pAdmin of existingPortalAdmins) {
-      const hasValidId =
-        pAdmin.ecommerceAdminId &&
-        validEcommerceAdminIds.includes(pAdmin.ecommerceAdminId.toString());
+      // Only evaluate admins that were specifically linked to the ecommerce platform
+      if (!pAdmin.ecommerceAdminId) {
+        continue; // Local portal admin - protect from deletion
+      }
 
-      const hasValidEmail =
-        pAdmin.email &&
-        validEcommerceEmails.includes(pAdmin.email.toLowerCase().trim());
+      const hasValidId = validEcommerceAdminIds.includes(pAdmin.ecommerceAdminId.toString());
+      const hasValidEmail = pAdmin.email && validEcommerceEmails.includes(pAdmin.email.toLowerCase().trim());
 
-      // If this admin no longer exists in the main ecommerce database, remove them!
+      // If this synced ecommerce admin no longer exists in the main ecommerce database, remove them!
       if (!hasValidId && !hasValidEmail) {
         console.log(`[adminSync] Deleting removed ecommerce admin from portal: ${pAdmin.name} (${pAdmin.username})`);
         await Member.deleteOne({ _id: pAdmin._id });
@@ -88,7 +88,6 @@ export async function syncEcommerceAdmins() {
           email: cleanEmail,
           ecommerceAdminId: eAdmin._id,
           passwordHash: eAdmin.passwordHash,
-          plainPassword: '',
           role: 'admin',
           phone: eAdmin.phone || '',
           active: eAdmin.active !== false,

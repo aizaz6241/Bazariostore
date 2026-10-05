@@ -17,10 +17,11 @@ export default function SellerTreasury() {
   const [sort, setSort] = useState('mixed'); // 'mixed' | 'price-low' | 'price-high' | 'stock' | 'newest'
   const [storeFilter, setStoreFilter] = useState('all'); // 'all' | 'not_added' | 'added'
   const [visibleCount, setVisibleCount] = useState(48);
-  const [actionLoadingId, setActionLoadingId] = useState(null);
+  const [actionLoadingIds, setActionLoadingIds] = useState(() => new Set());
   const [toastMessage, setToastMessage] = useState('');
 
   const sentinelRef = useRef(null);
+  const inFlightRef = useRef(new Set());
 
   const showToast = (msg) => {
     setToastMessage(msg);
@@ -62,10 +63,12 @@ export default function SellerTreasury() {
     loadTreasury();
   };
 
-  // 1-Click Add to Store
+  // 1-Click Add to Store with synchronous lock
   const handleAddToStore = async (p, e) => {
     if (e) e.stopPropagation();
-    setActionLoadingId(p._id);
+    if (inFlightRef.current.has(p._id)) return; // Immediate lock against spam/double clicks
+    inFlightRef.current.add(p._id);
+    setActionLoadingIds((prev) => new Set(prev).add(p._id));
 
     try {
       const res = await sapi(`/sellers/treasury/${p._id}/add`, { method: 'POST' });
@@ -85,16 +88,23 @@ export default function SellerTreasury() {
     } catch (err) {
       alert('Could not add to store: ' + err.message);
     } finally {
-      setActionLoadingId(null);
+      inFlightRef.current.delete(p._id);
+      setActionLoadingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(p._id);
+        return next;
+      });
     }
   };
 
-  // 1-Click Remove from Store
+  // 1-Click Remove from Store with synchronous lock
   const handleRemoveFromStore = async (p, e) => {
     if (e) e.stopPropagation();
+    if (inFlightRef.current.has(p._id)) return;
     if (!window.confirm(`Remove "${p.name}" from your store catalog?`)) return;
 
-    setActionLoadingId(p._id);
+    inFlightRef.current.add(p._id);
+    setActionLoadingIds((prev) => new Set(prev).add(p._id));
     try {
       await sapi(`/sellers/treasury/${p._id}/remove`, { method: 'POST' });
       setProducts((prev) =>
@@ -113,7 +123,12 @@ export default function SellerTreasury() {
     } catch (err) {
       alert('Could not remove product: ' + err.message);
     } finally {
-      setActionLoadingId(null);
+      inFlightRef.current.delete(p._id);
+      setActionLoadingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(p._id);
+        return next;
+      });
     }
   };
 
@@ -361,7 +376,7 @@ export default function SellerTreasury() {
           <div className="seller-treasury-grid">
             {visibleProducts.map((p) => {
             const isAdded = p.isAddedToStore;
-            const isLoading = actionLoadingId === p._id;
+            const isLoading = actionLoadingIds.has(p._id);
             const stockQty = p.stock || 0;
             const isOutOfStock = stockQty <= 0;
             const margin =

@@ -12,6 +12,7 @@ import {
   Award,
   UserCheck,
   Wallet,
+  Landmark,
 } from 'lucide-react';
 
 export default function MobileBottomNav() {
@@ -29,6 +30,7 @@ export default function MobileBottomNav() {
     { href: '/wallet', label: 'Wallet', icon: Wallet },
     { href: '/rewards', label: 'Rewards', icon: Award },
     ...(isAdmin ? [{ href: '/members', label: 'Members', icon: UserCheck }] : []),
+    ...(isAdmin ? [{ href: '/finance', label: 'Finance', icon: Landmark }] : []),
   ];
 
   return (

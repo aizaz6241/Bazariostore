@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, money, fmtDate } from '../api.js';
 import { STATUS_LABELS, ALL_STATUSES, PAYMENT_LABELS } from '../data.js';
@@ -6,6 +6,7 @@ import { ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
 import { getSocket } from '../socket.js';
 import { MOCK_CUSTOMERS, getRandomCustomer } from './mockCustomers.js';
+import AddFundsModal from './AddFundsModal.jsx';
 
 export default function Orders() {
   const [params, setParams] = useSearchParams();
@@ -17,11 +18,21 @@ export default function Orders() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Add Funds Modal state
+  const [addFundsOpen, setAddFundsOpen] = useState(false);
+  const [addFundsPreselectId, setAddFundsPreselectId] = useState('');
+
+  const handleOpenAddFunds = (sellerId = '') => {
+    setAddFundsPreselectId(sellerId || selectedSellerId || '');
+    setAddFundsOpen(true);
+  };
+
   // Place Order Modal on Behalf of Seller
   const [placeOrderOpen, setPlaceOrderOpen] = useState(false);
   const [selectedSellerId, setSelectedSellerId] = useState('');
   const [sellerProds, setSellerProds] = useState([]);
   const [loadingProds, setLoadingProds] = useState(false);
+  const activeSellerReqRef = useRef(0);
   const [randomNotice, setRandomNotice] = useState('');
   const [selectedMockId, setSelectedMockId] = useState('');
   const [orderForm, setOrderForm] = useState(() => {
@@ -188,19 +199,32 @@ export default function Orders() {
     setOrderForm((prev) => ({ ...prev, productId: '' }));
     if (!sellerId) return;
 
+    const reqId = ++activeSellerReqRef.current;
     setLoadingProds(true);
     try {
       const data = await api(`/sellers/${sellerId}?kyc=0`);
+      if (activeSellerReqRef.current !== reqId) return; // Discard stale response
       const prods = data.products || [];
       setSellerProds(prods);
       if (prods.length > 0) {
         setOrderForm((prev) => ({ ...prev, productId: prods[0]._id }));
       }
     } catch (err) {
-      alert('Error loading seller products: ' + err.message);
+      if (activeSellerReqRef.current === reqId) {
+        alert('Error loading seller products: ' + err.message);
+      }
     } finally {
-      setLoadingProds(false);
+      if (activeSellerReqRef.current === reqId) {
+        setLoadingProds(false);
+      }
     }
+  };
+
+  const handleClosePlaceOrder = () => {
+    setPlaceOrderOpen(false);
+    setSelectedSellerId('');
+    setSellerProds([]);
+    setOrderForm((prev) => ({ ...prev, productId: '' }));
   };
 
   const handleOpenPlaceOrder = (preselectSellerId = '') => {
@@ -222,9 +246,13 @@ export default function Orders() {
       alert('Please select a product from the merchant’s catalog.');
       return;
     }
+    const selProd = sellerProds.find((p) => p._id === orderForm.productId);
+    if (!selProd) {
+      alert('Selected product is not found in the current merchant’s catalog. Please re-select the product.');
+      return;
+    }
     setPlacingOrder(true);
     try {
-      const selProd = sellerProds.find((p) => p._id === orderForm.productId);
       const selSeller = sellers.find((s) => s._id === selectedSellerId);
 
       await api('/sellers/place-order', {
@@ -233,11 +261,11 @@ export default function Orders() {
           sellerId: selectedSellerId,
           items: [
             {
-              productId: selProd?._id,
-              name: selProd?.name || 'Product',
-              price: selProd?.price || 0,
+              productId: selProd._id,
+              name: selProd.name || 'Product',
+              price: selProd.price || 0,
               qty: Number(orderForm.qty),
-              image: selProd?.image || selProd?.images?.[0]?.url || '',
+              image: selProd.image || selProd.images?.[0]?.url || '',
             },
           ],
           customer: {
@@ -259,7 +287,7 @@ export default function Orders() {
       });
 
       alert(`✅ Order placed successfully on behalf of ${selSeller?.storeName || 'Seller'}!`);
-      setPlaceOrderOpen(false);
+      handleClosePlaceOrder();
       loadOrders();
     } catch (err) {
       alert('Error placing order: ' + err.message);
@@ -316,13 +344,38 @@ export default function Orders() {
             Monitor real-time customer orders across all seller catalogs, inspect line items, update fulfillment statuses, and manually place orders.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => handleOpenPlaceOrder()}
-          className="btn-primary"
-        >
-          <Ic name="plus" size={16} /> + Place Order on Behalf of Seller
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => handleOpenAddFunds()}
+            className="btn-secondary"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '9px 14px',
+              borderRadius: 8,
+              fontWeight: 800,
+              fontSize: 13,
+              background: '#ffffff',
+              border: '1.5px solid #cbd5e1',
+              color: '#1e293b',
+              cursor: 'pointer',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+              transition: 'all 0.15s ease',
+            }}
+            title="Directly add or credit funds to any seller wallet in INR / USD"
+          >
+            <Ic name="creditCard" size={16} /> 💳 Add Funds to Seller
+          </button>
+          <button
+            type="button"
+            onClick={() => handleOpenPlaceOrder()}
+            className="btn-primary"
+          >
+            <Ic name="plus" size={16} /> + Place Order on Behalf of Seller
+          </button>
+        </div>
       </div>
 
       {/* KPI Stats Bar */}
@@ -527,7 +580,7 @@ export default function Orders() {
 
       {/* ─── Modal 1: Place Order on Behalf of Seller ─── */}
       {placeOrderOpen && (
-        <div className="admin-modal-overlay" onClick={() => setPlaceOrderOpen(false)}>
+        <div className="admin-modal-overlay" onClick={handleClosePlaceOrder}>
           <div className="admin-modal-box" style={{ maxWidth: 620 }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-top">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -539,7 +592,7 @@ export default function Orders() {
                   </p>
                 </div>
               </div>
-              <button onClick={() => setPlaceOrderOpen(false)} className="btn-close-modal">✕</button>
+              <button onClick={handleClosePlaceOrder} className="btn-close-modal">✕</button>
             </div>
 
             <form onSubmit={handlePlaceOrderSubmit} className="admin-modal-form" style={{ padding: '18px 22px' }}>
@@ -560,6 +613,41 @@ export default function Orders() {
                     </option>
                   ))}
                 </select>
+
+                {/* Selected Seller Live Wallet Balance Banner & Quick Add Funds Trigger */}
+                {(() => {
+                  const curSeller = sellers.find((s) => s._id === selectedSellerId);
+                  if (!curSeller) return null;
+                  const curBal = curSeller.wallet?.balance || 0;
+                  const curInr = Math.round(curBal * 83.5);
+                  const curLocked = curSeller.wallet?.processingFund || 0;
+
+                  return (
+                    <div className="order-seller-wallet-banner">
+                      <div className="oswb-left">
+                        <div className="oswb-icon-circle">💼</div>
+                        <div>
+                          <span className="oswb-lbl">Merchant Available Wallet Balance:</span>
+                          <div className="oswb-bal">
+                            <span className="oswb-usd">{money(curBal)}</span>
+                            <span className="oswb-inr">(≈ ₹{curInr.toLocaleString('en-IN')} INR)</span>
+                            {curLocked > 0 && (
+                              <span className="oswb-locked">Locked: {money(curLocked)}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-add-seller-funds"
+                        onClick={() => handleOpenAddFunds(curSeller._id)}
+                        title="Add funds directly to this merchant wallet in INR / USD with Binance USDT rate"
+                      >
+                        <Ic name="plus" size={13} /> 💳 Add Funds to Wallet
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Product Selection */}
@@ -799,7 +887,7 @@ export default function Orders() {
               </div>
 
               <div className="modal-bottom-actions">
-                <button type="button" onClick={() => setPlaceOrderOpen(false)} className="btn-cancel">Cancel</button>
+                <button type="button" onClick={handleClosePlaceOrder} className="btn-cancel">Cancel</button>
                 <button
                   type="submit"
                   className="btn-primary"
@@ -928,6 +1016,23 @@ export default function Orders() {
           </div>
         </div>
       )}
+
+      {/* ─── Modal 3: Add Funds to Seller Wallet (INR & USD with Binance USDT Rate) ─── */}
+      <AddFundsModal
+        isOpen={addFundsOpen}
+        onClose={() => setAddFundsOpen(false)}
+        sellers={sellers}
+        preselectedSellerId={addFundsPreselectId || selectedSellerId}
+        onSuccess={(res) => {
+          loadSellers();
+          if (res?.wallet && (addFundsPreselectId || selectedSellerId)) {
+            const targetId = addFundsPreselectId || selectedSellerId;
+            setSellers((prev) =>
+              prev.map((s) => (s._id === targetId ? { ...s, wallet: res.wallet } : s))
+            );
+          }
+        }}
+      />
     </div>
   );
 }

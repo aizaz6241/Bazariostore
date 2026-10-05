@@ -30,7 +30,6 @@ export async function PATCH(req, { params }) {
       }
       const newHash = await hashPassword(password);
       member.passwordHash = newHash;
-      member.plainPassword = password;
 
       // If updating an admin, also sync to ecommerce 'admins' collection
       if (member.role === 'admin') {

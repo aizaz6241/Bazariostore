@@ -308,32 +308,54 @@ router.post('/wallet/withdraw', authSellerOrAdmin, async (req, res) => {
     const hasPending = await Withdrawal.findOne({ seller: seller._id, type: 'withdrawal', status: 'pending' });
     if (hasPending) return res.status(400).json({ message: 'Aapki ek withdrawal request already pending hai.' });
 
-    const reqDoc = await Withdrawal.create({
-      type: 'withdrawal',
-      seller: seller._id,
-      storeName: seller.storeName,
-      amount: amt,
-      method,
-      upiId: (upiId || '').trim(),
-      phone: (phone || upiPhone || '').trim(),
-      walletAddress: (walletAddress || '').trim(),
-      network: (network || 'TRC-20').trim(),
-      accountTitle: (accountTitle || '').trim(),
-      accountNumber: (accountNumber || '').trim(),
-      bankName: (bankName || '').trim(),
-      ifscCode: (ifscCode || '').trim().toUpperCase(),
-      branchName: (branchName || '').trim(),
-      accountType: (accountType || '').trim(),
-    });
+    // Atomically lock and deduct balance only if balance is strictly >= amt
+    const updatedSeller = await Seller.findOneAndUpdate(
+      {
+        _id: seller._id,
+        'wallet.balance': { $gte: amt },
+      },
+      {
+        $inc: {
+          'wallet.balance': -amt,
+          'wallet.pendingWithdrawal': amt,
+        },
+      },
+      { new: true }
+    );
 
-    // Lock pending withdrawal (reduce available balance)
-    seller.wallet = seller.wallet || {};
-    seller.wallet.pendingWithdrawal = (seller.wallet.pendingWithdrawal || 0) + amt;
-    seller.wallet.balance = Math.max(0, (seller.wallet.balance || 0) - amt);
-    await seller.save();
+    if (!updatedSeller) {
+      return res.status(400).json({ message: 'Insufficient available wallet balance or transaction conflict. Please refresh.' });
+    }
+
+    let reqDoc;
+    try {
+      reqDoc = await Withdrawal.create({
+        type: 'withdrawal',
+        seller: seller._id,
+        storeName: seller.storeName,
+        amount: amt,
+        method,
+        upiId: (upiId || '').trim(),
+        phone: (phone || upiPhone || '').trim(),
+        walletAddress: (walletAddress || '').trim(),
+        network: (network || 'TRC-20').trim(),
+        accountTitle: (accountTitle || '').trim(),
+        accountNumber: (accountNumber || '').trim(),
+        bankName: (bankName || '').trim(),
+        ifscCode: (ifscCode || '').trim().toUpperCase(),
+        branchName: (branchName || '').trim(),
+        accountType: (accountType || '').trim(),
+      });
+    } catch (createErr) {
+      // Rollback atomic deduction if doc creation fails
+      await Seller.findByIdAndUpdate(seller._id, {
+        $inc: { 'wallet.balance': amt, 'wallet.pendingWithdrawal': -amt },
+      }).catch(() => {});
+      throw createErr;
+    }
 
     // Auto-send chat notification
-    const chatMsgId = await sendWalletChatNotification(req.app, seller, reqDoc);
+    const chatMsgId = await sendWalletChatNotification(req.app, updatedSeller, reqDoc);
     if (chatMsgId) {
       await Withdrawal.findByIdAndUpdate(reqDoc._id, { chatMessageId: chatMsgId });
     }
@@ -358,8 +380,8 @@ router.post('/wallet/withdraw', authSellerOrAdmin, async (req, res) => {
     const io = req.app.get('io');
     if (io) {
       io.to(`seller:${seller._id}`).emit('wallet:update', {
-        balance: seller.wallet.balance,
-        pendingWithdrawal: seller.wallet.pendingWithdrawal,
+        balance: updatedSeller.wallet.balance,
+        pendingWithdrawal: updatedSeller.wallet.pendingWithdrawal,
       });
       io.to('admins').emit('withdrawal:new', reqDoc);
     }
@@ -702,12 +724,22 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
       return res.status(400).json({ message: 'Invalid status. Use: approved or rejected' });
     }
 
-    const reqDoc = await Withdrawal.findById(req.params.id).populate('seller');
-    if (!reqDoc) return res.status(404).json({ message: 'Request not found' });
-    if (reqDoc.status !== 'pending') return res.status(400).json({ message: 'Request is already processed' });
+    // Atomically transition status from 'pending' to 'processing' to prevent race conditions & double-approvals
+    const reqDoc = await Withdrawal.findOneAndUpdate(
+      { _id: req.params.id, status: 'pending' },
+      { $set: { status: 'processing' } },
+      { new: true }
+    ).populate('seller');
+
+    if (!reqDoc) {
+      return res.status(400).json({ message: 'Request is already processed or currently being processed by another action.' });
+    }
 
     const seller = await Seller.findById(reqDoc.seller._id || reqDoc.seller);
-    if (!seller) return res.status(404).json({ message: 'Seller not found' });
+    if (!seller) {
+      await Withdrawal.updateOne({ _id: req.params.id, status: 'processing' }, { $set: { status: 'pending' } }).catch(() => {});
+      return res.status(404).json({ message: 'Seller not found' });
+    }
 
     const sellerMaxLimit = seller.withdrawalLimit?.maxAmount !== undefined ? seller.withdrawalLimit.maxAmount : 500;
 
@@ -755,10 +787,14 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
     // Validation: Admin cannot approve more than requested or seller's tier limit
     if (status === 'approved') {
       if (reqDoc.type === 'withdrawal') {
+        // The request is locked as 'processing' above, so release it back to 'pending' before refusing,
+        // otherwise it would stay stuck and could never be approved or rejected again.
         if (finalAmount > reqDoc.amount) {
+          await Withdrawal.updateOne({ _id: req.params.id, status: 'processing' }, { $set: { status: 'pending' } }).catch(() => {});
           return res.status(400).json({ message: `Approved amount ($${finalAmount}) cannot exceed requested withdrawal amount ($${reqDoc.amount})` });
         }
         if (finalAmount > sellerMaxLimit) {
+          await Withdrawal.updateOne({ _id: req.params.id, status: 'processing' }, { $set: { status: 'pending' } }).catch(() => {});
           return res.status(400).json({ message: `Approved amount ($${finalAmount}) cannot exceed seller's single withdrawal limit ($${sellerMaxLimit})` });
         }
       }
@@ -925,6 +961,8 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
     audit(req, 'update', 'wallet_request', reqDoc._id, `${reqDoc.type} ${status} for ${reqDoc.storeName} — $${finalAmount}`);
     res.json({ message: `Request ${status} successfully`, request: reqDoc, wallet: seller.wallet });
   } catch (err) {
+    // If an error occurred while status was locked in 'processing', safely restore to 'pending'
+    await Withdrawal.updateOne({ _id: req.params.id, status: 'processing' }, { $set: { status: 'pending' } }).catch(() => {});
     res.status(500).json({ message: err.message });
   }
 });

@@ -4,6 +4,7 @@ import Ic from '../components/Icons.jsx';
 import CurrencyConverterWidget from '../components/CurrencyConverterWidget.jsx';
 import { getSocket } from '../socket.js';
 import SplitDepositModal from './SplitDepositModal.jsx';
+import AddFundsModal from './AddFundsModal.jsx';
 
 const STATUS_COLOR = { pending: 'chip-orange', approved: 'chip-green', rejected: 'chip-red' };
 
@@ -77,6 +78,8 @@ export default function AdminWithdrawals() {
   const [helpingAmountMap, setHelpingAmountMap] = useState({});
   const [bRateMap, setBRateMap] = useState({});
   const [inrAmountMap, setInrAmountMap] = useState({});
+  // Real USDT typed by the admin (what Binance actually shows). Wins over INR ÷ rate.
+  const [usdtMap, setUsdtMap] = useState({});
   const [noteMap, setNoteMap] = useState({});
   const [refMap, setRefMap] = useState({});
 
@@ -349,18 +352,27 @@ export default function AdminWithdrawals() {
         ? (helpingAmountMap[id] !== undefined && helpingAmountMap[id] !== '' ? Number(helpingAmountMap[id]) : 0)
         : undefined;
 
-      // Binance rate applies to both withdrawals and deposits
-      const bRate = (status === 'approved' && bRateMap[id] !== undefined && bRateMap[id] !== '')
+      // Binance numbers are saved ONLY when the admin really typed them. No silent defaults:
+      // a made-up rate would put a wrong USDT amount into the finance ledger.
+      const typedUsdt = (status === 'approved' && usdtMap[id] !== undefined && usdtMap[id] !== '' && Number(usdtMap[id]) > 0)
+        ? Number(usdtMap[id])
+        : undefined;
+
+      const currentInrVal = (status === 'approved' && inrAmountMap[id] !== undefined && inrAmountMap[id] !== '' && Number(inrAmountMap[id]) > 0)
+        ? Number(inrAmountMap[id])
+        : undefined;
+
+      let bRate = (status === 'approved' && bRateMap[id] !== undefined && bRateMap[id] !== '' && Number(bRateMap[id]) > 0)
         ? Number(bRateMap[id])
         : undefined;
 
-      const currentInrVal = (status === 'approved')
-        ? (inrAmountMap[id] !== undefined && inrAmountMap[id] !== '' ? Number(inrAmountMap[id]) : Number((appAmt * 83.50).toFixed(2)))
-        : undefined;
-
-      const usdtAmt = (status === 'approved' && bRate > 0 && currentInrVal > 0)
-        ? Number((currentInrVal / bRate).toFixed(2))
-        : undefined;
+      // Real USDT typed -> use it as is (and work the rate out from it). Otherwise INR ÷ rate.
+      let usdtAmt = typedUsdt;
+      if (usdtAmt !== undefined && currentInrVal > 0) {
+        bRate = Number((currentInrVal / usdtAmt).toFixed(2));
+      } else if (usdtAmt === undefined && bRate > 0 && currentInrVal > 0) {
+        usdtAmt = Number((currentInrVal / bRate).toFixed(2));
+      }
 
       await api(`/sellers/withdrawals/${id}`, {
         method: 'PUT',
@@ -398,7 +410,7 @@ export default function AdminWithdrawals() {
       const bRate = (isCredit && adjustForm.binanceRate) ? Number(adjustForm.binanceRate) : undefined;
       const inrVal = (isCredit && adjustForm.inrAmount !== '' && adjustForm.inrAmount !== undefined)
         ? Number(adjustForm.inrAmount)
-        : (isCredit && amt > 0 ? Number((amt * 83.50).toFixed(2)) : undefined);
+        : undefined;
       const usdtVal = (isCredit && bRate > 0 && inrVal > 0)
         ? Number((inrVal / bRate).toFixed(2))
         : undefined;
@@ -841,27 +853,32 @@ export default function AdminWithdrawals() {
                     {/* Binance B.Rate & USDT Calculator (Admin Internal for both Deposits & Withdrawals) */}
                     {(() => {
                       const appNum = Number(currentApprovedAmt !== undefined && currentApprovedAmt !== '' ? currentApprovedAmt : (r.amount || 0));
-                      const defaultInr = appNum > 0 ? (appNum * 83.5).toFixed(0) : '';
+                      const defaultInr = '';
                       const currentInr = inrAmountMap[r._id] !== undefined
                         ? inrAmountMap[r._id]
                         : (r.inrAmount ? String(r.inrAmount) : defaultInr);
-                      const currentBRate = bRateMap[r._id] !== undefined ? bRateMap[r._id] : (r.binanceRate ? String(r.binanceRate) : '');
-                      const calcUsdt = (Number(currentInr) > 0 && Number(currentBRate) > 0)
-                        ? (Number(currentInr) / Number(currentBRate)).toFixed(2)
-                        : null;
+                      const currentBRate = bRateMap[r._id] !== undefined
+                        ? bRateMap[r._id]
+                        : (r.binanceRate ? String(r.binanceRate) : '');
+                      const typedUsdtVal = usdtMap[r._id] !== undefined ? usdtMap[r._id] : '';
+                      const calcUsdt = Number(typedUsdtVal) > 0
+                        ? Number(typedUsdtVal).toFixed(2)
+                        : (Number(currentInr) > 0 && Number(currentBRate) > 0)
+                          ? (Number(currentInr) / Number(currentBRate)).toFixed(2)
+                          : null;
 
                       return (
                         <div style={{
                           background: 'linear-gradient(135deg, #fefce8 0%, #fffdf0 100%)',
                           border: '1.5px solid #fde047',
-                          borderRadius: 8,
-                          padding: '10px 14px',
-                          marginBottom: 10,
+                          borderRadius: 10,
+                          padding: '12px 14px',
+                          marginBottom: 12,
                         }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                               <span style={{ fontSize: 16 }}>🟡</span>
-                              <b style={{ fontSize: 12, color: '#854d0e' }}>
+                              <b style={{ fontSize: 12.5, color: '#854d0e' }}>
                                 {isDeposit ? 'Binance USDT Rate & Deposit Conversion' : 'B.Rate & Binance USDT Conversion'}
                               </b>
                               <span style={{ fontSize: 10, background: '#fef9c3', color: '#a16207', padding: '1px 6px', borderRadius: 4, fontWeight: 700, border: '1px solid #fde047' }}>
@@ -869,7 +886,7 @@ export default function AdminWithdrawals() {
                               </span>
                             </div>
                             {calcUsdt && (
-                              <div style={{ background: '#16a34a', color: '#ffffff', padding: '3px 10px', borderRadius: 6, fontSize: 12.5, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 5 }}>
+                              <div style={{ background: '#16a34a', color: '#ffffff', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 5 }}>
                                 <span>💎 Binance USDT:</span>
                                 <span>{calcUsdt} USDT</span>
                               </div>
@@ -890,7 +907,7 @@ export default function AdminWithdrawals() {
                                 style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #fde047', background: '#ffffff', fontSize: 13, fontWeight: 700, color: '#0f172a' }}
                               />
                               <small style={{ fontSize: 10.5, color: '#a16207', display: 'block', marginTop: 2 }}>
-                                Auto: ${appNum} × 83.50 = ₹{(appNum * 83.5).toFixed(0)} (editable)
+                                Asli INR likhein jo is transaction me aaye / gaye
                               </small>
                             </div>
 
@@ -906,9 +923,29 @@ export default function AdminWithdrawals() {
                                 onChange={(e) => setBRateMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
                                 style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1.5px solid #eab308', background: '#ffffff', fontSize: 13, fontWeight: 800, color: '#854d0e' }}
                               />
-                              <small style={{ fontSize: 10.5, color: '#a16207', display: 'block', marginTop: 2 }}>
-                                Binance P2P rate (1 USDT = ₹{currentBRate || '...'})
-                              </small>
+                              {/* Quick Rate Preset Chips */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginTop: 4 }}>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: '#854d0e' }}>Presets:</span>
+                                {['89.50', '90.00', '90.50', '91.00', '91.50'].map((presetRate) => (
+                                  <button
+                                    key={presetRate}
+                                    type="button"
+                                    onClick={() => setBRateMap((prev) => ({ ...prev, [r._id]: presetRate }))}
+                                    style={{
+                                      padding: '2px 6px',
+                                      fontSize: 10.5,
+                                      fontWeight: 800,
+                                      borderRadius: 4,
+                                      border: '1px solid #fde047',
+                                      background: currentBRate === presetRate ? '#eab308' : '#fefce8',
+                                      color: currentBRate === presetRate ? '#ffffff' : '#854d0e',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    ₹{presetRate}
+                                  </button>
+                                ))}
+                              </div>
                             </div>
 
                             <div>
@@ -928,9 +965,18 @@ export default function AdminWithdrawals() {
                                 justifyContent: 'space-between',
                                 minHeight: 33,
                               }}>
-                                <span>{calcUsdt ? `${calcUsdt} USDT` : 'B.Rate enter karein'}</span>
-                                {calcUsdt && <span style={{ fontSize: 10.5, color: '#16a34a' }}>₹{currentInr} ÷ {currentBRate}</span>}
+                                <span>{calcUsdt ? `${calcUsdt} USDT` : 'USDT ya B.Rate enter karein'}</span>
+                                {calcUsdt && !(Number(typedUsdtVal) > 0) && <span style={{ fontSize: 10.5, color: '#16a34a' }}>₹{currentInr} ÷ {currentBRate}</span>}
                               </div>
+                              <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                placeholder="Asli USDT (Binance wali amount) e.g. 46.45"
+                                value={typedUsdtVal}
+                                onChange={(e) => setUsdtMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
+                                style={{ width: '100%', marginTop: 4, padding: '6px 10px', borderRadius: 6, border: '1.5px solid #86efac', background: '#ffffff', fontSize: 13, fontWeight: 800, color: '#15803d' }}
+                              />
                               <small style={{ fontSize: 10.5, color: '#a16207', display: 'block', marginTop: 2 }}>
                                 {isDeposit ? 'Indian Rupees se itni USDT bani (Admin Only)' : 'Indian Rupees se itni USDT bani'}
                               </small>
@@ -1815,300 +1861,15 @@ export default function AdminWithdrawals() {
       )}
 
       {/* DIRECT MANUAL WALLET ADJUSTMENT MODAL */}
-      {showAdjustModal && (() => {
-        const selectedSellerObj = sellersList.find((s) => String(s._id) === String(adjustForm.sellerId)) || sellersList[0];
-        const isDebit = adjustForm.type === 'debit';
-        const isExcessDebit = isDebit && Number(adjustForm.amount) > (selectedSellerObj?.wallet?.balance || 0);
-
-        return (
-          <div className="admin-modal-overlay" onClick={() => setShowAdjustModal(false)}>
-            <div className="admin-modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
-              <div className="modal-top">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ width: 38, height: 38, borderRadius: 10, background: 'linear-gradient(135deg, #eff6ff, #dbeafe)', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
-                    💳
-                  </div>
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: 17, fontWeight: 900 }}>Direct Seller Wallet Adjustment</h3>
-                    <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>
-                      Credit or debit vendor funds instantly with live balance synchronization.
-                    </p>
-                  </div>
-                </div>
-                <button type="button" className="btn-close-modal" onClick={() => setShowAdjustModal(false)}>
-                  <Ic name="x" size={18} />
-                </button>
-              </div>
-
-              {adjustMsg && <div className="alert-success mb-3" style={{ background: '#dcfce7', border: '1px solid #86efac', color: '#166534', padding: '10px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, marginBottom: 14 }}>{adjustMsg}</div>}
-              {adjustErr && <div className="alert-error mb-3" style={{ background: '#fee2e2', border: '1px solid #fca5a5', color: '#991b1b', padding: '10px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, marginBottom: 14 }}>{adjustErr}</div>}
-
-              <form onSubmit={handleManualAdjustSubmit} className="admin-modal-form">
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  {/* 1. SELLER SELECTOR & PREVIEW */}
-                  <div className="adjust-seller-section">
-                    <label style={{ fontSize: 12.5, fontWeight: 800, color: '#1e293b', display: 'block', marginBottom: 6 }}>
-                      Select Target Seller Store *
-                    </label>
-                    <div className="custom-seller-dropdown-wrap">
-                      <select
-                        className="custom-seller-select"
-                        value={adjustForm.sellerId}
-                        onChange={(e) => setAdjustForm((f) => ({ ...f, sellerId: e.target.value }))}
-                      >
-                        {sellersList.map((s) => (
-                          <option key={s._id} value={s._id}>
-                            🏬 {s.storeName} — Owner: {s.ownerName} (Balance: {money(s.wallet?.balance || 0)})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Selected Seller Profile Preview Card */}
-                    {selectedSellerObj && (
-                      <div className="selected-seller-preview-box">
-                        <div className="sspb-left">
-                          <div className="sspb-avatar">
-                            {(selectedSellerObj.storeName?.[0] || 'S').toUpperCase()}
-                          </div>
-                          <div className="sspb-info">
-                            <b className="sspb-name">{selectedSellerObj.storeName}</b>
-                            <span className="sspb-owner">
-                              Owner: {selectedSellerObj.ownerName} &bull; {selectedSellerObj.email}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="sspb-right">
-                          <span className="sspb-lbl">Available Balance</span>
-                          <b className="sspb-balance">{money(selectedSellerObj.wallet?.balance || 0)}</b>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 2. ADJUSTMENT ACTION SEGMENTED CARDS */}
-                  <div>
-                    <label style={{ fontSize: 12.5, fontWeight: 800, color: '#1e293b', display: 'block', marginBottom: 6 }}>
-                      Select Adjustment Action *
-                    </label>
-                    <div className="adjust-action-toggle-grid">
-                      <button
-                        type="button"
-                        className={`adjust-action-card credit ${!isDebit ? 'active' : ''}`}
-                        onClick={() => setAdjustForm((f) => ({ ...f, type: 'credit' }))}
-                      >
-                        <span className="aac-icon">💰</span>
-                        <div className="aac-text">
-                          <b>Credit Funds (+)</b>
-                          <small>Add funds directly to available wallet</small>
-                        </div>
-                        {!isDebit && <span className="aac-check">✓</span>}
-                      </button>
-
-                      <button
-                        type="button"
-                        className={`adjust-action-card debit ${isDebit ? 'active' : ''}`}
-                        onClick={() => setAdjustForm((f) => ({ ...f, type: 'debit' }))}
-                      >
-                        <span className="aac-icon">💸</span>
-                        <div className="aac-text">
-                          <b>Debit Funds (-)</b>
-                          <small>Deduct funds from available wallet</small>
-                        </div>
-                        {isDebit && <span className="aac-check">✓</span>}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 3. MULTI-CURRENCY CONVERTER WIDGET */}
-                  <div className="field-full">
-                    <CurrencyConverterWidget
-                      usdValue={adjustForm.amount}
-                      onUsdChange={(val) => setAdjustForm((f) => ({ ...f, amount: val }))}
-                      title="Manual Amount & Currency Converter"
-                      mode={adjustForm.type === 'credit' ? 'deposit' : 'withdraw'}
-                    />
-                  </div>
-
-                  {/* Helping Amount Input (Admin Internal • Hidden from Seller) */}
-                  {!isDebit && (
-                    <div style={{ background: '#faf5ff', border: '1.5px solid #c4b5fd', borderRadius: 8, padding: '10px 14px' }}>
-                      <label style={{ fontSize: 12, fontWeight: 800, color: '#7c3aed', display: 'block', marginBottom: 4 }}>
-                        🤝 Helping Amount ($ USD) <span style={{ fontSize: 10.5, fontWeight: 600, color: '#6b7280' }}>(Admin Internal • Hidden from Seller)</span>:
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        placeholder="0 (e.g. how much admin contributed as help)"
-                        value={adjustForm.helpingAmount}
-                        onChange={(e) => setAdjustForm((f) => ({ ...f, helpingAmount: e.target.value }))}
-                        style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #c4b5fd', background: '#ffffff', fontSize: 13, fontWeight: 700, color: '#6b21a8' }}
-                      />
-                      <small style={{ color: '#8b5cf6', fontSize: 11, marginTop: 4, display: 'block' }}>
-                        Admin ki taraf se di gayi help amount. Seller ko chat ya wallet mein ye amount show nahi hoga.
-                      </small>
-                    </div>
-                  )}
-
-                  {/* Binance USDT Rate & Calculator (Admin Internal • Hidden from Seller) */}
-                  {!isDebit && (() => {
-                    const adjustAppNum = Number(adjustForm.amount || 0);
-                    const adjustDefaultInr = adjustAppNum > 0 ? (adjustAppNum * 83.5).toFixed(0) : '';
-                    const adjustCurrentInr = adjustForm.inrAmount !== '' && adjustForm.inrAmount !== undefined
-                      ? adjustForm.inrAmount
-                      : adjustDefaultInr;
-                    const adjustBRate = adjustForm.binanceRate || '';
-                    const adjustCalcUsdt = (Number(adjustCurrentInr) > 0 && Number(adjustBRate) > 0)
-                      ? (Number(adjustCurrentInr) / Number(adjustBRate)).toFixed(2)
-                      : null;
-
-                    return (
-                      <div style={{
-                        background: 'linear-gradient(135deg, #fefce8 0%, #fffdf0 100%)',
-                        border: '1.5px solid #fde047',
-                        borderRadius: 8,
-                        padding: '12px 14px',
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ fontSize: 16 }}>🟡</span>
-                            <b style={{ fontSize: 12.5, color: '#854d0e' }}>Binance USDT Rate &amp; Conversion</b>
-                            <span style={{ fontSize: 10, background: '#fef9c3', color: '#a16207', padding: '1px 6px', borderRadius: 4, fontWeight: 700, border: '1px solid #fde047' }}>
-                              Admin Internal • Hidden from Seller
-                            </span>
-                          </div>
-                          {adjustCalcUsdt && (
-                            <div style={{ background: '#16a34a', color: '#ffffff', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 5 }}>
-                              <span>💎 Binance USDT:</span>
-                              <span>{adjustCalcUsdt} USDT</span>
-                            </div>
-                          )}
-                        </div>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
-                          <div>
-                            <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4, color: '#713f12' }}>
-                              🇮🇳 Indian Rupees Received / Value (₹ INR):
-                            </label>
-                            <input
-                              type="number"
-                              step="any"
-                              placeholder="e.g. 8350"
-                              value={adjustCurrentInr}
-                              onChange={(e) => setAdjustForm((f) => ({ ...f, inrAmount: e.target.value }))}
-                              style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #fde047', background: '#ffffff', fontSize: 13, fontWeight: 700, color: '#0f172a' }}
-                            />
-                            <small style={{ fontSize: 10.5, color: '#a16207', display: 'block', marginTop: 2 }}>
-                              {adjustAppNum > 0 ? `Auto: $${adjustAppNum} × 83.50 = ₹${(adjustAppNum * 83.5).toFixed(0)} (editable)` : 'Enter USD amount above'}
-                            </small>
-                          </div>
-
-                          <div>
-                            <label style={{ fontSize: 11, fontWeight: 800, display: 'block', marginBottom: 4, color: '#854d0e' }}>
-                              🟡 Binance USDT Rate (₹/USDT):
-                            </label>
-                            <input
-                              type="number"
-                              step="any"
-                              placeholder="e.g. 90.00"
-                              value={adjustBRate}
-                              onChange={(e) => setAdjustForm((f) => ({ ...f, binanceRate: e.target.value }))}
-                              style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1.5px solid #eab308', background: '#ffffff', fontSize: 13, fontWeight: 800, color: '#854d0e' }}
-                            />
-                            <small style={{ fontSize: 10.5, color: '#a16207', display: 'block', marginTop: 2 }}>
-                              Binance P2P USDT rate (1 USDT = ₹{adjustBRate || '...'})
-                            </small>
-                          </div>
-
-                          <div>
-                            <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4, color: '#713f12' }}>
-                              💎 Converted Binance USDT:
-                            </label>
-                            <div style={{
-                              padding: '6px 10px',
-                              borderRadius: 6,
-                              background: adjustCalcUsdt ? '#ecfdf5' : '#f8fafc',
-                              border: `1.5px solid ${adjustCalcUsdt ? '#86efac' : '#cbd5e1'}`,
-                              fontSize: 13,
-                              fontWeight: 800,
-                              color: adjustCalcUsdt ? '#15803d' : '#94a3b8',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              minHeight: 33,
-                            }}>
-                              <span>{adjustCalcUsdt ? `${adjustCalcUsdt} USDT` : 'Binance rate daalein'}</span>
-                              {adjustCalcUsdt && <span style={{ fontSize: 10.5, color: '#16a34a' }}>₹{adjustCurrentInr} ÷ {adjustBRate}</span>}
-                            </div>
-                            <small style={{ fontSize: 10.5, color: '#a16207', display: 'block', marginTop: 2 }}>
-                              Sirf Admin record ke liye (seller ko nahi dikhega)
-                            </small>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Excess Debit Warning */}
-                  {isExcessDebit && (
-                    <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      ⚠️ Warning: Debit amount (${adjustForm.amount}) exceeds seller's current balance ({money(selectedSellerObj?.wallet?.balance || 0)}). Wallet will go negative.
-                    </div>
-                  )}
-
-                  {/* 4. REASON & REF INPUTS */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
-                        Reason / Notes * <span className="muted-sm">(Visible to seller)</span>
-                      </label>
-                      <input
-                        placeholder="e.g. Bank wire deposit verified / Bonus / Penalty"
-                        value={adjustForm.reason}
-                        onChange={(e) => setAdjustForm((f) => ({ ...f, reason: e.target.value }))}
-                        required
-                        style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #cbd5e1', fontSize: 13 }}
-                      />
-                    </div>
-
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
-                        Payment Ref / UTR <span className="muted-sm">(Optional)</span>
-                      </label>
-                      <input
-                        placeholder="e.g. UTR1234567890 / Cash Receipt #"
-                        value={adjustForm.reference}
-                        onChange={(e) => setAdjustForm((f) => ({ ...f, reference: e.target.value }))}
-                        style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #cbd5e1', fontSize: 13 }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* 5. MODAL BOTTOM ACTIONS */}
-                <div className="modal-bottom-actions mt-4">
-                  <button type="button" className="btn-cancel" onClick={() => setShowAdjustModal(false)}>
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn-primary"
-                    disabled={adjusting || !adjustForm.amount || Number(adjustForm.amount) <= 0}
-                    style={{
-                      background: isDebit ? 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)' : 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)',
-                      borderColor: isDebit ? '#b91c1c' : '#15803d',
-                      boxShadow: isDebit ? '0 2px 8px rgba(220, 38, 38, 0.3)' : '0 2px 8px rgba(22, 163, 74, 0.3)',
-                    }}
-                  >
-                    {adjusting ? 'Processing Adjustment...' : isDebit ? `💸 Confirm Debit $${adjustForm.amount || 0} USD` : `💰 Confirm Credit +$${adjustForm.amount || 0} USD`}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        );
-      })()}
+      <AddFundsModal
+        isOpen={showAdjustModal}
+        onClose={() => setShowAdjustModal(false)}
+        sellers={sellersList}
+        onSuccess={() => {
+          load();
+          loadDepositsLedger();
+        }}
+      />
 
       {/* Split Deposit Helping Amount Modal */}
       <SplitDepositModal

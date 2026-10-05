@@ -15,7 +15,7 @@ export async function GET(req) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
 
-    const member = await Member.findById(session._id).select('-passwordHash');
+    const member = await Member.findById(session._id).select('-passwordHash -plainPassword');
     if (!member) {
       return NextResponse.json({ message: 'User not found' }, { status: 404 });
     }

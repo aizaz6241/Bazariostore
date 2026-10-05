@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { sapi, fmtDay, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
@@ -80,6 +80,7 @@ export default function SellerWallet() {
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const submitLockRef = useRef(false);
 
   // Limit Increase Modal
   const [limitModalOpen, setLimitModalOpen] = useState(false);
@@ -308,6 +309,7 @@ export default function SellerWallet() {
 
   const handleDeposit = async (e) => {
     e.preventDefault();
+    if (submitLockRef.current) return;
     setErr('');
     setMsg('');
 
@@ -321,6 +323,7 @@ export default function SellerWallet() {
       return;
     }
 
+    submitLockRef.current = true;
     setSubmitting(true);
     try {
       const res = await sapi('/sellers/wallet/deposit', {
@@ -360,12 +363,14 @@ export default function SellerWallet() {
     } catch (e) {
       setErr(e.message || 'Failed to submit deposit request. Please check your connection.');
     } finally {
+      submitLockRef.current = false;
       setSubmitting(false);
     }
   };
 
   const handleWithdraw = async (e) => {
     e.preventDefault();
+    if (submitLockRef.current) return;
     setErr('');
     setMsg('');
 
@@ -422,6 +427,7 @@ export default function SellerWallet() {
       }
     }
 
+    submitLockRef.current = true;
     setSubmitting(true);
     try {
       await sapi('/sellers/wallet/withdraw', {
@@ -463,6 +469,7 @@ export default function SellerWallet() {
     } catch (e) {
       setErr(e.message || 'Failed to submit withdrawal request');
     } finally {
+      submitLockRef.current = false;
       setSubmitting(false);
     }
   };
