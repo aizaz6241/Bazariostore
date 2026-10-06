@@ -7,6 +7,7 @@ import RewardClaim from '@/lib/models/RewardClaim';
 import { syncEcommerceAdmins } from '@/lib/adminSync';
 import { loadTeamStats, OPEN_ORDER_STATUSES } from '@/lib/utils/teamStats';
 import { getWalletBalancesMap, EMPTY_WALLET } from '@/lib/utils/wallet';
+import { getLedgerStats, dashboardFinance } from '@/lib/utils/ledgerStats';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,21 +21,20 @@ export async function GET(req) {
     if (session.role === 'admin') {
       await syncEcommerceAdmins();
 
-      const [totalSellers, sellersWithWallet, pendingClaimsCount, pendingOrdersCount, allMembers] = await Promise.all([
+      const [totalSellers, ledgerStats, pendingClaimsCount, pendingOrdersCount, allMembers] = await Promise.all([
         Seller.countDocuments(CLIENT_SELLER_FILTER),
-        Seller.find(CLIENT_SELLER_FILTER).select('wallet.totalDeposited wallet.totalWithdrawn').lean(),
+        getLedgerStats(),
         RewardClaim.countDocuments({ status: 'pending' }),
         Order.countDocuments({ status: { $in: OPEN_ORDER_STATUSES } }),
         Member.find({ role: 'member', active: true }).select('name username phone avatar').lean(),
       ]);
 
-      let totalDepositsINR = 0;
-      let totalWithdrawalsINR = 0;
-      sellersWithWallet.forEach((s) => {
-        totalDepositsINR += Number(s.wallet?.totalDeposited || 0);
-        totalWithdrawalsINR += Number(s.wallet?.totalWithdrawn || 0);
-      });
-      const netFundsINR = totalDepositsINR - totalWithdrawalsINR;
+      // All money on this screen is REAL BINANCE USDT from the finance ledger. (The fields keep
+      // their old "...INR" names so every screen that reads them keeps working.)
+      const finance = dashboardFinance(ledgerStats);
+      const totalDepositsINR = finance.inUSDT;
+      const totalWithdrawalsINR = finance.outUSDT;
+      const netFundsINR = finance.balanceUSDT;
 
       // One batch for the whole team (was several queries per member)
       const [team, wallets] = await Promise.all([loadTeamStats(allMembers), getWalletBalancesMap().catch(() => new Map())]);
@@ -52,6 +52,8 @@ export async function GET(req) {
           totalDepositsINR: t.totalDeposits,
           totalWithdrawalsINR: t.totalWithdrawals,
           netVolumeINR: t.totalDeposits - t.totalWithdrawals,
+          depositsCount: t.depositsCount || 0,
+          earnedUSDT: mWallet.totalEarnedUSDT || 0,
           totalBonusesPKR: t.totalBonusesPKR,
           walletBalanceUSDT: mWallet.balanceUSDT || 0,
           walletBalancePKR: mWallet.balancePKR,
@@ -73,7 +75,7 @@ export async function GET(req) {
       if (staffList.length > 0) {
         topDepositor = [...staffList].sort((a, b) => b.totalDepositsINR - a.totalDepositsINR)[0];
         topWithdrawer = [...staffList].sort((a, b) => b.totalWithdrawalsINR - a.totalWithdrawalsINR)[0];
-        topEarner = [...staffList].sort((a, b) => b.walletBalanceUSDT - a.walletBalanceUSDT)[0];
+        topEarner = [...staffList].sort((a, b) => b.earnedUSDT - a.earnedUSDT || b.walletBalanceUSDT - a.walletBalanceUSDT)[0];
         topSellerManager = [...staffList].sort((a, b) => b.assignedSellersCount - a.assignedSellersCount)[0];
 
         staffList.forEach((s) => {
@@ -95,6 +97,7 @@ export async function GET(req) {
         pendingClaimsCount,
         pendingOrdersCount,
         adminWallet,
+        finance,
         staffAnalytics: {
           staffList: staffList.sort((a, b) => b.totalDepositsINR - a.totalDepositsINR),
           topDepositor,
@@ -111,8 +114,9 @@ export async function GET(req) {
 
     // ─── Member dashboard ───
     const me = { _id: session._id };
-    const [team, pendingClaimsCount] = await Promise.all([
+    const [team, ledgerStats, pendingClaimsCount] = await Promise.all([
       loadTeamStats([me]),
+      getLedgerStats(),
       RewardClaim.countDocuments({ memberId: session._id, status: 'pending' }),
     ]);
     const mine = team.get(String(session._id));
@@ -126,6 +130,7 @@ export async function GET(req) {
       walletBalancePKR: memberWallet.balancePKR ?? 0,
       walletBalanceINR: memberWallet.balanceINR ?? 0,
       memberWallet,
+      finance: dashboardFinance(ledgerStats, { ownerId: String(session._id) }),
       totalBonusesPKR: mine.totalBonusesPKR,
       pendingOrdersCount: mine.pendingOrdersCount,
       pendingClaimsCount,

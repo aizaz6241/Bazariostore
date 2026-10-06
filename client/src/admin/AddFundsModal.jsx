@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { api, money } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
+import SellerSelectDropdown from './SellerSelectDropdown.jsx';
 
 const FALLBACK_INR_RATE = 83.5; // used only if the live rate has not loaded
 const BINANCE_RATE_PRESETS = ['89.50', '90.00', '90.50', '91.00', '91.50'];
@@ -243,40 +244,68 @@ export default function AddFundsModal({
           {/* 1. SELLER SELECTION & PREVIEW */}
           <div className="afm-section">
             <label className="afm-label">
-              <span>1. Select Target Merchant Store *</span>
-              <span className="afm-label-sub">{sellersList.length} Stores Available</span>
+              <span>1. Target Merchant Store *</span>
+              <span className="afm-label-sub">
+                {sellersList.length} Stores Available &bull; Searchable
+              </span>
             </label>
-            <div className="afm-select-wrap">
-              <select
-                className="afm-select"
-                value={selectedSellerId}
-                onChange={(e) => setSelectedSellerId(e.target.value)}
-                required
-              >
-                {sellersList.map((s) => (
-                  <option key={s._id} value={s._id}>
-                    🏬 {s.storeName} — Owner: {s.ownerName || 'N/A'} (Balance: {money(s.wallet?.balance || 0)})
-                  </option>
-                ))}
-              </select>
-            </div>
 
-            {/* Selected Seller Preview Box */}
+            <SellerSelectDropdown
+              sellers={sellersList}
+              value={selectedSellerId}
+              onChange={(id) => setSelectedSellerId(id)}
+              inrRate={INR_RATE}
+              placeholder="-- Choose target merchant store --"
+            />
+
+            {/* Selected Seller Rich Preview Card */}
             {selectedSeller && (
-              <div className="afm-seller-preview">
-                <div className="afm-seller-avatar">
-                  {(selectedSeller.storeName?.[0] || 'S').toUpperCase()}
+              <div className="afm-seller-card-rich">
+                <div className="afm-scr-left">
+                  <div className="afm-scr-avatar">
+                    {(selectedSeller.storeName?.[0] || 'S').toUpperCase()}
+                  </div>
+                  <div className="afm-scr-details">
+                    <div className="afm-scr-title-line">
+                      <b className="afm-scr-store-name">{selectedSeller.storeName}</b>
+                      {(selectedSeller.isTestAccount || selectedSeller.accountType === 'test') && (
+                        <span className="seller-picker-badge-test">Test Store</span>
+                      )}
+                    </div>
+                    <div className="afm-scr-meta-row">
+                      <span className="afm-scr-meta-item">
+                        Owner: <b>{selectedSeller.ownerName || 'Merchant'}</b>
+                      </span>
+                      {selectedSeller.email && (
+                        <>
+                          <span>&bull;</span>
+                          <span className="afm-scr-meta-item">{selectedSeller.email}</span>
+                        </>
+                      )}
+                      {(selectedSeller.phone || selectedSeller.contact?.phone) && (
+                        <>
+                          <span>&bull;</span>
+                          <span className="afm-scr-meta-item">📞 {selectedSeller.phone || selectedSeller.contact?.phone}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="afm-seller-meta">
-                  <b className="afm-seller-name">{selectedSeller.storeName}</b>
-                  <span className="afm-seller-owner">
-                    Owner: {selectedSeller.ownerName || 'Merchant'} &bull; {selectedSeller.email}
-                  </span>
-                </div>
-                <div className="afm-seller-balance-box">
-                  <span className="afm-balance-lbl">Available Wallet</span>
-                  <b className="afm-balance-val">{money(currentBalance)}</b>
-                  <small className="afm-balance-inr">≈ ₹{(currentBalance * INR_RATE).toLocaleString('en-IN', { maximumFractionDigits: 0 })} INR</small>
+
+                <div className="afm-scr-balances">
+                  <div className="afm-scr-bal-box">
+                    <span className="afm-scr-bal-lbl">Available Wallet</span>
+                    <b className="afm-scr-bal-usd">{money(currentBalance)}</b>
+                    <span className="afm-scr-bal-inr">
+                      ≈ ₹{(currentBalance * INR_RATE).toLocaleString('en-IN', { maximumFractionDigits: 0 })} INR
+                    </span>
+                  </div>
+                  {(selectedSeller.wallet?.processingFund || 0) > 0 && (
+                    <div className="afm-scr-bal-locked" title="Processing funds currently locked in confirmed orders">
+                      <span className="afm-scr-locked-lbl">Locked Funds</span>
+                      <b className="afm-scr-locked-usd">{money(selectedSeller.wallet.processingFund)}</b>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

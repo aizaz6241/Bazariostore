@@ -185,9 +185,9 @@ async function describe(action, payload) {
       );
       if (!x.toOwner) details.push('The correct seller is not assigned to anyone yet: the deposit waits on the “not counted yet” list until it is.');
     } else {
-      summary = `Reverse a deposit of ${amountText} added to “${x.from.storeName}” by mistake`;
+      summary = `Remove a deposit of ${amountText} added to “${x.from.storeName}” by mistake (deduct it from that seller)`;
       details.push(`Store wallet: $${money(x.amount)} is taken back from “${x.from.storeName}” and the deposit is closed.`);
-      details.push(x.counted ? `Finance: ₮${money(x.usdt)} leaves the ledger (it was divided for ${ownerWords(x.fromOwner)}). Use this only when no money really came.` : 'Finance: it was not counted yet, so no wallet changes.');
+      details.push(x.counted ? `Finance: ₮${money(x.usdt)} leaves the ledger (it was divided for ${ownerWords(x.fromOwner)}). Correct only if this money is already counted on another deposit (added again for the right seller), or never came.` : 'Finance: it was not counted yet, so no wallet changes.');
     }
     if (x.shares) details.push(`Now: ${x.shares.map((s) => `${s.name} ₮${money(s.amountUSDT)}`).join(', ')}`);
     if (p.note) details.push(`Note: ${p.note}`);

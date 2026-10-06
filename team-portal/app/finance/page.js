@@ -488,7 +488,7 @@ function FixDepositModal({ row, data, onClose, onSaved }) {
           <div className="grid grid-cols-2 gap-2">
             {[
               { key: 'move', label: 'Move to the correct seller' },
-              { key: 'reverse', label: 'Reverse it (no money came)' },
+              { key: 'reverse', label: 'Remove it (deduct from this seller)' },
             ].map((k) => (
               <button
                 key={k.key}
@@ -564,7 +564,10 @@ function FixDepositModal({ row, data, onClose, onSaved }) {
                 ${fmt(row.walletAmount)} is taken back from the store wallet of <b>{row.storeName}</b> and the deposit is closed.
                 {row.usdt > 0 ? ` ₮${fmt(row.usdt)} leaves the Binance ledger.` : ''}
               </p>
-              <p>Use this only when the money never came (typed twice, wrong amount). If the money came but for another seller, use “Move”.</p>
+              <p>
+                Use this when the correct seller <b>already has a deposit of its own</b> for this money (you added it again for the right seller), or when it was typed twice / no money came.
+              </p>
+              <p>If the correct seller has not received it yet, use “Move” instead, so the money is not lost from the count.</p>
             </div>
           )}
 

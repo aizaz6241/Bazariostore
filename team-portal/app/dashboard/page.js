@@ -25,6 +25,7 @@ import {
 import WalletModal from '@/components/WalletModal';
 import { readCache, writeCache } from '@/lib/clientCache';
 import { useLiveRefresh } from '@/components/LiveProvider';
+import DashboardInsights from '@/components/DashboardInsights';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -94,7 +95,7 @@ export default function DashboardPage() {
             <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-xl">
               {isAdmin
                 ? 'Supervise team members, assign new seller stores, monitor deposit milestones, and approve bonus disbursements.'
-                : 'Manage your assigned ecommerce sellers, track live INR deposits and withdrawals, and hit your 5 Lakh weekly bonus sprint!'}
+                : 'Manage your assigned ecommerce sellers, track real Binance USDT deposits and withdrawals, and hit your 5 Lakh weekly bonus sprint!'}
             </p>
           </div>
 
@@ -171,9 +172,9 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 <div>
-                  <p className="text-amber-100/80 text-[10px] uppercase font-bold">Platform Total Deposits</p>
+                  <p className="text-amber-100/80 text-[10px] uppercase font-bold">Binance Deposits (All Sellers)</p>
                   <p className="text-base font-extrabold text-white">
-                    ${(stats?.totalDepositsINR || 0).toLocaleString()}
+                    ₮{(stats?.totalDepositsINR || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT
                   </p>
                 </div>
                 <div>
@@ -234,9 +235,9 @@ export default function DashboardPage() {
                 <TrendingUp className="w-4 h-4 text-emerald-600" />
               </div>
               <p className="text-xl sm:text-2xl font-extrabold text-emerald-600">
-                ${(stats?.totalDepositsINR || 0).toLocaleString()}
+                ₮{(stats?.totalDepositsINR || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
-              <p className="text-[11px] text-slate-400 mt-1">Store wallet deposits ($)</p>
+              <p className="text-[11px] text-slate-400 mt-1">Real USDT received in Binance</p>
             </div>
 
             <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-sm">
@@ -278,15 +279,15 @@ export default function DashboardPage() {
                 {/* Sub-breakdown */}
                 <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-white/20 text-xs">
                   <div>
-                    <p className="text-emerald-100/80 text-[10px]">Deposits (+)</p>
+                    <p className="text-emerald-100/80 text-[10px]">My stores deposited</p>
                     <p className="font-bold text-white text-xs sm:text-sm">
-                      ${(stats?.totalDepositsINR || 0).toLocaleString()}
+                      ₮{(stats?.totalDepositsINR || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                   </div>
                   <div>
-                    <p className="text-emerald-100/80 text-[10px]">Withdrawals (-)</p>
+                    <p className="text-emerald-100/80 text-[10px]">My stores withdrew</p>
                     <p className="font-bold text-white text-xs sm:text-sm">
-                      ${(stats?.totalWithdrawalsINR || 0).toLocaleString()}
+                      ₮{(stats?.totalWithdrawalsINR || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                   </div>
                   <div>
@@ -352,6 +353,9 @@ export default function DashboardPage() {
         )}
       </div>
 
+      {/* ─── Binance analytics (partners: whole business, member: own stores) ─── */}
+      <DashboardInsights finance={stats?.finance} isAdmin={isAdmin} />
+
       {/* ─── ADMIN: Staff Analytics & Performance Hub ─── */}
       {isAdmin && stats?.staffAnalytics && (
         <div className="space-y-4">
@@ -362,7 +366,7 @@ export default function DashboardPage() {
                 <span>Staff Analytics & Performance Hub</span>
               </h2>
               <p className="text-xs text-slate-500">
-                Comparative ranking across deposits, withdrawals, earned wallet balance, and active seller clients.
+                Members ranked by the real Binance USDT their stores brought in, what their stores withdrew, and what they earned.
               </p>
             </div>
 
@@ -391,10 +395,10 @@ export default function DashboardPage() {
                 {stats.staffAnalytics.topDepositor?.name || 'No members yet'}
               </p>
               <p className="text-lg font-black text-emerald-600">
-                ${(stats.staffAnalytics.topDepositor?.totalDepositsINR || 0).toLocaleString()}
+                ₮{(stats.staffAnalytics.topDepositor?.totalDepositsINR || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT
               </p>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                {stats.staffAnalytics.topDepositor?.assignedSellersCount || 0} stores assigned
+                Real Binance USDT • {stats.staffAnalytics.topDepositor?.depositsCount || 0} deposits • {stats.staffAnalytics.topDepositor?.assignedSellersCount || 0} stores
               </p>
             </div>
 
@@ -413,10 +417,10 @@ export default function DashboardPage() {
                 {stats.staffAnalytics.topWithdrawer?.name || 'No members yet'}
               </p>
               <p className="text-lg font-black text-slate-700">
-                ${(stats.staffAnalytics.topWithdrawer?.totalWithdrawalsINR || 0).toLocaleString()}
+                ₮{(stats.staffAnalytics.topWithdrawer?.totalWithdrawalsINR || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT
               </p>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Processed client payouts
+                Paid from Binance to their stores
               </p>
             </div>
 
@@ -428,17 +432,17 @@ export default function DashboardPage() {
                   <span>Highest Earned</span>
                 </span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500 text-white font-bold">
-                  Top Wallet
+                  Top Earner
                 </span>
               </div>
               <p className="text-base font-extrabold text-slate-900 mt-2 truncate">
                 {stats.staffAnalytics.topEarner?.name || 'No members yet'}
               </p>
               <p className="text-lg font-black text-amber-600">
-                ₮{(stats.staffAnalytics.topEarner?.walletBalanceUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT
+                ₮{(stats.staffAnalytics.topEarner?.earnedUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT
               </p>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Includes Rs. {(stats.staffAnalytics.topEarner?.totalBonusesPKR || 0).toLocaleString()} bonus
+                Total earned • wallet now ₮{(stats.staffAnalytics.topEarner?.walletBalanceUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             </div>
 
@@ -487,9 +491,9 @@ export default function DashboardPage() {
                     <tr>
                       <th className="py-3 px-4">Member Name</th>
                       <th className="py-3 px-4 text-center">Stores</th>
-                      <th className="py-3 px-4 text-right">Deposited</th>
-                      <th className="py-3 px-4 text-right">Withdrawn</th>
-                      <th className="py-3 px-4 text-right">Net Volume</th>
+                      <th className="py-3 px-4 text-right">Stores Deposited (USDT)</th>
+                      <th className="py-3 px-4 text-right">Stores Withdrew (USDT)</th>
+                      <th className="py-3 px-4 text-right">Earned (USDT)</th>
                       <th className="py-3 px-4 text-right">Bonuses</th>
                       <th className="py-3 px-4 text-right">Member Wallet (USDT)</th>
                       <th className="py-3 px-4 text-center">Orders</th>
@@ -519,15 +523,15 @@ export default function DashboardPage() {
                         </td>
 
                         <td className="py-3 px-4 text-right font-bold text-emerald-600">
-                          ${(staff.totalDepositsINR || 0).toLocaleString()}
+                          ₮{(staff.totalDepositsINR || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
 
                         <td className="py-3 px-4 text-right text-slate-600">
-                          ${(staff.totalWithdrawalsINR || 0).toLocaleString()}
+                          ₮{(staff.totalWithdrawalsINR || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
 
                         <td className="py-3 px-4 text-right font-semibold text-slate-800">
-                          ${(staff.netVolumeINR || 0).toLocaleString()}
+                          ₮{(staff.earnedUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
 
                         <td className="py-3 px-4 text-right font-semibold text-amber-600">

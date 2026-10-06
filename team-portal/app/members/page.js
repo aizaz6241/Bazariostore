@@ -443,7 +443,7 @@ export default function MembersPage() {
                         Deposited
                       </span>
                       <span className="text-sm font-extrabold text-emerald-600">
-                        ${(member.totalDepositsINR || 0).toLocaleString()}
+                        ₮{(member.totalDepositsINR || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
 
@@ -452,7 +452,7 @@ export default function MembersPage() {
                         Withdrawn
                       </span>
                       <span className="text-sm font-extrabold text-slate-600">
-                        ${(member.totalWithdrawalsINR || 0).toLocaleString()}
+                        ₮{(member.totalWithdrawalsINR || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
 
@@ -598,7 +598,7 @@ export default function MembersPage() {
                                   Deposit
                                 </span>
                                 <span className="font-bold text-emerald-600">
-                                  ${(seller.wallet?.totalDeposited || 0).toLocaleString()}
+                                  ₮{(seller.binance?.depositUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </span>
                               </div>
 
@@ -607,16 +607,16 @@ export default function MembersPage() {
                                   Withdraw
                                 </span>
                                 <span className="font-bold text-slate-600">
-                                  ${(seller.wallet?.totalWithdrawn || 0).toLocaleString()}
+                                  ₮{(seller.binance?.withdrawUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </span>
                               </div>
 
                               <div>
                                 <span className="text-[10px] text-slate-400 block font-medium">
-                                  Remaining
+                                  Net in Binance
                                 </span>
                                 <span className="font-bold text-brand-700">
-                                  ${(seller.wallet?.netRemaining || 0).toLocaleString()}
+                                  ₮{(seller.binance?.netUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </span>
                               </div>
 

@@ -1,0 +1,642 @@
+/* ==========================================================================
+   BAZARIO SELLER SELECT DROPDOWN / PICKER STYLESHEET
+   Professional, high-contrast, searchable merchant store selector
+   ========================================================================== */
+
+.seller-picker-wrap {
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* ─── 1. Trigger Display Button ─── */
+.seller-picker-trigger {
+  width: 100%;
+  padding: 10px 14px;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.18s ease;
+  box-sizing: border-box;
+  font-family: inherit;
+  min-height: 52px;
+}
+
+.seller-picker-trigger:hover:not(:disabled) {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.seller-picker-trigger.is-open {
+  border-color: #2563eb;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+
+.seller-picker-trigger:disabled {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.seller-picker-trigger-content {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* Store Avatar Circle */
+.seller-picker-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 900;
+  flex-shrink: 0;
+  box-shadow: 0 2px 5px rgba(37, 99, 235, 0.2);
+  text-transform: uppercase;
+}
+
+.seller-picker-placeholder {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #64748b;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.seller-picker-placeholder-icon {
+  font-size: 18px;
+}
+
+.seller-picker-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+}
+
+.seller-picker-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.seller-picker-store-name {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+
+.seller-picker-badge-test {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.seller-picker-sub {
+  font-size: 11.5px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.seller-picker-owner {
+  color: #475569;
+  font-weight: 600;
+}
+
+.seller-picker-email {
+  color: #64748b;
+}
+
+/* Balance on the right side of trigger */
+.seller-picker-trigger-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.seller-picker-balance-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  padding: 3px 9px;
+  border-radius: 7px;
+}
+
+.seller-picker-balance-usd {
+  font-size: 13px;
+  font-weight: 900;
+  color: #15803d;
+  line-height: 1.2;
+}
+
+.seller-picker-balance-inr {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #0284c7;
+  line-height: 1.2;
+}
+
+.seller-picker-chevron {
+  color: #64748b;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.seller-picker-chevron.is-rotated {
+  transform: rotate(180deg);
+  color: #2563eb;
+}
+
+/* ─── 2. Floating Dropdown Menu Panel ─── */
+.seller-picker-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 12px;
+  box-shadow: 0 16px 40px -6px rgba(15, 23, 42, 0.22), 0 4px 12px rgba(15, 23, 42, 0.08);
+  z-index: 1050;
+  overflow: hidden;
+  animation: sellerPickerSlideDown 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes sellerPickerSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Search bar inside dropdown */
+.seller-picker-search-bar {
+  padding: 10px 12px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.seller-picker-search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.seller-picker-search-icon {
+  position: absolute;
+  left: 11px;
+  color: #94a3b8;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+}
+
+.seller-picker-search-input {
+  width: 100%;
+  padding: 8px 32px 8px 34px;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #0f172a;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  box-sizing: border-box;
+}
+
+.seller-picker-search-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.seller-picker-search-clear {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.seller-picker-search-clear:hover {
+  color: #0f172a;
+  background: #f1f5f9;
+}
+
+.seller-picker-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  padding: 0 2px;
+}
+
+.seller-picker-count-badge {
+  color: #2563eb;
+}
+
+/* ─── 3. Scrollable List of Sellers ─── */
+.seller-picker-list {
+  max-height: 290px;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* Custom scrollbar */
+.seller-picker-list::-webkit-scrollbar {
+  width: 6px;
+}
+.seller-picker-list::-webkit-scrollbar-track {
+  background: #f8fafc;
+}
+.seller-picker-list::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+.seller-picker-list::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* ─── 4. Seller Option Item Card ─── */
+.seller-picker-item {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+
+.seller-picker-item:hover {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
+.seller-picker-item.is-selected {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.seller-picker-item.is-selected:hover {
+  background: #dbeafe;
+}
+
+.seller-picker-item-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.seller-picker-item-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.seller-picker-item-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.seller-picker-item-name {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.seller-picker-item-sub {
+  font-size: 11.5px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.seller-picker-item-sub b {
+  color: #334155;
+  font-weight: 700;
+}
+
+.seller-picker-item-right {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-shrink: 0;
+}
+
+.seller-picker-item-balance {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.seller-picker-item-usd {
+  font-size: 13px;
+  font-weight: 900;
+  color: #15803d;
+}
+
+.seller-picker-item-inr {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #0284c7;
+}
+
+.seller-picker-item-locked {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #b45309;
+  background: #fef3c7;
+  padding: 1px 4px;
+  border-radius: 3px;
+  margin-top: 1px;
+}
+
+.seller-picker-check {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 900;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.3);
+}
+
+/* ─── 5. Empty Search State ─── */
+.seller-picker-empty {
+  padding: 24px 16px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: #64748b;
+}
+
+.seller-picker-empty-icon {
+  font-size: 26px;
+}
+
+.seller-picker-empty-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+  margin: 0;
+}
+
+.seller-picker-empty-desc {
+  font-size: 11.5px;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.seller-picker-clear-search-btn {
+  margin-top: 4px;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #2563eb;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.seller-picker-clear-search-btn:hover {
+  background: #e2e8f0;
+  color: #1d4ed8;
+}
+
+/* ─── 6. High-Impact Selected Seller Profile Card ─── */
+.afm-seller-card-rich {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.afm-scr-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.afm-scr-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 900;
+  flex-shrink: 0;
+  box-shadow: 0 3px 8px rgba(37, 99, 235, 0.25);
+  text-transform: uppercase;
+}
+
+.afm-scr-details {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 3px;
+}
+
+.afm-scr-title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.afm-scr-store-name {
+  font-size: 15px;
+  font-weight: 900;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.afm-scr-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #64748b;
+  flex-wrap: wrap;
+}
+
+.afm-scr-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.afm-scr-meta-item b {
+  color: #334155;
+}
+
+.afm-scr-balances {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.afm-scr-bal-box {
+  background: #ffffff;
+  border: 1.5px solid #dcfce7;
+  padding: 8px 12px;
+  border-radius: 9px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  box-shadow: 0 1px 3px rgba(16, 185, 129, 0.08);
+}
+
+.afm-scr-bal-lbl {
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #15803d;
+  letter-spacing: 0.3px;
+}
+
+.afm-scr-bal-usd {
+  font-size: 17px;
+  font-weight: 900;
+  color: #166534;
+  line-height: 1.15;
+}
+
+.afm-scr-bal-inr {
+  font-size: 11px;
+  font-weight: 700;
+  color: #0284c7;
+  margin-top: 1px;
+}
+
+.afm-scr-bal-locked {
+  background: #fffbeb;
+  border: 1.5px solid #fef3c7;
+  padding: 8px 12px;
+  border-radius: 9px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.afm-scr-locked-lbl {
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #b45309;
+  letter-spacing: 0.3px;
+}
+
+.afm-scr-locked-usd {
+  font-size: 15px;
+  font-weight: 900;
+  color: #92400e;
+  line-height: 1.15;
+}
+
+@media (max-width: 600px) {
+  .afm-seller-card-rich {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .afm-scr-balances {
+    justify-content: space-between;
+  }
+}

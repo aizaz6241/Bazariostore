@@ -298,7 +298,7 @@ export default function SellersPage() {
                   {isAdmin && <th className="py-3 px-4">Assigned Member (Wallet)</th>}
                   <th className="py-3 px-4 text-right">Deposited</th>
                   <th className="py-3 px-4 text-right">Withdrawn</th>
-                  <th className="py-3 px-4 text-right">Remaining</th>
+                  <th className="py-3 px-4 text-right">Net in Binance</th>
                   <th className="py-3 px-4 text-center">Orders</th>
                   <th className="py-3 px-4 text-center">Actions</th>
                 </tr>
@@ -390,15 +390,15 @@ export default function SellersPage() {
                       )}
 
                       <td className="py-3 px-4 text-right font-bold text-emerald-600">
-                        ${(seller.wallet?.totalDeposited || 0).toLocaleString()}
+                        ₮{(seller.binance?.depositUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
 
                       <td className="py-3 px-4 text-right text-slate-600">
-                        ${(seller.wallet?.totalWithdrawn || 0).toLocaleString()}
+                        ₮{(seller.binance?.withdrawUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
 
                       <td className="py-3 px-4 text-right font-bold text-brand-700">
-                        ${(seller.wallet?.netRemaining || 0).toLocaleString()}
+                        ₮{(seller.binance?.netUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
 
                       <td className="py-3 px-4 text-center">
@@ -497,7 +497,7 @@ export default function SellersPage() {
 
                   <div className="flex items-center justify-between text-[11px] bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-100">
                     <span className="text-slate-500">
-                      Rem: <strong className="text-brand-700">${(seller.wallet?.netRemaining || 0).toLocaleString()}</strong>
+                      Net: <strong className="text-brand-700">₮{(seller.binance?.netUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                     </span>
                     <span className="text-slate-500">
                       Orders: <strong className="text-amber-600">{seller.pendingOrdersCount}</strong>
@@ -593,26 +593,26 @@ export default function SellersPage() {
                     </div>
                   )}
 
-                  {/* Live Financial Metrics (1 INR = 1 PKR rule) */}
+                  {/* Real Binance USDT of this store (finance ledger), not the store wallet */}
                   <div className="grid grid-cols-3 gap-2 bg-slate-50 rounded-2xl p-3 my-4 border border-slate-100 text-center">
                     <div>
                       <span className="text-[10px] text-slate-400 block font-medium">Deposited</span>
                       <span className="text-xs sm:text-sm font-bold text-emerald-600">
-                        ${(seller.wallet?.totalDeposited || 0).toLocaleString()}
+                        ₮{(seller.binance?.depositUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
 
                     <div>
                       <span className="text-[10px] text-slate-400 block font-medium">Withdrawn</span>
                       <span className="text-xs sm:text-sm font-bold text-slate-700">
-                        ${(seller.wallet?.totalWithdrawn || 0).toLocaleString()}
+                        ₮{(seller.binance?.withdrawUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
 
                     <div>
-                      <span className="text-[10px] text-slate-400 block font-medium">Remaining</span>
+                      <span className="text-[10px] text-slate-400 block font-medium">Net in Binance</span>
                       <span className="text-xs sm:text-sm font-bold text-brand-700">
-                        ${(seller.wallet?.netRemaining || 0).toLocaleString()}
+                        ₮{(seller.binance?.netUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
                   </div>
@@ -731,7 +731,7 @@ export default function SellersPage() {
               <p className="font-bold text-slate-800">{assignModalSeller.storeName}</p>
               <p className="text-slate-500 mt-0.5">Owner: {assignModalSeller.ownerName}</p>
               <p className="text-slate-500">
-                Deposits: ${(assignModalSeller.wallet?.totalDeposited || 0).toLocaleString()}
+                Deposits: ₮{(assignModalSeller.binance?.depositUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             </div>
 

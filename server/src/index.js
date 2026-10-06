@@ -159,10 +159,12 @@ let dbConnectedOnce = false;
 mongoose.connection.on('connected', () => {
   dbConnectedOnce = true;
 });
+const SERVER_STARTED_AT = new Date().toISOString();
 app.get(['/api/health', '/health'], (req, res) => {
   const connected = mongoose.connection.readyState === 1;
   if (connected) dbConnectedOnce = true;
-  res.status(dbConnectedOnce ? 200 : 503).json({ ok: dbConnectedOnce, name: 'Bazario Multi-Vendor Marketplace API', db: connected ? 'connected' : 'not connected' });
+  // `build` / `startedAt` show which version of the code is live (Render sets RENDER_GIT_COMMIT)
+  res.status(dbConnectedOnce ? 200 : 503).json({ ok: dbConnectedOnce, name: 'Bazario Multi-Vendor Marketplace API', db: connected ? 'connected' : 'not connected', build: String(process.env.RENDER_GIT_COMMIT || '').slice(0, 7), startedAt: SERVER_STARTED_AT });
 });
 app.use(['/api/products', '/products'], productRoutes);
 app.use(['/api/categories', '/categories'], categoryRoutes);

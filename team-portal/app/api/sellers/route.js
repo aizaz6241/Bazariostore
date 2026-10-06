@@ -4,6 +4,7 @@ import { Seller, Order, CLIENT_SELLER_FILTER } from '@/lib/models/SharedModels';
 import SellerAssignment from '@/lib/models/SellerAssignment';
 import Member from '@/lib/models/Member';
 import { evaluateMemberMilestones } from '@/lib/utils/milestones';
+import { getLedgerStats, sellerBinance } from '@/lib/utils/ledgerStats';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,6 +56,12 @@ export async function GET(req) {
       : [];
     const pendingBySeller = new Map(pendingAgg.map((o) => [String(o._id), o.n]));
 
+    // Real Binance USDT per store (finance ledger). The store wallet below is the shop's own $ book.
+    const ledgerStats = await getLedgerStats().catch((e) => {
+      console.error('Ledger stats error:', e.message);
+      return { bySeller: new Map(), byOwner: new Map() };
+    });
+
     const enrichedSellers = await Promise.all(
       sellers.map(async (s) => {
         const assignment = assignmentMap.get(s._id.toString());
@@ -73,6 +80,7 @@ export async function GET(req) {
           status: s.status,
           createdAt: s.createdAt,
           commissionLabel: s.commissionLabel || assignment?.commissionLabel || 'pkr_1to1',
+          binance: sellerBinance(ledgerStats, s._id),
           wallet: {
             balance: s.wallet?.balance || 0,
             totalDeposited,

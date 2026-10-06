@@ -7,6 +7,7 @@ import Ic from '../components/Icons.jsx';
 import { getSocket } from '../socket.js';
 import { MOCK_CUSTOMERS, getRandomCustomer } from './mockCustomers.js';
 import AddFundsModal from './AddFundsModal.jsx';
+import SellerSelectDropdown from './SellerSelectDropdown.jsx';
 
 export default function Orders() {
   const [params, setParams] = useSearchParams();
@@ -934,50 +935,54 @@ export default function Orders() {
       </div>
 
       {/* ─── Modal 1: Place Order on Behalf of Seller ─── */}
-      {placeOrderOpen && (
-        <div className="admin-modal-overlay" onClick={handleClosePlaceOrder}>
-          <div className="admin-modal-box" style={{ maxWidth: 620 }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-top">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 24 }}>📦</span>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 16 }}>Place Manual Order for Merchant</h3>
-                  <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>
-                    Select a seller store, choose product, and enter customer delivery details.
-                  </p>
+      {placeOrderOpen && (() => {
+        const selProd = sellerProds.find((p) => p._id === orderForm.productId) || sellerProds[0] || null;
+        const selSeller = sellers.find((s) => s._id === selectedSellerId);
+        const curBal = selSeller?.wallet?.balance || 0;
+        const inrRate = getCurrencyRate('INR');
+        const curInr = Math.round(curBal * inrRate);
+        const curLocked = selSeller?.wallet?.processingFund || 0;
+        const prodPrice = selProd?.price || 0;
+        const orderQty = Math.max(1, parseInt(orderForm.qty, 10) || 1);
+        const shipping = Math.max(0, parseFloat(orderForm.shippingCost) || 0);
+        const orderSubtotal = prodPrice * orderQty;
+        const orderTotal = orderSubtotal + shipping;
+        const orderTotalInr = Math.round(orderTotal * inrRate);
+
+        return (
+          <div className="admin-modal-overlay" onClick={handleClosePlaceOrder}>
+            <div className="admin-modal-box" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
+              <div className="pom-header">
+                <div className="pom-header-left">
+                  <div className="pom-header-icon">📦</div>
+                  <div>
+                    <h3 className="pom-title">Place Order on Behalf of Seller</h3>
+                    <p className="pom-subtitle">
+                      Create and dispatch a customer order on behalf of any merchant store.
+                    </p>
+                  </div>
                 </div>
+                <button type="button" onClick={handleClosePlaceOrder} className="btn-close-modal">✕</button>
               </div>
-              <button onClick={handleClosePlaceOrder} className="btn-close-modal">✕</button>
-            </div>
 
-            <form onSubmit={handlePlaceOrderSubmit} className="admin-modal-form" style={{ padding: '18px 22px' }}>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
-                  1. Select Target Merchant Store *:
-                </label>
-                <select
-                  value={selectedSellerId}
-                  onChange={(e) => handleSellerChangeForOrder(e.target.value)}
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: 6, border: '1.5px solid #cbd5e1', fontSize: 13.5, fontWeight: 700 }}
-                  required
-                >
-                  <option value="">-- Choose a seller --</option>
-                  {sellers.map((s) => (
-                    <option key={s._id} value={s._id}>
-                      🏬 {s.storeName} ({s.ownerName} - {s.email})
-                    </option>
-                  ))}
-                </select>
+              <form onSubmit={handlePlaceOrderSubmit} className="pom-body">
+                {/* 1. SELLER SELECTION & WALLET STATUS */}
+                <div className="pom-section">
+                  <div className="pom-label">
+                    <span>1. Target Merchant Store *</span>
+                    <span className="pom-label-sub">{sellers.length} Stores Available &bull; Searchable</span>
+                  </div>
 
-                {/* Selected Seller Live Wallet Balance Banner & Quick Add Funds Trigger */}
-                {(() => {
-                  const curSeller = sellers.find((s) => s._id === selectedSellerId);
-                  if (!curSeller) return null;
-                  const curBal = curSeller.wallet?.balance || 0;
-                  const curInr = Math.round(curBal * getCurrencyRate('INR')); // same live rate the seller sees
-                  const curLocked = curSeller.wallet?.processingFund || 0;
+                  <SellerSelectDropdown
+                    sellers={sellers}
+                    value={selectedSellerId}
+                    onChange={(id) => handleSellerChangeForOrder(id)}
+                    inrRate={inrRate}
+                    placeholder="-- Choose target merchant store --"
+                  />
 
-                  return (
+                  {/* Selected Seller Live Wallet Balance Banner */}
+                  {selSeller && (
                     <div className="order-seller-wallet-banner">
                       <div className="oswb-left">
                         <div className="oswb-icon-circle">💼</div>
@@ -995,266 +1000,292 @@ export default function Orders() {
                       <button
                         type="button"
                         className="btn-add-seller-funds"
-                        onClick={() => handleOpenAddFunds(curSeller._id)}
+                        onClick={() => handleOpenAddFunds(selSeller._id)}
                         title="Add funds directly to this merchant wallet in INR / USD with Binance USDT rate"
                       >
                         <Ic name="plus" size={13} /> 💳 Add Funds to Wallet
                       </button>
                     </div>
-                  );
-                })()}
-              </div>
+                  )}
 
-              {/* Product Selection */}
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
-                  2. Select Product from Catalog *:
-                </label>
-                {loadingProds ? (
-                  <p className="muted-sm">Loading seller catalog...</p>
-                ) : sellerProds.length === 0 ? (
-                  <div style={{ padding: '10px 14px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, fontSize: 12.5, color: '#92400e' }}>
-                    ⚠️ This seller has no active listed products. Please onboard products first or select another seller.
-                  </div>
-                ) : (
-                  <select
-                    value={orderForm.productId}
-                    onChange={(e) => setOrderForm({ ...orderForm, productId: e.target.value })}
-                    style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
-                    required
-                  >
-                    {sellerProds.map((p) => (
-                      <option key={p._id} value={p._id}>
-                        {p.name} — {money(p.price)} (Available Stock: {p.stock})
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-                <div>
-                  <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
-                    Quantity *:
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={orderForm.qty}
-                    onChange={(e) => setOrderForm({ ...orderForm, qty: e.target.value })}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
-                    required
-                  />
+                  {selSeller && curBal <= 0 && (
+                    <div style={{ marginTop: 4, padding: '6px 10px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 7, fontSize: 11.5, color: '#92400e', fontWeight: 600 }}>
+                      ⚠️ Seller currently has $0 available balance. Once confirmed, processing will require funds in their wallet.
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
-                    Payment Method:
-                  </label>
-                  <select
-                    value={orderForm.paymentMethod}
-                    onChange={(e) => setOrderForm({ ...orderForm, paymentMethod: e.target.value })}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
-                  >
-                    <option value="cod">Cash on Delivery (COD)</option>
-                    <option value="credit_card">Paid via Card</option>
-                    <option value="easypaisa">EasyPaisa / JazzCash</option>
-                    <option value="upi">UPI / Online</option>
-                  </select>
-                </div>
-              </div>
 
-              {/* Customer Details */}
-              <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 11.5, fontWeight: 800, textTransform: 'uppercase', color: '#475569', letterSpacing: '0.03em' }}>
-                      3. Customer Delivery Information
-                    </span>
-                    <span style={{ fontSize: 10, fontWeight: 700, background: '#dbeafe', color: '#1d4ed8', padding: '2px 8px', borderRadius: 999 }}>
-                      500 Profiles
+                {/* 2. PRODUCT CATALOG SELECTION & QUANTITY */}
+                <div className="pom-section">
+                  <div className="pom-label">
+                    <span>2. Select Product from Catalog *</span>
+                    <span className="pom-label-sub">
+                      {loadingProds ? 'Loading catalog...' : `${sellerProds.length} Products Available`}
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={applyRandomCustomer}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 5,
-                      background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: 6,
-                      padding: '5px 12px',
-                      fontSize: 11.5,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      boxShadow: '0 1px 2px rgba(37, 99, 235, 0.25)',
-                      whiteSpace: 'nowrap'
-                    }}
-                    title="Pick another random customer from 500 profiles"
-                  >
-                    🎲 Random Customer
-                  </button>
+
+                  {loadingProds ? (
+                    <div style={{ padding: '12px', background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 8, textAlign: 'center', fontSize: 12.5, color: '#64748b' }}>
+                      ⏳ Loading merchant product catalog...
+                    </div>
+                  ) : sellerProds.length === 0 ? (
+                    <div style={{ padding: '12px 14px', background: '#fffbeb', border: '1.5px solid #fde68a', borderRadius: 8, fontSize: 12.5, color: '#92400e' }}>
+                      ⚠️ This seller has no active listed products. Please onboard products first or select another seller store.
+                    </div>
+                  ) : (
+                    <>
+                      <select
+                        className="pom-select"
+                        value={orderForm.productId}
+                        onChange={(e) => setOrderForm({ ...orderForm, productId: e.target.value })}
+                        required
+                      >
+                        {sellerProds.map((p) => (
+                          <option key={p._id} value={p._id}>
+                            {p.name} — {money(p.price)} (Stock: {p.stock || 0})
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Selected Product Preview Card */}
+                      {selProd && (
+                        <div className="pom-product-preview-card">
+                          <div className="pom-ppc-left">
+                            <div className="pom-ppc-thumb">
+                              {selProd.image || selProd.images?.[0]?.url ? (
+                                <img src={selProd.image || selProd.images?.[0]?.url} alt={selProd.name} />
+                              ) : (
+                                <span style={{ fontSize: 18 }}>🛍️</span>
+                              )}
+                            </div>
+                            <div className="pom-ppc-info">
+                              <span className="pom-ppc-name" title={selProd.name}>
+                                {selProd.name}
+                              </span>
+                              <div className="pom-ppc-tags">
+                                <span className="pom-ppc-price">{money(selProd.price)}</span>
+                                <span className="muted-sm">&bull;</span>
+                                <span className="muted-sm">≈ ₹{Math.round((selProd.price || 0) * inrRate).toLocaleString('en-IN')} INR</span>
+                                <span className={`pom-ppc-stock ${(selProd.stock || 0) > 0 ? 'in-stock' : 'out-of-stock'}`}>
+                                  {(selProd.stock || 0) > 0 ? `Stock: ${selProd.stock}` : 'Out of Stock'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="pom-ppc-total-box">
+                            <span className="pom-ppc-total-lbl">Subtotal ({orderQty}x)</span>
+                            <b className="pom-ppc-total-val">{money(orderSubtotal)}</b>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
 
-                {/* Quick Customer Picker Dropdown - Responsive & Clean */}
-                <div style={{ marginBottom: 12 }}>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span>Or Select Specific Profile:</span>
-                    <span style={{ fontSize: 10.5, fontWeight: 600, color: '#2563eb' }}>{MOCK_CUSTOMERS.length} Available</span>
-                  </label>
-                  <select
-                    value={selectedMockId}
-                    onChange={(e) => {
-                      const id = Number(e.target.value);
-                      const found = MOCK_CUSTOMERS.find((c) => c.id === id);
-                      if (found) applyCustomer(found);
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '7px 10px',
-                      borderRadius: 6,
-                      border: '1px solid #cbd5e1',
-                      fontSize: 12,
-                      color: selectedMockId ? '#0f172a' : '#475569',
-                      background: '#fff',
-                      boxSizing: 'border-box',
-                      cursor: 'pointer',
-                      height: 36
-                    }}
-                  >
-                    <option value="" disabled>-- Choose from 500 preloaded customers --</option>
-                    {MOCK_CUSTOMERS.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        #{c.id}: {c.name} — {c.city}, {c.state} ({c.phone})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {randomNotice && (
-                  <div style={{
-                    marginBottom: 12,
-                    padding: '6px 10px',
-                    borderRadius: 6,
-                    background: '#f0fdf4',
-                    border: '1px solid #bbf7d0',
-                    color: '#166534',
-                    fontSize: 11.5,
-                    fontWeight: 600,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6
-                  }}>
-                    <span>✨</span>
-                    <span>{randomNotice}</span>
-                  </div>
-                )}
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-                  <div>
-                    <label style={{ fontSize: 11.5, fontWeight: 700, display: 'block', marginBottom: 3 }}>Full Name *</label>
-                    <input
-                      type="text"
-                      value={orderForm.customerName}
-                      onChange={(e) => setOrderForm({ ...orderForm, customerName: e.target.value })}
-                      style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5, boxSizing: 'border-box' }}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 11.5, fontWeight: 700, display: 'block', marginBottom: 3 }}>Phone Number *</label>
-                    <input
-                      type="text"
-                      value={orderForm.customerPhone}
-                      onChange={(e) => setOrderForm({ ...orderForm, customerPhone: e.target.value })}
-                      style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5, boxSizing: 'border-box' }}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: 10 }}>
-                  <label style={{ fontSize: 11.5, fontWeight: 700, display: 'block', marginBottom: 3 }}>Customer Email</label>
-                  <input
-                    type="email"
-                    value={orderForm.customerEmail}
-                    onChange={(e) => setOrderForm({ ...orderForm, customerEmail: e.target.value })}
-                    placeholder="customer@example.com"
-                    style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5, boxSizing: 'border-box' }}
-                  />
-                </div>
-
-                <div style={{ marginBottom: 10 }}>
-                  <label style={{ fontSize: 11.5, fontWeight: 700, display: 'block', marginBottom: 3 }}>Street Address *</label>
-                  <input
-                    type="text"
-                    value={orderForm.street}
-                    onChange={(e) => setOrderForm({ ...orderForm, street: e.target.value })}
-                    style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5, boxSizing: 'border-box' }}
-                    required
-                  />
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 75px 1.2fr', gap: 10 }}>
-                  <div>
-                    <label style={{ fontSize: 11.5, fontWeight: 700, display: 'block', marginBottom: 3 }}>City *</label>
-                    <input
-                      type="text"
-                      value={orderForm.city}
-                      onChange={(e) => setOrderForm({ ...orderForm, city: e.target.value })}
-                      style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5, boxSizing: 'border-box' }}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 11.5, fontWeight: 700, display: 'block', marginBottom: 3 }}>State</label>
-                    <input
-                      type="text"
-                      value={orderForm.state}
-                      onChange={(e) => setOrderForm({ ...orderForm, state: e.target.value })}
-                      style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5, boxSizing: 'border-box', textAlign: 'center' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 11.5, fontWeight: 700, display: 'block', marginBottom: 3, whiteSpace: 'nowrap' }}>Delivery ($)</label>
+                {/* QUANTITY & PAYMENT METHOD */}
+                <div className="pom-grid-2">
+                  <div className="pom-field">
+                    <label className="pom-field-label">Quantity *</label>
                     <input
                       type="number"
-                      value={orderForm.shippingCost}
-                      onChange={(e) => setOrderForm({ ...orderForm, shippingCost: e.target.value })}
-                      style={{ width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12.5, boxSizing: 'border-box' }}
+                      min="1"
+                      className="pom-input"
+                      value={orderForm.qty}
+                      onChange={(e) => setOrderForm({ ...orderForm, qty: e.target.value })}
+                      required
                     />
                   </div>
+                  <div className="pom-field">
+                    <label className="pom-field-label">Payment Method</label>
+                    <select
+                      className="pom-select"
+                      value={orderForm.paymentMethod}
+                      onChange={(e) => setOrderForm({ ...orderForm, paymentMethod: e.target.value })}
+                    >
+                      <option value="cod">Cash on Delivery (COD)</option>
+                      <option value="credit_card">Paid via Card</option>
+                      <option value="easypaisa">EasyPaisa / JazzCash</option>
+                      <option value="upi">UPI / Online Transfer</option>
+                    </select>
+                  </div>
                 </div>
-              </div>
 
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
-                  Admin Notes:
-                </label>
-                <input
-                  type="text"
-                  value={orderForm.adminNotes}
-                  onChange={(e) => setOrderForm({ ...orderForm, adminNotes: e.target.value })}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
-                />
-              </div>
+                {/* 3. CUSTOMER DELIVERY INFORMATION */}
+                <div className="pom-customer-card">
+                  <div className="pom-customer-header">
+                    <div className="pom-customer-title-wrap">
+                      <span className="pom-customer-title">3. Customer Delivery Information</span>
+                      <span className="pom-customer-badge">500 Profiles</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={applyRandomCustomer}
+                      className="pom-btn-random"
+                      title="Pick another random customer from 500 profiles"
+                    >
+                      🎲 Random Customer
+                    </button>
+                  </div>
 
-              <div className="modal-bottom-actions">
-                <button type="button" onClick={handleClosePlaceOrder} className="btn-cancel">Cancel</button>
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  disabled={placingOrder || sellerProds.length === 0}
-                >
-                  {placingOrder ? 'Dispatching Order...' : '📦 Confirm & Place Order'}
-                </button>
-              </div>
-            </form>
+                  {/* Profile Dropdown */}
+                  <div className="pom-field">
+                    <label className="pom-field-label">
+                      <span>Or Select Specific Profile:</span>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: '#2563eb' }}>
+                        {MOCK_CUSTOMERS.length} Preloaded
+                      </span>
+                    </label>
+                    <select
+                      className="pom-select"
+                      value={selectedMockId}
+                      onChange={(e) => {
+                        const id = Number(e.target.value);
+                        const found = MOCK_CUSTOMERS.find((c) => c.id === id);
+                        if (found) applyCustomer(found);
+                      }}
+                    >
+                      <option value="" disabled>-- Choose from 500 preloaded customers --</option>
+                      {MOCK_CUSTOMERS.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          #{c.id}: {c.name} — {c.city}, {c.state} ({c.phone})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {randomNotice && (
+                    <div className="pom-notice-banner">
+                      <span>✨</span>
+                      <span>{randomNotice}</span>
+                    </div>
+                  )}
+
+                  <div className="pom-grid-2">
+                    <div className="pom-field">
+                      <label className="pom-field-label">Full Name *</label>
+                      <input
+                        type="text"
+                        className="pom-input"
+                        value={orderForm.customerName}
+                        onChange={(e) => setOrderForm({ ...orderForm, customerName: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="pom-field">
+                      <label className="pom-field-label">Phone Number *</label>
+                      <input
+                        type="text"
+                        className="pom-input"
+                        value={orderForm.customerPhone}
+                        onChange={(e) => setOrderForm({ ...orderForm, customerPhone: e.target.value })}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pom-field">
+                    <label className="pom-field-label">Customer Email</label>
+                    <input
+                      type="email"
+                      className="pom-input"
+                      placeholder="customer@example.com"
+                      value={orderForm.customerEmail}
+                      onChange={(e) => setOrderForm({ ...orderForm, customerEmail: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="pom-field">
+                    <label className="pom-field-label">Street Address *</label>
+                    <input
+                      type="text"
+                      className="pom-input"
+                      value={orderForm.street}
+                      onChange={(e) => setOrderForm({ ...orderForm, street: e.target.value })}
+                      required
+                    />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 80px 1.2fr', gap: 10 }}>
+                    <div className="pom-field">
+                      <label className="pom-field-label">City *</label>
+                      <input
+                        type="text"
+                        className="pom-input"
+                        value={orderForm.city}
+                        onChange={(e) => setOrderForm({ ...orderForm, city: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="pom-field">
+                      <label className="pom-field-label">State</label>
+                      <input
+                        type="text"
+                        className="pom-input"
+                        style={{ textAlign: 'center' }}
+                        value={orderForm.state}
+                        onChange={(e) => setOrderForm({ ...orderForm, state: e.target.value })}
+                      />
+                    </div>
+                    <div className="pom-field">
+                      <label className="pom-field-label" style={{ whiteSpace: 'nowrap' }}>Delivery ($)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        className="pom-input"
+                        value={orderForm.shippingCost}
+                        onChange={(e) => setOrderForm({ ...orderForm, shippingCost: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. ORDER SUMMARY BANNER */}
+                <div className="pom-summary-card">
+                  <div className="pom-summary-item">
+                    <small>Items Subtotal</small>
+                    <b>{money(orderSubtotal)}</b>
+                  </div>
+                  <div className="pom-summary-item">
+                    <small>Delivery Fee</small>
+                    <b>{money(shipping)}</b>
+                  </div>
+                  <div className="pom-summary-total">
+                    <span className="pom-summary-total-lbl">Estimated Order Total</span>
+                    <b className="pom-summary-total-val">{money(orderTotal)}</b>
+                    <span className="pom-summary-total-inr">≈ ₹{orderTotalInr.toLocaleString('en-IN')} INR</span>
+                  </div>
+                </div>
+
+                {/* ADMIN NOTES */}
+                <div className="pom-field">
+                  <label className="pom-field-label">Admin Notes (Internal instruction or reference)</label>
+                  <input
+                    type="text"
+                    className="pom-input"
+                    value={orderForm.adminNotes}
+                    onChange={(e) => setOrderForm({ ...orderForm, adminNotes: e.target.value })}
+                  />
+                </div>
+
+                {/* FOOTER ACTIONS */}
+                <div className="pom-footer-actions">
+                  <button type="button" onClick={handleClosePlaceOrder} className="pom-btn-cancel">
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="pom-btn-submit"
+                    disabled={placingOrder || sellerProds.length === 0 || !selProd}
+                  >
+                    {placingOrder ? 'Dispatching Order...' : `📦 Confirm & Place Order (${money(orderTotal)})`}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ─── Modal 2: Quick Inspect Order Details ─── */}
       {inspectOrder && (
