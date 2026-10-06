@@ -979,34 +979,22 @@ export default function Orders() {
                     onChange={(id) => handleSellerChangeForOrder(id)}
                     inrRate={inrRate}
                     placeholder="-- Choose target merchant store --"
+                    extraAction={
+                      selSeller && (
+                        <button
+                          type="button"
+                          className="btn-add-seller-funds"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenAddFunds(selSeller._id);
+                          }}
+                          title="Add funds directly to this merchant wallet in INR / USD with Binance USDT rate"
+                        >
+                          <Ic name="plus" size={13} /> 💳 Add Funds
+                        </button>
+                      )
+                    }
                   />
-
-                  {/* Selected Seller Live Wallet Balance Banner */}
-                  {selSeller && (
-                    <div className="order-seller-wallet-banner">
-                      <div className="oswb-left">
-                        <div className="oswb-icon-circle">💼</div>
-                        <div>
-                          <span className="oswb-lbl">Merchant Available Wallet Balance:</span>
-                          <div className="oswb-bal">
-                            <span className="oswb-usd">{money(curBal)}</span>
-                            <span className="oswb-inr">(≈ ₹{curInr.toLocaleString('en-IN')} INR)</span>
-                            {curLocked > 0 && (
-                              <span className="oswb-locked">Locked: {money(curLocked)}</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className="btn-add-seller-funds"
-                        onClick={() => handleOpenAddFunds(selSeller._id)}
-                        title="Add funds directly to this merchant wallet in INR / USD with Binance USDT rate"
-                      >
-                        <Ic name="plus" size={13} /> 💳 Add Funds to Wallet
-                      </button>
-                    </div>
-                  )}
 
                   {selSeller && curBal <= 0 && (
                     <div style={{ marginTop: 4, padding: '6px 10px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 7, fontSize: 11.5, color: '#92400e', fontWeight: 600 }}>

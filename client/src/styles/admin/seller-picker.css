@@ -1,6 +1,6 @@
 /* ==========================================================================
    BAZARIO SELLER SELECT DROPDOWN / PICKER STYLESHEET
-   Professional, high-contrast, searchable merchant store selector
+   Clean, modern, high-contrast merchant selector with zero redundancy
    ========================================================================== */
 
 .seller-picker-wrap {
@@ -9,34 +9,36 @@
   box-sizing: border-box;
 }
 
-/* ─── 1. Trigger Display Button ─── */
+/* ─── 1. Single Unified Selector Card (Trigger Button) ─── */
 .seller-picker-trigger {
   width: 100%;
   padding: 10px 14px;
   background: #ffffff;
   border: 1.5px solid #cbd5e1;
-  border-radius: 10px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   cursor: pointer;
   text-align: left;
-  transition: all 0.18s ease;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   box-sizing: border-box;
   font-family: inherit;
-  min-height: 52px;
+  min-height: 56px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .seller-picker-trigger:hover:not(:disabled) {
   border-color: #94a3b8;
   background: #f8fafc;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
 }
 
 .seller-picker-trigger.is-open {
   border-color: #2563eb;
   background: #ffffff;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14), 0 2px 8px rgba(37, 99, 235, 0.1);
 }
 
 .seller-picker-trigger:disabled {
@@ -49,39 +51,39 @@
 .seller-picker-trigger-content {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 12px;
   min-width: 0;
   flex: 1;
 }
 
 /* Store Avatar Circle */
 .seller-picker-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 9px;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
   background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
   color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 900;
   flex-shrink: 0;
-  box-shadow: 0 2px 5px rgba(37, 99, 235, 0.2);
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.22);
   text-transform: uppercase;
 }
 
 .seller-picker-placeholder {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   color: #64748b;
   font-size: 13.5px;
   font-weight: 600;
 }
 
 .seller-picker-placeholder-icon {
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .seller-picker-info {
@@ -89,7 +91,7 @@
   flex-direction: column;
   min-width: 0;
   flex: 1;
-  gap: 1px;
+  gap: 2px;
 }
 
 .seller-picker-title-row {
@@ -100,13 +102,14 @@
 }
 
 .seller-picker-store-name {
-  font-size: 13.5px;
+  font-size: 14.5px;
   font-weight: 800;
   color: #0f172a;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 280px;
+  max-width: 240px;
+  letter-spacing: -0.2px;
 }
 
 .seller-picker-badge-test {
@@ -131,61 +134,121 @@
   gap: 6px;
 }
 
-.seller-picker-owner {
-  color: #475569;
-  font-weight: 600;
+.seller-picker-owner b {
+  color: #334155;
+  font-weight: 700;
+}
+
+.seller-picker-dot {
+  color: #cbd5e1;
+  font-size: 10px;
 }
 
 .seller-picker-email {
   color: #64748b;
 }
 
-/* Balance on the right side of trigger */
+.seller-picker-phone {
+  color: #475569;
+  font-weight: 600;
+}
+
+/* ─── Trigger Right Side (Balances & Chevron) ─── */
 .seller-picker-trigger-side {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
+/* Available Balance Pill */
 .seller-picker-balance-pill {
+  background: #f0fdf4;
+  border: 1.5px solid #bbf7d0;
+  padding: 4px 10px;
+  border-radius: 8px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
-  padding: 3px 9px;
-  border-radius: 7px;
+  text-align: right;
+}
+
+.seller-picker-balance-lbl {
+  font-size: 9.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #166534;
+  letter-spacing: 0.3px;
+  line-height: 1;
 }
 
 .seller-picker-balance-usd {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 900;
   color: #15803d;
-  line-height: 1.2;
+  line-height: 1.25;
 }
 
 .seller-picker-balance-inr {
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 700;
   color: #0284c7;
-  line-height: 1.2;
+  line-height: 1;
 }
 
+/* Locked Funds Pill */
+.seller-picker-locked-pill {
+  background: #fffbeb;
+  border: 1.5px solid #fde68a;
+  padding: 4px 9px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.seller-picker-locked-lbl {
+  font-size: 9.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #92400e;
+  letter-spacing: 0.3px;
+  line-height: 1;
+}
+
+.seller-picker-locked-val {
+  font-size: 13.5px;
+  font-weight: 900;
+  color: #b45309;
+  line-height: 1.25;
+}
+
+/* Chevron Icon */
 .seller-picker-chevron {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: #f1f5f9;
   color: #64748b;
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
+.seller-picker-trigger:hover .seller-picker-chevron {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
 .seller-picker-chevron.is-rotated {
   transform: rotate(180deg);
+  background: #dbeafe;
   color: #2563eb;
 }
 
-/* ─── 2. Floating Dropdown Menu Panel ─── */
+/* ─── 2. Floating Dropdown Popover Panel ─── */
 .seller-picker-popover {
   position: absolute;
   top: calc(100% + 6px);
@@ -485,158 +548,13 @@
   color: #1d4ed8;
 }
 
-/* ─── 6. High-Impact Selected Seller Profile Card ─── */
-.afm-seller-card-rich {
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  border: 1.5px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 14px 16px;
-  margin-top: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-}
-
-.afm-scr-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-  flex: 1;
-}
-
-.afm-scr-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 11px;
-  background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
-  color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  font-weight: 900;
-  flex-shrink: 0;
-  box-shadow: 0 3px 8px rgba(37, 99, 235, 0.25);
-  text-transform: uppercase;
-}
-
-.afm-scr-details {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  gap: 3px;
-}
-
-.afm-scr-title-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.afm-scr-store-name {
-  font-size: 15px;
-  font-weight: 900;
-  color: #0f172a;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.afm-scr-meta-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 12px;
-  color: #64748b;
-  flex-wrap: wrap;
-}
-
-.afm-scr-meta-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.afm-scr-meta-item b {
-  color: #334155;
-}
-
-.afm-scr-balances {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.afm-scr-bal-box {
-  background: #ffffff;
-  border: 1.5px solid #dcfce7;
-  padding: 8px 12px;
-  border-radius: 9px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  box-shadow: 0 1px 3px rgba(16, 185, 129, 0.08);
-}
-
-.afm-scr-bal-lbl {
-  font-size: 10.5px;
-  font-weight: 800;
-  text-transform: uppercase;
-  color: #15803d;
-  letter-spacing: 0.3px;
-}
-
-.afm-scr-bal-usd {
-  font-size: 17px;
-  font-weight: 900;
-  color: #166534;
-  line-height: 1.15;
-}
-
-.afm-scr-bal-inr {
-  font-size: 11px;
-  font-weight: 700;
-  color: #0284c7;
-  margin-top: 1px;
-}
-
-.afm-scr-bal-locked {
-  background: #fffbeb;
-  border: 1.5px solid #fef3c7;
-  padding: 8px 12px;
-  border-radius: 9px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-}
-
-.afm-scr-locked-lbl {
-  font-size: 10.5px;
-  font-weight: 800;
-  text-transform: uppercase;
-  color: #b45309;
-  letter-spacing: 0.3px;
-}
-
-.afm-scr-locked-usd {
-  font-size: 15px;
-  font-weight: 900;
-  color: #92400e;
-  line-height: 1.15;
-}
-
 @media (max-width: 600px) {
-  .afm-seller-card-rich {
+  .seller-picker-trigger {
     flex-direction: column;
     align-items: stretch;
-    gap: 10px;
+    gap: 8px;
   }
-  .afm-scr-balances {
+  .seller-picker-trigger-side {
     justify-content: space-between;
   }
 }

@@ -27,6 +27,7 @@ export default function SellerSelectDropdown({
   disabled = false,
   showBalance = true,
   inrRate: propInrRate,
+  extraAction = null,
   className = '',
 }) {
   const { rates } = useCurrency();
@@ -101,9 +102,14 @@ export default function SellerSelectDropdown({
 
   const isTest = (s) => Boolean(s?.isTestAccount || s?.accountType === 'test');
 
+  const curBal = selectedSeller?.wallet?.balance || 0;
+  const curInr = Math.round(curBal * INR_RATE);
+  const curLocked = selectedSeller?.wallet?.processingFund || 0;
+  const sellerPhone = selectedSeller?.phone || selectedSeller?.contact?.phone || '';
+
   return (
     <div className={`seller-picker-wrap ${className}`} ref={containerRef}>
-      {/* ─── 1. Trigger Display Button ─── */}
+      {/* ─── 1. Single Unified Selector Card (Trigger Button) ─── */}
       <button
         type="button"
         className={`seller-picker-trigger ${isOpen ? 'is-open' : ''}`}
@@ -132,14 +138,20 @@ export default function SellerSelectDropdown({
                 </div>
                 <div className="seller-picker-sub">
                   <span className="seller-picker-owner">
-                    Owner: {selectedSeller.ownerName || 'Merchant'}
+                    Owner: <b>{selectedSeller.ownerName || 'Merchant'}</b>
                   </span>
                   {selectedSeller.email && (
                     <>
-                      <span>&bull;</span>
+                      <span className="seller-picker-dot">&bull;</span>
                       <span className="seller-picker-email" title={selectedSeller.email}>
                         {selectedSeller.email}
                       </span>
+                    </>
+                  )}
+                  {sellerPhone && (
+                    <>
+                      <span className="seller-picker-dot">&bull;</span>
+                      <span className="seller-picker-phone">📞 {sellerPhone}</span>
                     </>
                   )}
                 </div>
@@ -155,22 +167,30 @@ export default function SellerSelectDropdown({
 
         <div className="seller-picker-trigger-side">
           {selectedSeller && showBalance && (
-            <div className="seller-picker-balance-pill">
-              <span className="seller-picker-balance-usd">
-                {money(selectedSeller.wallet?.balance || 0)}
-              </span>
-              <span className="seller-picker-balance-inr">
-                ≈ ₹{Math.round((selectedSeller.wallet?.balance || 0) * INR_RATE).toLocaleString('en-IN')}
-              </span>
-            </div>
+            <>
+              {curLocked > 0 && (
+                <div className="seller-picker-locked-pill" title="Processing funds locked in confirmed orders">
+                  <span className="seller-picker-locked-lbl">Locked</span>
+                  <span className="seller-picker-locked-val">{money(curLocked)}</span>
+                </div>
+              )}
+              <div className="seller-picker-balance-pill" title="Available wallet balance">
+                <span className="seller-picker-balance-lbl">Available</span>
+                <span className="seller-picker-balance-usd">{money(curBal)}</span>
+                <span className="seller-picker-balance-inr">≈ ₹{curInr.toLocaleString('en-IN')} INR</span>
+              </div>
+            </>
           )}
-          <div className={`seller-picker-chevron ${isOpen ? 'is-rotated' : ''}`}>
-            <Ic name="chevDown" size={16} />
+
+          {extraAction}
+
+          <div className={`seller-picker-chevron ${isOpen ? 'is-rotated' : ''}`} title="Choose another store">
+            <Ic name="chevDown" size={15} />
           </div>
         </div>
       </button>
 
-      {/* ─── 2. Floating Dropdown Menu Panel ─── */}
+      {/* ─── 2. Floating Dropdown Popover Panel ─── */}
       {isOpen && (
         <div className="seller-picker-popover" role="listbox">
           {/* Search bar */}

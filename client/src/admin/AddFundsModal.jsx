@@ -241,7 +241,7 @@ export default function AddFundsModal({
 
         {/* Modal Form Body */}
         <form onSubmit={handleSubmit} className="afm-body">
-          {/* 1. SELLER SELECTION & PREVIEW */}
+          {/* 1. SELLER SELECTION */}
           <div className="afm-section">
             <label className="afm-label">
               <span>1. Target Merchant Store *</span>
@@ -257,58 +257,6 @@ export default function AddFundsModal({
               inrRate={INR_RATE}
               placeholder="-- Choose target merchant store --"
             />
-
-            {/* Selected Seller Rich Preview Card */}
-            {selectedSeller && (
-              <div className="afm-seller-card-rich">
-                <div className="afm-scr-left">
-                  <div className="afm-scr-avatar">
-                    {(selectedSeller.storeName?.[0] || 'S').toUpperCase()}
-                  </div>
-                  <div className="afm-scr-details">
-                    <div className="afm-scr-title-line">
-                      <b className="afm-scr-store-name">{selectedSeller.storeName}</b>
-                      {(selectedSeller.isTestAccount || selectedSeller.accountType === 'test') && (
-                        <span className="seller-picker-badge-test">Test Store</span>
-                      )}
-                    </div>
-                    <div className="afm-scr-meta-row">
-                      <span className="afm-scr-meta-item">
-                        Owner: <b>{selectedSeller.ownerName || 'Merchant'}</b>
-                      </span>
-                      {selectedSeller.email && (
-                        <>
-                          <span>&bull;</span>
-                          <span className="afm-scr-meta-item">{selectedSeller.email}</span>
-                        </>
-                      )}
-                      {(selectedSeller.phone || selectedSeller.contact?.phone) && (
-                        <>
-                          <span>&bull;</span>
-                          <span className="afm-scr-meta-item">📞 {selectedSeller.phone || selectedSeller.contact?.phone}</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="afm-scr-balances">
-                  <div className="afm-scr-bal-box">
-                    <span className="afm-scr-bal-lbl">Available Wallet</span>
-                    <b className="afm-scr-bal-usd">{money(currentBalance)}</b>
-                    <span className="afm-scr-bal-inr">
-                      ≈ ₹{(currentBalance * INR_RATE).toLocaleString('en-IN', { maximumFractionDigits: 0 })} INR
-                    </span>
-                  </div>
-                  {(selectedSeller.wallet?.processingFund || 0) > 0 && (
-                    <div className="afm-scr-bal-locked" title="Processing funds currently locked in confirmed orders">
-                      <span className="afm-scr-locked-lbl">Locked Funds</span>
-                      <b className="afm-scr-locked-usd">{money(selectedSeller.wallet.processingFund)}</b>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
 
           {/* 2. TRANSACTION TYPE TOGGLE (Credit vs Debit) */}
