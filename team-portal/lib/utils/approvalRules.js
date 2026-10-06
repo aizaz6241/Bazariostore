@@ -14,6 +14,7 @@ export const ACTION_LABEL = {
   resplit: 'Divide an entry again',
   manual_create: 'Add a manual entry',
   manual_delete: 'Delete a manual entry',
+  fix_deposit: 'Fix a deposit added to the wrong seller',
   payout: 'Record a payout',
   reassign: 'Move a seller to another owner',
   seller_flag: 'Change seller type',

@@ -23,6 +23,7 @@ const has = (v) => v !== undefined && v !== null && v !== '';
  *   - changing an amount that is already counted
  *   - dividing an entry again
  *   - adding or deleting a manual entry
+ *   - fixing a deposit that was added to the wrong seller (move it / reverse it)
  *   - counting a bonus that the same person approved
  */
 export async function POST(req) {
@@ -62,6 +63,22 @@ export async function POST(req) {
     if (kind === 'manual') {
       if (action !== 'delete') throw new Error('Manual entries can only be deleted');
       return reply(await submitAction({ session, action: 'manual_delete', payload: { id }, gated: true }));
+    }
+
+    // ── Deposit added to the wrong seller: move it to the correct one, or reverse it ──
+    if (action === 'fix_deposit') {
+      const mode = body.mode === 'reverse' ? 'reverse' : 'move';
+      const payload = { id, kind: 'deposit', mode, note: String(body.note || '').trim().slice(0, 300) };
+      if (mode === 'move') {
+        if (!body.toSellerId || !mongoose.Types.ObjectId.isValid(body.toSellerId)) throw new Error('Choose the correct seller');
+        payload.toSellerId = String(body.toSellerId);
+        if (has(body.pkrRate)) {
+          const rate = Number(body.pkrRate);
+          if (!Number.isFinite(rate) || rate <= 0) throw new Error('PKR rate is not valid');
+          payload.pkrRate = rate;
+        }
+      }
+      return reply(await submitAction({ session, action: 'fix_deposit', payload, gated: true }));
     }
 
     if (action === 'skip' || action === 'resplit') {

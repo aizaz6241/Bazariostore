@@ -12,6 +12,7 @@ import { logFinance, actorFromSession, flushFinanceAlertsSoon } from '@/lib/util
 import { ACTION_LABEL, canDecide } from '@/lib/utils/approvalRules';
 import { syncEcommerceAdmins } from '@/lib/adminSync';
 import { isFinancePartner } from '@/lib/partners';
+import { inspectDepositFix, fixDeposit, ownerWords } from '@/lib/utils/depositFix';
 
 /**
  * TWO-PERSON APPROVALS
@@ -166,6 +167,31 @@ async function describe(action, payload) {
     const snap = await snapEntry(p.id, 'manual');
     if (!snap) throw new Error('Manual entry not found');
     return { summary: `Delete a manual entry (${snap.storeName}, ₮${money(snap.usdt)})`, details: [entryLine(snap)], targetId: sid(p.id), sellerId: '', storeName: snap.storeName };
+  }
+
+  // A deposit that was added to the wrong seller: hand it to the correct one, or reverse it
+  if (action === 'fix_deposit') {
+    const x = await inspectDepositFix({ id: p.id, mode: p.mode, toSellerId: p.toSellerId });
+    const amountText = `$${money(x.amount)}${x.usdt > 0 ? ` (₮${money(x.usdt)})` : ''}`;
+    const details = [];
+    let summary = '';
+    if (p.mode === 'move') {
+      summary = `Move a deposit of ${amountText} from “${x.from.storeName}” to “${x.to.storeName}” (it was added to the wrong seller)`;
+      details.push(`Store wallets: $${money(x.amount)} leaves “${x.from.storeName}” and is added to “${x.to.storeName}”.`);
+      details.push(
+        x.counted
+          ? `Finance: now divided for ${ownerWords(x.fromOwner)} → will be divided for ${ownerWords(x.toOwner)}. The Binance total does not change.`
+          : `Finance: not counted yet; once counted it will be divided for ${ownerWords(x.toOwner)}.`
+      );
+      if (!x.toOwner) details.push('The correct seller is not assigned to anyone yet: the deposit waits on the “not counted yet” list until it is.');
+    } else {
+      summary = `Reverse a deposit of ${amountText} added to “${x.from.storeName}” by mistake`;
+      details.push(`Store wallet: $${money(x.amount)} is taken back from “${x.from.storeName}” and the deposit is closed.`);
+      details.push(x.counted ? `Finance: ₮${money(x.usdt)} leaves the ledger (it was divided for ${ownerWords(x.fromOwner)}). Use this only when no money really came.` : 'Finance: it was not counted yet, so no wallet changes.');
+    }
+    if (x.shares) details.push(`Now: ${x.shares.map((s) => `${s.name} ₮${money(s.amountUSDT)}`).join(', ')}`);
+    if (p.note) details.push(`Note: ${p.note}`);
+    return { summary, details, targetId: sid(p.id), sellerId: sid(x.from._id), storeName: x.from.storeName || '' };
   }
 
   if (action === 'payout') {
@@ -363,6 +389,11 @@ async function performAction(action, payload, { requester, approver = null, appr
         console.error('Trigger finance push error:', pushErr);
       }
     }
+  } else if (action === 'fix_deposit') {
+    const done = await fixDeposit({ id: p.id, mode: p.mode, toSellerId: p.toSellerId, pkrRate: p.pkrRate, note: p.note, by });
+    out.ledger = done.ledger;
+    out.before = done.before;
+    out.after = done.after;
   } else if (action === 'manual_delete') {
     out.before = await snapEntry(p.id, 'manual');
     out.ledger = await updateFinanceEntry({ id: p.id, kind: 'manual', action: 'delete', by });

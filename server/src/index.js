@@ -57,7 +57,7 @@ import { createBackup, getBackupSettings, updateBackupSettings } from './service
 import { Conversation, Message } from './models/Chat.js';
 import Seller from './models/Seller.js';
 import { notify } from './utils/notify.js';
-import { processOrderPenalties } from './routes/sellers/orders.routes.js';
+import { processOrderPenalties, releaseLocksOfWaitingOrders } from './routes/sellers/orders.routes.js';
 import { processAutoProgressOrders } from './services/orderProgressionService.js';
 import { finishStuckWalletRequests } from './utils/walletRequests.js';
 import { encryptStoredPasswords, encryptionOn } from './utils/sellerPassword.js';
@@ -107,6 +107,14 @@ if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
   setTimeout(() => {
     processOrderPenalties(app);
   }, 8000);
+
+  // A waiting (pending) order must not hold locked funds: give them back to the available balance
+  setInterval(() => {
+    if (mongoose.connection.readyState === 1) releaseLocksOfWaitingOrders(app);
+  }, 5 * 60 * 1000);
+  setTimeout(() => {
+    if (mongoose.connection.readyState === 1) releaseLocksOfWaitingOrders(app);
+  }, 20000);
 
   // 5-7 Days Automated Order Lifecycle Progression Scheduler (runs every 5 minutes)
   setInterval(() => {

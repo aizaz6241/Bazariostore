@@ -378,6 +378,17 @@ const orderStatusHandler = async (req, res) => {
     }
   }
 
+  // 1b. Order moved BACK to "pending" by Admin: it is waiting again, so the money that was
+  //     locked for it returns to the seller's available balance (it is locked again when the
+  //     order is confirmed again). Also runs when the order is already pending, so an order
+  //     that was moved back before this existed is put right by saving "Pending" once more.
+  if (status === 'pending') {
+    const sellerIds = [...new Set(order.items.map((i) => i.seller?.toString()).filter(Boolean))];
+    for (const sId of sellerIds) {
+      await releaseSellerOrderCancelled(req.app, sId, order, { reason: 'pending' });
+    }
+  }
+
   // 2. Order moved forward by Admin: the seller's funds are locked first.
   //    (Also when a waiting order jumps straight to packed / shipped / ..., otherwise it would
   //    later be "delivered" and paid out without the funds ever having been locked.)
@@ -414,7 +425,7 @@ const orderStatusHandler = async (req, res) => {
   });
 
   order.status = status;
-  if (['cancelled', 'refunded', 'delivered'].includes(status)) {
+  if (['pending', 'cancelled', 'refunded', 'delivered'].includes(status)) {
     order.nextStatus = null;
     order.nextStatusAt = null;
   } else if (['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery'].includes(status)) {

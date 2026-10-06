@@ -18,6 +18,7 @@ import {
   Search,
   Trash2,
   X,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { computeSplit } from '@/lib/utils/financeSplit';
 import { useLiveRefresh, LiveBadge } from '@/components/LiveProvider';
@@ -402,6 +403,198 @@ function AddEntryModal({ data, onClose, onSaved }) {
   );
 }
 
+/* ───────────────────────── Deposit added to the wrong seller ───────────────────────── */
+function FixDepositModal({ row, data, onClose, onSaved }) {
+  const [mode, setMode] = useState('move');
+  const [toSellerId, setToSellerId] = useState('');
+  const [pkrRate, setPkrRate] = useState('');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const sellers = (data.sellerOptions || []).filter((x) => x.id !== row.sellerId);
+  const people = data.people || [];
+  const target = sellers.find((x) => x.id === toSellerId);
+  const owner = target ? people.find((p) => p.id === target.assignedTo) : null;
+  const needsPkr = mode === 'move' && owner && owner.role === 'member' && owner.deal !== 'inr_50' && !(row.pkrRate > 0);
+  const counted = Array.isArray(row.shares) && row.shares.length > 0;
+
+  // How the same USDT will be divided once it belongs to the correct seller (same rules as the server).
+  let preview = null;
+  if (mode === 'move' && target && owner && row.usdt > 0 && data.partnersOk) {
+    preview = computeSplit({
+      kind: 'deposit',
+      usdt: row.usdt,
+      inr: row.inr || 0,
+      pkrRate: row.pkrRate > 0 ? row.pkrRate : Number(pkrRate) || 0,
+      owner: { id: owner.id, name: owner.name, role: owner.role === 'partner' ? 'admin' : 'member', deal: owner.deal },
+      partners: data.partners,
+      previousStore: false,
+    });
+  }
+
+  const submit = async (e) => {
+    e.preventDefault();
+    try {
+      setSaving(true);
+      setErr('');
+      const token = localStorage.getItem('portal_token');
+      const res = await fetch('/api/finance/entry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ id: row.id, kind: 'deposit', action: 'fix_deposit', mode, toSellerId, pkrRate: needsPkr ? pkrRate : '', note }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || 'Could not send the request');
+      onSaved(json);
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const shareLine = (sh, sign) => (
+    <div key={sh.userId} className="flex items-center justify-between text-xs">
+      <span className="text-slate-700">
+        <b>{sh.name}</b>
+      </span>
+      <b className={sign === '+' ? 'text-emerald-700' : 'text-slate-500'}>
+        {sign}
+        {fmt(sh.amountUSDT, 3)} USDT
+      </b>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <form onSubmit={submit} onClick={(e) => e.stopPropagation()} className="bg-white w-full max-w-xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-extrabold text-slate-900">Deposit added to the wrong seller</h2>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              <b>{row.storeName}</b> • {day(row.date)} • store wallet ${fmt(row.walletAmount)}
+              {row.usdt > 0 ? ` • ₮${fmt(row.usdt)}` : ''}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-500">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {err && <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs font-semibold text-red-700">{err}</div>}
+
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { key: 'move', label: 'Move to the correct seller' },
+              { key: 'reverse', label: 'Reverse it (no money came)' },
+            ].map((k) => (
+              <button
+                key={k.key}
+                type="button"
+                onClick={() => setMode(k.key)}
+                className={`p-2.5 rounded-xl text-xs font-bold border transition ${
+                  mode === k.key ? (k.key === 'move' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-red-600 text-white border-red-600') : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                {k.label}
+              </button>
+            ))}
+          </div>
+
+          {mode === 'move' ? (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className={needsPkr ? '' : 'sm:col-span-2'}>
+                  <label className={labelCls}>Correct seller *</label>
+                  <select required value={toSellerId} onChange={(e) => setToSellerId(e.target.value)} className={inputCls}>
+                    <option value="">Select seller…</option>
+                    {sellers.map((x) => (
+                      <option key={x.id} value={x.id}>
+                        {x.storeName}
+                      </option>
+                    ))}
+                  </select>
+                  {target && (
+                    <span className={`text-[10px] mt-1 block ${owner ? 'text-slate-500' : 'text-amber-700'}`}>
+                      {owner ? `Belongs to ${owner.name} — ${dealText(owner)}` : 'This seller is not assigned yet: the deposit will wait on the “not counted yet” list until it is.'}
+                    </span>
+                  )}
+                </div>
+                {needsPkr && (
+                  <div>
+                    <label className={labelCls}>PKR per 1 USDT (that day) *</label>
+                    <input type="number" step="any" min="0" required value={pkrRate} onChange={(e) => setPkrRate(e.target.value)} placeholder="e.g. 282" className={inputCls} />
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 space-y-3">
+                <p className="text-[11px] text-slate-600">
+                  ${fmt(row.walletAmount)} leaves the store wallet of <b>{row.storeName}</b> and is added to <b>{target ? target.storeName : 'the correct seller'}</b>. The Binance total does not change; only who it is divided for.
+                </p>
+                {counted && (
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-500 uppercase mb-1.5">Divided now</div>
+                    <div className="space-y-1">{row.shares.map((sh) => shareLine(sh, ''))}</div>
+                  </div>
+                )}
+                {row.usdt > 0 && (
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-500 uppercase mb-1.5">After the move</div>
+                    {preview && preview.ok ? (
+                      <div className="space-y-1">{preview.shares.map((sh) => shareLine(sh, '+'))}</div>
+                    ) : (
+                      <p className="text-xs text-slate-400">
+                        {preview && preview.reason === 'pkr_rate'
+                          ? 'Enter that day’s PKR rate (and make sure the INR amount is on the deposit) for this 1:1 PKR member.'
+                          : target && !owner
+                          ? 'Assign the seller first to see the split.'
+                          : 'Choose the correct seller.'}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="rounded-2xl bg-red-50 border border-red-200 p-4 text-[11px] text-red-800 space-y-1">
+              <p>
+                ${fmt(row.walletAmount)} is taken back from the store wallet of <b>{row.storeName}</b> and the deposit is closed.
+                {row.usdt > 0 ? ` ₮${fmt(row.usdt)} leaves the Binance ledger.` : ''}
+              </p>
+              <p>Use this only when the money never came (typed twice, wrong amount). If the money came but for another seller, use “Move”.</p>
+            </div>
+          )}
+
+          <div>
+            <label className={labelCls}>Note</label>
+            <input type="text" value={note} maxLength={300} onChange={(e) => setNote(e.target.value)} placeholder="Optional — what happened" className={inputCls} />
+          </div>
+
+          <p className="text-[11px] text-slate-500">
+            It only works while {row.storeName} still has this amount in its available balance. Nothing changes until the other partner approves it.
+          </p>
+        </div>
+
+        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-2">
+          <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-700 text-xs font-bold">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={saving || (mode === 'move' && !toSellerId)}
+            className={`px-5 py-2.5 rounded-xl text-white text-xs font-bold disabled:opacity-50 ${mode === 'move' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-red-600 hover:bg-red-700'}`}
+          >
+            {saving ? 'Sending…' : 'Send for approval'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 /* ───────────────────────── Page ───────────────────────── */
 export default function FinancePage() {
   const { user } = useAuth();
@@ -411,6 +604,7 @@ export default function FinancePage() {
   const [busyId, setBusyId] = useState('');
   const [editId, setEditId] = useState('');
   const [showAdd, setShowAdd] = useState(false);
+  const [fixRow, setFixRow] = useState(null);
   const [notice, setNotice] = useState('');
   // Goes up whenever the approvals list and the activity log should be read again
   const [tick, setTick] = useState(0);
@@ -807,6 +1001,17 @@ export default function FinancePage() {
                         </button>
                       </div>
                     )}
+                    {row.kind === 'deposit' && (
+                      <button
+                        type="button"
+                        disabled={waitingByEntry.has(row.id)}
+                        onClick={() => setFixRow(row)}
+                        className="mt-2 px-3 py-1.5 rounded-xl bg-white border border-amber-300 text-amber-800 text-[11px] font-bold inline-flex items-center gap-1 disabled:opacity-50"
+                        title="Added to the wrong seller? Move it to the correct seller, or reverse it"
+                      >
+                        <ArrowLeftRight className="w-3.5 h-3.5" /> Wrong seller?
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -917,6 +1122,7 @@ export default function FinancePage() {
                             <b className="text-slate-900">{e.storeName}</b>
                             {e.manual && <span className="ml-1.5 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[9px] font-bold uppercase">Manual</span>}
                             {e.note && <div className="text-[10px] text-slate-400 mt-0.5">{e.note}</div>}
+                            {e.movedFrom && <div className="text-[10px] text-amber-700 mt-0.5">Moved from {e.movedFrom} (was added to the wrong seller)</div>}
                             {waitingByEntry.has(e.id) && (
                               <div className="mt-1">
                                 <WaitingTag approval={waitingByEntry.get(e.id)} />
@@ -995,6 +1201,16 @@ export default function FinancePage() {
                                   >
                                     <Shuffle className="w-3.5 h-3.5" />
                                   </button>
+                                  {e.kind === 'deposit' && (
+                                    <button
+                                      disabled={waitingByEntry.has(e.id)}
+                                      onClick={() => setFixRow(e)}
+                                      className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 disabled:opacity-50"
+                                      title="Added to the wrong seller? Move it to the correct seller, or reverse it"
+                                    >
+                                      <ArrowLeftRight className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
                                 </>
                               )}
                             </div>
@@ -1070,6 +1286,21 @@ export default function FinancePage() {
           <ExcludedTestSellers rows={data.excludedTest} />
           <ActivityLog tick={tick} />
         </>
+      )}
+
+      {fixRow && data && (
+        <FixDepositModal
+          row={fixRow}
+          data={data}
+          onClose={() => setFixRow(null)}
+          onSaved={(json) => {
+            requestNo.current += 1;
+            setData(json);
+            setFixRow(null);
+            setNotice(json.notice || '');
+            setTick((n) => n + 1);
+          }}
+        />
       )}
 
       {showAdd && data && (

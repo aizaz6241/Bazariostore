@@ -391,13 +391,20 @@ export async function releaseSellerOrderDelivered(app, sellerId, order) {
  * Returns locked processing fund back to available balance without profit/loss.
  * (Putting the items back in stock is done once for the whole order by restockOrder,
  * see utils/orderStock.js.)
+ *
+ * Also used when an admin moves a confirmed order BACK to "pending" (reason: 'pending'): the
+ * order is waiting again, so the money locked for it returns to the available balance. It is
+ * locked again when the order is confirmed again. `onlyWaiting` limits it to items that are
+ * themselves waiting (used by the background check below).
  */
-export async function releaseSellerOrderCancelled(app, sellerId, order) {
+export async function releaseSellerOrderCancelled(app, sellerId, order, { reason = 'cancelled', onlyWaiting = false } = {}) {
   await refreshItemFlags(order);
+  const backToPending = reason === 'pending';
+  const waiting = (it) => !it.itemStatus || it.itemStatus === 'pending';
 
   const mine = [];
   order.items.forEach((it, index) => {
-    if (ownedBy(it, sellerId) && it.processingLocked && !it.payoutSettled) mine.push(index);
+    if (ownedBy(it, sellerId) && it.processingLocked && !it.payoutSettled && (!onlyWaiting || waiting(it))) mine.push(index);
   });
   if (mine.length === 0) return;
 
@@ -425,7 +432,7 @@ export async function releaseSellerOrderCancelled(app, sellerId, order) {
     status: 'completed',
     balanceAfter: moved.wallet.balance,
     processingFundAfter: moved.wallet.processingFund,
-    adminNote: `Order #${order.orderNumber} Cancelled — $${totalToRefund.toFixed(2)} Processing Fund returned to Available Balance`,
+    adminNote: `Order #${order.orderNumber} ${backToPending ? 'moved back to Pending' : 'Cancelled'} — $${totalToRefund.toFixed(2)} Processing Fund returned to Available Balance`,
     processedAt: new Date(),
   });
 
@@ -434,8 +441,10 @@ export async function releaseSellerOrderCancelled(app, sellerId, order) {
       recipientType: 'seller',
       sellerId: String(sellerId),
       type: 'order',
-      title: `↩️ Order #${order.orderNumber} Cancelled`,
-      body: `$${totalToRefund.toFixed(2)} processing fund returned to your available balance.`,
+      title: `↩️ Order #${order.orderNumber} ${backToPending ? 'moved back to Pending' : 'Cancelled'}`,
+      body: backToPending
+        ? `$${totalToRefund.toFixed(2)} processing fund returned to your available balance. Confirm the order again to process it.`
+        : `$${totalToRefund.toFixed(2)} processing fund returned to your available balance.`,
       link: '/seller/wallet',
     });
 
@@ -443,6 +452,47 @@ export async function releaseSellerOrderCancelled(app, sellerId, order) {
       balance: moved.wallet.balance,
       processingFund: moved.wallet.processingFund,
     });
+  }
+}
+
+/**
+ * Background check: a WAITING order must not hold locked money.
+ *
+ * Orders that were moved back to "pending" before that step released the funds still have the
+ * amount sitting in the processing fund, and the seller cannot confirm them again ("already
+ * confirmed"). This returns the amount to the available balance, once per order (same once-only
+ * wallet step as a cancellation). Only items that are themselves waiting are touched, and only
+ * orders nobody changed in the last 10 minutes, so a confirmation in progress is never undone.
+ */
+export async function releaseLocksOfWaitingOrders(app) {
+  try {
+    const cutoff = new Date(Date.now() - 10 * 60 * 1000);
+    const orders = await Order.find({
+      status: 'pending',
+      updatedAt: { $lt: cutoff },
+      'items.processingLocked': true,
+    }).limit(200);
+
+    for (const order of orders) {
+      const sellerIds = [
+        ...new Set(
+          order.items
+            .filter((it) => it.processingLocked && !it.payoutSettled && (!it.itemStatus || it.itemStatus === 'pending'))
+            .map((it) => it.seller?.toString())
+            .filter(Boolean)
+        ),
+      ];
+      for (const sId of sellerIds) {
+        try {
+          await releaseSellerOrderCancelled(app, sId, order, { reason: 'pending', onlyWaiting: true });
+          console.log(`[orders] released the locked funds of waiting order #${order.orderNumber} (seller ${sId})`);
+        } catch (e) {
+          console.error(`[orders] could not release the locked funds of order #${order.orderNumber}:`, e.message);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[orders] waiting-order lock check failed:', e.message);
   }
 }
 

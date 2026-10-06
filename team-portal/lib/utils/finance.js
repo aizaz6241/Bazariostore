@@ -235,6 +235,8 @@ async function computeLedger() {
       ref: doc.depositRef || doc.transactionRef || '',
       editedBy: doc.finEditedBy || '',
       editedAt: doc.finEditedAt || null,
+      // set when the deposit was first added to another seller by mistake and then moved here
+      movedFrom: doc.movedFromStore || '',
     };
 
     if (doc.finSkip === true) {
