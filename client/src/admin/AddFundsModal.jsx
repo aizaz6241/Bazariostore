@@ -5,8 +5,6 @@ import { useCurrency } from '../context/CurrencyContext.jsx';
 import SellerSelectDropdown from './SellerSelectDropdown.jsx';
 
 const FALLBACK_INR_RATE = 83.5; // used only if the live rate has not loaded
-const BINANCE_RATE_PRESETS = ['89.50', '90.00', '90.50', '91.00', '91.50'];
-const INR_PRESETS = [5000, 10000, 25000, 50000, 100000];
 const REASON_PRESETS = [
   'Order fulfillment funds',
   'Bank deposit verified',
@@ -117,16 +115,6 @@ export default function AddFundsModal({
       const calcInr = Math.round(num * INR_RATE);
       setInrAmount(String(calcInr));
     }
-  };
-
-  // Handle Quick INR Preset Click
-  const handlePresetInr = (presetVal) => {
-    lastEditedRef.current = 'inr';
-    const currentNum = parseFloat(inrAmount) || 0;
-    const nextVal = currentNum > 0 ? currentNum + presetVal : presetVal;
-    setInrAmount(String(nextVal));
-    const calcUsd = (nextVal / INR_RATE).toFixed(2);
-    setUsdAmount(calcUsd);
   };
 
   // Binance USDT conversion calculations
@@ -244,10 +232,7 @@ export default function AddFundsModal({
           {/* 1. SELLER SELECTION */}
           <div className="afm-section">
             <label className="afm-label">
-              <span>1. Target Merchant Store *</span>
-              <span className="afm-label-sub">
-                {sellersList.length} Stores Available &bull; Searchable
-              </span>
+              <span className="afm-label-main">1. Target Merchant Store *</span>
             </label>
 
             <SellerSelectDropdown
@@ -255,13 +240,16 @@ export default function AddFundsModal({
               value={selectedSellerId}
               onChange={(id) => setSelectedSellerId(id)}
               inrRate={INR_RATE}
+              hideOwner={true}
               placeholder="-- Choose target merchant store --"
             />
           </div>
 
           {/* 2. TRANSACTION TYPE TOGGLE (Credit vs Debit) */}
           <div className="afm-section">
-            <label className="afm-label">2. Select Adjustment Action *</label>
+            <label className="afm-label">
+              <span className="afm-label-main">2. Select Adjustment Action *</span>
+            </label>
             <div className="afm-type-toggle-grid">
               <button
                 type="button"
@@ -271,7 +259,6 @@ export default function AddFundsModal({
                 <div className="afm-type-icon">💰</div>
                 <div className="afm-type-info">
                   <b>Credit Funds (+)</b>
-                  <small>Add funds directly to merchant balance</small>
                 </div>
                 {!isDebit && <div className="afm-type-check">✓ Active</div>}
               </button>
@@ -284,7 +271,6 @@ export default function AddFundsModal({
                 <div className="afm-type-icon">💸</div>
                 <div className="afm-type-info">
                   <b>Debit Funds (-)</b>
-                  <small>Deduct funds from merchant balance</small>
                 </div>
                 {isDebit && <div className="afm-type-check">✓ Active</div>}
               </button>
@@ -294,8 +280,7 @@ export default function AddFundsModal({
           {/* 3. DUAL CURRENCY AMOUNT INPUT (INR & USD) */}
           <div className="afm-section">
             <label className="afm-label">
-              <span>3. Enter Adjustment Amount *</span>
-              <span className="afm-label-sub">Both INR &amp; USD sync in real-time</span>
+              <span className="afm-label-main">3. Enter Adjustment Amount *</span>
             </label>
 
             <div className="afm-amount-card">
@@ -305,7 +290,6 @@ export default function AddFundsModal({
                   <span className="afm-currency-title">
                     🇮🇳 Amount in Indian Rupees (₹ INR)
                   </span>
-                  <span className="afm-badge-inr">Local Indian Currency</span>
                 </div>
                 <div className="afm-input-group">
                   <span className="afm-input-prefix">₹</span>
@@ -322,25 +306,6 @@ export default function AddFundsModal({
                 </div>
               </div>
 
-              {/* Quick INR Preset Chips */}
-              {!isDebit && (
-                <div className="afm-presets-bar">
-                  <span className="afm-presets-lbl">⚡ Quick Presets:</span>
-                  <div className="afm-preset-chips">
-                    {INR_PRESETS.map((p) => (
-                      <button
-                        key={p}
-                        type="button"
-                        className="afm-preset-chip"
-                        onClick={() => handlePresetInr(p)}
-                      >
-                        +₹{p.toLocaleString('en-IN')} <small>(≈${(p / INR_RATE).toFixed(1)})</small>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* Conversion Rate Indicator */}
               <div className="afm-rate-bridge">
                 <span className="afm-bridge-icon">⇅</span>
@@ -353,7 +318,6 @@ export default function AddFundsModal({
                   <span className="afm-currency-title text-blue">
                     💵 Amount in US Dollars ($ USD) *
                   </span>
-                  <span className="afm-badge-usd">Platform Wallet Balance</span>
                 </div>
                 <div className="afm-input-group">
                   <span className="afm-input-prefix">$</span>
@@ -373,21 +337,17 @@ export default function AddFundsModal({
             </div>
           </div>
 
-          {/* 4. BINANCE USDT RATE & CONVERSION (ADMIN INTERNAL • HIDDEN FROM SELLER) */}
+          {/* 4. BINANCE USDT RATE & CONVERSION (ADMIN INTERNAL) */}
           {!isDebit && (
             <div className="afm-binance-container">
               <div className="afm-binance-header">
                 <div className="afm-binance-header-left">
                   <span className="afm-binance-icon">🟡</span>
-                  <div>
-                    <b className="afm-binance-title">Binance USDT Received</b>
-                    <span className="afm-binance-badge">Admin Internal • Hidden from Seller</span>
-                  </div>
+                  <b className="afm-binance-title">Binance USDT Received</b>
                 </div>
                 {calcUsdt && (
                   <div className="afm-usdt-pill">
-                    <span>💎 Binance USDT Received:</span>
-                    <b>{calcUsdt} USDT</b>
+                    <span>{calcUsdt} USDT</span>
                   </div>
                 )}
               </div>
@@ -407,23 +367,21 @@ export default function AddFundsModal({
                     onChange={(e) => setBinanceInr(e.target.value)}
                     className="afm-subinput binance-rate-input"
                   />
-                  {parseFloat(inrAmount) > 0 && String(parseFloat(inrAmount)) !== String(parsedBinanceInr) ? (
+                  {parseFloat(inrAmount) > 0 && String(parseFloat(inrAmount)) !== String(parsedBinanceInr) && (
                     <button
                       type="button"
                       onClick={() => setBinanceInr(String(parseFloat(inrAmount)))}
-                      style={{ marginTop: 4, padding: 0, border: 'none', background: 'none', color: '#b45309', fontSize: 11.5, fontWeight: 700, textDecoration: 'underline', cursor: 'pointer' }}
+                      className="afm-copy-amt-link"
                     >
-                      Upar wali amount use karein (₹{Number(parseFloat(inrAmount)).toLocaleString('en-IN')})
+                      Copy from above (₹{Number(parseFloat(inrAmount)).toLocaleString('en-IN')})
                     </button>
-                  ) : (
-                    <small className="afm-binance-hint">Asli INR likhein jo seller ne bheje.</small>
                   )}
                 </div>
 
                 {/* Real USDT received */}
                 <div>
                   <label className="afm-sublabel">
-                    💎 USDT Received (Binance me jitne aaye):
+                    💎 USDT Received:
                   </label>
                   <input
                     type="number"
@@ -434,43 +392,36 @@ export default function AddFundsModal({
                     onChange={(e) => setUsdtReceived(e.target.value)}
                     className="afm-subinput binance-rate-input"
                   />
-                  <small className="afm-binance-hint">
-                    Binance me dekh kar asli amount likhein. Agar asal paisa nahi aaya (sirf helping ya purana balance) to khali chhor dein.
-                  </small>
                 </div>
 
                 {/* Worked-out rate (reference only) */}
                 <div style={{ gridColumn: '1 / -1' }}>
-                  <label className="afm-sublabel">
-                    🟡 Rate (khud nikalta hai):
-                  </label>
-                  <div className={`afm-usdt-display-box ${parsedBRate > 0 ? 'has-val' : ''}`}>
-                    <span className="afm-usdt-val">
-                      {parsedBRate > 0 ? `₹${parsedBRate} / USDT` : 'INR aur USDT likhein'}
-                    </span>
-                    {parsedBRate > 0 && (
-                      <span className="afm-usdt-calc">
-                        ₹{Number(parsedBinanceInr).toFixed(0)} ÷ {calcUsdt}
+                  <div className="afm-rate-row">
+                    <label className="afm-sublabel" style={{ margin: 0 }}>
+                      🟡 Rate:
+                    </label>
+                    <div className={`afm-usdt-display-box ${parsedBRate > 0 ? 'has-val' : ''}`}>
+                      <span className="afm-usdt-val">
+                        {parsedBRate > 0 ? `₹${parsedBRate} / USDT` : '—'}
                       </span>
-                    )}
+                      {parsedBRate > 0 && (
+                        <span className="afm-usdt-calc">
+                          (₹{Number(parsedBinanceInr).toFixed(0)} ÷ {calcUsdt})
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <small className="afm-binance-hint">
-                    Ye USDT Finance ledger me add honge. Seller ko show nahi hota.
-                  </small>
                 </div>
               </div>
             </div>
           )}
 
-          {/* 5. HELPING AMOUNT (ADMIN INTERNAL • HIDDEN FROM SELLER) */}
+          {/* 5. HELPING AMOUNT */}
           {!isDebit && (
             <div className="afm-helping-container">
               <div className="afm-helping-header">
                 <span className="afm-helping-icon">🤝</span>
-                <div>
-                  <b className="afm-helping-title">Admin Helping Amount ($ USD)</b>
-                  <span className="afm-helping-badge">Admin Internal Split • Hidden from Seller</span>
-                </div>
+                <b className="afm-helping-title">Admin Helping Amount ($ USD)</b>
               </div>
 
               <div className="afm-helping-body">
@@ -478,22 +429,19 @@ export default function AddFundsModal({
                   type="number"
                   min="0"
                   step="any"
-                  placeholder="0 (e.g. 50 if admin contributed $50 as help)"
+                  placeholder="0.00 (Optional admin help contribution)"
                   value={helpingAmount}
                   onChange={(e) => setHelpingAmount(e.target.value)}
                   className="afm-subinput helping-input"
                 />
-                <small className="afm-helping-hint">
-                  Admin ki taraf se di gayi help amount. Seller ko full <b>${parsedUsd || 0} USD</b> balance milega, lekin Admin USDT Wallet se ye <b>${parsedHelping}</b> minus ho jayegi taake USDT Wallet mein sirf seller ke apne real funds count hon.
-                </small>
 
                 {parsedHelping > 0 && parsedUsd > 0 && (
                   <div className="afm-helping-summary-pill">
-                    <span>Credited to Seller: <b>${parsedUsd.toFixed(2)}</b></span>
+                    <span>Credited: <b>${parsedUsd.toFixed(2)}</b></span>
                     <span>&bull;</span>
                     <span>Admin Helping: <b style={{ color: '#7c3aed' }}>-${parsedHelping.toFixed(2)}</b></span>
                     <span>&bull;</span>
-                    <span>Real Seller USDT Inflow: <b style={{ color: '#059669' }}>+${realSellerInflow.toFixed(2)}</b></span>
+                    <span>Real Inflow: <b style={{ color: '#059669' }}>+${realSellerInflow.toFixed(2)}</b></span>
                   </div>
                 )}
               </div>
@@ -511,7 +459,7 @@ export default function AddFundsModal({
           <div className="afm-meta-grid">
             <div>
               <label className="afm-sublabel">
-                Reason / Notes * <span className="afm-note-vis">(Visible to seller)</span>
+                Reason / Notes *
               </label>
               <input
                 type="text"
@@ -526,7 +474,7 @@ export default function AddFundsModal({
                   <button
                     key={r}
                     type="button"
-                    className="afm-reason-chip"
+                    className={`afm-reason-chip ${reason === r ? 'active' : ''}`}
                     onClick={() => setReason(r)}
                   >
                     {r}
@@ -546,9 +494,6 @@ export default function AddFundsModal({
                 placeholder="e.g. UTR982348234 / Cash Receipt #"
                 className="afm-subinput"
               />
-              <small className="afm-subhint">
-                Transaction reference ID ya banking UTR number.
-              </small>
             </div>
           </div>
 

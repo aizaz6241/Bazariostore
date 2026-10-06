@@ -102,13 +102,12 @@
 }
 
 .seller-picker-store-name {
-  font-size: 14.5px;
+  font-size: 15px;
   font-weight: 800;
   color: #0f172a;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 240px;
   letter-spacing: -0.2px;
 }
 
@@ -165,16 +164,17 @@
 .seller-picker-balance-pill {
   background: #f0fdf4;
   border: 1.5px solid #bbf7d0;
-  padding: 4px 10px;
+  padding: 3px 9px;
   border-radius: 8px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   text-align: right;
+  flex-shrink: 0;
 }
 
 .seller-picker-balance-lbl {
-  font-size: 9.5px;
+  font-size: 9px;
   font-weight: 800;
   text-transform: uppercase;
   color: #166534;
@@ -183,33 +183,34 @@
 }
 
 .seller-picker-balance-usd {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 900;
   color: #15803d;
   line-height: 1.25;
 }
 
 .seller-picker-balance-inr {
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
   color: #0284c7;
-  line-height: 1;
+  line-height: 1.1;
 }
 
 /* Locked Funds Pill */
 .seller-picker-locked-pill {
   background: #fffbeb;
   border: 1.5px solid #fde68a;
-  padding: 4px 9px;
+  padding: 3px 9px;
   border-radius: 8px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   text-align: right;
+  flex-shrink: 0;
 }
 
 .seller-picker-locked-lbl {
-  font-size: 9.5px;
+  font-size: 9px;
   font-weight: 800;
   text-transform: uppercase;
   color: #92400e;
@@ -218,8 +219,8 @@
 }
 
 .seller-picker-locked-val {
-  font-size: 13.5px;
-  font-weight: 900;
+  font-size: 13px;
+  font-weight: 800;
   color: #b45309;
   line-height: 1.25;
 }
@@ -548,13 +549,19 @@
   color: #1d4ed8;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 520px) {
   .seller-picker-trigger {
-    flex-direction: column;
-    align-items: stretch;
+    flex-wrap: wrap;
     gap: 8px;
+    padding: 8px 10px;
+  }
+  .seller-picker-trigger-content {
+    flex: 1 1 auto;
+    min-width: 0;
   }
   .seller-picker-trigger-side {
-    justify-content: space-between;
+    width: 100%;
+    justify-content: flex-end;
+    gap: 6px;
   }
 }

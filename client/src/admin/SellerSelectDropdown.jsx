@@ -26,6 +26,7 @@ export default function SellerSelectDropdown({
   placeholder = 'Select target merchant store...',
   disabled = false,
   showBalance = true,
+  hideOwner = false,
   inrRate: propInrRate,
   extraAction = null,
   className = '',
@@ -136,25 +137,27 @@ export default function SellerSelectDropdown({
                     <span className="seller-picker-badge-test">Test Store</span>
                   )}
                 </div>
-                <div className="seller-picker-sub">
-                  <span className="seller-picker-owner">
-                    Owner: <b>{selectedSeller.ownerName || 'Merchant'}</b>
-                  </span>
-                  {selectedSeller.email && (
-                    <>
-                      <span className="seller-picker-dot">&bull;</span>
-                      <span className="seller-picker-email" title={selectedSeller.email}>
-                        {selectedSeller.email}
-                      </span>
-                    </>
-                  )}
-                  {sellerPhone && (
-                    <>
-                      <span className="seller-picker-dot">&bull;</span>
-                      <span className="seller-picker-phone">📞 {sellerPhone}</span>
-                    </>
-                  )}
-                </div>
+                {!hideOwner && (
+                  <div className="seller-picker-sub">
+                    <span className="seller-picker-owner">
+                      Owner: <b>{selectedSeller.ownerName || 'Merchant'}</b>
+                    </span>
+                    {selectedSeller.email && (
+                      <>
+                        <span className="seller-picker-dot">&bull;</span>
+                        <span className="seller-picker-email" title={selectedSeller.email}>
+                          {selectedSeller.email}
+                        </span>
+                      </>
+                    )}
+                    {sellerPhone && (
+                      <>
+                        <span className="seller-picker-dot">&bull;</span>
+                        <span className="seller-picker-phone">📞 {sellerPhone}</span>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             </>
           ) : (
@@ -168,7 +171,7 @@ export default function SellerSelectDropdown({
         <div className="seller-picker-trigger-side">
           {selectedSeller && showBalance && (
             <>
-              {curLocked > 0 && (
+              {(curLocked > 0 || hideOwner) && (
                 <div className="seller-picker-locked-pill" title="Processing funds locked in confirmed orders">
                   <span className="seller-picker-locked-lbl">Locked</span>
                   <span className="seller-picker-locked-val">{money(curLocked)}</span>
@@ -281,15 +284,17 @@ export default function SellerSelectDropdown({
                             <span className="seller-picker-badge-test">Test</span>
                           )}
                         </div>
-                        <div className="seller-picker-item-sub">
-                          <span>Owner: <b>{s.ownerName || 'Merchant'}</b></span>
-                          {s.email && (
-                            <>
-                              <span>&bull;</span>
-                              <span title={s.email}>{s.email}</span>
-                            </>
-                          )}
-                        </div>
+                        {!hideOwner && (
+                          <div className="seller-picker-item-sub">
+                            <span>Owner: <b>{s.ownerName || 'Merchant'}</b></span>
+                            {s.email && (
+                              <>
+                                <span>&bull;</span>
+                                <span title={s.email}>{s.email}</span>
+                              </>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -298,7 +303,7 @@ export default function SellerSelectDropdown({
                         <div className="seller-picker-item-balance">
                           <span className="seller-picker-item-usd">{money(bal)}</span>
                           <span className="seller-picker-item-inr">≈ ₹{inr.toLocaleString('en-IN')}</span>
-                          {locked > 0 && (
+                          {(locked > 0 || hideOwner) && (
                             <span className="seller-picker-item-locked" title="Processing funds locked in confirmed orders">
                               Locked: {money(locked)}
                             </span>

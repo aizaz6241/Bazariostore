@@ -540,6 +540,33 @@
   display: flex;
   flex-direction: column;
   animation: afmScaleUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f8fafc;
+}
+
+.add-funds-modal-card::-webkit-scrollbar {
+  width: 7px;
+}
+
+.add-funds-modal-card::-webkit-scrollbar-track {
+  background: #f8fafc;
+  border-top-right-radius: 18px;
+  border-bottom-right-radius: 18px;
+}
+
+.add-funds-modal-card::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+  border: 2px solid #f8fafc;
+  transition: background 0.2s ease;
+}
+
+.add-funds-modal-card::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.add-funds-modal-card::-webkit-scrollbar-thumb:active {
+  background: #64748b;
 }
 
 @keyframes afmScaleUp {
@@ -670,9 +697,16 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 800;
-  color: #1e293b;
+  color: #0f172a;
+}
+
+.afm-label-main {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.2px;
 }
 
 .afm-label-sub {
@@ -792,7 +826,7 @@
 }
 
 .afm-type-card {
-  padding: 12px 14px;
+  padding: 10px 14px;
   border-radius: 11px;
   border: 1.5px solid #e2e8f0;
   background: #ffffff;
@@ -803,6 +837,7 @@
   text-align: left;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
+  min-height: 48px;
 }
 
 .afm-type-card:hover {
@@ -1136,41 +1171,29 @@
   box-shadow: 0 0 0 3px rgba(202, 138, 4, 0.15);
 }
 
-.afm-rate-chips-row {
+.afm-copy-amt-link {
+  margin-top: 5px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #b45309;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+  display: inline-block;
+  transition: color 0.15s ease;
+}
+
+.afm-copy-amt-link:hover {
+  color: #78350f;
+}
+
+.afm-rate-row {
   display: flex;
   align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-  margin-top: 6px;
-}
-
-.afm-chips-lbl {
-  font-size: 10.5px;
-  font-weight: 700;
-  color: #854d0e;
-  margin-right: 2px;
-}
-
-.afm-rate-chip {
-  padding: 3px 7px;
-  border-radius: 5px;
-  border: 1px solid #fde047;
-  background: #fefce8;
-  color: #854d0e;
-  font-size: 10.5px;
-  font-weight: 800;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.afm-rate-chip:hover {
-  background: #fef08a;
-}
-
-.afm-rate-chip.active {
-  background: #eab308;
-  color: #ffffff;
-  border-color: #ca8a04;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .afm-usdt-display-box {
@@ -1204,14 +1227,7 @@
   font-size: 11px;
   font-weight: 700;
   color: #16a34a;
-}
-
-.afm-binance-hint {
-  font-size: 10.5px;
-  color: #a16207;
-  display: block;
-  margin-top: 4px;
-  line-height: 1.3;
+  margin-left: 6px;
 }
 
 /* ─── HELPING CONTAINER ─── */
@@ -1299,21 +1315,28 @@
 }
 
 .afm-reason-chip {
-  padding: 2px 7px;
-  border-radius: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
   border: 1px solid #cbd5e1;
   background: #f8fafc;
   color: #475569;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .afm-reason-chip:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+  border-color: #94a3b8;
+}
+
+.afm-reason-chip.active {
   background: #0f172a;
   color: #ffffff;
   border-color: #0f172a;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.15);
 }
 
 .afm-subhint {
