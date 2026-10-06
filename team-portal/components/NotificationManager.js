@@ -1,7 +1,9 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from './AuthProvider';
+import { readCache, writeCache } from '@/lib/clientCache';
 import { Bell, BellOff, Volume2, VolumeX, CheckCircle, AlertCircle, X } from 'lucide-react';
 
 const NotificationContext = createContext({
@@ -14,6 +16,8 @@ const NotificationContext = createContext({
   playMessageSound: () => {},
   playCashSound: () => {},
   playNotificationSound: () => {},
+  unreadChatCount: 0,
+  refreshUnreadChatCount: () => {},
 });
 
 // Helper to convert base64 VAPID key to Uint8Array for pushManager
@@ -30,15 +34,65 @@ function urlBase64ToUint8Array(base64String) {
 
 export function NotificationProvider({ children }) {
   const { user } = useAuth();
+  const router = useRouter();
   const [permission, setPermission] = useState('default');
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [soundEnabled, setSoundEnabledState] = useState(true);
   const [showPromptBanner, setShowPromptBanner] = useState(false);
   const [inAppToast, setInAppToast] = useState(null); // { title, body, url, type }
   const [loadingAction, setLoadingAction] = useState(false);
+  const [unreadChatCount, setUnreadChatCount] = useState(() => {
+    return readCache('portal_total_unread_chat') || 0;
+  });
 
   const audioCache = useRef({});
   const audioCtxRef = useRef(null);
+
+  const refreshUnreadChatCount = useCallback(async () => {
+    if (!user) return;
+    try {
+      const token = localStorage.getItem('portal_token');
+      if (!token) return;
+      const res = await fetch('/api/chat/contacts', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const total = typeof data.totalUnreadCount === 'number' ? data.totalUnreadCount : 0;
+        setUnreadChatCount(total);
+        writeCache('portal_total_unread_chat', total);
+      }
+    } catch (_) {}
+  }, [user]);
+
+  useEffect(() => {
+    refreshUnreadChatCount();
+    const timer = setInterval(() => {
+      if (!document.hidden && user) {
+        refreshUnreadChatCount();
+      }
+    }, 8000);
+    const onVis = () => {
+      if (!document.hidden && user) refreshUnreadChatCount();
+    };
+    document.addEventListener('visibilitychange', onVis);
+
+    const onCustomUpdate = (e) => {
+      if (typeof e.detail === 'number') {
+        setUnreadChatCount(e.detail);
+        writeCache('portal_total_unread_chat', e.detail);
+      } else {
+        refreshUnreadChatCount();
+      }
+    };
+    window.addEventListener('chat_unread_updated', onCustomUpdate);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('chat_unread_updated', onCustomUpdate);
+    };
+  }, [user, refreshUnreadChatCount]);
 
   // Initialize sound settings & audio objects
   useEffect(() => {
@@ -274,6 +328,7 @@ export function NotificationProvider({ children }) {
             url: notif.url,
             type: notif.dataType,
           });
+          refreshUnreadChatCount();
         }
       };
 
@@ -378,6 +433,8 @@ export function NotificationProvider({ children }) {
         playMessageSound,
         playCashSound,
         playNotificationSound,
+        unreadChatCount,
+        refreshUnreadChatCount,
       }}
     >
       {children}
@@ -422,8 +479,16 @@ export function NotificationProvider({ children }) {
       {inAppToast && (
         <div
           onClick={() => {
-            if (inAppToast.url && typeof window !== 'undefined') {
-              window.location.href = inAppToast.url;
+            const destUrl = inAppToast.url;
+            if (destUrl) {
+              if (typeof window !== 'undefined' && destUrl.startsWith('/chat')) {
+                window.dispatchEvent(new CustomEvent('portal_open_chat_url', { detail: { url: destUrl } }));
+              }
+              try {
+                router.push(destUrl);
+              } catch (_) {
+                if (typeof window !== 'undefined') window.location.href = destUrl;
+              }
             }
             setInAppToast(null);
           }}

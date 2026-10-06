@@ -27,7 +27,7 @@ export async function GET(req) {
 
     const myId = session._id.toString();
     const convIdFor = (contactId) => `personal_${[myId, contactId.toString()].sort().join('_')}`;
-    const conversationIds = ['main_group', ...contacts.map((c) => convIdFor(c._id))];
+    const conversationIds = ['main_group', 'materials_group', ...contacts.map((c) => convIdFor(c._id))];
 
     // Unread counts for every conversation in one query; the newest message of each
     // conversation through the (conversationId, createdAt) index, without loading media.
@@ -74,12 +74,22 @@ export async function GET(req) {
     const groupLastMsg = lastByConv.get('main_group') || null;
     const groupUnreadCount = unreadByConv.get('main_group') || 0;
 
+    const materialsLastMsg = lastByConv.get('materials_group') || null;
+    const materialsUnreadCount = unreadByConv.get('materials_group') || 0;
+
+    const totalUnreadCount = Array.from(unreadByConv.values()).reduce((sum, n) => sum + (n || 0), 0);
+
     return NextResponse.json({
       contacts: enrichedContacts,
       group: {
         lastMessage: groupLastMsg,
         unreadCount: groupUnreadCount,
       },
+      materialsGroup: {
+        lastMessage: materialsLastMsg,
+        unreadCount: materialsUnreadCount,
+      },
+      totalUnreadCount,
     });
   } catch (err) {
     console.error('Fetch chat contacts error:', err);

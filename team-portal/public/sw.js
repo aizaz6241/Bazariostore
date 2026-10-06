@@ -53,7 +53,7 @@ self.addEventListener('push', (event) => {
   const sound = data.sound || '/sounds/notification.wav';
   const vibrate = data.vibrate || [200, 100, 200, 100, 200];
   const tag = data.tag || `bazario-${Date.now()}`;
-  const targetUrl = data.data?.url || '/dashboard';
+  const targetUrl = data.data?.url || data.url || '/dashboard';
 
   const notificationOptions = {
     body,

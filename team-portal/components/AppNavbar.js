@@ -30,7 +30,7 @@ import { useNotifications } from './NotificationManager';
 
 export default function AppNavbar() {
   const { user, logout } = useAuth();
-  const { permission, soundEnabled, setSoundEnabled, enableNotifications, sendTestPush } = useNotifications();
+  const { permission, soundEnabled, setSoundEnabled, enableNotifications, sendTestPush, unreadChatCount } = useNotifications();
   const [isNotifMenuOpen, setIsNotifMenuOpen] = useState(false);
   const pathname = usePathname();
 
@@ -175,6 +175,11 @@ export default function AppNavbar() {
                   {/* icons come back on wide screens; at laptop width the labels need the room */}
                   <Icon className="w-4 h-4 hidden xl:block" />
                   <span>{item.label}</span>
+                  {item.href === '/chat' && unreadChatCount > 0 && (
+                    <span className="ml-1 px-1.5 py-0.2 bg-emerald-600 text-white text-[10px] font-extrabold rounded-full animate-pulse shadow-xs">
+                      {unreadChatCount > 99 ? '99+' : unreadChatCount}
+                    </span>
+                  )}
                 </Link>
               );
             })}

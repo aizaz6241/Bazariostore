@@ -40,10 +40,11 @@ export async function GET(req) {
 
     for (const id of ids) {
       const doc = byId.get(id);
-      // Only the team group and the user's own 1-on-1 chats
+      // Allow main group, materials group, and user's own 1-on-1 chats
       const allowed =
         doc &&
         (doc.conversationId === 'main_group' ||
+          doc.conversationId === 'materials_group' ||
           (doc.conversationId || '').replace(/^personal_/, '').split('_').includes(myId));
       if (!allowed || doc.isDeleted || !doc.mediaUrl) {
         missing.push(id);

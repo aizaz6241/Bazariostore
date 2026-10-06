@@ -4,6 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from './AuthProvider';
+import { useNotifications } from './NotificationManager';
 import {
   LayoutDashboard,
   MessageSquare,
@@ -18,6 +19,7 @@ import {
 
 export default function MobileBottomNav() {
   const { user } = useAuth();
+  const { unreadChatCount } = useNotifications();
   const pathname = usePathname();
 
   if (!user || pathname === '/login') return null;
@@ -49,8 +51,13 @@ export default function MobileBottomNav() {
                 isActive ? 'text-brand-600 font-semibold' : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              <div className={`p-1 rounded-xl transition-all ${isActive ? 'bg-brand-50 scale-105' : ''}`}>
+              <div className={`p-1 rounded-xl transition-all relative ${isActive ? 'bg-brand-50 scale-105' : ''}`}>
                 <Icon className="w-5 h-5" />
+                {item.href === '/chat' && unreadChatCount > 0 && (
+                  <span className="absolute -top-1 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-emerald-600 text-white text-[10px] font-bold rounded-full ring-2 ring-white shadow-xs">
+                    {unreadChatCount > 99 ? '99+' : unreadChatCount}
+                  </span>
+                )}
               </div>
               <span className="text-[10px] mt-0.5 tracking-tight font-medium">{item.label}</span>
             </Link>

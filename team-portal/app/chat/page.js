@@ -28,6 +28,7 @@ import {
   Loader2,
   Download,
   ZoomIn,
+  Lock,
 } from 'lucide-react';
 
 // Pictures / voice notes already downloaded in this visit (message id -> data), so opening a
@@ -60,6 +61,9 @@ export default function ChatPage() {
   const [contacts, setContacts] = useState(() => readCache(contactsKey)?.contacts || []);
   const [groupMeta, setGroupMeta] = useState(
     () => readCache(contactsKey)?.group || { unreadCount: 0, lastMessage: null }
+  );
+  const [materialsMeta, setMaterialsMeta] = useState(
+    () => readCache(contactsKey)?.materialsGroup || { unreadCount: 0, lastMessage: null }
   );
   const [contactsLoaded, setContactsLoaded] = useState(() => !!readCache(contactsKey));
 
@@ -213,9 +217,14 @@ export default function ChatPage() {
       if (res.ok) {
         const data = await res.json();
         const group = data.group || { unreadCount: 0, lastMessage: null };
+        const materialsGroup = data.materialsGroup || { unreadCount: 0, lastMessage: null };
         setContacts(data.contacts || []);
         setGroupMeta(group);
-        writeCache(contactsKey, { contacts: data.contacts || [], group });
+        setMaterialsMeta(materialsGroup);
+        writeCache(contactsKey, { contacts: data.contacts || [], group, materialsGroup });
+        if (typeof data.totalUnreadCount === 'number') {
+          window.dispatchEvent(new CustomEvent('chat_unread_updated', { detail: data.totalUnreadCount }));
+        }
       }
     } catch (err) {
       console.error('Fetch chat contacts error:', err);
@@ -239,6 +248,57 @@ export default function ChatPage() {
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
+
+  // ─── 1b. Deep-Linking & Notification Navigation ───
+  // Automatically activates the target conversation and enters chat room on mobile
+  useEffect(() => {
+    const handleUrlTarget = (overrideUrl) => {
+      try {
+        const queryStr =
+          overrideUrl && overrideUrl.includes('?')
+            ? overrideUrl.slice(overrideUrl.indexOf('?'))
+            : typeof window !== 'undefined'
+            ? window.location.search
+            : '';
+        if (!queryStr) return;
+        const params = new URLSearchParams(queryStr);
+        const ct = params.get('chatType');
+        const cid = params.get('contactId');
+
+        if (ct === 'materials') {
+          setActiveChat({ type: 'materials' });
+          setMobileView('chat');
+        } else if (ct === 'personal' && cid) {
+          const match = contacts.find((c) => c._id === cid);
+          setActiveChat({
+            type: 'personal',
+            contact: match || { _id: cid, name: 'Direct Message', username: 'user', role: 'member' },
+          });
+          setMobileView('chat');
+        } else if (ct === 'group') {
+          setActiveChat({ type: 'group' });
+          setMobileView('chat');
+        }
+      } catch (e) {
+        console.error('Failed to parse chat target from URL:', e);
+      }
+    };
+
+    handleUrlTarget();
+
+    const onCustomEvent = (e) => {
+      if (e.detail?.url) {
+        handleUrlTarget(e.detail.url);
+      }
+    };
+    window.addEventListener('portal_open_chat_url', onCustomEvent);
+    window.addEventListener('popstate', () => handleUrlTarget());
+
+    return () => {
+      window.removeEventListener('portal_open_chat_url', onCustomEvent);
+      window.removeEventListener('popstate', () => handleUrlTarget());
+    };
+  }, [contacts]);
 
   // ─── 2. Fetch Messages for Current Active Chat ───
   const fetchMessages = async (quiet = false) => {
@@ -622,7 +682,12 @@ export default function ChatPage() {
   // ─── Admin: clear the whole conversation for everyone ───
   const handleClearChat = async () => {
     if (!isAdmin || clearingChat) return;
-    const label = activeChat.type === 'group' ? 'the Team Group chat' : `your chat with ${activeChat.contact?.name || 'this member'}`;
+    const label =
+      activeChat.type === 'materials'
+        ? 'the Materials Group'
+        : activeChat.type === 'group'
+        ? 'the Team Group chat'
+        : `your chat with ${activeChat.contact?.name || 'this member'}`;
     if (!window.confirm(`Clear ${label}?\n\nAll messages, pictures and voice notes in it will be deleted for everyone. This cannot be undone.`)) return;
 
     try {
@@ -656,6 +721,11 @@ export default function ChatPage() {
   const handleTextSubmit = (e) => {
     e.preventDefault();
     if (!inputText.trim()) return;
+
+    if (activeChat.type === 'materials') {
+      alert('Materials Group is for photos and promotional materials. Please attach or paste a picture to send.');
+      return;
+    }
 
     handleSendMessage({
       messageType: 'text',
@@ -1040,9 +1110,17 @@ export default function ChatPage() {
   };
 
   // ─── 5. Day Separator & Formatting ───
+  const getDayKey = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
   const getDayLabel = (dateStr) => {
     if (!dateStr) return '';
     const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return '';
     const today = new Date();
     const yesterday = new Date();
     yesterday.setDate(today.getDate() - 1);
@@ -1061,16 +1139,21 @@ export default function ChatPage() {
   const formatMessageTime = (dateStr) => {
     if (!dateStr) return '';
     const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return '';
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   const distinctDays = Array.from(
-    new Set(messages.map((m) => getDayLabel(m.createdAt)))
-  ).filter(Boolean);
+    new Map(
+      messages
+        .filter((m) => m.createdAt)
+        .map((m) => [getDayKey(m.createdAt), { key: getDayKey(m.createdAt), label: getDayLabel(m.createdAt) }])
+    ).values()
+  ).filter((d) => d.key && d.label);
 
-  const jumpToDate = (dayLabel) => {
+  const jumpToDate = (dayKey) => {
     setIsDatePickerOpen(false);
-    const el = document.getElementById(`day-divider-${dayLabel.replace(/\s+/g, '-')}`);
+    const el = document.getElementById(`day-divider-${dayKey}`);
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
@@ -1169,6 +1252,62 @@ export default function ChatPage() {
                 {groupMeta.unreadCount > 0 && (
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-600 text-white font-bold ml-auto shadow-xs">
                     {groupMeta.unreadCount}
+                  </span>
+                )}
+              </div>
+            </div>
+          </button>
+
+          {/* ── 2. PINNED: Materials Group (Admins post photos, all view/download) ── */}
+          <button
+            onClick={() => {
+              setActiveChat({ type: 'materials' });
+              setMobileView('chat');
+            }}
+            className={`w-full p-3.5 flex items-start space-x-3 text-left transition-all ${
+              activeChat.type === 'materials'
+                ? 'bg-purple-50/90 border-l-4 border-purple-600'
+                : 'hover:bg-slate-50'
+            }`}
+          >
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-blue-600 flex items-center justify-center text-white shrink-0 shadow-sm">
+              <ImageIcon className="w-6 h-6" />
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-900 truncate">
+                  Materials Group
+                </span>
+                {materialsMeta.lastMessage && (
+                  <span className="text-[10px] text-slate-400 shrink-0 ml-1">
+                    {formatMessageTime(materialsMeta.lastMessage.createdAt)}
+                  </span>
+                )}
+              </div>
+
+              <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                {materialsMeta.lastMessage
+                  ? `${materialsMeta.lastMessage.senderName}: ${
+                      materialsMeta.lastMessage.isDeleted
+                        ? '🚫 Message deleted'
+                        : materialsMeta.lastMessage.messageType === 'image'
+                        ? '📷 Photo & Material'
+                        : materialsMeta.lastMessage.text
+                    }`
+                  : 'Official photos & assets channel (Admins post only)'}
+              </p>
+
+              <div className="flex items-center space-x-1.5 mt-1">
+                <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-800 font-bold uppercase">
+                  Admins Post
+                </span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-medium">
+                  View & Download
+                </span>
+                {materialsMeta.unreadCount > 0 && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-600 text-white font-bold ml-auto shadow-xs">
+                    {materialsMeta.unreadCount}
                   </span>
                 )}
               </div>
@@ -1332,14 +1471,18 @@ export default function ChatPage() {
             {/* Avatar */}
             <div
               className={`w-9 h-9 rounded-2xl flex items-center justify-center font-bold text-white shrink-0 ${
-                activeChat.type === 'group'
+                activeChat.type === 'materials'
+                  ? 'bg-gradient-to-tr from-purple-600 via-indigo-600 to-blue-600'
+                  : activeChat.type === 'group'
                   ? 'bg-gradient-to-tr from-emerald-600 to-teal-500'
                   : activeChat.contact?.role === 'admin'
                   ? 'bg-gradient-to-tr from-purple-600 to-indigo-600'
                   : 'bg-gradient-to-tr from-slate-700 to-slate-800'
               }`}
             >
-              {activeChat.type === 'group' ? (
+              {activeChat.type === 'materials' ? (
+                <ImageIcon className="w-4 h-4" />
+              ) : activeChat.type === 'group' ? (
                 <Users className="w-4 h-4" />
               ) : activeChat.contact?.role === 'admin' ? (
                 <Shield className="w-4 h-4" />
@@ -1352,7 +1495,9 @@ export default function ChatPage() {
             <div className="min-w-0">
               <div className="flex items-center space-x-2">
                 <h2 className="text-xs sm:text-sm font-bold text-slate-100 truncate">
-                  {activeChat.type === 'group'
+                  {activeChat.type === 'materials'
+                    ? 'Materials Group'
+                    : activeChat.type === 'group'
                     ? 'Team General Discussion'
                     : activeChat.contact
                     ? activeChat.contact.name
@@ -1360,14 +1505,18 @@ export default function ChatPage() {
                 </h2>
                 <span
                   className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${
-                    activeChat.type === 'group'
+                    activeChat.type === 'materials'
+                      ? 'bg-purple-500/25 text-purple-300 border border-purple-500/30'
+                      : activeChat.type === 'group'
                       ? 'bg-emerald-500/20 text-emerald-300'
                       : activeChat.contact?.role === 'admin'
                       ? 'bg-purple-500/20 text-purple-300'
                       : 'bg-slate-500/20 text-slate-300'
                   }`}
                 >
-                  {activeChat.type === 'group'
+                  {activeChat.type === 'materials'
+                    ? 'Admins Post Only'
+                    : activeChat.type === 'group'
                     ? 'Public'
                     : activeChat.contact?.role === 'admin'
                     ? 'Admin'
@@ -1386,7 +1535,9 @@ export default function ChatPage() {
                 )}
               </div>
               <p className="text-[10px] text-slate-400 truncate">
-                {activeChat.type === 'group'
+                {activeChat.type === 'materials'
+                  ? 'Official pictures & marketing assets • All members can view & download'
+                  : activeChat.type === 'group'
                   ? 'All admins and members can view & reply here'
                   : activeChat.contact
                   ? `Private 1-on-1 line (@${activeChat.contact.username})`
@@ -1430,11 +1581,11 @@ export default function ChatPage() {
                   <div className="max-h-56 overflow-y-auto divide-y divide-slate-800/60 mt-1">
                     {distinctDays.map((day) => (
                       <button
-                        key={day}
-                        onClick={() => jumpToDate(day)}
+                        key={day.key}
+                        onClick={() => jumpToDate(day.key)}
                         className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-800 hover:text-white rounded-xl transition flex items-center justify-between"
                       >
-                        <span>{day}</span>
+                        <span>{day.label}</span>
                         <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
                       </button>
                     ))}
@@ -1475,15 +1626,21 @@ export default function ChatPage() {
           ) : messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400">
               <div className="w-12 h-12 rounded-2xl bg-slate-200/80 text-slate-600 flex items-center justify-center mb-2">
-                <MessageSquare className="w-6 h-6" />
+                {activeChat.type === 'materials' ? <ImageIcon className="w-6 h-6" /> : <MessageSquare className="w-6 h-6" />}
               </div>
               <p className="text-sm font-semibold text-slate-700">
-                {activeChat.type === 'group'
+                {activeChat.type === 'materials'
+                  ? 'No materials or photos shared yet'
+                  : activeChat.type === 'group'
                   ? 'No messages in group yet'
                   : `Start conversation with ${activeChat.contact?.name || 'user'}`}
               </p>
               <p className="text-xs text-slate-400 max-w-xs mt-1">
-                Type a text, record a voice note, or attach a picture to begin.
+                {activeChat.type === 'materials'
+                  ? isAdmin
+                    ? 'Upload product photos and promotional materials for members to view and download.'
+                    : 'Admins will post product photos and materials here for you to download.'
+                  : 'Type a text, record a voice note, or attach a picture to begin.'}
               </p>
             </div>
           ) : (
@@ -1494,9 +1651,10 @@ export default function ChatPage() {
               const isHighlighted = highlightedMsgId === msg._id;
 
               // Day divider check
+              const currentDayKey = getDayKey(msg.createdAt);
+              const prevDayKey = index > 0 ? getDayKey(messages[index - 1].createdAt) : null;
+              const isNewDay = currentDayKey && currentDayKey !== prevDayKey;
               const currentDay = getDayLabel(msg.createdAt);
-              const prevDay = index > 0 ? getDayLabel(messages[index - 1].createdAt) : null;
-              const isNewDay = currentDay !== prevDay;
 
               // Seen by users
               const seenUsers = (msg.readBy || []).filter(
@@ -1508,15 +1666,19 @@ export default function ChatPage() {
 
               return (
                 <React.Fragment key={msg._id}>
-                  {/* WhatsApp-Style Sticky Day Divider */}
+                  {/* WhatsApp-Style Sticky Day Divider with Horizontal Rule */}
                   {isNewDay && (
                     <div
-                      id={`day-divider-${currentDay.replace(/\s+/g, '-')}`}
-                      className="flex justify-center my-4 sticky top-1 z-10"
+                      id={`day-divider-${currentDayKey}`}
+                      className="relative flex items-center justify-center my-6 sticky top-2 z-10 select-none px-2"
                     >
-                      <span className="px-3.5 py-1 bg-white/95 backdrop-blur border border-slate-200 text-slate-600 text-[11px] font-bold rounded-full shadow-xs uppercase tracking-wider">
-                        {currentDay}
-                      </span>
+                      <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                        <div className="w-full border-t border-slate-200/90 shadow-2xs" />
+                      </div>
+                      <div className="relative flex items-center space-x-1.5 px-4 py-1.5 bg-white/95 backdrop-blur-md border border-slate-200/90 text-slate-700 text-xs font-bold rounded-full shadow-xs">
+                        <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{currentDay}</span>
+                      </div>
                     </div>
                   )}
 
@@ -1800,7 +1962,14 @@ export default function ChatPage() {
 
         {/* ─── Input / Controls Bar ─── */}
         <div className="p-3 sm:p-4 bg-white border-t border-slate-200 shrink-0 z-20">
-          {isRecordingVoice ? (
+          {activeChat.type === 'materials' && !isAdmin ? (
+            <div className="p-3 bg-purple-50/70 border border-purple-200/80 rounded-2xl flex items-center justify-center space-x-2 text-slate-700 text-xs text-center shadow-2xs">
+              <Lock className="w-4 h-4 text-purple-600 shrink-0" />
+              <span>
+                <strong>Materials Group</strong> is view & download only for members. Only Admins can upload photos and marketing materials.
+              </span>
+            </div>
+          ) : isRecordingVoice ? (
             <VoiceRecorder
               onSendAudio={handleSendVoice}
               onCancel={() => setIsRecordingVoice(false)}
@@ -1820,26 +1989,32 @@ export default function ChatPage() {
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={uploadingImage}
-                className="p-2.5 rounded-2xl text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition active:scale-95 shrink-0 disabled:opacity-50"
-                title="Attach Picture"
+                className={`p-2.5 rounded-2xl transition active:scale-95 shrink-0 disabled:opacity-50 ${
+                  activeChat.type === 'materials'
+                    ? 'bg-purple-100/80 text-purple-700 hover:bg-purple-200/80 border border-purple-300'
+                    : 'text-slate-500 hover:text-emerald-600 hover:bg-emerald-50'
+                }`}
+                title={activeChat.type === 'materials' ? 'Upload Photo / Material' : 'Attach Picture'}
               >
                 {uploadingImage ? (
-                  <Loader2 className="w-5 h-5 animate-spin text-emerald-600" />
+                  <Loader2 className="w-5 h-5 animate-spin text-purple-600" />
                 ) : (
                   <ImageIcon className="w-5 h-5" />
                 )}
               </button>
 
-              {/* Voice Button */}
-              <button
-                type="button"
-                onClick={() => setIsRecordingVoice(true)}
-                disabled={uploadingImage}
-                className="p-2.5 rounded-2xl text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition active:scale-95 shrink-0 disabled:opacity-50"
-                title="Record Voice Note"
-              >
-                <Mic className="w-5 h-5" />
-              </button>
+              {/* Voice Button (hidden in Materials Group) */}
+              {activeChat.type !== 'materials' && (
+                <button
+                  type="button"
+                  onClick={() => setIsRecordingVoice(true)}
+                  disabled={uploadingImage}
+                  className="p-2.5 rounded-2xl text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition active:scale-95 shrink-0 disabled:opacity-50"
+                  title="Record Voice Note"
+                >
+                  <Mic className="w-5 h-5" />
+                </button>
+              )}
 
               {/* Text Input */}
               <input
@@ -1851,6 +2026,8 @@ export default function ChatPage() {
                 placeholder={
                   uploadingImage
                     ? 'Processing picture...'
+                    : activeChat.type === 'materials'
+                    ? 'Click 📷 or paste (Ctrl+V) picture — caption optional...'
                     : activeChat.type === 'group'
                     ? 'Message team (Ctrl+V screenshot anywhere)...'
                     : `Message ${activeChat.contact?.name || 'privately'} (Ctrl+V screenshot)...`
@@ -1862,7 +2039,11 @@ export default function ChatPage() {
               <button
                 type="submit"
                 disabled={!inputText.trim() || uploadingImage}
-                className="p-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white transition active:scale-95 shadow-md shadow-emerald-500/20 shrink-0"
+                className={`p-2.5 rounded-2xl disabled:opacity-40 text-white transition active:scale-95 shadow-md shrink-0 ${
+                  activeChat.type === 'materials'
+                    ? 'bg-purple-600 hover:bg-purple-700 shadow-purple-500/20'
+                    : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20'
+                }`}
                 title="Send Message"
               >
                 <Send className="w-5 h-5" />
@@ -1966,7 +2147,9 @@ export default function ChatPage() {
                 <div>
                   <h3 className="font-bold text-sm sm:text-base leading-tight">Send Picture</h3>
                   <p className="text-[11px] text-slate-400">
-                    {activeChat.type === 'group'
+                    {activeChat.type === 'materials'
+                      ? 'Posting to Materials Group (Admins)'
+                      : activeChat.type === 'group'
                       ? 'Sending to Team General'
                       : `Sending to ${activeChat.contact?.name || 'Contact'}`}
                   </p>

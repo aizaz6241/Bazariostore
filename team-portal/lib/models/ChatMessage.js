@@ -4,7 +4,7 @@ const chatMessageSchema = new mongoose.Schema(
   {
     chatType: {
       type: String,
-      enum: ['group', 'personal'],
+      enum: ['group', 'personal', 'materials'],
       required: true,
       default: 'group',
       index: true,

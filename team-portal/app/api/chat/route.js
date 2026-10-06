@@ -23,7 +23,9 @@ export async function GET(req) {
 
     let conversationId = 'main_group';
 
-    if (chatType === 'personal') {
+    if (chatType === 'materials') {
+      conversationId = 'materials_group';
+    } else if (chatType === 'personal') {
       if (!targetMemberId) {
         return NextResponse.json({ message: 'targetMemberId is required for personal chat' }, { status: 400 });
       }
@@ -151,7 +153,21 @@ export async function POST(req) {
     let conversationId = 'main_group';
     let target = null;
 
-    if (chatType === 'personal') {
+    if (chatType === 'materials') {
+      conversationId = 'materials_group';
+      if (session.role !== 'admin') {
+        return NextResponse.json(
+          { message: 'Forbidden: Only admins are permitted to post in the Materials Group.' },
+          { status: 403 }
+        );
+      }
+      if (messageType !== 'image') {
+        return NextResponse.json(
+          { message: 'Only pictures and materials can be posted in Materials Group.' },
+          { status: 400 }
+        );
+      }
+    } else if (chatType === 'personal') {
       if (!targetMemberId) {
         return NextResponse.json({ message: 'Target user ID is required for personal chat' }, { status: 400 });
       }
@@ -194,7 +210,7 @@ export async function POST(req) {
     try {
       const previewBody =
         messageType === 'image'
-          ? '📷 Sent a photo'
+          ? (text ? `📷 ${text.trim().slice(0, 80)}` : '📷 Sent a photo')
           : messageType === 'voice'
           ? '🎤 Sent a voice message'
           : (text ? text.trim().slice(0, 120) : 'New message');
@@ -203,21 +219,31 @@ export async function POST(req) {
         sendPushToUser(target, {
           title: `💬 ${session.name}`,
           body: previewBody,
-          url: '/chat',
+          url: `/chat?chatType=personal&contactId=${session._id.toString()}`,
           type: 'chat',
           sound: '/sounds/message.wav',
           vibrate: [200, 100, 200, 100, 200],
-          data: { chatType: 'personal', senderId: session._id.toString() },
+          data: { chatType: 'personal', contactId: session._id.toString(), senderId: session._id.toString() },
         }).catch((e) => console.error('Personal push error:', e));
+      } else if (chatType === 'materials' || conversationId === 'materials_group') {
+        sendPushToAllExcept(session._id, {
+          title: `📁 Materials Group: ${session.name}`,
+          body: previewBody,
+          url: '/chat?chatType=materials',
+          type: 'chat',
+          sound: '/sounds/message.wav',
+          vibrate: [200, 100, 200, 100, 200],
+          data: { chatType: 'materials', conversationId: 'materials_group' },
+        }).catch((e) => console.error('Materials group push error:', e));
       } else {
         sendPushToAllExcept(session._id, {
           title: `💬 ${session.name} (Bazario Team)`,
           body: previewBody,
-          url: '/chat',
+          url: '/chat?chatType=group',
           type: 'chat',
           sound: '/sounds/message.wav',
           vibrate: [200, 100, 200, 100, 200],
-          data: { chatType: 'group', senderId: session._id.toString() },
+          data: { chatType: 'group', conversationId: 'main_group', senderId: session._id.toString() },
         }).catch((e) => console.error('Group push error:', e));
       }
     } catch (pushErr) {
@@ -258,7 +284,9 @@ export async function DELETE(req) {
     const targetMemberId = searchParams.get('targetMemberId');
 
     let conversationId = 'main_group';
-    if (chatType === 'personal') {
+    if (chatType === 'materials') {
+      conversationId = 'materials_group';
+    } else if (chatType === 'personal') {
       if (!targetMemberId) {
         return NextResponse.json({ message: 'targetMemberId is required for personal chat' }, { status: 400 });
       }
