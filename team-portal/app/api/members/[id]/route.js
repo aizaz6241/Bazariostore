@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAuthSession, hashPassword } from '@/lib/auth';
+import { getAuthSession, hashPassword, forgetSessions } from '@/lib/auth';
 import Member from '@/lib/models/Member';
 import SellerAssignment from '@/lib/models/SellerAssignment';
 import mongoose from 'mongoose';
@@ -96,6 +96,7 @@ export async function PATCH(req, { params }) {
     }
 
     await member.save();
+    forgetSessions(member._id);
 
     if (changes.length > 0) {
       await logFinance({
@@ -157,6 +158,7 @@ export async function DELETE(req, { params }) {
 
     // Delete the member record
     await Member.findByIdAndDelete(member._id);
+    forgetSessions(member._id);
 
     await logFinance({
       session,

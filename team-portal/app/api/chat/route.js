@@ -3,6 +3,7 @@ import { getAuthSession } from '@/lib/auth';
 import ChatMessage from '@/lib/models/ChatMessage';
 import Member from '@/lib/models/Member';
 import { sendPushToUser, sendPushToAllExcept } from '@/lib/utils/push';
+import { storeChatPicture, deleteChatPictures } from '@/lib/utils/chatMedia';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,7 +41,7 @@ export async function GET(req) {
     if (Number.isFinite(beforeMs) && beforeMs > 0) {
       const pageSize = Math.min(Math.max(parseInt(searchParams.get('limit'), 10) || OLDER_PAGE, 1), 100);
       const page = await ChatMessage.find({ conversationId, createdAt: { $lt: new Date(beforeMs) } })
-        .select('-mediaUrl')
+        .select('-mediaUrl -mediaKey')
         .populate('readBy', 'name username avatar role')
         .sort({ createdAt: -1 })
         .limit(pageSize + 1)
@@ -54,29 +55,38 @@ export async function GET(req) {
       });
     }
 
-    // Mark unread messages in this conversation as read by the current user
+    // Cheap fingerprint of the conversation. The chat page sends the fingerprint it already has;
+    // when nothing changed we answer without any messages.
+    const fingerprint = async () => {
+      const [count, latest] = await Promise.all([
+        ChatMessage.countDocuments({ conversationId }),
+        ChatMessage.findOne({ conversationId }).sort({ updatedAt: -1 }).select('updatedAt').lean(),
+      ]);
+      const cursor = latest?.updatedAt ? new Date(latest.updatedAt).getTime() : 0;
+      return { count, cursor, sig: `${count}:${cursor}` };
+    };
+
+    // Nothing changed since this page last asked. That earlier request already marked everything
+    // as read, so there is nothing to write either: answer straight away.
+    const askedSig = searchParams.get('sig');
+    let { count, cursor, sig } = await fingerprint();
+    if (askedSig && askedSig === sig) {
+      return NextResponse.json({ conversationId, unchanged: true, sig, cursor, count });
+    }
+
+    // Mark unread messages in this conversation as read by the current user. Only when there
+    // really is something unread, so an ordinary check never writes to the database.
     try {
-      await ChatMessage.updateMany(
+      const marked = await ChatMessage.updateMany(
         {
           conversationId,
           readBy: { $ne: session._id },
         },
         { $addToSet: { readBy: session._id } }
       );
+      if ((marked?.modifiedCount || 0) > 0) ({ count, cursor, sig } = await fingerprint());
     } catch (readErr) {
       console.error('Mark read error:', readErr);
-    }
-
-    // Cheap fingerprint of the conversation. The chat page polls every couple of seconds and sends
-    // the fingerprint it already has; when nothing changed we answer without any messages.
-    const [count, latest] = await Promise.all([
-      ChatMessage.countDocuments({ conversationId }),
-      ChatMessage.findOne({ conversationId }).sort({ updatedAt: -1 }).select('updatedAt').lean(),
-    ]);
-    const cursor = latest?.updatedAt ? new Date(latest.updatedAt).getTime() : 0;
-    const sig = `${count}:${cursor}`;
-    if (searchParams.get('sig') === sig) {
-      return NextResponse.json({ conversationId, unchanged: true, sig, cursor, count });
     }
 
     // Delta: the page tells us the newest change it already has (`after`). We send only what is
@@ -87,14 +97,14 @@ export async function GET(req) {
       const afterDate = new Date(afterMs);
       const [fresh, changed] = await Promise.all([
         ChatMessage.find({ conversationId, createdAt: { $gt: afterDate } })
-          .select('-mediaUrl')
+          .select('-mediaUrl -mediaKey')
           .populate('readBy', 'name username avatar role')
           .sort({ createdAt: 1 })
           .limit(300)
           .lean(),
         // Older messages that were edited, deleted or read: sent without their media
         ChatMessage.find({ conversationId, createdAt: { $lte: afterDate }, updatedAt: { $gt: afterDate } })
-          .select('-mediaUrl')
+          .select('-mediaUrl -mediaKey')
           .populate('readBy', 'name username avatar role')
           .sort({ createdAt: 1 })
           .limit(300)
@@ -116,7 +126,7 @@ export async function GET(req) {
     // asks /api/chat/media for the media of the messages it is showing, and "Load earlier
     // messages" pages back through the history.
     const newest = await ChatMessage.find({ conversationId })
-      .select('-mediaUrl')
+      .select('-mediaUrl -mediaKey')
       .populate('readBy', 'name username avatar role')
       .sort({ createdAt: -1 })
       .limit(FIRST_PAGE)
@@ -172,7 +182,7 @@ export async function POST(req) {
         return NextResponse.json({ message: 'Target user ID is required for personal chat' }, { status: 400 });
       }
 
-      const targetMember = await Member.findById(targetMemberId);
+      const targetMember = await Member.findById(targetMemberId).select('_id').lean();
       if (!targetMember) {
         return NextResponse.json({ message: 'Recipient user not found' }, { status: 404 });
       }
@@ -190,6 +200,13 @@ export async function POST(req) {
       return NextResponse.json({ message: 'Message text cannot be empty' }, { status: 400 });
     }
 
+    // A picture goes to the file storage and the message keeps only its link. If that is not
+    // possible (no token, storage unreachable) it stays inside the message, as before.
+    let storedPicture = null;
+    if (messageType === 'image' && typeof mediaUrl === 'string' && mediaUrl.startsWith('data:')) {
+      storedPicture = await storeChatPicture(mediaUrl);
+    }
+
     const newMsg = await ChatMessage.create({
       chatType: chatType || 'group',
       conversationId,
@@ -199,12 +216,13 @@ export async function POST(req) {
       targetMemberId: target,
       messageType: messageType || 'text',
       text: text ? text.trim() : '',
-      mediaUrl: mediaUrl || '',
+      mediaUrl: storedPicture ? '' : mediaUrl || '',
+      mediaLink: storedPicture ? storedPicture.url : '',
+      mediaKey: storedPicture ? storedPicture.key : '',
       audioDuration: audioDuration || 0,
       readBy: [session._id],
     });
 
-    await newMsg.populate('readBy', 'name username avatar role');
 
     // Asynchronously trigger push notifications to recipient(s) with custom message sound
     try {
@@ -253,6 +271,9 @@ export async function POST(req) {
     // The sender already has the picture / voice note it just uploaded: do not send it back.
     const sent = newMsg.toObject();
     delete sent.mediaUrl;
+    delete sent.mediaKey;
+    // "seen by" starts with the sender: no need to ask the database who that is
+    sent.readBy = [{ _id: session._id, name: session.name, username: session.username, avatar: session.avatar, role: session.role }];
 
     return NextResponse.json(
       {
@@ -294,7 +315,11 @@ export async function DELETE(req) {
       conversationId = `personal_${parts.join('_')}`;
     }
 
+    // pictures of this conversation that live on the file storage: removed there as well
+    const stored = await ChatMessage.find({ conversationId, mediaKey: { $nin: ['', null] } }).select('mediaKey').lean();
+
     const result = await ChatMessage.deleteMany({ conversationId });
+    await deleteChatPictures(stored.map((m) => m.mediaKey));
 
     return NextResponse.json({
       message: 'Chat cleared',

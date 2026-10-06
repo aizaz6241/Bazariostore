@@ -1,8 +1,9 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from './AuthProvider';
+import { useRealtime, useRealtimeEvent } from './RealtimeProvider';
 import { readCache, writeCache } from '@/lib/clientCache';
 import { Bell, BellOff, Volume2, VolumeX, CheckCircle, AlertCircle, X } from 'lucide-react';
 
@@ -48,11 +49,21 @@ export function NotificationProvider({ children }) {
   const audioCache = useRef({});
   const audioCtxRef = useRef(null);
 
+  // Realtime: while the server pushes chat news, the badge is kept up to date by those pushes
+  const pathname = usePathname();
+  const onChatPageRef = useRef(false);
+  onChatPageRef.current = pathname === '/chat'; // the chat page keeps the badge itself
+  const realtime = useRealtime();
+  const pushedRef = useRef(false);
+  pushedRef.current = !!realtime.status.chat;
+  const lastUnreadFetchRef = useRef(0);
+
   const refreshUnreadChatCount = useCallback(async () => {
     if (!user) return;
     try {
       const token = localStorage.getItem('portal_token');
       if (!token) return;
+      lastUnreadFetchRef.current = Date.now();
       const res = await fetch('/api/chat/contacts', {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -68,9 +79,12 @@ export function NotificationProvider({ children }) {
   useEffect(() => {
     refreshUnreadChatCount();
     const timer = setInterval(() => {
-      if (!document.hidden && user) {
-        refreshUnreadChatCount();
-      }
+      if (document.hidden || !user) return;
+      // the chat page loads the same list itself and reports the total (see `chat_unread_updated`)
+      if (onChatPageRef.current) return;
+      // pushed by the server: only a slow safety check
+      if (pushedRef.current && Date.now() - lastUnreadFetchRef.current < 60000) return;
+      refreshUnreadChatCount();
     }, 8000);
     const onVis = () => {
       if (!document.hidden && user) refreshUnreadChatCount();
@@ -93,6 +107,22 @@ export function NotificationProvider({ children }) {
       window.removeEventListener('chat_unread_updated', onCustomUpdate);
     };
   }, [user, refreshUnreadChatCount]);
+
+  // A message was pushed while the user is on another page: the badge goes up at once
+  useRealtimeEvent('chat:message', (payload) => {
+    if (onChatPageRef.current || !user) return;
+    if (String(payload?.message?.senderId || '') === String(user._id)) return;
+    setUnreadChatCount((n) => {
+      const next = (Number(n) || 0) + 1;
+      writeCache('portal_total_unread_chat', next);
+      return next;
+    });
+  });
+  // The channel was (re)opened: count again once
+  useRealtimeEvent('resync', () => {
+    if (onChatPageRef.current || document.hidden) return;
+    if (Date.now() - lastUnreadFetchRef.current > 5000) refreshUnreadChatCount();
+  });
 
   // Initialize sound settings & audio objects
   useEffect(() => {

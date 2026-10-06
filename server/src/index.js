@@ -27,6 +27,7 @@ import compression from 'compression';
 import mongoose from 'mongoose';
 import { Server } from 'socket.io';
 import { verifySocketToken } from './middleware/auth.js';
+import { attachPortalRealtime } from './realtime/portalRealtime.js';
 import { sanitizeRequest, asText } from './middleware/sanitize.js';
 import { limit } from './utils/rateLimit.js';
 
@@ -284,6 +285,14 @@ app.use(finalErrorHandler);
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: (origin, cb) => cb(null, originAllowed(origin)) } });
 app.set('io', io);
+
+// Team portal (Vercel) pages connect here for instant chat and live numbers. Separate namespace
+// (`/portal`): nothing of the store chat below is shared with it.
+try {
+  app.set('portalRealtime', attachPortalRealtime(io));
+} catch (e) {
+  console.error('[portal-rt] could not start:', e.message);
+}
 
 io.on('connection', (socket) => {
   // Seller joins their support room (requires valid seller or admin JWT token)

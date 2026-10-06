@@ -46,6 +46,8 @@ export function dropCache(key) {
 export function clearAllCache() {
   memory.clear();
   if (typeof window === 'undefined') return;
+  // chat pictures / voice notes kept on the device
+  import('./mediaCache').then((m) => m.clearSavedMedia()).catch(() => {});
   try {
     const keys = [];
     for (let i = 0; i < window.localStorage.length; i++) {

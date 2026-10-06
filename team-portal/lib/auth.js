@@ -39,6 +39,26 @@ export function verifyToken(token) {
   }
 }
 
+// The signed-in account of a token is remembered for a few seconds per server instance, so the
+// many small requests of one open page (chat, live numbers, wallet) do not each look the account
+// up again. A removed or switched-off account therefore stops working within this time.
+const SESSION_CACHE_MS = 15 * 1000;
+const SESSION_CACHE_MAX = 500;
+function sessionCache() {
+  if (!global.__portalSessions) global.__portalSessions = new Map();
+  return global.__portalSessions;
+}
+
+/** Call after an account was changed, switched off or removed. */
+export function forgetSessions(memberId) {
+  const cache = sessionCache();
+  if (!memberId) return cache.clear();
+  const id = String(memberId);
+  for (const [key, entry] of cache) {
+    if (String(entry.member?._id) === id) cache.delete(key);
+  }
+}
+
 export async function getAuthSession(req) {
   await connectDB();
 
@@ -67,6 +87,11 @@ export async function getAuthSession(req) {
   // type field `t`; it must never open a portal session, even when the email matches a member.
   if (decoded.t) return null;
 
+  const cache = sessionCache();
+  const cacheKey = crypto.createHash('sha256').update(token).digest('hex');
+  const hit = cache.get(cacheKey);
+  if (hit && Date.now() - hit.at < SESSION_CACHE_MS) return hit.member;
+
   let member = await Member.findById(decoded.id).select('-passwordHash -plainPassword');
 
   // Robust fallback: if token had an older ID, lookup by ecommerceAdminId or email
@@ -77,7 +102,12 @@ export async function getAuthSession(req) {
     member = await Member.findOne({ email: decoded.email.toLowerCase() }).select('-passwordHash -plainPassword');
   }
 
-  if (!member || !member.active) return null;
+  if (!member || !member.active) {
+    cache.delete(cacheKey);
+    return null;
+  }
 
+  if (cache.size >= SESSION_CACHE_MAX) cache.delete(cache.keys().next().value);
+  cache.set(cacheKey, { member, at: Date.now() });
   return member;
 }

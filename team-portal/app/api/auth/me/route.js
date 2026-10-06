@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAuthSession } from '@/lib/auth';
+import { getAuthSession, forgetSessions } from '@/lib/auth';
 import Member from '@/lib/models/Member';
 import SellerAssignment from '@/lib/models/SellerAssignment';
 import { Seller } from '@/lib/models/SharedModels';
@@ -34,6 +34,7 @@ export async function GET(req) {
       if (!eAdmin) {
         // Admin was deleted from ecommerce website! Automatically remove from portal
         await Member.deleteOne({ _id: member._id });
+        forgetSessions(member._id);
         return NextResponse.json({ message: 'Administrator account was deleted from platform.' }, { status: 401 });
       }
 
@@ -41,6 +42,7 @@ export async function GET(req) {
       if (eAdmin.name && eAdmin.name !== member.name) {
         member.name = eAdmin.name;
         await member.save();
+        forgetSessions(member._id);
       }
     }
 

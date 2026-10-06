@@ -50,6 +50,16 @@ const chatMessageSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    // A picture saved on the file storage (UploadThing): its link, and the key needed to delete
+    // it there. When this is set, `mediaUrl` is empty.
+    mediaLink: {
+      type: String,
+      default: '',
+    },
+    mediaKey: {
+      type: String,
+      default: '',
+    },
     // Duration in seconds for voice notes
     audioDuration: {
       type: Number,
@@ -97,5 +107,6 @@ const chatMessageSchema = new mongoose.Schema(
 
 chatMessageSchema.index({ conversationId: 1, createdAt: -1 });
 chatMessageSchema.index({ conversationId: 1, updatedAt: -1 }); // fast "did anything change?" check for chat polling
+chatMessageSchema.index({ updatedAt: -1 }); // "what changed just now, in any chat" (realtime channel on the store server)
 
 export default mongoose.models.PortalChatMessage || mongoose.model('PortalChatMessage', chatMessageSchema);

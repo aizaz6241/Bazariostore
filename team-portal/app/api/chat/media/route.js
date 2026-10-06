@@ -30,7 +30,7 @@ export async function GET(req) {
 
     const myId = session._id.toString();
     const docs = await ChatMessage.find({ _id: { $in: ids } })
-      .select('conversationId mediaUrl isDeleted')
+      .select('conversationId mediaUrl mediaLink isDeleted')
       .lean();
 
     const media = {};
@@ -46,14 +46,16 @@ export async function GET(req) {
         (doc.conversationId === 'main_group' ||
           doc.conversationId === 'materials_group' ||
           (doc.conversationId || '').replace(/^personal_/, '').split('_').includes(myId));
-      if (!allowed || doc.isDeleted || !doc.mediaUrl) {
+      // a picture on the file storage is answered with its link
+      const value = doc ? doc.mediaUrl || doc.mediaLink || '' : '';
+      if (!allowed || doc.isDeleted || !value) {
         missing.push(id);
         continue;
       }
       // Too much for one answer: leave the rest for the next request (always send at least one)
-      if (bytes > 0 && bytes + doc.mediaUrl.length > MAX_BYTES) continue;
-      media[id] = doc.mediaUrl;
-      bytes += doc.mediaUrl.length;
+      if (bytes > 0 && bytes + value.length > MAX_BYTES) continue;
+      media[id] = value;
+      bytes += value.length;
     }
 
     return NextResponse.json({ media, missing });

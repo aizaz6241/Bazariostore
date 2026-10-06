@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthSession } from '@/lib/auth';
 import ChatMessage from '@/lib/models/ChatMessage';
+import { deleteChatPictures } from '@/lib/utils/chatMedia';
 
 export const dynamic = 'force-dynamic';
 
@@ -80,9 +81,14 @@ export async function DELETE(req, { params }) {
     message.deletedAt = new Date();
     message.deletedBy = session._id;
     message.text = 'This message was deleted';
+    const storedKey = message.mediaKey || '';
     message.mediaUrl = '';
+    message.mediaLink = '';
+    message.mediaKey = '';
     message.audioDuration = 0;
     await message.save();
+    // a picture on the file storage is removed there too
+    if (storedKey) await deleteChatPictures([storedKey]);
 
     await message.populate('readBy', 'name username avatar role');
 

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAuthSession } from '@/lib/auth';
+import { getAuthSession, forgetSessions } from '@/lib/auth';
 import Member from '@/lib/models/Member';
 import SellerAssignment from '@/lib/models/SellerAssignment';
 import { logFinance, flushFinanceAlertsSoon } from '@/lib/utils/financeLog';
@@ -32,6 +32,7 @@ export async function PUT(req, { params }) {
     const previousLabel = member.commissionLabel || 'pkr_1to1';
     member.commissionLabel = commissionLabel;
     await member.save();
+    forgetSessions(member._id);
 
     if (previousLabel !== commissionLabel) {
       await logFinance({

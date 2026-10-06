@@ -6,6 +6,8 @@ import { useNotifications } from '@/components/NotificationManager';
 import VoiceRecorder from '@/components/VoiceRecorder';
 import AudioPlayer from '@/components/AudioPlayer';
 import { readCache, writeCache, dropCache } from '@/lib/clientCache';
+import { useRealtime, useRealtimeEvent } from '@/components/RealtimeProvider';
+import { getSavedMedia, saveMedia, dropSavedMedia } from '@/lib/mediaCache';
 import {
   Send,
   Mic,
@@ -35,9 +37,19 @@ import {
 // chat again never downloads them twice.
 const mediaStore = new Map();
 const MEDIA_STORE_MAX = 120;
-const rememberMedia = (id, data) => {
+const rememberMedia = (id, data, keepOnDevice = true) => {
   mediaStore.set(id, data);
   if (mediaStore.size > MEDIA_STORE_MAX) mediaStore.delete(mediaStore.keys().next().value);
+  // also kept on the device, so the next visit shows it without downloading
+  // (a picture that lives on the file storage is a link: the browser keeps those by itself)
+  if (keepOnDevice && String(data).startsWith('data:')) saveMedia(id, data);
+};
+// A picture stored on the file storage arrives as a link (`mediaLink`): that IS its media.
+const withMedia = (m) => (m && m.mediaLink && !m.mediaUrl && !m.isDeleted ? { ...m, mediaUrl: m.mediaLink } : m);
+// A message was deleted (or its chat cleared): its picture / voice note leaves this device too
+const forgetMedia = (id) => {
+  mediaStore.delete(id);
+  dropSavedMedia(id);
 };
 const isMediaMessage = (m) => m.messageType === 'voice' || m.messageType === 'image';
 const needsMedia = (m) =>
@@ -45,7 +57,21 @@ const needsMedia = (m) =>
 // What is kept on the device between visits: the latest messages as text (media is re-fetched)
 const SAVED_MESSAGES = 40;
 const lightCopy = (list) =>
-  list.slice(-SAVED_MESSAGES).map((m) => (isMediaMessage(m) ? { ...m, mediaUrl: '' } : m));
+  list
+    .slice(-SAVED_MESSAGES)
+    .map((m) => (isMediaMessage(m) && !/^https?:/i.test(m.mediaUrl || '') ? { ...m, mediaUrl: '' } : m));
+
+// "last seen today at 2:05 PM" (shown to admins only)
+const formatLastSeen = (at) => {
+  const d = new Date(at);
+  if (!at || isNaN(d.getTime())) return '';
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const startOf = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((startOf(new Date()) - startOf(d)) / 86400000);
+  if (days <= 0) return `last seen today at ${time}`;
+  if (days === 1) return `last seen yesterday at ${time}`;
+  return `last seen ${d.toLocaleDateString([], { day: 'numeric', month: 'short' })} at ${time}`;
+};
 
 export default function ChatPage() {
   const { user } = useAuth();
@@ -117,12 +143,116 @@ export default function ChatPage() {
   const keepScrollRef = useRef(null); // scroll position to restore after older messages are added
   const mediaBusyRef = useRef(false);
   const mediaMissRef = useRef(new Set()); // media the server could not give us: do not ask again
+  const mediaDeviceAskedRef = useRef(new Set()); // media already looked for on this device
   const showScrollBottomRef = useRef(false);
   const [, setMediaTick] = useState(0); // redraw when a picture / voice note turns out to be unavailable
 
   const isAdmin = user?.role === 'admin';
 
   activeKeyRef.current = `${activeChat.type}:${activeChat.contact?._id || ''}`;
+
+  // ─── Realtime: new messages are pushed to this page (see RealtimeProvider) ───
+  const realtime = useRealtime();
+  const pushedRef = useRef(false); // is the server pushing chat news right now?
+  pushedRef.current = !!realtime.status.chat;
+  const lastMessagesFetchRef = useRef(0);
+  const lastContactsFetchRef = useRef(0);
+  const syncTimerRef = useRef(null);
+  const syncAgainRef = useRef(false);
+  const lastSyncRef = useRef(0);
+  // The id the server uses for the conversation that is open
+  const conversationIdOf = (chat) =>
+    chat.type === 'materials'
+      ? 'materials_group'
+      : chat.type === 'personal'
+      ? chat.contact?._id
+        ? `personal_${[String(uid), String(chat.contact._id)].sort().join('_')}`
+        : ''
+      : 'main_group';
+  const activeConvRef = useRef('');
+  activeConvRef.current = conversationIdOf(activeChat);
+  // Latest chat list, for updating it in place when a message is pushed
+  const contactsRef = useRef(contacts);
+  contactsRef.current = contacts;
+  const groupMetaRef = useRef(groupMeta);
+  groupMetaRef.current = groupMeta;
+  const materialsMetaRef = useRef(materialsMeta);
+  materialsMetaRef.current = materialsMeta;
+
+  // ─── Typing & online / last seen — ADMINS ONLY ───
+  // The server sends these to admin accounts only, so for a member everything below stays
+  // empty. `isAdmin` is checked here as well so nothing of it is ever drawn for a member.
+  const presence = realtime.presence;
+  const showPresence = isAdmin && realtime.status.connected && presence.known;
+  const isOnline = (memberId) => showPresence && !!presence.online[String(memberId)];
+  const presenceText = (memberId) => {
+    if (!showPresence || !memberId) return '';
+    if (presence.online[String(memberId)]) return 'Online';
+    return formatLastSeen(presence.lastSeen[String(memberId)]);
+  };
+  // who is typing where: { [conversationId]: { [memberId]: { name, until } } }
+  const [typingMap, setTypingMap] = useState({});
+  const typingSentAtRef = useRef(0);
+  const typingOnRef = useRef(false);
+
+  useRealtimeEvent('typing', (p) => {
+    if (!isAdmin || !p?.conversationId || !p?.memberId || String(p.memberId) === String(uid)) return;
+    setTypingMap((prev) => {
+      const conv = { ...(prev[p.conversationId] || {}) };
+      if (p.typing) conv[p.memberId] = { name: p.name || 'Someone', until: Date.now() + 5000 };
+      else delete conv[p.memberId];
+      return { ...prev, [p.conversationId]: conv };
+    });
+  });
+  // "typing" goes away by itself a few seconds after the last keystroke
+  useEffect(() => {
+    const anyone = Object.values(typingMap).some((conv) => Object.keys(conv).length > 0);
+    if (!anyone) return undefined;
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setTypingMap((prev) => {
+        let changed = false;
+        const next = {};
+        for (const [convId, people] of Object.entries(prev)) {
+          const kept = {};
+          for (const [id, t] of Object.entries(people)) {
+            if (t.until > now) kept[id] = t;
+            else changed = true;
+          }
+          next[convId] = kept;
+        }
+        return changed ? next : prev;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [typingMap]);
+
+  const typingNames = (conversationId) =>
+    isAdmin ? Object.values(typingMap[conversationId] || {}).map((t) => t.name) : [];
+  const typingText = (conversationId, { short = false } = {}) => {
+    const names = typingNames(conversationId);
+    if (names.length === 0) return '';
+    if (short) return 'typing…';
+    if (names.length === 1) return `${names[0]} is typing…`;
+    return `${names.slice(0, 2).join(', ')}${names.length > 2 ? ` +${names.length - 2}` : ''} are typing…`;
+  };
+
+  // This person is typing: told to the server, which passes it on to admins only
+  const reportTyping = (value) => {
+    const conversationId = activeConvRef.current;
+    if (!conversationId || conversationId === 'materials_group') return;
+    const typing = !!String(value || '').trim();
+    const now = Date.now();
+    if (typing) {
+      if (typingOnRef.current && now - typingSentAtRef.current < 2500) return;
+      typingOnRef.current = true;
+      typingSentAtRef.current = now;
+      realtime.emit('typing', { conversationId, typing: true });
+    } else if (typingOnRef.current) {
+      typingOnRef.current = false;
+      realtime.emit('typing', { conversationId, typing: false });
+    }
+  };
 
   showScrollBottomRef.current = showScrollBottom;
 
@@ -175,19 +305,42 @@ export default function ChatPage() {
           continue;
         }
 
-        const ids = waiting.slice(-2).map((m) => m._id);
+        // kept on this device from an earlier visit
+        const askDevice = waiting.filter((m) => !mediaDeviceAskedRef.current.has(m._id)).map((m) => m._id);
+        if (askDevice.length > 0) {
+          askDevice.forEach((id) => mediaDeviceAskedRef.current.add(id));
+          const saved = await getSavedMedia(askDevice);
+          if (Object.keys(saved).length > 0) {
+            Object.entries(saved).forEach(([id, value]) => rememberMedia(id, value, false));
+            applyMedia(saved);
+            continue;
+          }
+        }
+
+        // The rest comes from the server, newest first: two small requests side by side
+        const newestFirst = waiting.slice(-4).reverse().map((m) => m._id);
+        const batches = [newestFirst.slice(0, 2), newestFirst.slice(2, 4)].filter((b) => b.length > 0);
         const token = localStorage.getItem('portal_token');
-        const res = await fetch(`/api/chat/media?ids=${ids.join(',')}`, {
-          headers: { Authorization: `Bearer ${token}` },
+        const answers = await Promise.all(
+          batches.map(async (ids) => {
+            const res = await fetch(`/api/chat/media?ids=${ids.join(',')}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            return res.ok ? res.json() : null;
+          })
+        );
+        if (answers.every((a) => !a)) break;
+        const found = {};
+        const missing = [];
+        answers.filter(Boolean).forEach((data) => {
+          Object.assign(found, data.media || {});
+          missing.push(...(data.missing || []));
         });
-        if (!res.ok) break;
-        const data = await res.json();
-        const found = data.media || {};
-        (data.missing || []).forEach((id) => mediaMissRef.current.add(id));
-        if ((data.missing || []).length > 0) setMediaTick((n) => n + 1);
+        missing.forEach((id) => mediaMissRef.current.add(id));
+        if (missing.length > 0) setMediaTick((n) => n + 1);
         Object.entries(found).forEach(([id, value]) => rememberMedia(id, value));
         // nothing usable came back: stop instead of asking for the same ids forever
-        if (Object.keys(found).length === 0 && (data.missing || []).length === 0) break;
+        if (Object.keys(found).length === 0 && missing.length === 0) break;
         applyMedia(found);
       }
     } catch (err) {
@@ -210,6 +363,7 @@ export default function ChatPage() {
   // ─── 1. Fetch Contacts & Group Metadata ───
   const fetchContacts = async () => {
     try {
+      lastContactsFetchRef.current = Date.now();
       const token = localStorage.getItem('portal_token');
       const res = await fetch('/api/chat/contacts', {
         headers: { Authorization: `Bearer ${token}` },
@@ -233,11 +387,74 @@ export default function ChatPage() {
     }
   };
 
+  // The chat list changed on this screen (a pushed message, a chat that was opened): show it,
+  // remember it and tell the navigation badge, without asking the server.
+  const applyChatList = ({ contacts: nextContacts, group, materialsGroup }) => {
+    const c = nextContacts || contactsRef.current;
+    const g = group || groupMetaRef.current;
+    const m = materialsGroup || materialsMetaRef.current;
+    if (nextContacts) {
+      contactsRef.current = c;
+      setContacts(c);
+    }
+    if (group) {
+      groupMetaRef.current = g;
+      setGroupMeta(g);
+    }
+    if (materialsGroup) {
+      materialsMetaRef.current = m;
+      setMaterialsMeta(m);
+    }
+    writeCache(contactsKey, { contacts: c, group: g, materialsGroup: m });
+    const total = (g.unreadCount || 0) + (m.unreadCount || 0) + c.reduce((sum, x) => sum + (x.unreadCount || 0), 0);
+    window.dispatchEvent(new CustomEvent('chat_unread_updated', { detail: total }));
+  };
+
+  // `message` becomes the last message of its conversation; `unread` adds one to its badge
+  const noteLastMessage = (conversationId, message, unread) => {
+    if (!conversationId || !message) return;
+    const last = {
+      conversationId,
+      messageType: message.messageType,
+      text: message.text,
+      createdAt: message.createdAt,
+      senderId: message.senderId,
+      senderName: message.senderName,
+      isDeleted: !!message.isDeleted,
+      isEdited: !!message.isEdited,
+    };
+    const bump = (meta) => ({ ...meta, lastMessage: last, unreadCount: (meta.unreadCount || 0) + (unread ? 1 : 0) });
+    if (conversationId === 'main_group') return applyChatList({ group: bump(groupMetaRef.current) });
+    if (conversationId === 'materials_group') return applyChatList({ materialsGroup: bump(materialsMetaRef.current) });
+    if (!contactsRef.current.some((x) => x.conversationId === conversationId)) {
+      // someone who is not in the list yet: load the list properly
+      fetchContacts();
+      return;
+    }
+    applyChatList({ contacts: contactsRef.current.map((x) => (x.conversationId === conversationId ? bump(x) : x)) });
+  };
+
+  // The open conversation is being read: its badge goes away at once
+  const clearUnreadOf = (conversationId) => {
+    if (!conversationId) return;
+    if (conversationId === 'main_group') {
+      if (groupMetaRef.current.unreadCount > 0) applyChatList({ group: { ...groupMetaRef.current, unreadCount: 0 } });
+    } else if (conversationId === 'materials_group') {
+      if (materialsMetaRef.current.unreadCount > 0) applyChatList({ materialsGroup: { ...materialsMetaRef.current, unreadCount: 0 } });
+    } else if (contactsRef.current.some((x) => x.conversationId === conversationId && x.unreadCount > 0)) {
+      applyChatList({ contacts: contactsRef.current.map((x) => (x.conversationId === conversationId ? { ...x, unreadCount: 0 } : x)) });
+    }
+  };
+
   useEffect(() => {
     fetchContacts();
     // Poll only while the tab is visible; refresh at once when the user comes back.
+    // While the server pushes chat news the list is kept up to date by those pushes, and this
+    // is only a slow safety check.
     const interval = setInterval(() => {
-      if (!document.hidden) fetchContacts();
+      if (document.hidden) return;
+      if (pushedRef.current && Date.now() - lastContactsFetchRef.current < 45000) return;
+      fetchContacts();
     }, 6000);
     const onVisible = () => {
       if (!document.hidden) fetchContacts();
@@ -301,9 +518,29 @@ export default function ChatPage() {
   }, [contacts]);
 
   // ─── 2. Fetch Messages for Current Active Chat ───
+  // Someone else's messages just appeared in the open chat: highlight and chime
+  const announceArrived = (arrived) => {
+    if (arrived.length === 0) return;
+    if (showScrollBottomRef.current) {
+      setUnreadWhileScrolled((prev) => prev + arrived.length);
+    }
+    const latest = arrived[arrived.length - 1];
+    setHighlightedMsgId(latest._id);
+    setTimeout(() => setHighlightedMsgId(null), 4000);
+
+    // Audio notification chime
+    const hasBonus = arrived.some((m) => m.messageType === 'system_bonus');
+    if (hasBonus) {
+      playCashSound();
+    } else {
+      playMessageSound();
+    }
+  };
+
   const fetchMessages = async (quiet = false) => {
     try {
       if (!quiet) setLoadingMessages(true);
+      lastMessagesFetchRef.current = Date.now();
       const token = localStorage.getItem('portal_token');
 
       let url = `/api/chat?chatType=${activeChat.type}`;
@@ -328,7 +565,7 @@ export default function ChatPage() {
         if (chatKey !== activeKeyRef.current) return;
         if (data.unchanged) return;
 
-        const incoming = data.messages || [];
+        const incoming = (data.messages || []).map(withMedia);
         const current = messagesRef.current;
         let next;
 
@@ -338,6 +575,7 @@ export default function ChatPage() {
             const old = byId.get(inc._id);
             if (old) {
               // edited / deleted / read update of a message we already show (media is kept locally)
+              if (inc.isDeleted && !old.isDeleted) forgetMedia(inc._id);
               byId.set(inc._id, { ...old, ...inc, mediaUrl: inc.isDeleted ? '' : inc.mediaUrl || old.mediaUrl || '' });
             } else if (!inc.partial) {
               byId.set(inc._id, inc);
@@ -349,6 +587,7 @@ export default function ChatPage() {
           const realCount = next.filter((m) => !m.pending && !m.failed).length;
           if (typeof data.count === 'number' && data.count < realCount) {
             if (data.count === 0) {
+              next.filter((m) => !m.pending && !m.failed && isMediaMessage(m)).forEach((m) => forgetMedia(m._id));
               next = next.filter((m) => m.pending || m.failed);
             } else {
               messagesSigRef.current = '';
@@ -374,25 +613,14 @@ export default function ChatPage() {
         const known = new Set(current.map((m) => m._id));
         const arrived = next.filter((m) => !known.has(m._id) && !m.pending && m.senderId !== user?._id);
         if (prevMessagesLengthRef.current > 0 && arrived.length > 0) {
-          if (showScrollBottomRef.current) {
-            setUnreadWhileScrolled((prev) => prev + arrived.length);
-          }
-          const latest = arrived[arrived.length - 1];
-          setHighlightedMsgId(latest._id);
-          setTimeout(() => setHighlightedMsgId(null), 4000);
-
-          // Audio notification chime
-          const hasBonus = arrived.some((m) => m.messageType === 'system_bonus');
-          if (hasBonus) {
-            playCashSound();
-          } else {
-            playMessageSound();
-          }
+          announceArrived(arrived);
         }
 
         prevMessagesLengthRef.current = next.length;
         messagesRef.current = next;
         setMessages(next);
+        // this request also marked the conversation as read
+        if (!document.hidden) clearUnreadOf(data.conversationId);
       }
     } catch (err) {
       console.error('Failed to load chat messages:', err);
@@ -406,7 +634,10 @@ export default function ChatPage() {
     const chatKey = `${activeChat.type}:${activeChat.contact?._id || ''}`;
     // Seen before (this visit or an earlier one): show it at once, then fetch only what is new
     const saved = readCache(chatCacheKey(chatKey));
-    const known = saved && Array.isArray(saved.messages) && saved.messages.length > 0 ? saved : null;
+    const known =
+      saved && Array.isArray(saved.messages) && saved.messages.length > 0
+        ? { ...saved, messages: saved.messages.map(withMedia) }
+        : null;
 
     firstScrollRef.current = true;
     keepScrollRef.current = null;
@@ -437,8 +668,12 @@ export default function ChatPage() {
       fetchMessages(false);
     }
 
+    // Without the realtime channel: ask every 2 seconds, as before. With it, new messages are
+    // pushed to this page, and this is only a slow safety check.
     const interval = setInterval(() => {
-      if (!document.hidden) fetchMessages(true);
+      if (document.hidden) return;
+      if (pushedRef.current && Date.now() - lastMessagesFetchRef.current < 25000) return;
+      fetchMessages(true);
     }, 2000);
     const onVisible = () => {
       if (!document.hidden) fetchMessages(true);
@@ -447,9 +682,81 @@ export default function ChatPage() {
 
     return () => {
       clearInterval(interval);
+      clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = null;
+      syncAgainRef.current = false;
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [activeChat.type, activeChat.contact?._id]);
+
+  // ─── 2b. Realtime: messages pushed by the server ───
+  // Ask the portal for the small update of the open chat (this also marks it as read). Several
+  // reasons arriving together cost one request, and never more than one about every second.
+  const syncSoon = (delay = 120) => {
+    if (syncTimerRef.current) {
+      syncAgainRef.current = true;
+      return;
+    }
+    const sinceLast = Date.now() - lastSyncRef.current;
+    const wait = Math.max(delay, sinceLast < 1200 ? 1200 - sinceLast : 0);
+    syncTimerRef.current = setTimeout(async () => {
+      syncTimerRef.current = null;
+      lastSyncRef.current = Date.now();
+      if (!document.hidden) await fetchMessages(true);
+      if (syncAgainRef.current) {
+        syncAgainRef.current = false;
+        syncSoon(300);
+      }
+    }, wait);
+  };
+
+  // A new message, complete: show it now. No request is needed to see it.
+  useRealtimeEvent('chat:message', (payload) => {
+    const message = withMedia(payload?.message);
+    const conversationId = payload?.conversationId || message?.conversationId;
+    if (!message || !message._id || !conversationId) return;
+
+    const mine = String(message.senderId) === String(uid);
+    const isOpen = conversationId === activeConvRef.current;
+    if (message.mediaUrl) rememberMedia(message._id, message.mediaUrl);
+
+    // chat list: last message, and a badge unless the user is looking at that chat
+    noteLastMessage(conversationId, message, !mine && !(isOpen && !document.hidden));
+
+    if (!isOpen) return;
+    // still loading this chat: its first load brings the message
+    if (chatKeyRef.current !== activeKeyRef.current) return;
+    const current = messagesRef.current;
+    if (current.some((m) => m._id === message._id)) return;
+    // being sent from this very screen: the answer of the send request puts it in place
+    if (mine && current.some((m) => m.pending)) return;
+
+    const next = sortByTime([...current, message]);
+    // (a hidden tab stays quiet: the phone / desktop notification already makes the sound)
+    if (!mine && !document.hidden) announceArrived([message]);
+    prevMessagesLengthRef.current = next.length;
+    messagesRef.current = next;
+    setMessages(next);
+
+    // mark it as read and pick up anything else that changed
+    if (!mine) syncSoon(120);
+  });
+
+  // Read / edited / deleted / cleared: fetch the small update of the open chat
+  useRealtimeEvent('chat:changed', (payload) => {
+    const conversationId = payload?.conversationId || '';
+    if (conversationId && conversationId !== activeConvRef.current) return;
+    syncSoon(250);
+    // a cleared or unknown change may also have changed the chat list
+    if (!conversationId) fetchContacts();
+  });
+
+  // The channel was (re)opened: whatever happened meanwhile was not pushed
+  useRealtimeEvent('resync', () => {
+    if (document.hidden) return;
+    syncSoon(50);
+    if (Date.now() - lastContactsFetchRef.current > 3000) fetchContacts();
+  });
 
   // Older messages were added above: keep the message the user was reading in place
   useLayoutEffect(() => {
@@ -504,7 +811,7 @@ export default function ChatPage() {
       const data = await res.json();
 
       const have = new Set(messagesRef.current.map((m) => m._id));
-      const older = (data.messages || []).filter((m) => !have.has(m._id));
+      const older = (data.messages || []).map(withMedia).filter((m) => !have.has(m._id));
       const el = messagesContainerRef.current;
       if (el) keepScrollRef.current = { height: el.scrollHeight, top: el.scrollTop };
       skipAutoScrollRef.current = true;
@@ -659,9 +966,14 @@ export default function ChatPage() {
       if (res.ok) {
         const data = await res.json();
         // the server does not echo the picture / voice note back: keep the copy we just sent
-        if (optimistic.mediaUrl && data.chatMessage?._id) rememberMedia(data.chatMessage._id, optimistic.mediaUrl);
+        // (a picture that went to the file storage needs no copy on the device: it is a link now)
+        if (optimistic.mediaUrl && data.chatMessage?._id && !data.chatMessage.mediaLink) {
+          rememberMedia(data.chatMessage._id, optimistic.mediaUrl);
+        }
         settle({ ...data.chatMessage, mediaUrl: data.chatMessage?.mediaUrl || optimistic.mediaUrl });
-        fetchContacts();
+        // chat list: this is now the last message of that conversation
+        if (data.chatMessage?.conversationId) noteLastMessage(data.chatMessage.conversationId, data.chatMessage, false);
+        else fetchContacts();
       } else {
         const errData = await res.json().catch(() => ({}));
         settle({ ...optimistic, pending: false, failed: true, failReason: errData.message || 'Failed to send' });
@@ -732,6 +1044,7 @@ export default function ChatPage() {
       text: inputText.trim(),
     });
     setInputText('');
+    reportTyping('');
   };
 
   const handleSendVoice = (audioBase64, durationSec) => {
@@ -848,6 +1161,12 @@ export default function ChatPage() {
 
       if (pendingImagePreview.file) {
         mediaBase64 = await compressImage(pendingImagePreview.file);
+      } else if (/^data:image\/(?!gif)/i.test(mediaBase64 || '')) {
+        // a pasted picture that never was a file: make it small as well
+        try {
+          const blob = await (await fetch(mediaBase64)).blob();
+          mediaBase64 = await compressImage(new File([blob], 'pasted', { type: blob.type || 'image/png' }));
+        } catch (_) {}
       }
 
       await handleSendMessage({
@@ -1231,6 +1550,9 @@ export default function ChatPage() {
                 )}
               </div>
 
+              {typingText('main_group') ? (
+                <p className="text-[11px] text-emerald-600 font-semibold truncate mt-0.5">{typingText('main_group')}</p>
+              ) : (
               <p className="text-[11px] text-slate-500 truncate mt-0.5">
                 {groupMeta.lastMessage
                   ? `${groupMeta.lastMessage.senderName}: ${
@@ -1244,6 +1566,7 @@ export default function ChatPage() {
                     }`
                   : 'Group room for all admins and members'}
               </p>
+              )}
 
               <div className="flex items-center space-x-1.5 mt-1">
                 <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-bold uppercase">
@@ -1357,12 +1680,19 @@ export default function ChatPage() {
                   }`}
                 >
                   <div
-                    className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-base shrink-0 shadow-sm ${
+                    className={`relative w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-base shrink-0 shadow-sm ${
                       isContactAdmin
                         ? 'bg-gradient-to-tr from-purple-600 to-indigo-600 text-white'
                         : 'bg-gradient-to-tr from-slate-700 to-slate-800 text-white'
                     }`}
                   >
+                    {/* Admins only: green dot while this person has the portal open */}
+                    {isOnline(contact._id) && (
+                      <span
+                        title="Online"
+                        className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white"
+                      />
+                    )}
                     {isContactAdmin ? (
                       <Shield className="w-5 h-5" />
                     ) : (
@@ -1382,6 +1712,9 @@ export default function ChatPage() {
                       )}
                     </div>
 
+                    {typingText(contact.conversationId, { short: true }) ? (
+                      <p className="text-[11px] text-emerald-600 font-semibold truncate mt-0.5">typing…</p>
+                    ) : (
                     <p className="text-[11px] text-slate-500 truncate mt-0.5">
                       {contact.lastMessage
                         ? `${
@@ -1397,6 +1730,17 @@ export default function ChatPage() {
                           }`
                         : `Tap to message @${contact.username}`}
                     </p>
+                    )}
+                    {/* Admins only: Online / last seen */}
+                    {presenceText(contact._id) && (
+                      <p
+                        className={`text-[10px] truncate mt-0.5 ${
+                          isOnline(contact._id) ? 'text-emerald-600 font-semibold' : 'text-slate-400'
+                        }`}
+                      >
+                        {presenceText(contact._id)}
+                      </p>
+                    )}
 
                     <div className="flex items-center space-x-1.5 mt-1 flex-wrap gap-y-1">
                       <span
@@ -1534,6 +1878,19 @@ export default function ChatPage() {
                   </span>
                 )}
               </div>
+              {/* Admins only: "typing…", or Online / last seen of the person in a 1-on-1 chat */}
+              {typingText(activeConvRef.current) ? (
+                <p className="text-[10px] text-emerald-300 font-semibold truncate animate-pulse">
+                  {typingText(activeConvRef.current)}
+                </p>
+              ) : activeChat.type === 'personal' && presenceText(activeChat.contact?._id) ? (
+                <p className="text-[10px] truncate flex items-center space-x-1.5">
+                  {isOnline(activeChat.contact?._id) && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block shrink-0" />}
+                  <span className={isOnline(activeChat.contact?._id) ? 'text-emerald-300 font-semibold' : 'text-slate-400'}>
+                    {presenceText(activeChat.contact?._id)}
+                  </span>
+                </p>
+              ) : (
               <p className="text-[10px] text-slate-400 truncate">
                 {activeChat.type === 'materials'
                   ? 'Official pictures & marketing assets • All members can view & download'
@@ -1543,6 +1900,7 @@ export default function ChatPage() {
                   ? `Private 1-on-1 line (@${activeChat.contact.username})`
                   : 'Secure 1-on-1 line'}
               </p>
+              )}
             </div>
           </div>
 
@@ -2020,7 +2378,11 @@ export default function ChatPage() {
               <input
                 type="text"
                 value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
+                onChange={(e) => {
+                  setInputText(e.target.value);
+                  reportTyping(e.target.value);
+                }}
+                onBlur={() => reportTyping('')}
                 onPaste={handlePasteEvent}
                 disabled={uploadingImage}
                 placeholder={

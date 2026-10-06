@@ -1,6 +1,7 @@
 import './globals.css';
 import { AuthProvider, AuthGate } from '@/components/AuthProvider';
 import { LiveProvider } from '@/components/LiveProvider';
+import { RealtimeProvider } from '@/components/RealtimeProvider';
 import { NotificationProvider } from '@/components/NotificationManager';
 import AppNavbar from '@/components/AppNavbar';
 import MobileBottomNav from '@/components/MobileBottomNav';
@@ -44,6 +45,7 @@ export default function RootLayout({ children }) {
       </head>
       <body className="bg-slate-50 text-slate-900 antialiased min-h-screen flex flex-col pb-16 lg:pb-0">
         <AuthProvider>
+          <RealtimeProvider>
           <NotificationProvider>
             <LiveProvider>
               <AppNavbar />
@@ -53,6 +55,7 @@ export default function RootLayout({ children }) {
               <MobileBottomNav />
             </LiveProvider>
           </NotificationProvider>
+          </RealtimeProvider>
         </AuthProvider>
       </body>
     </html>

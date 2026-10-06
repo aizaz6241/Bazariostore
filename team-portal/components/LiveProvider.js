@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { useAuth } from './AuthProvider';
 import { useNotifications } from './NotificationManager';
+import { useRealtime, useRealtimeEvent } from './RealtimeProvider';
 
 /**
  * Live updates for every money screen.
@@ -14,10 +15,15 @@ import { useNotifications } from './NotificationManager';
  * page reload, no spinner.
  *
  * It rests while the tab is in the background and checks at once when you come back.
+ *
+ * When the realtime channel is pushing money changes (see RealtimeProvider), the app is TOLD
+ * the moment something changes and checks right then; the timer below slows down to a safety
+ * check. Without the channel it keeps asking every few seconds, exactly as before.
  */
 
 const ACTIVE_MS = 3000; // someone is using the app
 const IDLE_MS = 10000; // open and visible, but untouched for a while
+const PUSHED_MS = 25000; // changes are pushed to us: this is only a safety check
 const IDLE_AFTER_MS = 120000;
 
 const LiveContext = createContext({
@@ -34,6 +40,10 @@ export function LiveProvider({ children }) {
   const listeners = useRef(new Set());
   const refreshUserRef = useRef(refreshUser);
   refreshUserRef.current = refreshUser;
+  const realtime = useRealtime();
+  const pushedRef = useRef(false);
+  pushedRef.current = !!realtime.status.live;
+  const checkRef = useRef(null);
 
   const subscribe = useCallback((fn) => {
     listeners.current.add(fn);
@@ -57,7 +67,8 @@ export function LiveProvider({ children }) {
       if (stopped || document.hidden) return;
       const idle = Date.now() - lastActive > IDLE_AFTER_MS;
       // back off a little while the server is not answering
-      const wait = (idle ? IDLE_MS : ACTIVE_MS) * Math.min(1 + failures, 4);
+      const base = pushedRef.current ? PUSHED_MS : idle ? IDLE_MS : ACTIVE_MS;
+      const wait = base * Math.min(1 + failures, 4);
       timer = setTimeout(check, wait);
     };
 
@@ -113,6 +124,7 @@ export function LiveProvider({ children }) {
       check();
     };
 
+    checkRef.current = check;
     check();
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
@@ -123,6 +135,7 @@ export function LiveProvider({ children }) {
 
     return () => {
       stopped = true;
+      checkRef.current = null;
       clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
@@ -132,6 +145,14 @@ export function LiveProvider({ children }) {
       window.removeEventListener('scroll', onActive);
     };
   }, [userId]);
+
+  // Told by the server that something changed (or the channel just came back): check now
+  useRealtimeEvent('live:changed', () => checkRef.current?.());
+  useRealtimeEvent('resync', () => checkRef.current?.());
+  // The channel started / stopped pushing: check once, which also sets the new pace
+  useEffect(() => {
+    checkRef.current?.();
+  }, [realtime.status.live]);
 
   return <LiveContext.Provider value={{ status, lastChangeAt, subscribe }}>{children}</LiveContext.Provider>;
 }
