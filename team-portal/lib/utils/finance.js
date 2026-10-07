@@ -5,6 +5,8 @@ import SellerAssignment from '@/lib/models/SellerAssignment';
 import FinanceSplit from '@/lib/models/FinanceSplit';
 import WalletTransaction from '@/lib/models/WalletTransaction';
 import RewardClaim from '@/lib/models/RewardClaim';
+import ReserveMove from '@/lib/models/ReserveMove';
+import { simulateReserve, carryUncovered } from '@/lib/utils/reserveSim';
 import { Seller, Withdrawal } from '@/lib/models/SharedModels';
 import { computeSplit, computeBonusSplit, r2, r6 } from '@/lib/utils/financeSplit';
 import { getLiveVersion, forgetLiveVersion, hashOf } from '@/lib/utils/liveVersion';
@@ -135,7 +137,7 @@ export async function buildLedger({ fresh = false } = {}) {
 async function computeLedger() {
   let wrote = false;
 
-  const [partnerDocs, memberDocs, sellers, assignments, docs, splitDocs, payoutDocs, claimDocs] = await Promise.all([
+  const [partnerDocs, memberDocs, sellers, assignments, docs, splitDocs, payoutDocs, claimDocs, reserveDocs] = await Promise.all([
     Member.find({ role: 'admin', active: true }).sort({ createdAt: 1 }).select('name username email').lean(),
     Member.find({}).select('name username role commissionLabel active wallet').lean(),
     Seller.find({}).select('storeName ownerName wallet isTestAccount accountType isPreviousStoreSeller').lean(),
@@ -150,6 +152,7 @@ async function computeLedger() {
     FinanceSplit.find({}).lean(),
     WalletTransaction.find({ type: 'debit', date: { $gte: FINANCE_START } }).sort({ date: 1 }).lean(),
     RewardClaim.find({ status: 'approved' }).sort({ approvedAt: 1 }).lean(),
+    ReserveMove.find({}).sort({ date: 1 }).lean(),
   ]);
 
   const partners = partnerDocs.map((p) => ({ id: sid(p._id), name: p.name, email: p.email || '' }));
@@ -474,6 +477,11 @@ async function computeLedger() {
         bonusCostUSDT: 0,
         sellerWithdrawUSDT: 0,
         payoutUSDT: 0,
+        // reserve pool (partners only): moved into it, taken back out of it, and what the reserve
+        // had paid for someone who was short and that person has since given back
+        toReserveUSDT: 0,
+        fromReserveUSDT: 0,
+        reserveReturnUSDT: 0,
         balanceUSDT: 0,
       });
     }
@@ -518,6 +526,38 @@ async function computeLedger() {
     walletOf(p.userId, p.name).payoutUSDT += p.amountUSDT;
   }
 
+  // ─── Reserve pool: replay everything in the order it happened (lib/utils/reserveSim.js) ───
+  const reserveMoves = reserveDocs.map((m) => ({
+    id: sid(m._id),
+    type: m.type,
+    source: m.source || 'wallets',
+    amountUSDT: r6(num(m.amountUSDT)),
+    date: new Date(m.date || m.createdAt),
+    note: m.note || '',
+    by: [m.requestedBy, m.approvedBy].filter(Boolean).join(' + '),
+  }));
+  const sim = simulateReserve({
+    entries,
+    payouts,
+    reserveMoves,
+    partners,
+    nameOf: (id) => (memberMap.get(id) ? memberMap.get(id).name : walletMap.get(id)?.name || 'Unknown'),
+  });
+  for (const [userId, tt] of sim.totals) {
+    const w = walletOf(userId);
+    w.toReserveUSDT = tt.toReserveUSDT;
+    w.fromReserveUSDT = tt.fromReserveUSDT;
+    w.reserveReturnUSDT = tt.returnedUSDT;
+  }
+  // which seller withdrawals the reserve helped to pay, and for whom
+  for (const e of entries) {
+    const used = sim.perEntry.get(e.id);
+    if (used) {
+      e.reserveUsedUSDT = used.reserveUsedUSDT;
+      e.reserveCovers = used.covers;
+    }
+  }
+
   const wallets = [...walletMap.values()].map((w) => ({
     ...w,
     earnedUSDT: r6(w.earnedUSDT),
@@ -526,12 +566,21 @@ async function computeLedger() {
     sellerWithdrawUSDT: r6(w.sellerWithdrawUSDT),
     payoutUSDT: r6(w.payoutUSDT),
     // may be negative: settles from next deposits
-    balanceUSDT: r6(w.earnedUSDT + w.bonusUSDT - w.bonusCostUSDT - w.sellerWithdrawUSDT - w.payoutUSDT),
+    balanceUSDT: r6(
+      w.earnedUSDT + w.bonusUSDT - w.bonusCostUSDT - w.sellerWithdrawUSDT - w.payoutUSDT - w.toReserveUSDT + w.fromReserveUSDT + w.reserveReturnUSDT
+    ),
   }));
   wallets.sort((a, b) => (a.role === b.role ? b.balanceUSDT - a.balanceUSDT : a.role === 'partner' ? -1 : 1));
 
-  const balanceUSDT = r6(inUSDT - sellerOutUSDT - payoutUSDT);
+  // Binance = everything received − everything paid out + what the partners brought in from
+  // their own pockets for the reserve.
+  const pocketInUSDT = r6(sim.pocketInUSDT);
+  const balanceUSDT = r6(inUSDT - sellerOutUSDT - payoutUSDT + pocketInUSDT);
   const walletsUSDT = r6(wallets.reduce((s, w) => s + w.balanceUSDT, 0));
+  const reserveUSDT = sim.reserve.balanceUSDT;
+  // paid by the reserve for people who were short, not given back yet
+  const reserveOwedUSDT = sim.reserve.owedUSDT;
+  const owedBy = new Map(sim.reserve.owed.map((x) => [x.userId, x.amountUSDT]));
 
   // ─── Members in minus: money the partners are carrying for them ───
   // A member whose wallet is below zero owes that amount; it is not in Binance. The partners'
@@ -540,21 +589,35 @@ async function computeLedger() {
   // owe. When the members' minus comes back (from their next deposits), the book balance is
   // available again.
   const partnerIdSet = new Set(partners.map((p) => p.id));
+  // Everyone below zero (a member, or a partner). Part of it may have been paid by the reserve;
+  // the rest is not in Binance and is carried by the partners' wallets.
   const inMinus = wallets
-    .filter((w) => !partnerIdSet.has(w.userId) && w.balanceUSDT < -0.000001)
-    .map((w) => ({ userId: w.userId, name: w.name, deal: w.deal, owesUSDT: r6(-w.balanceUSDT) }))
+    .filter((w) => w.balanceUSDT < -0.000001)
+    .map((w) => {
+      const owes = r6(-w.balanceUSDT);
+      const fromReserve = r6(Math.min(owes, owedBy.get(w.userId) || 0));
+      return {
+        userId: w.userId,
+        name: w.name,
+        deal: w.deal,
+        isPartner: partnerIdSet.has(w.userId),
+        owesUSDT: owes,
+        paidByReserveUSDT: fromReserve,
+        carriedByPartnersUSDT: r6(owes - fromReserve),
+      };
+    })
     .sort((a, b) => b.owesUSDT - a.owesUSDT);
   const membersMinusUSDT = r6(inMinus.reduce((s, w) => s + w.owesUSDT, 0));
+  const minusPaidByReserveUSDT = r6(inMinus.reduce((s, w) => s + w.paidByReserveUSDT, 0));
+  const minusCarriedUSDT = r6(inMinus.reduce((s, w) => s + w.carriedByPartnersUSDT, 0));
   const membersPlusUSDT = r6(wallets.filter((w) => !partnerIdSet.has(w.userId) && w.balanceUSDT > 0).reduce((s, w) => s + w.balanceUSDT, 0));
 
-  let carriedSoFar = 0;
   const partnerWallets = wallets.filter((w) => partnerIdSet.has(w.userId));
-  partnerWallets.forEach((w, i) => {
-    // equal shares; the last partner takes the remainder so the shares add up exactly
-    const share = i === partnerWallets.length - 1 ? r6(membersMinusUSDT - carriedSoFar) : r6(membersMinusUSDT / partnerWallets.length);
-    carriedSoFar = r6(carriedSoFar + share);
-    w.heldForMembersUSDT = share;
-    w.availableUSDT = r6(w.balanceUSDT - share);
+  // equally, but never more than a partner has: the other one carries what is left
+  const carried = carryUncovered(partnerWallets, minusCarriedUSDT);
+  partnerWallets.forEach((w) => {
+    w.heldForMembersUSDT = carried.get(w.userId) || 0;
+    w.availableUSDT = w.balanceUSDT > 0 ? r6(w.balanceUSDT - w.heldForMembersUSDT) : w.balanceUSDT;
   });
   wallets.forEach((w) => {
     if (partnerIdSet.has(w.userId)) return;
@@ -562,7 +625,22 @@ async function computeLedger() {
     w.availableUSDT = w.balanceUSDT;
   });
   const partnersBookUSDT = r6(partnerWallets.reduce((s, w) => s + w.balanceUSDT, 0));
-  const partnersAvailableUSDT = r6(partnerWallets.reduce((s, w) => s + w.availableUSDT, 0));
+  const partnersAvailableUSDT = r6(partnerWallets.reduce((s, w) => s + Math.max(w.availableUSDT, 0), 0));
+
+  // The reserve, for the Finance screen
+  const reserveHalves = partners.map((p, i) => ({
+    id: p.id,
+    name: p.name,
+    amountUSDT: i === partners.length - 1 ? r6(reserveUSDT - r6(reserveUSDT / Math.max(partners.length, 1)) * (partners.length - 1)) : r6(reserveUSDT / partners.length),
+  }));
+  const reserve = {
+    balanceUSDT: reserveUSDT,
+    halves: reserveHalves,
+    owedUSDT: reserveOwedUSDT,
+    owed: sim.reserve.owed,
+    pocketInUSDT,
+    history: sim.reserve.history,
+  };
 
   // ─── What real sellers can still ask to withdraw (store wallet, in $) ───
   let liabilityUSD = 0;
@@ -614,7 +692,13 @@ async function computeLedger() {
       payoutUSDT: r6(payoutUSDT),
       balanceUSDT,
       walletsUSDT,
-      diffUSDT: r6(balanceUSDT - walletsUSDT),
+      // Binance = all wallets + the reserve + what the reserve paid for people who are still short
+      reserveUSDT,
+      reserveOwedUSDT,
+      pocketInUSDT,
+      diffUSDT: r6(balanceUSDT - walletsUSDT - reserveUSDT - reserveOwedUSDT),
+      minusPaidByReserveUSDT,
+      minusCarriedUSDT,
       // members below zero, and what that leaves the partners today
       membersMinusUSDT,
       membersMinusCount: inMinus.length,
@@ -628,6 +712,10 @@ async function computeLedger() {
     },
     wallets,
     membersInMinus: inMinus,
+    reserve,
+    // wallet lines that are not a share of a deposit / withdrawal / payout (reserve moves, and
+    // reserve money that came back from someone who had been short)
+    walletExtras: sim.extras,
     entries,
     pending,
     skipped,
@@ -691,6 +779,8 @@ async function computeLedger() {
     data.excludedTest.map((x) => [x.sellerId, x.deposits, x.withdrawals, x.depositUSD, x.withdrawalUSD]),
     payouts.map((p) => [p.id, p.amountUSDT]),
     reversedPayouts.map((p) => p.id),
+    reserveMoves.map((m) => [m.id, m.type, m.source, m.amountUSDT, m.date.getTime()]),
+    [reserveUSDT, reserveOwedUSDT],
     unassignedSellers.map((x) => x.id),
   ]);
 

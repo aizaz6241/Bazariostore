@@ -9,7 +9,8 @@ import { UTApi, UTFile } from 'uploadthing/server';
  * is having a bad moment, the picture stays inside the message as before, so sending a picture
  * never fails because of the storage.
  *
- * Voice notes are small and stay inside the message.
+ * A short voice note stays inside its message. A long one is sent in pieces (lib/utils/chatAudio.js)
+ * and is saved here as one file when the storage is available.
  */
 
 const UPLOAD_TIMEOUT_MS = 12000;
@@ -63,6 +64,29 @@ export async function storeChatPicture(dataUrl) {
     return { url, key: res.data.key };
   } catch (err) {
     console.error('[chat] picture could not be saved on the file storage (kept in the message):', err.message);
+    return null;
+  }
+}
+
+/**
+ * Saves any file of the chat (a long voice note) on the file storage.
+ * @returns {Promise<{ url: string, key: string } | null>} null = the storage is not available
+ */
+export async function storeChatFile(bytes, name, mime, timeoutMs = 30000) {
+  const ut = storage();
+  if (!ut || !bytes || bytes.length === 0) return null;
+  try {
+    const file = new UTFile([bytes], name, { type: mime });
+    const [res] = await Promise.race([
+      ut.uploadFiles([file]),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('storage took too long')), timeoutMs)),
+    ]);
+    if (!res || res.error || !res.data) throw new Error(res?.error?.message || 'Upload failed');
+    const url = res.data.ufsUrl || res.data.url;
+    if (!url || !res.data.key) throw new Error('Upload gave no link');
+    return { url, key: res.data.key };
+  } catch (err) {
+    console.error('[chat] file could not be saved on the file storage:', err.message);
     return null;
   }
 }

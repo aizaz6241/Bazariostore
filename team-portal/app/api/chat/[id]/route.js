@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAuthSession } from '@/lib/auth';
 import ChatMessage from '@/lib/models/ChatMessage';
 import { deleteChatPictures } from '@/lib/utils/chatMedia';
+import { deleteVoiceOf } from '@/lib/utils/chatAudio';
 
 export const dynamic = 'force-dynamic';
 
@@ -86,7 +87,11 @@ export async function DELETE(req, { params }) {
     message.mediaLink = '';
     message.mediaKey = '';
     message.audioDuration = 0;
+    const hadLongVoice = message.messageType === 'voice' && message.mediaSize > 0;
+    message.mediaSize = 0;
     await message.save();
+    // a long voice note kept in the database: its pieces are removed
+    if (hadLongVoice) await deleteVoiceOf([message._id]);
     // a picture on the file storage is removed there too
     if (storedKey) await deleteChatPictures([storedKey]);
 

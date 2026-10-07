@@ -60,6 +60,16 @@ const chatMessageSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    // A long voice note (sent in pieces): what it is and how large. Its `mediaLink` is either a
+    // file-storage link, or /api/chat/audio/<id> when the recording is kept in the database.
+    mediaMime: {
+      type: String,
+      default: '',
+    },
+    mediaSize: {
+      type: Number,
+      default: 0,
+    },
     // Duration in seconds for voice notes
     audioDuration: {
       type: Number,

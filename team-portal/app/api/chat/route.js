@@ -5,8 +5,12 @@ import Member from '@/lib/models/Member';
 import { sendPushToUser, sendPushToAllExcept } from '@/lib/utils/push';
 import { storeChatPicture, deleteChatPictures } from '@/lib/utils/chatMedia';
 import { markChatNotificationRead } from '@/lib/utils/notifications';
+import mongoose from 'mongoose';
+import { finishVoiceUpload, voiceLinkOf, deleteVoiceOf } from '@/lib/utils/chatAudio';
 
 export const dynamic = 'force-dynamic';
+// a long voice note is put together and saved when its message is sent: give that a little time
+export const maxDuration = 60;
 
 const FIRST_PAGE = 50; // messages sent when a chat is opened
 const OLDER_PAGE = 60; // messages per "Load earlier messages"
@@ -163,7 +167,7 @@ export async function POST(req) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
 
-    const { chatType, targetMemberId, messageType: askedType, text, mediaUrl, audioDuration } = await req.json();
+    const { chatType, targetMemberId, messageType: askedType, text, mediaUrl, audioDuration, uploadId } = await req.json();
     // Only ordinary messages can be sent from the chat box. "System" messages (bonus announcements
     // and the like) are written by the server itself, never by whoever is typing.
     const messageType = ['text', 'image', 'voice'].includes(askedType) ? askedType : 'text';
@@ -215,7 +219,21 @@ export async function POST(req) {
       storedPicture = await storeChatPicture(mediaUrl);
     }
 
+    // A long voice note arrived in pieces (see lib/utils/chatAudio.js): the message keeps a link
+    let voice = null;
+    if (messageType === 'voice' && uploadId) {
+      try {
+        voice = await finishVoiceUpload({ userId: session._id, uploadId });
+      } catch (e) {
+        return NextResponse.json({ message: e.message || 'Could not send the voice note' }, { status: 400 });
+      }
+    } else if (messageType === 'voice' && (!mediaUrl || !String(mediaUrl).trim())) {
+      return NextResponse.json({ message: 'The voice note is empty' }, { status: 400 });
+    }
+    const newId = new mongoose.Types.ObjectId();
+
     const newMsg = await ChatMessage.create({
+      _id: newId,
       chatType: chatType || 'group',
       conversationId,
       senderId: session._id,
@@ -224,12 +242,15 @@ export async function POST(req) {
       targetMemberId: target,
       messageType: messageType || 'text',
       text: text ? text.trim() : '',
-      mediaUrl: storedPicture ? '' : mediaUrl || '',
-      mediaLink: storedPicture ? storedPicture.url : '',
-      mediaKey: storedPicture ? storedPicture.key : '',
+      mediaUrl: storedPicture || voice ? '' : mediaUrl || '',
+      mediaLink: storedPicture ? storedPicture.url : voice ? voice.mediaLink || voiceLinkOf(newId) : '',
+      mediaKey: storedPicture ? storedPicture.key : voice ? voice.mediaKey : '',
+      mediaMime: voice ? voice.mime : '',
+      mediaSize: voice ? voice.size : 0,
       audioDuration: audioDuration || 0,
       readBy: [session._id],
     });
+    if (voice) await voice.attach(newMsg._id);
 
 
     // Asynchronously trigger push notifications to recipient(s) with custom message sound
@@ -325,9 +346,12 @@ export async function DELETE(req) {
 
     // pictures of this conversation that live on the file storage: removed there as well
     const stored = await ChatMessage.find({ conversationId, mediaKey: { $nin: ['', null] } }).select('mediaKey').lean();
+    // long voice notes kept in the database: their pieces go as well
+    const voices = await ChatMessage.find({ conversationId, messageType: 'voice', mediaSize: { $gt: 0 } }).select('_id').lean();
 
     const result = await ChatMessage.deleteMany({ conversationId });
     await deleteChatPictures(stored.map((m) => m.mediaKey));
+    await deleteVoiceOf(voices.map((m) => m._id));
 
     return NextResponse.json({
       message: 'Chat cleared',

@@ -135,6 +135,7 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
 
     const isDeposit = e.kind === 'deposit';
     const pctText = `${Number(share.pct.toFixed(2))}%`;
+    const myCover = (e.reserveCovers || []).find((c) => String(c.userId) === uid);
 
     if (isDeposit) {
       earnedUSDT += share.amountUSDT;
@@ -160,8 +161,44 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
         : `Seller withdrawal share ${pctText}: ${e.storeName}`,
       details: isDeposit
         ? `${share.label} of ₮${e.usdt.toFixed(2)} USDT received on Binance${e.inr > 0 ? ` (₹${e.inr.toLocaleString('en-US')} INR @ ${e.rate})` : ''}`
-        : `${share.label} of ₮${e.usdt.toFixed(2)} USDT paid to the seller from Binance`,
+        : `${share.label} of ₮${e.usdt.toFixed(2)} USDT paid to the seller from Binance${e.inr > 0 ? ` (₹${e.inr.toLocaleString('en-US')} INR @ ${e.rate})` : ''}${
+            myCover ? ` • ₮${myCover.amountUSDT.toFixed(2)} of your share was paid by the reserve because your wallet did not have enough` : ''
+          }`,
+      // what the seller really paid / was paid: shown next to the USDT so nobody has to convert
+      sellerINR: e.inr || 0,
+      sellerUSDT: e.usdt || 0,
       date: new Date(e.date),
+    });
+  }
+
+  // ─── Reserve pool lines (partners): money moved into / out of the reserve, and reserve money
+  // that came back from someone who had been short. These are not a share of any deposit. ───
+  let reserveNetUSDT = 0;
+  for (const x of ledger.walletExtras || []) {
+    if (String(x.userId) !== uid) continue;
+    const isOut = x.kind === 'reserve_to';
+    reserveNetUSDT += isOut ? -x.amountUSDT : x.amountUSDT;
+    rawTransactions.push({
+      id: x.id,
+      type: isOut ? 'debit' : 'credit',
+      category: x.kind, // reserve_to | reserve_from | reserve_return
+      amount: x.amountUSDT,
+      currency: 'USDT',
+      amountUSDT: x.amountUSDT,
+      sellerId: null,
+      storeName: x.kind === 'reserve_return' ? x.storeName || '' : 'Reserve pool',
+      sourceRef: x.entryId || x.moveId || '',
+      description:
+        x.kind === 'reserve_to'
+          ? 'Moved to the reserve pool (your half)'
+          : x.kind === 'reserve_from'
+            ? 'Moved back from the reserve pool (your half)'
+            : `Reserve money returned by ${x.fromName || 'a member'} (your half)`,
+      details:
+        x.kind === 'reserve_return'
+          ? `Not a share of a deposit: the reserve had paid this for ${x.fromName || 'a member'} when their wallet was short. It comes back to the partners’ wallets, half each.`
+          : x.note || '',
+      date: new Date(x.date),
     });
   }
 
@@ -211,7 +248,7 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
   const totalBonusUSDT = r2(bonusUSDT);
   const totalBonusCostUSDT = r2(bonusCostUSDT);
   const totalWithdrawnUSDT = r2(sellerWithdrawUSDT + bonusCostUSDT + payoutUSDT);
-  const balanceUSDT = r2(earnedUSDT + bonusUSDT - bonusCostUSDT - sellerWithdrawUSDT - payoutUSDT); // can be negative
+  const balanceUSDT = r2(earnedUSDT + bonusUSDT - bonusCostUSDT - sellerWithdrawUSDT - payoutUSDT + reserveNetUSDT); // can be negative
   // A partner carries an equal share of what members in minus owe: that part of the wallet is in
   // the books but not in Binance yet, so it cannot be paid out today (see lib/utils/finance.js).
   const ledgerWallet = ledger.wallets.find((w) => String(w.userId) === uid);
@@ -235,6 +272,8 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
   let periodWithdrawnPKR = 0;
 
   for (const t of filteredTransactions) {
+    // moving money to / from the reserve is neither earning nor spending
+    if (String(t.category || '').startsWith('reserve_')) continue;
     if (t.currency === 'USDT') {
       if (t.type === 'credit') periodEarnedUSDT += t.amount;
       if (t.type === 'debit') periodWithdrawnUSDT += t.amount;
@@ -263,6 +302,8 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
       balanceUSDT,
       availableUSDT,
       heldForMembersUSDT,
+      // reserve pool (partners): into it (−), back from it (+), and reserve money that came back (+)
+      reserveNetUSDT: r2(reserveNetUSDT),
       totalEarnedUSDT,
       totalWithdrawnUSDT,
       totalSellerWithdrawUSDT,

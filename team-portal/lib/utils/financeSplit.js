@@ -9,10 +9,12 @@
  *                               day's PKR/USDT rate; the rest is split 50/50 by the partners
  *   - nobody (unassigned)    -> partners 50% + 50%
  *
- * Seller withdrawal (money OUT), charged on the full amount:
+ * Seller withdrawal (money OUT), charged on the full amount, the mirror of the deposit:
  *   - previous-store seller  -> partners 50% + 50%
  *   - a partner's seller     -> that partner 75%, other partner 25%
- *   - a member's seller      -> member 50%, partners 25% + 25%
+ *   - 50% member (inr_50)    -> member 50%, partners 25% + 25%
+ *   - 1:1 PKR member         -> member pays (INR withdrawn) PKR, converted to USDT at that
+ *                               day's PKR/USDT rate; the rest is split 50/50 by the partners
  *   - unassigned             -> partners 50% + 50%
  */
 
@@ -76,9 +78,10 @@ export function computeSplit({ kind, usdt, inr = 0, pkrRate = 0, owner = null, p
     const member = { id: ownerId, name: owner.name };
     const isPkrDeal = owner.deal !== 'inr_50';
 
-    if (kind === 'deposit' && isPkrDeal) {
+    if (isPkrDeal) {
       if (!(Number(inr) > 0) || !(Number(pkrRate) > 0)) return { ok: false, reason: 'pkr_rate' };
       // 1 INR deposited = 1 PKR for the member, paid in USDT at that day's rate.
+      // 1 INR withdrawn by the seller = 1 PKR taken from the member, the same way.
       const memberUsdt = Math.min(total, Number(inr) / Number(pkrRate));
       push(member, 'member', `1:1 PKR (Rs ${Number(inr).toLocaleString('en-US')} @ ${pkrRate})`, memberUsdt);
       const rest = total - shares[0].amountUSDT;

@@ -56,6 +56,24 @@ const forgetMedia = (id) => {
   dropSavedMedia(id);
 };
 const isMediaMessage = (m) => m.messageType === 'voice' || m.messageType === 'image';
+// Voice notes: a short one travels inside its message; a longer one is sent in pieces, because
+// the hosting refuses a request above a few MB (this is what made 3-5 minute notes fail).
+const VOICE_INLINE_MAX_BYTES = 1.5 * 1024 * 1024;
+const VOICE_PIECE_BYTES = 2 * 1024 * 1024; // must match PIECE_BYTES in lib/utils/chatAudio.js
+const VOICE_MAX_BYTES = 300 * 1024 * 1024;
+const newUploadId = () => {
+  const b = new Uint8Array(16);
+  (window.crypto || window.msCrypto).getRandomValues(b);
+  return [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+};
+const blobToDataUrl = (blob) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read the recording'));
+    reader.onloadend = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const needsMedia = (m) =>
   isMediaMessage(m) && !m.isDeleted && !m.mediaUrl && !m.pending && !m.failed && !String(m._id).startsWith('tmp_');
 // What is kept on the device between visits: the latest messages as text (media is re-fetched)
@@ -1089,11 +1107,14 @@ function ChatPageInner() {
       senderRole: user?.role,
       messageType: payload.messageType || 'text',
       text: payload.text || '',
-      mediaUrl: payload.mediaUrl || '',
+      mediaUrl: payload.mediaUrl || payload.localUrl || '',
       audioDuration: payload.audioDuration || 0,
       readBy: [],
       createdAt: new Date().toISOString(),
       pending: true,
+      progress: payload.blob ? 0 : null,
+      // kept so that "tap to resend" can send exactly the same thing again
+      retry: payload,
     };
 
     const withTemp = [...messagesRef.current, optimistic];
@@ -1116,13 +1137,63 @@ function ChatPageInner() {
       setMessages(next);
     };
 
+    // "Sending… 40%" on a long voice note
+    const showProgress = (pct) => {
+      if (activeKeyRef.current !== chatKey) return;
+      const next = messagesRef.current.map((m) => (m._id === tempId ? { ...m, progress: pct } : m));
+      messagesRef.current = next;
+      setMessages(next);
+    };
+
     try {
       const token = localStorage.getItem('portal_token');
+      const { blob, localUrl, upload, ...plain } = payload;
       const body = {
         chatType: activeChat.type,
         targetMemberId: activeChat.type === 'personal' ? activeChat.contact?._id : null,
-        ...payload,
+        ...plain,
       };
+
+      if (blob) {
+        if (blob.size <= VOICE_INLINE_MAX_BYTES) {
+          body.mediaUrl = await blobToDataUrl(blob);
+        } else {
+          // A long voice note goes up in pieces. A piece that fails is tried again; what has
+          // already arrived is remembered, so "tap to resend" continues instead of starting over.
+          if (!payload.upload) payload.upload = { id: newUploadId(), sent: 0 };
+          const up = payload.upload;
+          const pieces = Math.ceil(blob.size / VOICE_PIECE_BYTES);
+          for (let i = up.sent; i < pieces; i++) {
+            const piece = blob.slice(i * VOICE_PIECE_BYTES, (i + 1) * VOICE_PIECE_BYTES);
+            let lastError = 'Network error';
+            let done = false;
+            for (let attempt = 0; attempt < 3 && !done; attempt++) {
+              if (attempt > 0) await wait(1200 * attempt);
+              try {
+                const r = await fetch(`/api/chat/upload?uploadId=${up.id}&index=${i}`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${token}` },
+                  body: piece,
+                });
+                if (r.ok) done = true;
+                else {
+                  lastError = (await r.json().catch(() => ({}))).message || 'Upload failed';
+                  if (r.status < 500 && r.status !== 408 && r.status !== 429) break; // trying again will not help
+                }
+              } catch (e) {
+                lastError = 'Network error';
+              }
+            }
+            if (!done) {
+              settle({ ...optimistic, pending: false, failed: true, failReason: lastError });
+              return;
+            }
+            up.sent = i + 1;
+            showProgress(Math.round((up.sent / pieces) * 95));
+          }
+          body.uploadId = up.id;
+        }
+      }
 
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -1137,10 +1208,12 @@ function ChatPageInner() {
         const data = await res.json();
         // the server does not echo the picture / voice note back: keep the copy we just sent
         // (a picture that went to the file storage needs no copy on the device: it is a link now)
-        if (optimistic.mediaUrl && data.chatMessage?._id && !data.chatMessage.mediaLink) {
-          rememberMedia(data.chatMessage._id, optimistic.mediaUrl);
+        // (a recording is kept as its data, never as the temporary address used while sending)
+        const sentMedia = body.mediaUrl || '';
+        if (sentMedia && data.chatMessage?._id && !data.chatMessage.mediaLink) {
+          rememberMedia(data.chatMessage._id, sentMedia);
         }
-        settle({ ...data.chatMessage, mediaUrl: data.chatMessage?.mediaUrl || optimistic.mediaUrl });
+        settle({ ...data.chatMessage, mediaUrl: data.chatMessage?.mediaUrl || data.chatMessage?.mediaLink || sentMedia });
         // chat list: this is now the last message of that conversation
         if (data.chatMessage?.conversationId) noteLastMessage(data.chatMessage.conversationId, data.chatMessage, false);
         else fetchContacts();
@@ -1152,6 +1225,16 @@ function ChatPageInner() {
       console.error('Send message failed:', err);
       settle({ ...optimistic, pending: false, failed: true, failReason: 'Network error' });
     }
+  };
+
+  // Try a message that could not be sent once more (a long voice note continues where it stopped)
+  const resendFailedMessage = (msg) => {
+    if (!msg?.retry) return;
+    const next = messagesRef.current.filter((m) => m._id !== msg._id);
+    messagesRef.current = next;
+    prevMessagesLengthRef.current = next.length;
+    setMessages(next);
+    handleSendMessage(msg.retry);
   };
 
   // Remove a message that could not be sent
@@ -1217,13 +1300,19 @@ function ChatPageInner() {
     reportTyping('');
   };
 
-  const handleSendVoice = (audioBase64, durationSec) => {
+  const handleSendVoice = (blob, durationSec, localUrl) => {
+    setIsRecordingVoice(false);
+    if (!blob || blob.size === 0) return;
+    if (blob.size > VOICE_MAX_BYTES) {
+      alert('This voice note is too long to send. Please record it in two parts.');
+      return;
+    }
     handleSendMessage({
       messageType: 'voice',
-      mediaUrl: audioBase64,
+      blob,
+      localUrl, // played from the device while it is being sent
       audioDuration: durationSec,
     });
-    setIsRecordingVoice(false);
   };
 
   // Compress & optimize image for lightning-fast delivery (WhatsApp-grade)
@@ -2457,17 +2546,21 @@ function ChatPageInner() {
                               <span className="italic opacity-80 mr-0.5">(edited)</span>
                             )}
                             {msg.failed ? (
-                              <button
-                                type="button"
-                                onClick={() => dismissFailedMessage(msg._id)}
-                                className="font-bold text-red-200 underline"
-                                title={msg.failReason || 'Not sent'}
-                              >
-                                Not sent • tap to remove
-                              </button>
+                              <span className="flex items-center gap-2" title={msg.failReason || 'Not sent'}>
+                                {msg.retry ? (
+                                  <button type="button" onClick={() => resendFailedMessage(msg)} className="font-bold text-red-200 underline">
+                                    Not sent • tap to resend
+                                  </button>
+                                ) : (
+                                  <span className="font-bold text-red-200">Not sent</span>
+                                )}
+                                <button type="button" onClick={() => dismissFailedMessage(msg._id)} className="text-red-200/90 underline">
+                                  Remove
+                                </button>
+                              </span>
                             ) : msg.pending ? (
                               <span className="italic opacity-80 flex items-center gap-1">
-                                <Clock className="w-3 h-3 inline" /> Sending…
+                                <Clock className="w-3 h-3 inline" /> Sending…{typeof msg.progress === 'number' && msg.progress > 0 ? ` ${msg.progress}%` : ''}
                               </span>
                             ) : (
                               <span>{formatMessageTime(msg.createdAt)}</span>

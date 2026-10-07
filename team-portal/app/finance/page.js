@@ -58,7 +58,10 @@ function EntryForm({ row, busy, onSave, onCancel }) {
   const [inr, setInr] = useState(row.inr ? String(row.inr) : '');
   const [amount, setAmount] = useState(row.usdt && row.reason !== 'auto_default' ? String(row.usdt) : '');
   const [pkrRate, setPkrRate] = useState(row.pkrRate ? String(row.pkrRate) : '');
-  const needsPkr = row.kind === 'deposit' && row.owner && row.owner.role === 'member' && row.owner.deal !== 'inr_50';
+  // 1:1 PKR member: the INR amount and that day's PKR rate decide the member's part, on a deposit
+  // and (the same way) on a seller withdrawal
+  const needsPkr =
+    (row.kind === 'deposit' || (row.kind === 'seller_withdrawal' && !row.previousStore)) && row.owner && row.owner.role === 'member' && row.owner.deal !== 'inr_50';
   const rate = Number(inr) > 0 && Number(amount) > 0 ? (Number(inr) / Number(amount)).toFixed(2) : null;
 
   if (row.kind === 'bonus') {
@@ -111,10 +114,12 @@ function EntryForm({ row, busy, onSave, onCancel }) {
     >
       <label className="text-[11px] font-bold text-slate-600">
         INR {row.kind === 'deposit' ? 'received' : 'paid'}
+        {needsPkr ? ' *' : ''}
         <input
           type="number"
           step="any"
           min="0"
+          required={needsPkr}
           value={inr}
           onChange={(e) => setInr(e.target.value)}
           placeholder="e.g. 5000"
@@ -194,7 +199,7 @@ function AddEntryModal({ data, onClose, onSaved }) {
   const seller = sellers.find((x) => x.id === sellerId);
   const owner = people.find((p) => p.id === ownerId);
   const partnersPayAll = entryKind === 'seller_withdrawal' && seller?.previousStore;
-  const needsPkr = entryKind === 'deposit' && owner && owner.role === 'member' && owner.deal !== 'inr_50';
+  const needsPkr = !partnersPayAll && owner && owner.role === 'member' && owner.deal !== 'inr_50';
 
   const pickSeller = (id) => {
     setSellerId(id);
@@ -327,8 +332,8 @@ function AddEntryModal({ data, onClose, onSaved }) {
               <input type="date" required value={date} max={today} onChange={(e) => setDate(e.target.value)} className={inputCls} />
             </div>
             <div>
-              <label className={labelCls}>INR amount</label>
-              <input type="number" step="any" min="0" value={inr} onChange={(e) => setInr(e.target.value)} placeholder="e.g. 5000" className={inputCls} />
+              <label className={labelCls}>INR amount{needsPkr ? ' *' : ''}</label>
+              <input type="number" step="any" min="0" required={!!needsPkr} value={inr} onChange={(e) => setInr(e.target.value)} placeholder="e.g. 5000" className={inputCls} />
             </div>
             <div>
               <label className={labelCls}>USDT {entryKind === 'deposit' ? 'received' : 'sent'} *</label>
@@ -598,6 +603,148 @@ function FixDepositModal({ row, data, onClose, onSaved }) {
   );
 }
 
+/* ───────────────────────── Reserve pool: put money in / move it back ───────────────────────── */
+const RESERVE_TYPE = {
+  add_wallets: { label: 'Put in (from wallets)', cls: 'bg-indigo-100 text-indigo-800', sign: '+' },
+  add_pocket: { label: 'Put in (own pockets)', cls: 'bg-indigo-100 text-indigo-800', sign: '+' },
+  take: { label: 'Moved back to wallets', cls: 'bg-slate-100 text-slate-700', sign: '-' },
+  used: { label: 'Paid a shortfall', cls: 'bg-red-100 text-red-700', sign: '-' },
+  returned: { label: 'Came back (to wallets)', cls: 'bg-emerald-100 text-emerald-800', sign: '' },
+};
+
+function ReserveModal({ mode, data, onClose, onSent }) {
+  const [amount, setAmount] = useState('');
+  const [source, setSource] = useState('wallets');
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const reserve = data.reserve || { balanceUSDT: 0 };
+  const partnerWallets = data.wallets.filter((w) => data.partners.some((p) => p.id === w.userId));
+  const half = Number(amount) > 0 ? Number(amount) / 2 : 0;
+  const isAdd = mode === 'add';
+
+  let problem = '';
+  if (half > 0) {
+    if (!isAdd && Number(amount) > reserve.balanceUSDT + 0.005) problem = `The reserve holds only ${usdt(reserve.balanceUSDT)}.`;
+    if (isAdd && source === 'wallets') {
+      const low = partnerWallets.filter((w) => (w.availableUSDT ?? w.balanceUSDT) + 0.005 < half);
+      if (low.length > 0) problem = `${low.map((w) => `${w.name} can take out only ${usdt(Math.max(w.availableUSDT ?? w.balanceUSDT, 0))}`).join('; ')}. Each partner gives ${usdt(half)}.`;
+    }
+  }
+
+  const submit = async (e) => {
+    e.preventDefault();
+    try {
+      setSaving(true);
+      setErr('');
+      const token = localStorage.getItem('portal_token');
+      const res = await fetch('/api/finance/reserve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ type: isAdd ? 'add' : 'take', source, amount: Number(amount), note }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || 'Could not send the request');
+      onSent(json.message || 'Sent for approval.');
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-start sm:items-center justify-center p-4 overflow-y-auto" onClick={onClose}>
+      <form onSubmit={submit} onClick={(e) => e.stopPropagation()} className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-extrabold text-slate-900">{isAdd ? 'Put money into the reserve' : 'Move reserve money back to the wallets'}</h2>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              {isAdd ? 'Half from each partner. The other partner has to approve it.' : 'Half goes to each partner’s wallet. The other partner has to approve it.'}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="p-1.5 rounded-full hover:bg-slate-100 text-slate-500">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {isAdd && (
+            <div>
+              <label className={labelCls}>Where does the money come from?</label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { id: 'wallets', title: 'From our wallets', text: 'Taken out of both wallets. Binance total stays the same.' },
+                  { id: 'pocket', title: 'From our own pockets', text: 'New USDT sent to Binance. Wallets stay the same.' },
+                ].map((o) => (
+                  <button
+                    type="button"
+                    key={o.id}
+                    onClick={() => setSource(o.id)}
+                    className={`text-left p-3 rounded-2xl border text-xs ${source === o.id ? 'border-indigo-500 bg-indigo-50' : 'border-slate-200 bg-white'}`}
+                  >
+                    <b className="text-slate-900 block">{o.title}</b>
+                    <span className="text-[11px] text-slate-500">{o.text}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className={labelCls}>Total amount (USDT) *</label>
+            <input type="number" step="any" min="0" required autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 500" className={`${inputCls} border-indigo-400`} />
+          </div>
+          <div>
+            <label className={labelCls}>Note</label>
+            <input type="text" value={note} maxLength={300} onChange={(e) => setNote(e.target.value)} placeholder="Optional" className={inputCls} />
+          </div>
+
+          <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 text-xs space-y-1.5">
+            <div className="text-[11px] font-bold text-slate-500 uppercase">What will happen</div>
+            {half > 0 ? (
+              <>
+                {partnerWallets.map((w) => (
+                  <div key={w.userId} className="flex items-center justify-between">
+                    <span className="text-slate-700">
+                      <b>{w.name}</b>
+                      {isAdd && source === 'pocket' ? ' sends to Binance' : ' wallet'}
+                    </span>
+                    <b className={isAdd && source === 'wallets' ? 'text-red-600' : 'text-emerald-700'}>
+                      {isAdd && source === 'wallets' ? '-' : '+'}
+                      {fmt(half)} USDT
+                    </b>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between pt-1.5 border-t border-slate-200">
+                  <span className="text-slate-700">
+                    <b>Reserve</b> {usdt(reserve.balanceUSDT)} →
+                  </span>
+                  <b className="text-slate-900">{usdt(reserve.balanceUSDT + (isAdd ? 1 : -1) * Number(amount))}</b>
+                </div>
+              </>
+            ) : (
+              <p className="text-slate-400">Enter the amount.</p>
+            )}
+          </div>
+
+          {(problem || err) && <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 font-semibold">{err || problem}</div>}
+        </div>
+
+        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-2">
+          <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-xl bg-white border border-slate-300 text-slate-700 text-xs font-bold">
+            Cancel
+          </button>
+          <button type="submit" disabled={saving || !(half > 0) || !!problem} className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold disabled:opacity-50">
+            {saving ? 'Sending…' : 'Send for approval'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 /* ───────────────────────── Page ───────────────────────── */
 export default function FinancePage() {
   const { user } = useAuth();
@@ -608,6 +755,8 @@ export default function FinancePage() {
   const [editId, setEditId] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [fixRow, setFixRow] = useState(null);
+  const [reserveMode, setReserveMode] = useState(''); // '' | 'add' | 'take'
+  const [showReserveHistory, setShowReserveHistory] = useState(false);
   const [notice, setNotice] = useState('');
   // Goes up whenever the approvals list and the activity log should be read again
   const [tick, setTick] = useState(0);
@@ -724,6 +873,11 @@ export default function FinancePage() {
   const liability = data?.sellerLiability || {};
   const partners = data?.partners || [];
   const mismatch = Math.abs(t.diffUSDT || 0) > 0.01;
+  const reserve = data?.reserve || { balanceUSDT: 0, halves: [], owedUSDT: 0, owed: [], pocketInUSDT: 0, history: [] };
+  const reserveInUse = reserve.balanceUSDT > 0.000001 || reserve.owedUSDT > 0.000001 || reserve.history.length > 0;
+  const reserveWaiting = (approvals?.pending || []).find((a) => a.action === 'reserve_add' || a.action === 'reserve_take');
+  const partnerIds = new Set(partners.map((p) => p.id));
+  const reserveCol = (w) => (w.fromReserveUSDT || 0) + (w.reserveReturnUSDT || 0) - (w.toReserveUSDT || 0);
   const short = (liability.totalUSD || 0) > (t.balanceUSDT || 0);
   const unassigned = data?.unassignedSellers || [];
 
@@ -922,22 +1076,162 @@ export default function FinancePage() {
               <p className="text-2xl sm:text-3xl font-black mt-1">{usdt(t.balanceUSDT)}</p>
               <p className={`text-[11px] mt-1 flex items-center gap-1 ${mismatch ? 'text-red-300' : 'text-emerald-300'}`}>
                 {mismatch ? <AlertTriangle className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                {mismatch ? `Wallets add up to ${usdt(t.walletsUSDT)} (difference ${usdt(t.diffUSDT)})` : 'Matches the sum of all wallets'}
+                {mismatch
+                  ? `Wallets${reserveInUse ? ' + reserve' : ''} add up to ${usdt((t.walletsUSDT || 0) + (t.reserveUSDT || 0) + (t.reserveOwedUSDT || 0))} (difference ${usdt(t.diffUSDT)})`
+                  : reserveInUse
+                  ? 'Matches all wallets + the reserve'
+                  : 'Matches the sum of all wallets'}
               </p>
             </div>
           </div>
 
-          {/* ── Members in minus: what the partners can really use today ── */}
+          {/* ── Reserve pool ── */}
+          <div className="bg-white rounded-3xl border border-indigo-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-indigo-100 bg-indigo-50/60 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="font-bold text-indigo-950 text-sm flex items-center gap-2">
+                  <Landmark className="w-4 h-4" /> Reserve pool
+                </div>
+                <div className="text-[11px] text-indigo-900/70 mt-0.5">
+                  Kept aside in the same Binance account, half each. Used only when someone’s wallet is not enough for a seller withdrawal. It never fills by itself.
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setReserveMode('add')}
+                  disabled={!data.partnersOk || !!reserveWaiting}
+                  className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold disabled:opacity-50 flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Put money in
+                </button>
+                <button
+                  onClick={() => setReserveMode('take')}
+                  disabled={!data.partnersOk || !!reserveWaiting || !(reserve.balanceUSDT > 0)}
+                  className="px-3 py-2 rounded-xl bg-white border border-indigo-300 text-indigo-800 text-xs font-bold disabled:opacity-50"
+                >
+                  Move back to wallets
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-0 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+              <div className="p-5">
+                <div className="text-[10px] uppercase font-bold text-slate-400">In the reserve now</div>
+                <p className="text-2xl font-black text-indigo-700 mt-1 tabular-nums">{usdt(reserve.balanceUSDT)}</p>
+                {reserveWaiting && (
+                  <div className="mt-2">
+                    <WaitingTag approval={reserveWaiting} />
+                  </div>
+                )}
+              </div>
+              <div className="p-5">
+                <div className="text-[10px] uppercase font-bold text-slate-400 mb-1.5">Whose money it is</div>
+                {reserve.halves.map((h) => (
+                  <div key={h.id} className="flex items-center justify-between text-xs py-0.5">
+                    <span className="font-bold text-slate-900">{h.name}</span>
+                    <span className="font-black tabular-nums text-slate-700">{usdt(h.amountUSDT)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="p-5">
+                <div className="text-[10px] uppercase font-bold text-slate-400 mb-1.5">Paid for others, still to come back</div>
+                {reserve.owed.length === 0 ? (
+                  <p className="text-xs text-slate-400">Nothing. Nobody owes the reserve.</p>
+                ) : (
+                  <>
+                    {reserve.owed.map((o) => (
+                      <div key={o.userId} className="flex items-center justify-between text-xs py-0.5">
+                        <span className="font-bold text-slate-900">{o.name}</span>
+                        <span className="font-black tabular-nums text-red-600">{usdt(o.amountUSDT)}</span>
+                      </div>
+                    ))}
+                    <p className="text-[10px] text-slate-500 mt-1.5 leading-relaxed">
+                      When they earn again, this comes back to the partners’ wallets, half each (not into the reserve).
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-slate-100">
+              <button onClick={() => setShowReserveHistory((v) => !v)} className="w-full px-5 py-3 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 flex items-center justify-between">
+                <span>Reserve history ({reserve.history.length})</span>
+                <span className="text-slate-400">{showReserveHistory ? 'Hide' : 'Show'}</span>
+              </button>
+              {showReserveHistory && (
+                <div className="overflow-x-auto border-t border-slate-100">
+                  <table className="w-full text-xs min-w-[640px]">
+                    <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase">
+                      <tr>
+                        <th className="text-left px-5 py-2.5">Date</th>
+                        <th className="text-left px-3 py-2.5">What happened</th>
+                        <th className="text-left px-3 py-2.5">Details</th>
+                        <th className="text-right px-3 py-2.5">Amount</th>
+                        <th className="text-right px-5 py-2.5">Reserve after</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {reserve.history.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-slate-400">
+                            Nothing yet. Use “Put money in” to start the reserve.
+                          </td>
+                        </tr>
+                      )}
+                      {[...reserve.history].reverse().map((h, i) => {
+                        const tp = RESERVE_TYPE[h.type] || RESERVE_TYPE.used;
+                        return (
+                          <tr key={i} className="hover:bg-slate-50/60">
+                            <td className="px-5 py-2.5 text-slate-600 whitespace-nowrap">{day(h.date)}</td>
+                            <td className="px-3 py-2.5 whitespace-nowrap">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${tp.cls}`}>{tp.label}</span>
+                            </td>
+                            <td className="px-3 py-2.5 text-slate-600">
+                              {h.type === 'used' && (
+                                <>
+                                  For <b className="text-slate-900">{h.name}</b>
+                                  {h.storeName ? ` — withdrawal of ${h.storeName}` : ''}
+                                </>
+                              )}
+                              {h.type === 'returned' && (
+                                <>
+                                  From <b className="text-slate-900">{h.name}</b>
+                                  {h.storeName ? ` — deposit of ${h.storeName}` : ''}
+                                </>
+                              )}
+                              {(h.type === 'add_wallets' || h.type === 'add_pocket' || h.type === 'take') && <>{h.by ? `By ${h.by}` : 'Half each'}</>}
+                              {h.note && <div className="text-[10px] text-slate-400 mt-0.5">{h.note}</div>}
+                            </td>
+                            <td className={`px-3 py-2.5 text-right tabular-nums font-black ${tp.sign === '+' ? 'text-emerald-600' : tp.sign === '-' ? 'text-red-600' : 'text-slate-500'}`}>
+                              {tp.sign}
+                              {fmt(h.amountUSDT)}
+                            </td>
+                            <td className="px-5 py-2.5 text-right tabular-nums font-bold text-slate-800">{usdt(h.balanceAfterUSDT)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── People in minus: what the partners can really use today ── */}
           {(t.membersMinusCount || 0) > 0 && (
             <div className="bg-white rounded-3xl border border-red-200 overflow-hidden">
               <div className="px-5 py-4 border-b border-red-100 bg-red-50/60 flex flex-wrap items-center justify-between gap-2">
                 <div className="font-bold text-red-900 text-sm flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4" />
                   <span>
-                    {t.membersMinusCount} {t.membersMinusCount === 1 ? 'member is' : 'members are'} in minus: {usdt(t.membersMinusUSDT)} owed
+                    {t.membersMinusCount} {t.membersMinusCount === 1 ? 'person is' : 'people are'} in minus: {usdt(t.membersMinusUSDT)} owed
                   </span>
                 </div>
-                <span className="text-[11px] text-red-900/70">This money is not in Binance. It comes back from their next deposits.</span>
+                <span className="text-[11px] text-red-900/70">
+                  {(t.minusPaidByReserveUSDT || 0) > 0
+                    ? `${usdt(t.minusPaidByReserveUSDT)} was paid by the reserve, ${usdt(t.minusCarriedUSDT)} by the partners’ wallets. It comes back from their next deposits.`
+                    : 'This money is not in Binance. It comes back from their next deposits.'}
+                </span>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-5 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
@@ -945,9 +1239,20 @@ export default function FinancePage() {
                   <div className="text-[10px] uppercase font-bold text-slate-400 mb-2">Who is in minus</div>
                   <div className="space-y-1.5">
                     {(data.membersInMinus || []).map((m) => (
-                      <div key={m.userId} className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-slate-900">{m.name}</span>
-                        <span className="font-black text-red-600 tabular-nums">-{fmt(m.owesUSDT)}</span>
+                      <div key={m.userId} className="text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-900">
+                            {m.name}
+                            {m.isPartner && <span className="ml-1.5 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[9px] font-bold uppercase">Partner</span>}
+                          </span>
+                          <span className="font-black text-red-600 tabular-nums">-{fmt(m.owesUSDT)}</span>
+                        </div>
+                        {(m.paidByReserveUSDT || 0) > 0 && (
+                          <div className="text-[10px] text-slate-500">
+                            Reserve paid {fmt(m.paidByReserveUSDT)}
+                            {(m.carriedByPartnersUSDT || 0) > 0.000001 ? ` • partners’ wallets ${fmt(m.carriedByPartnersUSDT)}` : ''}
+                          </div>
+                        )}
                       </div>
                     ))}
                     <div className="flex items-center justify-between text-xs pt-2 mt-2 border-t border-slate-100">
@@ -965,7 +1270,7 @@ export default function FinancePage() {
                         <tr>
                           <th className="text-left py-1.5">Partner</th>
                           <th className="text-right py-1.5 px-2">Share</th>
-                          <th className="text-right py-1.5 px-2">With members in minus</th>
+                          <th className="text-right py-1.5 px-2">Paid for people in minus</th>
                           <th className="text-right py-1.5 pl-2">Can take out now</th>
                         </tr>
                       </thead>
@@ -987,7 +1292,7 @@ export default function FinancePage() {
                         <tr className="border-t border-slate-200 font-black">
                           <td className="py-2">Both partners</td>
                           <td className="py-2 px-2 text-right tabular-nums">{usdt(t.partnersBookUSDT)}</td>
-                          <td className="py-2 px-2 text-right tabular-nums text-red-700">-{fmt(t.membersMinusUSDT)}</td>
+                          <td className="py-2 px-2 text-right tabular-nums text-red-700">-{fmt(t.minusCarriedUSDT ?? t.membersMinusUSDT)}</td>
                           <td className="py-2 pl-2 text-right tabular-nums text-sm">{usdt(t.partnersAvailableUSDT)}</td>
                         </tr>
                       </tfoot>
@@ -1000,10 +1305,19 @@ export default function FinancePage() {
                         , of which <b className="text-slate-800">{usdt(t.membersPlusUSDT)}</b> belongs to members with a positive wallet
                       </>
                     ) : null}
-    . The partners&apos; shares add up to <b className="text-slate-800">{usdt(t.partnersBookUSDT)}</b>, but{' '}
-                    <b className="text-slate-800">{usdt(t.membersMinusUSDT)}</b> of that is with members in minus, so{' '}
-                    <b className="text-slate-800">{usdt(t.partnersAvailableUSDT)}</b> can be taken out today. Nobody&apos;s share is reduced: when the
-                    members&apos; minus comes back, the full share can be taken out.
+    . The partners&apos; shares add up to <b className="text-slate-800">{usdt(t.partnersBookUSDT)}</b>
+                    {(t.minusCarriedUSDT ?? t.membersMinusUSDT) > 0.000001 ? (
+                      <>
+                        , but <b className="text-slate-800">{usdt(t.minusCarriedUSDT ?? t.membersMinusUSDT)}</b> of that was paid for people in minus (the
+                        part the reserve did not pay), so <b className="text-slate-800">{usdt(t.partnersAvailableUSDT)}</b> can be taken out today
+                      </>
+                    ) : (
+                      <>
+                        {' '}
+                        and all of it can be taken out today: the reserve paid the whole minus
+                      </>
+                    )}
+                    . Nobody&apos;s share is reduced: when the minus comes back, the full share can be taken out.
                   </p>
                 </div>
               </div>
@@ -1038,6 +1352,7 @@ export default function FinancePage() {
                     <th className="text-right px-3 py-2.5">Bonuses</th>
                     <th className="text-right px-3 py-2.5">Share of seller withdrawals</th>
                     <th className="text-right px-3 py-2.5">Payouts taken</th>
+                    {reserveInUse && <th className="text-right px-3 py-2.5">Reserve (in / out / came back)</th>}
                     <th className="text-right px-3 py-2.5">Share (balance)</th>
                     <th className="text-right px-5 py-2.5">Can take out now</th>
                   </tr>
@@ -1053,13 +1368,19 @@ export default function FinancePage() {
                       <td className="text-right px-3 py-3 font-bold tabular-nums">{money(w.bonusUSDT - w.bonusCostUSDT)}</td>
                       <td className="text-right px-3 py-3 font-bold tabular-nums">{money(-w.sellerWithdrawUSDT)}</td>
                       <td className="text-right px-3 py-3 font-bold tabular-nums">{money(-w.payoutUSDT)}</td>
+                      {reserveInUse && (
+                        <td className="text-right px-3 py-3 font-bold tabular-nums">
+                          {partnerIds.has(w.userId) ? money(reserveCol(w)) : <span className="text-slate-300">—</span>}
+                          {(w.reserveReturnUSDT || 0) > 0 && <div className="text-[10px] font-semibold text-slate-400">{fmt(w.reserveReturnUSDT)} came back</div>}
+                        </td>
+                      )}
                       <td className={`text-right px-3 py-3 font-black text-sm tabular-nums ${w.balanceUSDT < 0 ? 'text-red-600' : 'text-slate-900'}`}>
                         {usdt(w.balanceUSDT)}
                       </td>
                       <td className={`text-right px-5 py-3 font-black text-sm tabular-nums ${(w.availableUSDT ?? w.balanceUSDT) < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
                         {usdt(w.availableUSDT ?? w.balanceUSDT)}
                         {(w.heldForMembersUSDT || 0) > 0 && (
-                          <div className="text-[10px] font-semibold text-slate-400">{fmt(w.heldForMembersUSDT)} is with members in minus</div>
+                          <div className="text-[10px] font-semibold text-slate-400">{fmt(w.heldForMembersUSDT)} paid for people in minus</div>
                         )}
                       </td>
                     </tr>
@@ -1072,9 +1393,24 @@ export default function FinancePage() {
                     <td className="text-right px-3 py-3 text-slate-400 tabular-nums">0.00</td>
                     <td className="text-right px-3 py-3 tabular-nums">-{fmt(t.sellerOutUSDT)}</td>
                     <td className="text-right px-3 py-3 tabular-nums">-{fmt(t.payoutUSDT)}</td>
+                    {reserveInUse && <td className="text-right px-3 py-3 tabular-nums">{money(data.wallets.reduce((s2, w) => s2 + reserveCol(w), 0))}</td>}
                     <td className="text-right px-3 py-3 text-sm tabular-nums">{usdt(t.walletsUSDT)}</td>
-                    <td className="text-right px-5 py-3 text-sm tabular-nums">{usdt(t.balanceUSDT)}</td>
+                    <td className="text-right px-5 py-3 text-sm tabular-nums">{reserveInUse ? <span className="text-slate-300">—</span> : usdt(t.balanceUSDT)}</td>
                   </tr>
+                  {reserveInUse && (
+                    <tr className="bg-slate-50 text-[11px] text-slate-600">
+                      <td colSpan={8} className="px-5 pb-3">
+                        All wallets <b>{usdt(t.walletsUSDT)}</b> + reserve <b>{usdt(t.reserveUSDT)}</b>
+                        {(t.reserveOwedUSDT || 0) > 0 ? (
+                          <>
+                            {' '}
+                            + paid by the reserve for people in minus <b>{usdt(t.reserveOwedUSDT)}</b>
+                          </>
+                        ) : null}{' '}
+                        = in Binance <b className="text-slate-900">{usdt(t.balanceUSDT)}</b>
+                      </td>
+                    </tr>
+                  )}
                 </tfoot>
               </table>
             </div>
@@ -1250,6 +1586,11 @@ export default function FinancePage() {
                             {e.manual && <span className="ml-1.5 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[9px] font-bold uppercase">Manual</span>}
                             {e.note && <div className="text-[10px] text-slate-400 mt-0.5">{e.note}</div>}
                             {e.movedFrom && <div className="text-[10px] text-amber-700 mt-0.5">Moved from {e.movedFrom} (was added to the wrong seller)</div>}
+                            {(e.reserveCovers || []).map((c) => (
+                              <div key={c.userId} className="text-[10px] text-indigo-700 mt-0.5">
+                                Reserve paid {fmt(c.amountUSDT)} for {c.name} (wallet was short)
+                              </div>
+                            ))}
                             {waitingByEntry.has(e.id) && (
                               <div className="mt-1">
                                 <WaitingTag approval={waitingByEntry.get(e.id)} />
@@ -1472,6 +1813,19 @@ export default function FinancePage() {
           <ExcludedTestSellers rows={data.excludedTest} />
           <ActivityLog tick={tick} />
         </>
+      )}
+
+      {reserveMode && data && (
+        <ReserveModal
+          mode={reserveMode}
+          data={data}
+          onClose={() => setReserveMode('')}
+          onSent={(message) => {
+            setReserveMode('');
+            setNotice(message);
+            setTick((n) => n + 1);
+          }}
+        />
       )}
 
       {fixRow && data && (

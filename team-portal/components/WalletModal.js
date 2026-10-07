@@ -209,12 +209,13 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
 
     // Type filter
     if (typeFilter === 'earnings') {
-      if (tx.type !== 'credit') return false;
+      if (tx.type !== 'credit' || String(tx.category || '').startsWith('reserve_')) return false;
     } else if (typeFilter === 'client_activity') {
       if (tx.category === 'payout_reversed') return false;
       if (!tx.isClientActivity && tx.type !== 'activity' && !tx.category.startsWith('commission')) return false;
     } else if (typeFilter === 'payouts') {
       if (tx.type !== 'debit' && tx.category !== 'payout_reversed') return false;
+      if (tx.category === 'reserve_to') return false;
     }
 
     // Currency filter
@@ -337,6 +338,11 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
               <div className="flex items-center justify-between text-[11px] text-slate-300/90 mt-4 pt-3 border-t border-white/10">
                 <span>Earned: <strong className="text-emerald-400">₮{formatMoney(balances.totalEarnedUSDT)}</strong></span>
                 <span>Deducted: <strong className="text-red-400">₮{formatMoney(balances.totalWithdrawnUSDT)}</strong></span>
+            {Math.abs(balances.reserveNetUSDT || 0) > 0.004 && (
+              <span>
+                Reserve: <strong className="text-indigo-300">{balances.reserveNetUSDT > 0 ? '+' : '-'}₮{formatMoney(Math.abs(balances.reserveNetUSDT))}</strong>
+              </span>
+            )}
               </div>
             </div>
 
@@ -764,6 +770,21 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
                                 ↩️ Reversed — not counted
                               </span>
                             )}
+                            {tx.category === 'reserve_to' && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                                🏦 To reserve pool
+                              </span>
+                            )}
+                            {tx.category === 'reserve_from' && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                                🏦 Back from reserve pool
+                              </span>
+                            )}
+                            {tx.category === 'reserve_return' && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                                🏦 Reserve money came back — not your share
+                              </span>
+                            )}
                           </div>
 
                           <div className="text-[11px] text-slate-500 mt-0.5 flex items-center space-x-2 flex-wrap">
@@ -804,8 +825,13 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
                           {isINR ? '₹' : isPKR ? 'Rs ' : '₮'}
                           {formatMoney(tx.amount)} {tx.currency}
                         </div>
+                        {tx.sellerINR > 0 && (
+                          <div className="text-[10px] font-semibold text-slate-500">
+                            Seller {tx.type === 'credit' ? 'paid' : 'took'} ₹{Number(tx.sellerINR).toLocaleString('en-US', { maximumFractionDigits: 0 })} INR
+                          </div>
+                        )}
                         <span className="text-[10px] text-slate-400 capitalize">
-                          {tx.category === 'payout_reversed' ? 'Reversed (not counted)' : isCredit ? 'Credit (Inflow)' : tx.category === 'seller_withdrawal_share' ? 'Debit (Seller withdrawal)' : isDebit ? 'Debit (Payout)' : 'Client Store Outflow'}
+                          {tx.category === 'payout_reversed' ? 'Reversed (not counted)' : tx.category === 'reserve_return' ? 'Reserve money back (not a share)' : tx.category === 'reserve_from' ? 'Back from reserve' : tx.category === 'reserve_to' ? 'Moved to reserve' : isCredit ? 'Credit (Inflow)' : tx.category === 'seller_withdrawal_share' ? 'Debit (Seller withdrawal)' : isDebit ? 'Debit (Payout)' : 'Client Store Outflow'}
                         </span>
                       </div>
                     </div>

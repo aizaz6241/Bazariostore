@@ -4,9 +4,10 @@ import Member from '@/lib/models/Member';
 import FinanceApproval from '@/lib/models/FinanceApproval';
 import FinanceSplit from '@/lib/models/FinanceSplit';
 import WalletTransaction from '@/lib/models/WalletTransaction';
+import ReserveMove from '@/lib/models/ReserveMove';
 import RewardClaim from '@/lib/models/RewardClaim';
 import { Seller } from '@/lib/models/SharedModels';
-import { invalidateLedger, updateFinanceEntry, createManualEntry } from '@/lib/utils/finance';
+import { invalidateLedger, buildLedger, updateFinanceEntry, createManualEntry } from '@/lib/utils/finance';
 import { getWalletData, getWalletBalancesMap, recordWalletPayout, insufficientText } from '@/lib/utils/wallet';
 import { assignSeller, currentOwnerOf } from '@/lib/utils/sellerAssign';
 import { logFinance, actorFromSession, flushFinanceAlertsSoon } from '@/lib/utils/financeLog';
@@ -212,6 +213,50 @@ async function describe(action, payload) {
       ],
       targetId: `${sid(p.userId)}:${Date.now()}`,
       payeeId: sid(p.userId),
+      sellerId: '',
+      storeName: '',
+    };
+  }
+
+  if (action === 'reserve_add' || action === 'reserve_take') {
+    const amount = Math.round(num(p.amount) * 100) / 100;
+    if (!(amount > 0)) throw new Error('Enter the amount (greater than 0)');
+    const ledger = await buildLedger({ fresh: true });
+    if (!ledger.partnersOk) throw new Error('The reserve needs exactly two partners');
+    const half = amount / 2;
+    const note = String(p.note || '').trim();
+
+    if (action === 'reserve_take') {
+      if (amount > ledger.reserve.balanceUSDT + 0.005) {
+        throw new Error(`The reserve holds ₮${money(ledger.reserve.balanceUSDT)}. You cannot move back more than that.`);
+      }
+      return {
+        summary: `Move ₮${money(amount)} from the reserve back to the wallets (₮${money(half)} each)`,
+        details: [`Reserve now: ₮${money(ledger.reserve.balanceUSDT)} → after: ₮${money(ledger.reserve.balanceUSDT - amount)}`, ...(note ? [`Note: ${note}`] : [])],
+        targetId: 'reserve',
+        payeeId: '',
+        sellerId: '',
+        storeName: '',
+      };
+    }
+
+    const fromPocket = p.source === 'pocket';
+    if (!fromPocket) {
+      // each partner gives half out of what they can really take out today
+      const short = ledger.wallets.filter((w) => ledger.partners.some((x) => x.id === w.userId) && (w.availableUSDT ?? w.balanceUSDT) + 0.005 < half);
+      if (short.length > 0) {
+        throw new Error(
+          `Each partner gives ₮${money(half)}. ${short.map((w) => `${w.name} can take out only ₮${money(Math.max(w.availableUSDT ?? w.balanceUSDT, 0))}`).join('; ')}. Use a smaller amount, or add it from your own pockets.`
+        );
+      }
+    }
+    return {
+      summary: fromPocket
+        ? `Put ₮${money(amount)} into the reserve from your own pockets (₮${money(half)} each, new money into Binance)`
+        : `Put ₮${money(amount)} into the reserve from the wallets (₮${money(half)} from each partner)`,
+      details: [`Reserve now: ₮${money(ledger.reserve.balanceUSDT)} → after: ₮${money(ledger.reserve.balanceUSDT + amount)}`, ...(note ? [`Note: ${note}`] : [])],
+      targetId: 'reserve',
+      payeeId: '',
       sellerId: '',
       storeName: '',
     };
@@ -444,6 +489,24 @@ async function performAction(action, payload, { requester, approver = null, appr
     } catch (pushErr) {
       console.error('Trigger payout push error:', pushErr);
     }
+  } else if (action === 'reserve_add' || action === 'reserve_take') {
+    // (describe() above has just checked the amount against the wallets / the reserve again)
+    const amount = Math.round(num(p.amount) * 100) / 100;
+    const before = (await buildLedger({ fresh: true })).reserve.balanceUSDT;
+    const move = await ReserveMove.create({
+      type: action === 'reserve_add' ? 'add' : 'take',
+      source: action === 'reserve_add' ? (p.source === 'pocket' ? 'pocket' : 'wallets') : '',
+      amountUSDT: amount,
+      date: new Date(),
+      note: String(p.note || '').trim().slice(0, 300),
+      requestedBy: by,
+      approvedBy: approver?.name || '',
+    });
+    invalidateLedger();
+    out.before = { reserveUSDT: before };
+    out.after = { reserveUSDT: action === 'reserve_add' ? before + amount : before - amount, amountUSDT: amount, source: move.source || '' };
+    out.entity = 'reserve';
+    out.entityId = sid(move._id);
   } else if (action === 'payout_reverse') {
     const tx = await WalletTransaction.findById(p.id).lean();
     if (!tx) throw new Error('Payout not found');

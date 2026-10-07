@@ -6,7 +6,7 @@
  *   - one person's wallet statement (everyone: "my wallet")
  * and the same summary code then works for both.
  *
- * Event: { t, kind: 'in' | 'out' | 'transfer', group, amount, source: { id, name }, people, inr, isDeposit }
+ * Event: { t, kind: 'in' | 'out' | 'transfer' | 'adjust', group, amount, source: { id, name }, people, inr, isDeposit }
  * All amounts are real Binance USDT. Days are the viewer's own calendar days.
  */
 
@@ -91,6 +91,9 @@ export function eventsFromWallet(wallet) {
       events.push({ t, kind: 'out', group: 'bonus_cost', amount, source: { id: 'bonus', name: 'Milestone bonus' }, people: [], inr: 0 });
     } else if (tx.category === 'payout_withdrawal') {
       events.push({ t, kind: 'out', group: 'payout', amount, source: { id: 'payout', name: 'Payout' }, people: [], inr: 0 });
+    } else if (String(tx.category || '').startsWith('reserve_')) {
+      // reserve pool money: it changes the wallet balance, but it is neither earned nor spent
+      events.push({ t, kind: 'adjust', group: 'reserve', amount: tx.type === 'debit' ? -amount : amount, source: { id: 'reserve', name: 'Reserve pool' }, people: [], inr: 0 });
     } else if (tx.type === 'credit') {
       events.push({ t, kind: 'in', group: 'other', amount, source: store, people: [], inr: 0 });
     } else if (tx.type === 'debit') {
@@ -101,7 +104,7 @@ export function eventsFromWallet(wallet) {
 }
 
 function emptyTotals() {
-  return { in: 0, out: 0, outSeller: 0, outPayout: 0, outOther: 0, net: 0, transfers: 0, deposits: 0, movements: 0, inr: 0, rateUsdt: 0 };
+  return { in: 0, out: 0, outSeller: 0, outPayout: 0, outOther: 0, net: 0, transfers: 0, adjust: 0, deposits: 0, movements: 0, inr: 0, rateUsdt: 0 };
 }
 
 function addTo(target, ev) {
@@ -119,6 +122,8 @@ function addTo(target, ev) {
     else if (ev.group === 'payout') target.outPayout += ev.amount;
     else target.outOther += ev.amount;
     target.movements += 1;
+  } else if (ev.kind === 'adjust') {
+    target.adjust += ev.amount; // signed: moves the balance only
   } else {
     target.transfers += ev.amount;
   }
@@ -195,6 +200,7 @@ export function summarize(events, { fromKey, toKey, compare = true, slots = 5 })
     if (key < fromKey) {
       if (ev.kind === 'in') opening += ev.amount;
       else if (ev.kind === 'out') opening -= ev.amount;
+      else if (ev.kind === 'adjust') opening += ev.amount;
       if (compare && key >= prevFrom) addTo(previous, ev);
       continue;
     }
@@ -214,7 +220,7 @@ export function summarize(events, { fromKey, toKey, compare = true, slots = 5 })
   let best = null;
   let activeDays = 0;
   for (const d of days) {
-    running += d.net;
+    running += d.net + d.adjust;
     d.balance = r2(running);
     d.rate = d.rateUsdt > 0 ? r2(d.inr / d.rateUsdt) : null;
     for (const k of ['in', 'out', 'outSeller', 'outPayout', 'outOther', 'net', 'transfers', 'inr']) d[k] = r2(d[k]);

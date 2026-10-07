@@ -17,6 +17,8 @@ export const ACTION_LABEL = {
   fix_deposit: 'Fix a deposit added to the wrong seller',
   payout: 'Record a payout',
   payout_reverse: 'Reverse a payout',
+  reserve_add: 'Put money into the reserve',
+  reserve_take: 'Move reserve money back to the wallets',
   reassign: 'Move a seller to another owner',
   seller_flag: 'Change seller type',
   admin_create: 'Create an admin account',
