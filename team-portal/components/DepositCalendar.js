@@ -1,28 +1,28 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useLiveRefresh } from './LiveProvider';
 import { readCache, writeCache } from '@/lib/clientCache';
 import { dayKey } from '@/lib/utils/analytics';
-import { CalendarDays, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Loader2, X } from 'lucide-react';
 
 /**
  * Deposits calendar (partners' dashboard).
  *
  * One month at a time. A day on which real USDT came into Binance is filled green and carries
- * the day's total under its date. Tapping a day lists its deposits below the calendar.
+ * the day's exact total under its date. Tapping a day opens a panel from the right with every
+ * deposit of that day (store, member, INR, USDT) and the day's totals per member.
  * A day that only has deposits still waiting for their real USDT is marked amber.
+ * Today carries a blue dot.
  */
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const fmt = (n, d = 2) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
-// short enough for a calendar cell on a phone; the exact amount is in the day's list
-const short = (n) => {
-  const v = Number(n) || 0;
-  if (v >= 100000) return `${Math.round(v / 1000)}k`;
-  if (v >= 10000) return `${(v / 1000).toFixed(1)}k`;
-  if (v >= 100) return Math.round(v).toLocaleString('en-US');
-  return String(Math.round(v * 10) / 10);
+// the exact day total for a calendar cell, split so the cents can be drawn smaller: 109.17 -> ['109', '17']
+const cellParts = (n) => {
+  const [whole, cents] = (Math.round((Number(n) || 0) * 100) / 100).toFixed(2).split('.');
+  return [Number(whole).toLocaleString('en-US'), cents];
 };
 const monthKeyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 const longDay = (key) => {
@@ -41,6 +41,8 @@ export default function DepositCalendar() {
     return new Date(n.getFullYear(), n.getMonth(), 1);
   });
   const [selected, setSelected] = useState(() => dayKey(new Date()));
+  // the day panel (slides in from the right) opens only when a day is tapped
+  const [panelOpen, setPanelOpen] = useState(false);
   const requestNo = useRef(0);
 
   const load = useCallback(async (silent = false) => {
@@ -130,6 +132,12 @@ export default function DepositCalendar() {
     setMonth(next);
     // keep a useful day open: today in the current month, otherwise nothing until one is tapped
     setSelected(monthKeyOf(next) === thisMonth ? today : '');
+    setPanelOpen(false);
+  };
+
+  const openDay = (key) => {
+    setSelected(key);
+    setPanelOpen(true);
   };
 
   const sel = selected && selected.startsWith(mKey) ? byDay.get(selected) : null;
@@ -143,7 +151,7 @@ export default function DepositCalendar() {
             <CalendarDays className="w-5 h-5 text-emerald-600" />
             <span>Deposits Calendar</span>
           </h2>
-          <p className="text-xs text-slate-500">Real USDT received in Binance, day by day. Tap a day to see its deposits.</p>
+          <p className="text-xs text-slate-500">Real USDT received in Binance, day by day. Tap a day to see all its transactions.</p>
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -224,7 +232,7 @@ export default function DepositCalendar() {
               return (
                 <button
                   key={c.key}
-                  onClick={() => setSelected(c.key)}
+                  onClick={() => openDay(c.key)}
                   aria-label={label}
                   aria-pressed={isSel}
                   className={`relative h-14 sm:h-16 rounded-xl flex flex-col items-center justify-center leading-none transition-colors ${
@@ -235,10 +243,18 @@ export default function DepositCalendar() {
                       : future
                       ? 'text-slate-300 hover:bg-slate-50'
                       : 'text-slate-600 hover:bg-slate-100'
-                  } ${isSel ? 'ring-2 ring-offset-2 ring-slate-900' : isToday ? 'ring-2 ring-emerald-400 ring-offset-1' : ''}`}
+                  } ${isSel && panelOpen ? 'ring-2 ring-offset-2 ring-slate-900' : isToday ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`}
                 >
                   <span className={`text-sm tabular-nums ${has || onlyWaiting || isToday ? 'font-extrabold' : 'font-medium'}`}>{c.d}</span>
-                  {has && <span className="mt-1 text-[10px] sm:text-[11px] font-bold tabular-nums">₮{short(day.usdt)}</span>}
+                  {isToday && <span className="absolute top-1 left-1 w-2 h-2 rounded-full bg-blue-500 ring-2 ring-white" aria-hidden="true" />}
+                  {has && (
+                    <span className="mt-1 max-w-full font-bold tabular-nums whitespace-nowrap tracking-tighter sm:tracking-normal text-[9px] sm:text-[11px]">
+                      {/* phones: no ₮ and no thousands comma, so the whole amount fits the cell */}
+                      <span className="hidden sm:inline">₮{cellParts(day.usdt)[0]}</span>
+                      <span className="sm:hidden">{cellParts(day.usdt)[0].replace(/,/g, '')}</span>
+                      <span className="text-[8px] sm:text-[10px] opacity-90">.{cellParts(day.usdt)[1]}</span>
+                    </span>
+                  )}
                   {onlyWaiting && <span className="mt-1 text-[9px] sm:text-[10px] font-bold">waiting</span>}
                   {has && day.waiting > 0 && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-amber-300 ring-1 ring-white" aria-hidden="true" />}
                 </button>
@@ -249,53 +265,199 @@ export default function DepositCalendar() {
           {/* What the marks mean */}
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500">
             <span className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded bg-emerald-600" /> USDT received (day total under the date)
+              <span className="w-3 h-3 rounded bg-emerald-600" /> USDT received (exact day total under the date)
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-3 h-3 rounded bg-amber-50 border border-amber-300" /> Deposit waiting for real USDT
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded ring-2 ring-emerald-400" /> Today
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-500" /> Today
             </span>
           </div>
 
-          {/* The tapped day */}
-          {selected && selected.startsWith(mKey) && (
-            <div className="mt-4 pt-4 border-t border-slate-200">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <h3 className="text-sm font-bold text-slate-900">{longDay(selected)}</h3>
-                {sel && sel.counted > 0 && <span className="text-sm font-extrabold text-emerald-700 tabular-nums">₮{fmt(sel.usdt)}</span>}
-              </div>
-              {!sel ? (
-                <p className="text-xs text-slate-500 mt-1">{selected > today ? 'This day has not come yet.' : 'No deposits on this day.'}</p>
-              ) : (
-                <ul className="mt-2 divide-y divide-slate-100">
-                  {sel.items.map((d) => (
-                    <li key={d.id} className="py-2 flex items-start justify-between gap-3 text-xs">
-                      <span className="min-w-0">
-                        <b className="text-slate-900 break-words">{d.store}</b>
-                        <span className="block text-[11px] text-slate-500">
-                          {timeOf(d.t)}
-                          {d.member ? ` · ${d.member}` : ' · seller not assigned'}
-                          {d.counted && d.inr > 0 ? ` · ₹${fmt(d.inr, 0)}` : ''}
-                        </span>
-                      </span>
-                      {d.counted ? (
-                        <b className="tabular-nums text-slate-900 shrink-0">₮{fmt(d.usdt)}</b>
-                      ) : (
-                        <span className="shrink-0 text-right">
-                          <span className="inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-bold">Waiting for real USDT</span>
-                          <span className="block text-[10px] text-slate-500 mt-0.5">${fmt(Math.max(0, d.wallet - d.helping))} in store wallet</span>
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
+          <DayPanel open={panelOpen && Boolean(selected)} dayKeyValue={selected} day={sel} isFuture={selected > today} isToday={selected === today} onClose={() => setPanelOpen(false)} />
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * The tapped day: a panel that slides in from the right with everything that came in that day.
+ * Top: the day's totals. Then one line per member (how many deposits, INR, USDT). Then every
+ * deposit: time, store, member, INR and the real USDT.
+ */
+function DayPanel({ open, dayKeyValue, day, isFuture, isToday, onClose }) {
+  const [mounted, setMounted] = useState(false);
+  const [shown, setShown] = useState(false);
+  const closeRef = useRef(null);
+
+  useEffect(() => setMounted(true), []);
+
+  // slide in after the panel is on the page; slide out before it is taken off
+  const [present, setPresent] = useState(false);
+  useEffect(() => {
+    if (open) {
+      setPresent(true);
+      const id = requestAnimationFrame(() => requestAnimationFrame(() => setShown(true)));
+      return () => cancelAnimationFrame(id);
+    }
+    setShown(false);
+    const t = setTimeout(() => setPresent(false), 200);
+    return () => clearTimeout(t);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    const before = document.body.style.overflow;
+    document.body.style.overflow = 'hidden'; // the page behind does not scroll while the panel is open
+    closeRef.current?.focus();
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = before;
+    };
+  }, [open, onClose]);
+
+  const items = useMemo(() => [...(day?.items || [])].sort((a, b) => a.t - b.t), [day]);
+
+  const sums = useMemo(() => {
+    let usdt = 0;
+    let inr = 0;
+    let counted = 0;
+    let waiting = 0;
+    const people = new Map();
+    for (const d of items) {
+      const name = d.member || 'Seller not assigned';
+      if (!people.has(name)) people.set(name, { name, count: 0, usdt: 0, inr: 0, waiting: 0 });
+      const p = people.get(name);
+      if (d.counted) {
+        usdt += d.usdt;
+        inr += d.inr;
+        counted += 1;
+        p.count += 1;
+        p.usdt += d.usdt;
+        p.inr += d.inr;
+      } else {
+        waiting += 1;
+        p.waiting += 1;
+      }
+    }
+    return { usdt, inr, counted, waiting, people: [...people.values()].sort((a, b) => b.usdt - a.usdt || a.name.localeCompare(b.name)) };
+  }, [items]);
+
+  if (!mounted || !present || !dayKeyValue) return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[80]" role="dialog" aria-modal="true" aria-label={`Transactions of ${longDay(dayKeyValue)}`}>
+      <button
+        type="button"
+        aria-label="Close"
+        tabIndex={-1}
+        onClick={onClose}
+        className={`absolute inset-0 w-full h-full bg-slate-900/40 transition-opacity duration-200 cursor-default ${shown ? 'opacity-100' : 'opacity-0'}`}
+      />
+      <aside
+        className={`absolute inset-y-0 right-0 w-full sm:max-w-md bg-white shadow-2xl flex flex-col transition-transform duration-200 ease-out ${shown ? 'translate-x-0' : 'translate-x-full'}`}
+      >
+        <header className="px-4 sm:px-5 pt-4 pb-3 border-b border-slate-200">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                {isToday && <span className="w-2 h-2 rounded-full bg-blue-500" aria-hidden="true" />}
+                {isToday ? 'Today' : 'Day transactions'}
+              </p>
+              <h3 className="text-base font-bold text-slate-900">{longDay(dayKeyValue)}</h3>
+            </div>
+            <button ref={closeRef} onClick={onClose} aria-label="Close" className="p-2 -mr-1 rounded-xl text-slate-500 hover:bg-slate-100 hover:text-slate-900">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          {items.length > 0 && (
+            <div className="mt-3 grid grid-cols-[1fr_1.25fr_0.75fr] gap-2">
+              <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-2.5 py-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">USDT</p>
+                <p className="text-xs sm:text-sm font-extrabold text-emerald-800 tabular-nums break-all">₮{fmt(sums.usdt)}</p>
+              </div>
+              <div className="rounded-xl bg-slate-50 border border-slate-200 px-2.5 py-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">INR</p>
+                <p className="text-xs sm:text-sm font-extrabold text-slate-900 tabular-nums break-all">₹{fmt(sums.inr)}</p>
+              </div>
+              <div className="rounded-xl bg-slate-50 border border-slate-200 px-2.5 py-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Deposits</p>
+                <p className="text-sm font-extrabold text-slate-900 tabular-nums">
+                  {sums.counted}
+                  {sums.waiting > 0 && <span className="block text-[10px] font-bold text-amber-700 whitespace-nowrap">+{sums.waiting} waiting</span>}
+                </p>
+              </div>
+            </div>
+          )}
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4">
+          {items.length === 0 ? (
+            <p className="text-sm text-slate-500 py-10 text-center">{isFuture ? 'This day has not come yet.' : 'No deposits on this day.'}</p>
+          ) : (
+            <>
+              <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">By member</h4>
+              <table className="mt-1.5 w-full text-xs">
+                <thead>
+                  <tr className="text-[10px] uppercase tracking-wider text-slate-400">
+                    <th className="text-left font-bold py-1">Member</th>
+                    <th className="text-right font-bold py-1">Deposits</th>
+                    <th className="text-right font-bold py-1">INR</th>
+                    <th className="text-right font-bold py-1">USDT</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {sums.people.map((p) => (
+                    <tr key={p.name}>
+                      <td className="py-1.5 pr-2 font-semibold text-slate-900 break-words">{p.name}</td>
+                      <td className="py-1.5 text-right tabular-nums text-slate-600">
+                        {p.count}
+                        {p.waiting > 0 && <span className="text-amber-700"> +{p.waiting}</span>}
+                      </td>
+                      <td className="py-1.5 pl-2 text-right tabular-nums text-slate-600">₹{fmt(p.inr)}</td>
+                      <td className="py-1.5 pl-2 text-right tabular-nums font-bold text-slate-900">₮{fmt(p.usdt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <h4 className="mt-5 text-[11px] font-bold uppercase tracking-wider text-slate-400">All transactions ({items.length})</h4>
+              <ul className="mt-1.5 space-y-2">
+                {items.map((d) => (
+                  <li key={d.id} className={`rounded-xl border px-3 py-2.5 ${d.counted ? 'border-slate-200 bg-white' : 'border-amber-200 bg-amber-50'}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-slate-900 break-words">{d.store}</p>
+                        <p className="text-[11px] text-slate-500">
+                          {timeOf(d.t)} · <span className="font-semibold text-slate-700">{d.member || 'Seller not assigned'}</span>
+                        </p>
+                      </div>
+                      {d.counted ? (
+                        <div className="shrink-0 text-right">
+                          <p className="text-sm font-extrabold text-emerald-700 tabular-nums">₮{fmt(d.usdt)}</p>
+                          <p className="text-[11px] text-slate-500 tabular-nums">{d.inr > 0 ? `₹${fmt(d.inr)}` : 'INR not entered'}</p>
+                        </div>
+                      ) : (
+                        <div className="shrink-0 text-right">
+                          <span className="inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-bold">Waiting for real USDT</span>
+                          <p className="text-[10px] text-slate-500 mt-0.5 tabular-nums">${fmt(Math.max(0, d.wallet - d.helping))} in store wallet</p>
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      </aside>
+    </div>,
+    document.body
   );
 }
