@@ -15,6 +15,7 @@ import { ChevronLeft, ReceiptText, Loader2, X, MessageSquarePlus, CheckCircle2, 
  * "Payment made, proof missing?".
  */
 
+const money = (n, d = 2) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
 const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -235,6 +236,29 @@ export default function MyProofsPane({ visible, onBack, onSeen, isPartner }) {
               Try again
             </button>
           </div>
+        )}
+
+        {/* All of this person's proofs in one line: what came in, and what is his */}
+        {data?.summary && data.summary.proofs > 0 && (
+          <section className="w-full max-w-2xl mx-auto grid grid-cols-2 gap-2" aria-label="Totals">
+            <div className="rounded-2xl bg-white border border-slate-200 px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total received</p>
+              <p className="text-lg font-extrabold text-slate-900 tabular-nums leading-tight">₮{money(data.summary.totalUsdt)}</p>
+              <p className="text-[11px] text-slate-500">
+                {data.summary.proofs} deposit{data.summary.proofs === 1 ? '' : 's'} of your sellers
+                {data.summary.totalInr > 0 ? ` · ₹${money(data.summary.totalInr, 0)}` : ''}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-emerald-600 text-white px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-100">Your share</p>
+              <p className="text-lg font-extrabold tabular-nums leading-tight">₮{money(data.summary.shareUsdt)}</p>
+              <p className="text-[11px] text-emerald-100">
+                {data.summary.counted < data.summary.proofs
+                  ? `${data.summary.proofs - data.summary.counted} not added to your wallet yet`
+                  : 'added to your wallet from these deposits'}
+              </p>
+            </div>
+          </section>
         )}
 
         {/* Ask the partners */}

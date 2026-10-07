@@ -303,6 +303,17 @@ export function ProofCard({ proof, onSaved, onView, readOnly = false }) {
               Added by {proof.completedBy || 'a partner'} · {whenText(proof.completedAt)}
               {!readOnly && proof.changes > 0 && ` · changed ${proof.changes} time${proof.changes === 1 ? '' : 's'}`}
             </p>
+            {readOnly &&
+              (proof.mine ? (
+                <div className="mt-2 rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 flex items-center justify-between gap-3">
+                  <span className="text-[11px] text-emerald-900">
+                    Your share{proof.mine.sharePct > 0 ? ` (${proof.mine.sharePct}%)` : ''} of ₮{fmt(proof.mine.totalUsdt)}
+                  </span>
+                  <b className="text-sm text-emerald-800 tabular-nums">₮{fmt(proof.mine.shareUsdt)}</b>
+                </div>
+              ) : (
+                <p className="mt-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">Your share is not added to your wallet yet (waiting on the Finance screen).</p>
+              ))}
             {!readOnly && differs && (
               <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mt-1.5">
                 The finance ledger now says ₮{fmt(ledger.usdt)} for this deposit.

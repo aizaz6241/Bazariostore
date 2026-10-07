@@ -251,6 +251,36 @@ export async function listMyProofs({ session, limit = 60, markSeen = true } = {}
     new Set((await PaymentProof.find({ _id: { $in: page.map((r) => r._id) }, [field]: { $nin: ['', null] } }).select('_id').lean()).map((r) => sid(r._id)));
   const [inline, inlineUsdt] = await Promise.all([inlineIds('screenshot.data'), inlineIds('usdtScreenshot.data')]);
 
+  // What each deposit brought in and what this person's own share of it is: read from the
+  // finance ledger (the same numbers as the Wallet), never worked out again here.
+  const ledger = await buildLedger();
+  const entryById = new Map((ledger.entries || []).filter((e) => e.kind === 'deposit').map((e) => [sid(e.id), e]));
+  const mineOf = (sourceId) => {
+    const e = entryById.get(sid(sourceId));
+    if (!e) return null; // not divided yet (waiting on the Finance screen)
+    const share = (e.shares || []).find((s) => sid(s.userId) === me);
+    return {
+      totalUsdt: r2(e.usdt),
+      totalInr: r2(e.inr),
+      shareUsdt: share ? num(share.amountUSDT) : 0, // exactly the Wallet line, not rounded again
+      sharePct: share ? Math.round(num(share.pct) * 100) / 100 : 0,
+    };
+  };
+  // totals over ALL of the person's complete proofs (not only the ones on this page)
+  const everyId = await PaymentProof.find(filter).select('sourceId').lean();
+  const summary = { proofs: everyId.length, counted: 0, totalUsdt: 0, totalInr: 0, shareUsdt: 0 };
+  for (const p of everyId) {
+    const m = mineOf(p.sourceId);
+    if (!m) continue;
+    summary.counted += 1;
+    summary.totalUsdt += m.totalUsdt;
+    summary.totalInr += m.totalInr;
+    summary.shareUsdt += m.shareUsdt;
+  }
+  summary.totalUsdt = r2(summary.totalUsdt);
+  summary.totalInr = r2(summary.totalInr);
+  summary.shareUsdt = r2(summary.shareUsdt);
+
   const items = page.map((p) => {
     const card = shape(
       {
@@ -264,12 +294,13 @@ export async function listMyProofs({ session, limit = 60, markSeen = true } = {}
     delete card.ledger; // the finance ledger is not the owner's business here
     delete card.changes;
     card.isNew = p.seenByOwner !== true;
+    card.mine = mineOf(p.sourceId); // { totalUsdt, totalInr, shareUsdt, sharePct } or null
     return card;
   });
   if (markSeen && items.some((x) => x.isNew)) {
     await PaymentProof.updateMany({ ownerId: me, status: 'complete', seenByOwner: { $ne: true } }, { $set: { seenByOwner: true } });
   }
-  return { total, hasMore: rows.length > size, items };
+  return { total, hasMore: rows.length > size, summary, items };
 }
 
 export async function myProofCounts(userId) {

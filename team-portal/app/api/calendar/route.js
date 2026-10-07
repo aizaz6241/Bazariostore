@@ -15,6 +15,7 @@ const num = (v) => {
  * A short list of every real seller deposit of the finance ledger (it only READS the ledger):
  *   counted  -> the real USDT received on Binance
  *   waiting  -> approved, but the real USDT has not been entered / divided yet
+ * and of the real USDT that left Binance (`outs`): payouts and seller withdrawals.
  * The screen groups them into its own calendar days, like the Analytics screen does.
  */
 export async function GET(req) {
@@ -49,7 +50,27 @@ export async function GET(req) {
     }
     deposits.sort((a, b) => a.t - b.t);
 
-    return NextResponse.json({ deposits });
+    // Real USDT that LEFT Binance: payouts taken by a member / partner, and seller withdrawals
+    const roleOf = new Map((ledger.wallets || []).map((w) => [String(w.userId), w.role]));
+    const outs = [];
+    for (const p of ledger.payouts || []) {
+      outs.push({
+        id: `payout_${p.id}`,
+        t: new Date(p.date).getTime(),
+        kind: 'payout',
+        name: p.name || 'Unknown',
+        role: roleOf.get(String(p.userId)) || '',
+        usdt: num(p.amountUSDT),
+        note: p.note || '',
+      });
+    }
+    for (const e of ledger.entries || []) {
+      if (e.kind !== 'seller_withdrawal') continue;
+      outs.push({ id: `seller_${e.id}`, t: new Date(e.date).getTime(), kind: 'seller', store: e.storeName || 'Store', member: e.owner?.name || '', usdt: num(e.usdt), inr: num(e.inr) });
+    }
+    outs.sort((a, b) => a.t - b.t);
+
+    return NextResponse.json({ deposits, outs });
   } catch (err) {
     console.error('Deposits calendar error:', err);
     return NextResponse.json({ message: err.message || 'Could not load the calendar' }, { status: 500 });
