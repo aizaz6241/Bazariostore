@@ -70,7 +70,16 @@ export async function GET(req) {
     }
     outs.sort((a, b) => a.t - b.t);
 
-    return NextResponse.json({ deposits, outs });
+    // Milestone bonuses given to members: paid by the two partners' wallets, so the Binance total
+    // does not change, but it is money a member received that day
+    const bonuses = [];
+    for (const e of ledger.entries || []) {
+      if (e.kind !== 'bonus') continue;
+      bonuses.push({ id: `bonus_${e.id}`, t: new Date(e.date).getTime(), member: e.owner?.name || 'Member', title: e.storeName || 'Milestone bonus', usdt: num(e.usdt), pkr: num(e.amountPKR), pkrRate: num(e.pkrRate) });
+    }
+    bonuses.sort((a, b) => a.t - b.t);
+
+    return NextResponse.json({ deposits, outs, bonuses });
   } catch (err) {
     console.error('Deposits calendar error:', err);
     return NextResponse.json({ message: err.message || 'Could not load the calendar' }, { status: 500 });

@@ -16,6 +16,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Loader2, X } from 'lucide-reac
  * A day that only has deposits still waiting for their real USDT is marked amber.
  * Money that left Binance is shown too: a payout taken by a member / partner in violet, a seller
  * withdrawal in red (a dot on a day that also has deposits, the whole cell when it has none).
+ * A milestone bonus given to a member is cyan (it moves between wallets; Binance does not change).
  * Today carries a blue dot.
  */
 
@@ -95,13 +96,21 @@ export default function DepositCalendar() {
       else day.sellerOut = (day.sellerOut || 0) + o.usdt;
       (day.outs = day.outs || []).push(o);
     }
+    // milestone bonuses given to members that day
+    for (const b of data?.bonuses || []) {
+      const key = dayKey(b.t);
+      if (!map.has(key)) map.set(key, { usdt: 0, counted: 0, waiting: 0, items: [] });
+      const day = map.get(key);
+      day.bonus = (day.bonus || 0) + b.usdt;
+      (day.bonuses = day.bonuses || []).push(b);
+    }
     return map;
   }, [data]);
 
   const today = dayKey(new Date());
   const thisMonth = monthKeyOf(new Date());
   // nothing to look at before the month of the very first deposit
-  const firstT = Math.min(data?.deposits?.[0]?.t ?? Infinity, data?.outs?.[0]?.t ?? Infinity);
+  const firstT = Math.min(data?.deposits?.[0]?.t ?? Infinity, data?.outs?.[0]?.t ?? Infinity, data?.bonuses?.[0]?.t ?? Infinity);
   const firstMonth = Number.isFinite(firstT) ? monthKeyOf(new Date(firstT)) : thisMonth;
   const mKey = monthKeyOf(month);
   const canGoBack = mKey > firstMonth;
@@ -127,8 +136,10 @@ export default function DepositCalendar() {
     let best = null;
     let payout = 0;
     let sellerOut = 0;
+    let bonus = 0;
     for (const [key, day] of byDay) {
       if (!key.startsWith(mKey)) continue;
+      bonus += day.bonus || 0;
       payout += day.payout || 0;
       sellerOut += day.sellerOut || 0;
       usdt += day.usdt;
@@ -139,7 +150,7 @@ export default function DepositCalendar() {
         if (!best || day.usdt > best.usdt) best = { key, usdt: day.usdt };
       }
     }
-    return { usdt, deposits, days, waiting, best, payout, sellerOut };
+    return { usdt, deposits, days, waiting, best, payout, sellerOut, bonus };
   }, [byDay, mKey]);
 
   const move = (n) => {
@@ -219,6 +230,11 @@ export default function DepositCalendar() {
             Seller withdrawals <b className="text-red-700 tabular-nums">₮{fmt(totals.sellerOut)}</b>
           </span>
         )}
+        {totals.bonus > 0 && (
+          <span>
+            Bonuses <b className="text-cyan-700 tabular-nums">₮{fmt(totals.bonus)}</b>
+          </span>
+        )}
       </div>
 
       {error && (
@@ -255,7 +271,10 @@ export default function DepositCalendar() {
               const sellerOut = day?.sellerOut || 0;
               // nothing came in that day, but money went out: the cell shows that instead
               const onlyOut = !has && !onlyWaiting && payout + sellerOut > 0;
-              const outText = `${payout > 0 ? `, payouts ${fmt(payout)} USDT` : ''}${sellerOut > 0 ? `, seller withdrawals ${fmt(sellerOut)} USDT` : ''}`;
+              const bonus = day?.bonus || 0;
+              // only a bonus that day: the cell shows the bonus
+              const onlyBonus = !has && !onlyWaiting && !onlyOut && bonus > 0;
+              const outText = `${bonus > 0 ? `, bonus ${fmt(bonus)} USDT` : ''}` + `${payout > 0 ? `, payouts ${fmt(payout)} USDT` : ''}${sellerOut > 0 ? `, seller withdrawals ${fmt(sellerOut)} USDT` : ''}`;
               const label = `${longDay(c.key)}: ${
                 has ? `${fmt(day.usdt)} USDT from ${day.counted} deposit${day.counted === 1 ? '' : 's'}` : onlyWaiting ? `${day.waiting} deposit${day.waiting === 1 ? '' : 's'} waiting for real USDT` : 'no deposits'
               }${outText}`;
@@ -274,12 +293,14 @@ export default function DepositCalendar() {
                       ? 'bg-violet-100 text-violet-900 border border-violet-300 hover:bg-violet-200'
                       : onlyOut
                       ? 'bg-red-50 text-red-900 border border-red-300 hover:bg-red-100'
+                      : onlyBonus
+                      ? 'bg-cyan-50 text-cyan-900 border border-cyan-300 hover:bg-cyan-100'
                       : future
                       ? 'text-slate-300 hover:bg-slate-50'
                       : 'text-slate-600 hover:bg-slate-100'
                   } ${isSel && panelOpen ? 'ring-2 ring-offset-2 ring-slate-900' : isToday ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`}
                 >
-                  <span className={`text-sm tabular-nums ${has || onlyWaiting || onlyOut || isToday ? 'font-extrabold' : 'font-medium'}`}>{c.d}</span>
+                  <span className={`text-sm tabular-nums ${has || onlyWaiting || onlyOut || onlyBonus || isToday ? 'font-extrabold' : 'font-medium'}`}>{c.d}</span>
                   {isToday && <span className="absolute top-1 left-1 w-2 h-2 rounded-full bg-blue-500 ring-2 ring-white" aria-hidden="true" />}
                   {has && (
                     <span className="mt-1 max-w-full font-bold tabular-nums whitespace-nowrap tracking-tighter sm:tracking-normal text-[9px] sm:text-[11px]">
@@ -297,6 +318,14 @@ export default function DepositCalendar() {
                       <span className="text-[8px] sm:text-[10px] opacity-90">.{cellParts(payout + sellerOut)[1]}</span>
                     </span>
                   )}
+                  {onlyBonus && (
+                    <span className="mt-1 max-w-full font-bold tabular-nums whitespace-nowrap tracking-tighter sm:tracking-normal text-[9px] sm:text-[11px]">
+                      <span className="hidden sm:inline">₮{cellParts(bonus)[0]}</span>
+                      <span className="sm:hidden">{cellParts(bonus)[0].replace(/,/g, '')}</span>
+                      <span className="text-[8px] sm:text-[10px] opacity-90">.{cellParts(bonus)[1]}</span>
+                    </span>
+                  )}
+                  {bonus > 0 && !onlyBonus && <span className="absolute top-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-cyan-400 ring-1 ring-white" aria-hidden="true" />}
                   {/* money also went out on a day that has deposits (or a second kind on an "out" day) */}
                   {payout > 0 && !(onlyOut && payout > 0) && <span className="absolute bottom-1 right-1 w-2 h-2 rounded-full bg-violet-500 ring-1 ring-white" aria-hidden="true" />}
                   {sellerOut > 0 && !(onlyOut && !(payout > 0)) && <span className="absolute bottom-1 left-1 w-2 h-2 rounded-full bg-red-500 ring-1 ring-white" aria-hidden="true" />}
@@ -321,6 +350,10 @@ export default function DepositCalendar() {
             <span className="flex items-center gap-1.5">
               <span className="w-3 h-3 rounded bg-red-50 border border-red-300" />
               <span className="w-2.5 h-2.5 rounded-full bg-red-500" /> Seller withdrawal
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded bg-cyan-50 border border-cyan-300" />
+              <span className="w-2.5 h-2.5 rounded-full bg-cyan-400" /> Bonus given to a member
             </span>
             <span className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-blue-500" /> Today
@@ -379,6 +412,9 @@ function DayPanel({ open, dayKeyValue, day, isFuture, isToday, onClose }) {
   const outs = useMemo(() => [...(day?.outs || [])].sort((a, b) => a.t - b.t), [day]);
   const payoutTotal = day?.payout || 0;
   const sellerOutTotal = day?.sellerOut || 0;
+  // milestone bonuses given to members that day
+  const bonuses = useMemo(() => [...(day?.bonuses || [])].sort((a, b) => a.t - b.t), [day]);
+  const bonusTotal = day?.bonus || 0;
 
   const sums = useMemo(() => {
     let usdt = 0;
@@ -451,6 +487,12 @@ function DayPanel({ open, dayKeyValue, day, isFuture, isToday, onClose }) {
               </div>
             </div>
           )}
+          {bonuses.length > 0 && (
+            <div className="mt-2 rounded-xl bg-cyan-50 border border-cyan-200 px-2.5 py-2 flex items-center justify-between gap-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-cyan-800">Bonuses to members</p>
+              <p className="text-xs sm:text-sm font-extrabold text-cyan-900 tabular-nums">₮{fmt(bonusTotal)}</p>
+            </div>
+          )}
           {outs.length > 0 && (
             <div className="mt-2 grid grid-cols-2 gap-2">
               <div className="rounded-xl bg-violet-50 border border-violet-200 px-2.5 py-2">
@@ -467,7 +509,7 @@ function DayPanel({ open, dayKeyValue, day, isFuture, isToday, onClose }) {
 
         <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-4">
           {outs.length > 0 && (
-            <div className={items.length > 0 ? 'mb-5' : ''}>
+            <div className={items.length > 0 || bonuses.length > 0 ? 'mb-5' : ''}>
               <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Money out ({outs.length})</h4>
               <ul className="mt-1.5 space-y-2">
                 {outs.map((o) => (
@@ -494,8 +536,33 @@ function DayPanel({ open, dayKeyValue, day, isFuture, isToday, onClose }) {
               </ul>
             </div>
           )}
+          {bonuses.length > 0 && (
+            <div className={items.length > 0 ? 'mb-5' : ''}>
+              <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Bonuses ({bonuses.length})</h4>
+              <ul className="mt-1.5 space-y-2">
+                {bonuses.map((b) => (
+                  <li key={b.id} className="rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-slate-900 break-words">{b.member}</p>
+                        <p className="text-[11px] text-slate-500">
+                          {timeOf(b.t)} · <span className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-200 text-cyan-900">Bonus</span>
+                          <span className="font-semibold text-slate-700"> · {b.title}</span>
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">Paid by the two partners, half each. The Binance total does not change.</p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-sm font-extrabold text-cyan-800 tabular-nums">₮{fmt(b.usdt)}</p>
+                        {b.pkr > 0 && <p className="text-[11px] text-slate-500 tabular-nums">Rs {fmt(b.pkr, 0)}</p>}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {items.length === 0 ? (
-            outs.length === 0 && <p className="text-sm text-slate-500 py-10 text-center">{isFuture ? 'This day has not come yet.' : 'Nothing on this day.'}</p>
+            outs.length === 0 && bonuses.length === 0 && <p className="text-sm text-slate-500 py-10 text-center">{isFuture ? 'This day has not come yet.' : 'Nothing on this day.'}</p>
           ) : (
             <>
               <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-400">By member</h4>
