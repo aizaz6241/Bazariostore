@@ -682,6 +682,39 @@ export default function FinancePage() {
     }
   };
 
+  // Take back a payout that was recorded by mistake. Always needs the other partner's approval.
+  const reversePayout = async (p) => {
+    const reason = window.prompt(
+      `Reverse the payout of ₮${Number(p.amountUSDT).toLocaleString('en-US', { maximumFractionDigits: 6 })} to ${p.name}?\n\n` +
+        'Use this only when the payout was written by mistake or the money was never sent. The row is kept, but it is no longer counted: ' +
+        'the wallet and the Binance total get the amount back.\n\nThe other partner has to approve it. Reason:',
+      ''
+    );
+    if (reason === null) return;
+    if (reason.trim().length < 3) {
+      setError('Write the reason for reversing this payout.');
+      return;
+    }
+    try {
+      setBusyId(p.id);
+      setError('');
+      const token = localStorage.getItem('portal_token');
+      const res = await fetch('/api/wallet/payout/reverse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ id: p.id, reason: reason.trim() }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || 'Could not reverse this payout');
+      setNotice(json.message || 'Sent for approval.');
+      setTick((n) => n + 1);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusyId('');
+    }
+  };
+
   if (!user) return null;
   if (user.role !== 'admin') {
     return <div className="p-8 text-center text-sm text-slate-500">This page is for admins only.</div>;
@@ -1261,13 +1294,15 @@ export default function FinancePage() {
             <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
               <div className="px-5 py-4 border-b border-slate-100 font-bold text-slate-900 text-sm">Payouts to members / partners ({data.payouts.length})</div>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs min-w-[520px]">
+                <table className="w-full text-xs min-w-[640px]">
                   <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase">
                     <tr>
                       <th className="text-left px-5 py-2.5">Date</th>
                       <th className="text-left px-3 py-2.5">Person</th>
                       <th className="text-left px-3 py-2.5">Note</th>
-                      <th className="text-right px-5 py-2.5">USDT</th>
+                      <th className="text-left px-3 py-2.5">Recorded by</th>
+                      <th className="text-right px-3 py-2.5">USDT</th>
+                      <th className="text-right px-5 py-2.5"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1275,8 +1310,65 @@ export default function FinancePage() {
                       <tr key={p.id} className="hover:bg-slate-50/60">
                         <td className="px-5 py-3 text-slate-600 whitespace-nowrap">{day(p.date)}</td>
                         <td className="px-3 py-3 font-bold text-slate-900">{p.name}</td>
-                        <td className="px-3 py-3 text-slate-500">{p.note || '—'}</td>
-                        <td className="px-5 py-3 text-right font-black text-amber-700 tabular-nums">-{fmt(p.amountUSDT)}</td>
+                        <td className="px-3 py-3 text-slate-500">
+                          {p.note || '—'}
+                          {waitingByEntry.get(p.id) && (
+                            <div className="mt-1">
+                              <WaitingTag approval={waitingByEntry.get(p.id)} />
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-slate-500 whitespace-nowrap">{p.processedBy || '—'}</td>
+                        <td className="px-3 py-3 text-right font-black text-amber-700 tabular-nums">-{fmt(p.amountUSDT)}</td>
+                        <td className="px-5 py-3 text-right">
+                          {!waitingByEntry.get(p.id) && (
+                            <button
+                              disabled={busyId === p.id}
+                              onClick={() => reversePayout(p)}
+                              className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 text-[11px] font-bold hover:bg-slate-50 disabled:opacity-60"
+                              title="This payout was written by mistake or the money was never sent"
+                            >
+                              Reverse
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ── Payouts that were taken back: kept for the record, not counted ── */}
+          {(data.reversedPayouts || []).length > 0 && (
+            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-100 text-sm">
+                <span className="font-bold text-slate-900">Reversed payouts ({data.reversedPayouts.length})</span>
+                <span className="text-[11px] text-slate-500 ml-2">kept for the record, not counted anywhere</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs min-w-[560px]">
+                  <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase">
+                    <tr>
+                      <th className="text-left px-5 py-2.5">Recorded</th>
+                      <th className="text-left px-3 py-2.5">Person</th>
+                      <th className="text-left px-3 py-2.5">Reversed</th>
+                      <th className="text-left px-3 py-2.5">Reason</th>
+                      <th className="text-right px-5 py-2.5">USDT</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {[...data.reversedPayouts].reverse().map((p) => (
+                      <tr key={p.id} className="text-slate-500">
+                        <td className="px-5 py-3 whitespace-nowrap">{day(p.date)}</td>
+                        <td className="px-3 py-3 font-bold text-slate-700">{p.name}</td>
+                        <td className="px-3 py-3">
+                          {p.reversedAt ? day(p.reversedAt) : '—'}
+                          {p.reversedBy ? ` • ${p.reversedBy}` : ''}
+                        </td>
+                        <td className="px-3 py-3">{p.reverseReason || '—'}</td>
+                        <td className="px-5 py-3 text-right font-bold tabular-nums line-through">{fmt(p.amountUSDT)}</td>
                       </tr>
                     ))}
                   </tbody>

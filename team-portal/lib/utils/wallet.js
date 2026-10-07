@@ -185,6 +185,25 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
     });
   }
 
+  // ─── Payouts that were taken back: shown, never counted ───
+  for (const p of ledger.reversedPayouts || []) {
+    if (p.userId !== uid) continue;
+    rawTransactions.push({
+      id: `reversed_${p.id}`,
+      type: 'activity',
+      category: 'payout_reversed',
+      amount: p.amountUSDT,
+      currency: 'USDT',
+      amountUSDT: p.amountUSDT,
+      sellerId: null,
+      storeName: 'Operations Payout',
+      sourceRef: p.id,
+      description: `Payout of ₮${p.amountUSDT.toFixed(2)} USDT — reversed (not counted)`,
+      details: `Taken back${p.reversedBy ? ` by ${p.reversedBy}` : ''}${p.reverseReason ? `: ${p.reverseReason}` : ''}`,
+      date: new Date(p.date),
+    });
+  }
+
   // ─── Balances ───
   const totalEarnedUSDT = r2(earnedUSDT + bonusUSDT);
   const totalSellerWithdrawUSDT = r2(sellerWithdrawUSDT);

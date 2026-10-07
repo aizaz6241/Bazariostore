@@ -78,6 +78,12 @@ const walletTransactionSchema = new mongoose.Schema(
       default: Date.now,
       index: true,
     },
+    // A payout that was recorded by mistake and taken back. The row is kept (nothing is ever
+    // deleted) but it is no longer counted: the wallet and the Binance total get the amount back.
+    reversed: { type: Boolean, default: false },
+    reversedAt: { type: Date, default: null },
+    reversedBy: { type: String, default: '' },
+    reverseReason: { type: String, default: '' },
   },
   { timestamps: true }
 );

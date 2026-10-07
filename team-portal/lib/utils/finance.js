@@ -425,11 +425,28 @@ async function computeLedger() {
 
   // ─── Payouts to members / partners (real USDT that left Binance) ───
   const payouts = [];
+  // Payouts that were taken back: kept for the record, never counted.
+  const reversedPayouts = [];
   for (const tx of payoutDocs) {
     if ((tx.currency || '').toUpperCase() === 'PKR') continue; // PKR payouts belong to the PKR bonus wallet
     const amountUSDT = r6(num(tx.amountUSDT) || ((tx.currency || '').toUpperCase() === 'USDT' ? num(tx.amount) : 0));
     if (!(amountUSDT > 0)) continue;
     const m = memberMap.get(sid(tx.userId));
+    if (tx.reversed === true) {
+      reversedPayouts.push({
+        id: sid(tx._id),
+        userId: sid(tx.userId),
+        name: m ? m.name : 'Unknown',
+        amountUSDT,
+        date: new Date(tx.date || tx.createdAt),
+        note: tx.note || '',
+        processedBy: tx.processedBy || '',
+        reversedAt: tx.reversedAt ? new Date(tx.reversedAt) : null,
+        reversedBy: tx.reversedBy || '',
+        reverseReason: tx.reverseReason || '',
+      });
+      continue;
+    }
     payouts.push({
       id: sid(tx._id),
       userId: sid(tx.userId),
@@ -580,6 +597,7 @@ async function computeLedger() {
       .map((x) => ({ ...x, depositUSD: r2(x.depositUSD), withdrawalUSD: r2(x.withdrawalUSD), usdt: r6(x.usdt) }))
       .sort((a, b) => new Date(b.lastDate) - new Date(a.lastDate)),
     payouts,
+    reversedPayouts,
     sellerLiability: {
       totalUSD: r2(liabilityUSD),
       pendingWithdrawalUSD: r2(pendingWithdrawalUSD),
@@ -634,6 +652,7 @@ async function computeLedger() {
     skipped.map((e) => e.id),
     data.excludedTest.map((x) => [x.sellerId, x.deposits, x.withdrawals, x.depositUSD, x.withdrawalUSD]),
     payouts.map((p) => [p.id, p.amountUSDT]),
+    reversedPayouts.map((p) => p.id),
     unassignedSellers.map((x) => x.id),
   ]);
 

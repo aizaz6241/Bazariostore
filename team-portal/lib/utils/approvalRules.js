@@ -16,6 +16,7 @@ export const ACTION_LABEL = {
   manual_delete: 'Delete a manual entry',
   fix_deposit: 'Fix a deposit added to the wrong seller',
   payout: 'Record a payout',
+  payout_reverse: 'Reverse a payout',
   reassign: 'Move a seller to another owner',
   seller_flag: 'Change seller type',
   admin_create: 'Create an admin account',
@@ -82,8 +83,16 @@ export function saveNeedsApproval({ counted, current = {}, next = {} }) {
   return false;
 }
 
-/** A payout written by someone other than the person who receives it needs a second person. */
-export function payoutNeedsApproval({ recorderId, payeeId }) {
+/**
+ * Who may write a payout into the books at once.
+ *   a member            -> never. A member can only ASK for a payout; a partner pays it on
+ *                          Binance and approves the request, and only then is it recorded.
+ *   a partner, own      -> at once (it only lowers the partner's own wallet; it is logged and the
+ *                          other partner is alerted)
+ *   a partner, for someone else -> needs a second person (the other partner, or the person paid)
+ */
+export function payoutNeedsApproval({ recorderId, payeeId, recorderRole }) {
+  if (clean(recorderRole) !== 'admin') return true;
   return clean(recorderId) !== clean(payeeId);
 }
 

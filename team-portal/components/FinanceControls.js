@@ -124,6 +124,12 @@ export function ApprovalsPanel({ approvals, onChanged }) {
                   {line}
                 </div>
               ))}
+              {a.action === 'payout' && typeof a.walletNow === 'number' && (
+                <div className={`text-[11px] mt-0.5 font-semibold ${a.walletNow + 0.005 < a.amount ? 'text-red-700' : 'text-slate-600'}`}>
+                  Wallet now: ₮{a.walletNow.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                  {a.walletNow + 0.005 < a.amount ? ' — less than this payout. Do not send the money: it cannot be recorded.' : ''}
+                </div>
+              )}
               {a.lastError && <div className="text-[11px] text-red-700 mt-1 font-semibold">Last try failed: {a.lastError}</div>}
             </div>
             <div className="flex flex-wrap items-center gap-1.5 shrink-0">
@@ -369,8 +375,14 @@ export function PayoutConfirmations({ tick, onChanged }) {
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState({ text: '', bad: false });
 
-  const mine = (approvals?.pending || []).filter((a) => a.action === 'payout' && a.payeeIsMe && a.canApprove);
-  if (mine.length === 0 && !msg.text) return null;
+  const forMe = (approvals?.pending || []).filter((a) => a.action === 'payout' && a.payeeIsMe);
+  // written by a partner in my name: I confirm that the money arrived
+  const mine = forMe.filter((a) => a.canApprove);
+  // asked for by me: waiting until a partner has paid it and approves
+  const asked = forMe.filter((a) => !a.canApprove);
+  // what was decided about my own requests lately
+  const decided = (approvals?.recent || []).filter((a) => a.action === 'payout' && a.payeeIsMe && a.selfRequest);
+  if (mine.length === 0 && asked.length === 0 && decided.length === 0 && !msg.text) return null;
 
   const decide = async (a, decision) => {
     try {
@@ -390,9 +402,40 @@ export function PayoutConfirmations({ tick, onChanged }) {
   return (
     <div className="bg-indigo-50 rounded-3xl border border-indigo-200 p-4 text-xs space-y-2">
       <div className="font-bold text-indigo-950 flex items-center gap-2">
-        <ShieldCheck className="w-4 h-4" /> Payouts waiting for confirmation
+        <ShieldCheck className="w-4 h-4" /> {mine.length > 0 ? 'Payouts waiting for confirmation' : 'Payout requests'}
       </div>
       {msg.text && <div className={`font-semibold ${msg.bad ? 'text-red-700' : 'text-emerald-800'}`}>{msg.text}</div>}
+      {asked.map((a) => (
+        <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 bg-white rounded-2xl border border-amber-200 px-3 py-2.5">
+          <div>
+            <div className="font-bold text-slate-900">
+              {a.selfRequest ? `Payout request of ₮${Number(a.amount || 0).toLocaleString('en-US', { maximumFractionDigits: 6 })}` : a.summary}
+            </div>
+            <div className="text-[11px] text-slate-500">
+              <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold mr-1">Waiting for admin approval</span>
+              sent {when(a.createdAt)} • nothing is deducted until it is approved
+            </div>
+          </div>
+          {a.canCancel && (
+            <button disabled={busy === a.id} onClick={() => decide(a, 'cancel')} className="px-3 py-2 rounded-xl bg-white border border-slate-300 text-slate-700 font-bold disabled:opacity-60">
+              Cancel request
+            </button>
+          )}
+        </div>
+      ))}
+      {decided.map((a) => (
+        <div key={a.id} className="flex flex-wrap items-center gap-2 bg-white/70 rounded-2xl border border-indigo-100 px-3 py-2 text-[11px]">
+          <span className={`px-2 py-0.5 rounded-full font-bold uppercase text-[9px] ${STATUS_STYLE[a.status] || 'bg-slate-100 text-slate-600'}`}>
+            {a.status === 'approved' ? 'paid' : 'not approved'}
+          </span>
+          <span className="font-semibold text-slate-800">Payout request of ₮{Number(a.amount || 0).toLocaleString('en-US', { maximumFractionDigits: 6 })}</span>
+          <span className="text-slate-500">
+            {a.decidedBy ? `by ${a.decidedBy} • ` : ''}
+            {when(a.decidedAt)}
+            {a.decisionNote ? ` • “${a.decisionNote}”` : ''}
+          </span>
+        </div>
+      ))}
       {mine.map((a) => (
         <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 bg-white rounded-2xl border border-indigo-100 px-3 py-2.5">
           <div>

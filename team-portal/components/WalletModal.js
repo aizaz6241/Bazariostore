@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useLiveRefresh } from '@/components/LiveProvider';
+import { useAuth } from '@/components/AuthProvider';
 import {
   X,
   Wallet,
@@ -28,6 +29,9 @@ import {
 import { formatMoney, formatUSDT, USDT_INR_RATE, USDT_PKR_RATE } from '@/lib/utils/currency';
 
 export default function WalletModal({ isOpen, onClose, memberId = null, title = null }) {
+  // A member can only ASK for a payout (an admin pays and approves); an admin records one.
+  const { user: viewer } = useAuth();
+  const iAmAdmin = viewer?.role === 'admin';
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
@@ -207,9 +211,10 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
     if (typeFilter === 'earnings') {
       if (tx.type !== 'credit') return false;
     } else if (typeFilter === 'client_activity') {
+      if (tx.category === 'payout_reversed') return false;
       if (!tx.isClientActivity && tx.type !== 'activity' && !tx.category.startsWith('commission')) return false;
     } else if (typeFilter === 'payouts') {
-      if (tx.type !== 'debit') return false;
+      if (tx.type !== 'debit' && tx.category !== 'payout_reversed') return false;
     }
 
     // Currency filter
@@ -448,7 +453,7 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
                 className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white transition flex items-center space-x-1 shadow-xs ml-auto"
               >
                 <PlusCircle className="w-3.5 h-3.5" />
-                <span>{showPayoutForm ? 'Close Payout' : 'Record Payout / Withdraw'}</span>
+                <span>{showPayoutForm ? 'Close Payout' : iAmAdmin ? 'Record Payout / Withdraw' : 'Request Payout'}</span>
               </button>
             </div>
 
@@ -493,12 +498,19 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
               <div className="flex items-center justify-between">
                 <h4 className="font-bold text-amber-900 text-xs sm:text-sm flex items-center space-x-1.5">
                   <DollarSign className="w-4 h-4 text-amber-600" />
-                  <span>Record Official Payout / Withdrawal</span>
+                  <span>{iAmAdmin ? 'Record Official Payout / Withdrawal' : 'Request a Payout'}</span>
                 </h4>
                 <button onClick={() => setShowPayoutForm(false)} className="text-amber-700 hover:text-amber-900">
                   <X className="w-4 h-4" />
                 </button>
               </div>
+
+              {!iAmAdmin && (
+                <p className="text-[11px] text-amber-900/80 font-medium">
+                  This sends a request to the admins. An admin pays you on Binance and approves it; only then is the
+                  amount taken from your wallet.
+                </p>
+              )}
 
               {payoutMsg.text && (
                 <div className={`p-2.5 rounded-xl text-xs font-semibold ${payoutMsg.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-800'}`}>
@@ -533,11 +545,13 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Payout Note / Receipt / Method</label>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    {iAmAdmin ? 'Payout Note / Receipt / Method' : 'Where to send it (your Binance ID / note)'}
+                  </label>
                   <div className="flex space-x-2">
                     <input
                       type="text"
-                      placeholder="e.g. Binance TXID / Bank Transfer UTR: 991288"
+                      placeholder={iAmAdmin ? 'e.g. Binance TXID / Bank Transfer UTR: 991288' : 'e.g. Binance Pay ID 123456789'}
                       value={payoutNote}
                       onChange={(e) => setPayoutNote(e.target.value)}
                       className="flex-1 p-2 rounded-xl bg-white border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500"
@@ -547,7 +561,7 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
                       disabled={payoutLoading}
                       className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shrink-0 transition flex items-center space-x-1"
                     >
-                      {payoutLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span>Confirm</span>}
+                      {payoutLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span>{iAmAdmin ? 'Confirm' : 'Send Request'}</span>}
                     </button>
                   </div>
                 </div>
@@ -738,6 +752,11 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
                                 💸 Payout
                               </span>
                             )}
+                            {tx.category === 'payout_reversed' && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 text-slate-700">
+                                ↩️ Reversed — not counted
+                              </span>
+                            )}
                           </div>
 
                           <div className="text-[11px] text-slate-500 mt-0.5 flex items-center space-x-2 flex-wrap">
@@ -760,14 +779,16 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
                         {/* Hero USDT amount */}
                         <div
                           className={`text-sm sm:text-base font-black ${
-                            isCredit
+                            tx.category === 'payout_reversed'
+                              ? 'text-slate-400 line-through'
+                              : isCredit
                               ? 'text-emerald-600'
                               : isDebit
                               ? 'text-red-600'
                               : 'text-amber-700'
                           }`}
                         >
-                          {isCredit ? '+' : isDebit ? '-' : '🛒 '}
+                          {tx.category === 'payout_reversed' ? '' : isCredit ? '+' : isDebit ? '-' : '🛒 '}
                           {formatUSDT(tx.amountUSDT)}
                         </div>
 
@@ -777,7 +798,7 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
                           {formatMoney(tx.amount)} {tx.currency}
                         </div>
                         <span className="text-[10px] text-slate-400 capitalize">
-                          {isCredit ? 'Credit (Inflow)' : tx.category === 'seller_withdrawal_share' ? 'Debit (Seller withdrawal)' : isDebit ? 'Debit (Payout)' : 'Client Store Outflow'}
+                          {tx.category === 'payout_reversed' ? 'Reversed (not counted)' : isCredit ? 'Credit (Inflow)' : tx.category === 'seller_withdrawal_share' ? 'Debit (Seller withdrawal)' : isDebit ? 'Debit (Payout)' : 'Client Store Outflow'}
                         </span>
                       </div>
                     </div>

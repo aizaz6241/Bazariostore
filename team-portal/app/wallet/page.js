@@ -133,6 +133,7 @@ export default function WalletPage() {
         setPayoutAmount('');
         setPayoutNote('');
         setTimeout(() => setShowPayoutForm(false), okData.pendingApproval ? 4000 : 1500);
+        setConfirmTick((n) => n + 1); // the request shows up under "Payout requests" at once
         fetchWallet();
       } else {
         const errData = await res.json();
@@ -190,9 +191,10 @@ export default function WalletPage() {
     if (typeFilter === 'earnings') {
       if (tx.type !== 'credit') return false;
     } else if (typeFilter === 'client_activity') {
+      if (tx.category === 'payout_reversed') return false;
       if (!tx.isClientActivity && tx.type !== 'activity' && !tx.category?.startsWith('commission')) return false;
     } else if (typeFilter === 'payouts') {
-      if (tx.type !== 'debit') return false;
+      if (tx.type !== 'debit' && tx.category !== 'payout_reversed') return false;
     }
 
     if (currencyFilter !== 'all') {
@@ -256,7 +258,7 @@ export default function WalletPage() {
             className="px-4 py-2.5 rounded-2xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white transition flex items-center space-x-1.5 shadow-sm"
           >
             <PlusCircle className="w-4 h-4" />
-            <span>{showPayoutForm ? 'Close Payout' : 'Record Payout / Withdraw'}</span>
+            <span>{showPayoutForm ? 'Close Payout' : isAdmin ? 'Record Payout / Withdraw' : 'Request Payout'}</span>
           </button>
         </div>
       </div>
@@ -401,12 +403,19 @@ export default function WalletPage() {
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-amber-900 text-sm sm:text-base flex items-center space-x-2">
               <DollarSign className="w-4 h-4 text-amber-600" />
-              <span>Record Official Wallet Payout / Withdrawal</span>
+              <span>{isAdmin ? 'Record Official Wallet Payout / Withdrawal' : 'Request a Payout'}</span>
             </h3>
             <button onClick={() => setShowPayoutForm(false)} className="text-amber-700 hover:text-amber-900">
               <X className="w-5 h-5" />
             </button>
           </div>
+
+          {!isAdmin && (
+            <p className="text-[11px] text-amber-900/80 font-medium">
+              This sends a request to the admins. An admin pays you on Binance and approves it; only then is the amount
+              taken from your wallet. Nothing changes until it is approved.
+            </p>
+          )}
 
           {payoutMsg.text && (
             <div className={`p-3 rounded-xl text-xs font-semibold ${payoutMsg.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-800'}`}>
@@ -441,11 +450,13 @@ export default function WalletPage() {
             </div>
 
             <div className="sm:col-span-2">
-              <label className="block text-xs font-bold text-slate-700 mb-1">Payout Note / Receipt / Method</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                {isAdmin ? 'Payout Note / Receipt / Method' : 'Where to send it (your Binance ID / note)'}
+              </label>
               <div className="flex space-x-2">
                 <input
                   type="text"
-                  placeholder="e.g. Binance TXID / Bank Transfer UTR: 991288"
+                  placeholder={isAdmin ? 'e.g. Binance TXID / Bank Transfer UTR: 991288' : 'e.g. Binance Pay ID 123456789'}
                   value={payoutNote}
                   onChange={(e) => setPayoutNote(e.target.value)}
                   className="flex-1 p-2.5 rounded-xl bg-white border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500"
@@ -455,7 +466,7 @@ export default function WalletPage() {
                   disabled={payoutLoading}
                   className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shrink-0 transition flex items-center space-x-1"
                 >
-                  {payoutLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>Confirm Payout</span>}
+                  {payoutLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>{isAdmin ? 'Confirm Payout' : 'Send Request'}</span>}
                 </button>
               </div>
             </div>
@@ -702,6 +713,11 @@ export default function WalletPage() {
                             💸 Payout Withdrawal
                           </span>
                         )}
+                        {tx.category === 'payout_reversed' && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-700">
+                            ↩️ Payout reversed — not counted
+                          </span>
+                        )}
                       </div>
 
                       <div className="text-[11px] text-slate-500 mt-1 flex items-center space-x-2 flex-wrap">
@@ -723,14 +739,16 @@ export default function WalletPage() {
                   <div className="text-right shrink-0">
                     <div
                       className={`text-sm sm:text-base font-black ${
-                        isCredit
+                        tx.category === 'payout_reversed'
+                          ? 'text-slate-400 line-through'
+                          : isCredit
                           ? 'text-emerald-600'
                           : isDebit
                           ? 'text-red-600'
                           : 'text-amber-700'
                       }`}
                     >
-                      {isCredit ? '+' : isDebit ? '-' : '🛒 '}
+                      {tx.category === 'payout_reversed' ? '' : isCredit ? '+' : isDebit ? '-' : '🛒 '}
                       {formatUSDT(tx.amountUSDT)}
                     </div>
                     <div className="text-[11px] font-bold text-slate-500">
@@ -738,7 +756,7 @@ export default function WalletPage() {
                       {formatMoney(tx.amount)} {tx.currency}
                     </div>
                     <span className="text-[10px] text-slate-400 capitalize">
-                      {isCredit ? 'Credit (Inflow)' : tx.category === 'seller_withdrawal_share' ? 'Debit (Seller withdrawal)' : isDebit ? 'Debit (Payout)' : 'Client Store Outflow'}
+                      {tx.category === 'payout_reversed' ? 'Reversed (not counted)' : isCredit ? 'Credit (Inflow)' : tx.category === 'seller_withdrawal_share' ? 'Debit (Seller withdrawal)' : isDebit ? 'Debit (Payout)' : 'Client Store Outflow'}
                     </span>
                   </div>
                 </div>

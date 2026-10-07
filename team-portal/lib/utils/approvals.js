@@ -3,10 +3,11 @@ import { connectDB } from '@/lib/db';
 import Member from '@/lib/models/Member';
 import FinanceApproval from '@/lib/models/FinanceApproval';
 import FinanceSplit from '@/lib/models/FinanceSplit';
+import WalletTransaction from '@/lib/models/WalletTransaction';
 import RewardClaim from '@/lib/models/RewardClaim';
 import { Seller } from '@/lib/models/SharedModels';
 import { invalidateLedger, updateFinanceEntry, createManualEntry } from '@/lib/utils/finance';
-import { getWalletData, recordWalletPayout } from '@/lib/utils/wallet';
+import { getWalletData, getWalletBalancesMap, recordWalletPayout } from '@/lib/utils/wallet';
 import { assignSeller, currentOwnerOf } from '@/lib/utils/sellerAssign';
 import { logFinance, actorFromSession, flushFinanceAlertsSoon } from '@/lib/utils/financeLog';
 import { ACTION_LABEL, canDecide } from '@/lib/utils/approvalRules';
@@ -37,6 +38,7 @@ const oid = (v) => new mongoose.Types.ObjectId(String(v));
 const withdrawalsCol = () => mongoose.connection.db.collection('withdrawals');
 
 const INTERRUPTED_MS = 2 * 60 * 1000;
+const samePersonId = (a, b) => !!a && !!b && String(a) === String(b);
 
 // ───────────────────────── Snapshots (for "before" / "after") ─────────────────────────
 
@@ -200,11 +202,34 @@ async function describe(action, payload) {
     const amount = num(p.amount);
     if (!(amount > 0)) throw new Error('Valid payout amount is required');
     if (String(p.currency || 'USDT').toUpperCase() !== 'USDT') throw new Error('Payouts are recorded in USDT (Binance) only');
+    // A member asking for their own payout: the partner pays on Binance first, then approves.
+    const asked = p.selfRequest === true;
     return {
-      summary: `Record a payout of ₮${money(amount)} to ${payee.name}`,
-      details: p.note ? [`Note: ${p.note}`] : [],
+      summary: asked ? `${payee.name} asks for a payout of ₮${money(amount)}` : `Record a payout of ₮${money(amount)} to ${payee.name}`,
+      details: [
+        ...(asked ? ['Pay it on Binance first, then approve. Approving records the payout and lowers the wallet.'] : []),
+        ...(p.note ? [`Note: ${p.note}`] : []),
+      ],
       targetId: `${sid(p.userId)}:${Date.now()}`,
       payeeId: sid(p.userId),
+      sellerId: '',
+      storeName: '',
+    };
+  }
+
+  if (action === 'payout_reverse') {
+    const tx = isId(p.id) ? await WalletTransaction.findById(p.id).lean() : null;
+    if (!tx || tx.type !== 'debit' || tx.category !== 'payout_withdrawal') throw new Error('Payout not found');
+    if (tx.reversed === true) throw new Error('This payout was already reversed');
+    const payee = await Member.findById(tx.userId).select('name').lean();
+    const amount = num(tx.amountUSDT) || num(tx.amount);
+    const reason = String(p.reason || '').trim();
+    if (reason.length < 3) throw new Error('Write the reason for reversing this payout');
+    return {
+      summary: `Reverse the payout of ₮${money(amount)} to ${payee ? payee.name : 'Unknown'} (recorded ${new Date(tx.date || tx.createdAt).toISOString().slice(0, 10)})`,
+      details: [`Reason: ${reason}`, 'The row is kept, but it is no longer counted: the wallet and the Binance total get the amount back.'],
+      targetId: sid(tx._id),
+      payeeId: '',
       sellerId: '',
       storeName: '',
     };
@@ -399,7 +424,9 @@ async function performAction(action, payload, { requester, approver = null, appr
     out.ledger = await updateFinanceEntry({ id: p.id, kind: 'manual', action: 'delete', by });
     out.entity = 'manual_entry';
   } else if (action === 'payout') {
-    const tx = await recordWalletPayout({ userId: p.userId, amount: Number(p.amount), currency: 'USDT', note: p.note || '', processedBy: by });
+    // A request a member made for themselves is paid by the partner who approves it.
+    const paidBy = p.selfRequest === true && approver ? approver.name : by;
+    const tx = await recordWalletPayout({ userId: p.userId, amount: Number(p.amount), currency: 'USDT', note: p.note || '', processedBy: paidBy });
     out.result = tx;
     out.after = { payoutId: sid(tx._id), userId: sid(p.userId), amountUSDT: num(p.amount), note: p.note || '' };
     out.entity = 'payout';
@@ -408,7 +435,7 @@ async function performAction(action, payload, { requester, approver = null, appr
       const { sendPushToUser } = await import('@/lib/utils/push');
       sendPushToUser(p.userId, {
         title: `💳 Payout Processed: ${p.amount} USDT`,
-        body: `Payout has been processed by ${by || 'Admin'}. Check your wallet balance.`,
+        body: `Payout has been processed by ${paidBy || 'Admin'}. Check your wallet balance.`,
         url: '/wallet',
         type: 'finance',
         sound: '/sounds/cash.wav',
@@ -416,6 +443,32 @@ async function performAction(action, payload, { requester, approver = null, appr
       }).catch((e) => console.error('Payout push error:', e));
     } catch (pushErr) {
       console.error('Trigger payout push error:', pushErr);
+    }
+  } else if (action === 'payout_reverse') {
+    const tx = await WalletTransaction.findById(p.id).lean();
+    if (!tx) throw new Error('Payout not found');
+    const amount = num(tx.amountUSDT) || num(tx.amount);
+    out.before = { payoutId: sid(tx._id), userId: sid(tx.userId), amountUSDT: amount, note: tx.note || '', date: tx.date, counted: true };
+    // only a payout that is still counted can be taken back (two clicks can never do it twice)
+    const done = await WalletTransaction.updateOne(
+      { _id: tx._id, type: 'debit', category: 'payout_withdrawal', reversed: { $ne: true } },
+      { $set: { reversed: true, reversedAt: new Date(), reversedBy: approver ? `${by} (approved by ${approver.name})` : by, reverseReason: String(p.reason || '').trim().slice(0, 300) } }
+    );
+    if (!done.modifiedCount) throw new Error('This payout was already reversed');
+    invalidateLedger();
+    out.after = { ...out.before, counted: false, reason: String(p.reason || '').trim() };
+    out.entity = 'payout';
+    out.entityId = sid(tx._id);
+    try {
+      const { sendPushToUser } = await import('@/lib/utils/push');
+      sendPushToUser(tx.userId, {
+        title: `↩️ Payout reversed: ${amount} USDT`,
+        body: 'A payout recorded in your wallet was taken back. The amount is in your wallet balance again.',
+        url: '/wallet',
+        type: 'finance',
+      }).catch((e) => console.error('Payout reverse push error:', e));
+    } catch (pushErr) {
+      console.error('Trigger payout reverse push error:', pushErr);
     }
   } else if (action === 'assign' || action === 'reassign') {
     const current = await currentOwnerOf(p.sellerId);
@@ -558,6 +611,20 @@ export async function decideApproval({ id, decision, session, note = '' }) {
       meta: { approvalId: sid(approval._id), requestedBy: approval.requestedBy?.name || '' },
     });
     await flushFinanceAlertsSoon();
+    // a member whose payout request was turned down hears about it
+    if (decision === 'reject' && approval.action === 'payout' && approval.payeeId && !samePersonId(approval.payeeId, viewer.memberId)) {
+      try {
+        const { sendPushToUser } = await import('@/lib/utils/push');
+        sendPushToUser(approval.payeeId, {
+          title: 'Payout request not approved',
+          body: cleanNote ? `Reason: ${cleanNote}` : 'Your payout request was not approved. Nothing was deducted from your wallet.',
+          url: '/wallet',
+          type: 'finance',
+        }).catch((e) => console.error('Payout reject push error:', e));
+      } catch (pushErr) {
+        console.error('Trigger payout reject push error:', pushErr);
+      }
+    }
     return { message: decision === 'reject' ? 'Request rejected. Nothing was changed.' : 'Request cancelled.' };
   }
 
@@ -595,6 +662,8 @@ function shape(a, viewer) {
     decisionNote: a.decisionNote || '',
     lastError: a.lastError || '',
     payeeIsMe: !!a.payeeId && String(a.payeeId) === String(viewer.memberId),
+    amount: a.action === 'payout' ? num(a.payload?.amount) : 0,
+    selfRequest: a.action === 'payout' && a.payload?.selfRequest === true,
     canApprove: canDecide({ approval: base, viewer, decision: 'approve' }).ok,
     canCancel: canDecide({ approval: base, viewer, decision: 'cancel' }).ok,
   };
@@ -619,8 +688,23 @@ export async function listApprovals({ session }) {
   }
 
   if (session.role !== 'admin') {
-    const mine = await FinanceApproval.find({ status: 'pending', action: 'payout', payeeId: viewer.memberId }).sort({ createdAt: -1 }).limit(20).lean();
-    return { pending: mine.map((a) => shape(a, viewer)), recent: [], waitingForMe: mine.length };
+    // A member sees only payouts in their own name: the ones they asked for (waiting for a
+    // partner), the ones a partner wrote (waiting for their "received"), and what was decided
+    // about them lately.
+    const [mine, decided] = await Promise.all([
+      FinanceApproval.find({ status: { $in: ['pending', 'processing'] }, action: 'payout', payeeId: viewer.memberId }).sort({ createdAt: -1 }).limit(20).lean(),
+      FinanceApproval.find({
+        status: { $in: ['approved', 'rejected'] },
+        action: 'payout',
+        payeeId: viewer.memberId,
+        decidedAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+      })
+        .sort({ decidedAt: -1 })
+        .limit(5)
+        .lean(),
+    ]);
+    const shaped = mine.map((a) => shape(a, viewer));
+    return { pending: shaped, recent: decided.map((a) => shape(a, viewer)), waitingForMe: shaped.filter((a) => a.canApprove).length };
   }
 
   const [pending, recent] = await Promise.all([
@@ -628,6 +712,20 @@ export async function listApprovals({ session }) {
     FinanceApproval.find({ status: { $in: ['approved', 'rejected', 'cancelled'] } }).sort({ decidedAt: -1 }).limit(15).lean(),
   ]);
   const shapedPending = pending.map((a) => shape(a, viewer));
+  // For a payout that is waiting: what that wallet holds right now, so nobody sends money that
+  // can no longer be recorded (the wallet may have gone down since the request was made).
+  if (shapedPending.some((a) => a.action === 'payout')) {
+    try {
+      const wallets = await getWalletBalancesMap();
+      pending.forEach((a, i) => {
+        if (a.action !== 'payout' || !a.payeeId) return;
+        const w = wallets.get(String(a.payeeId));
+        shapedPending[i].walletNow = w ? num(w.balanceUSDT) : 0;
+      });
+    } catch (e) {
+      console.error('[approvals] wallet lookup failed:', e.message);
+    }
+  }
   return {
     pending: shapedPending,
     recent: recent.map((a) => shape(a, viewer)),
@@ -637,6 +735,13 @@ export async function listApprovals({ session }) {
 
 /** Wallet balance check for a payout request, so an impossible one is refused straight away. */
 export async function assertPayoutPossible({ userId, amount }) {
+  await connectDB();
+  // One request at a time per person: otherwise several requests, each within the balance, could
+  // together ask for more than the wallet holds.
+  const waiting = await FinanceApproval.findOne({ action: 'payout', payeeId: sid(userId), status: { $in: ['pending', 'processing'] } }).lean();
+  if (waiting) {
+    throw new Error(`A payout of ₮${money(waiting.payload?.amount)} is already waiting for approval for this wallet. Cancel it first to ask for a different amount.`);
+  }
   invalidateLedger();
   const wallet = await getWalletData({ userId });
   const available = wallet?.balances?.balanceUSDT || 0;
