@@ -20,6 +20,7 @@ export async function POST(req) {
         title: '💰 Test Deposit Alert (Rs 50,000 PKR)',
         body: 'A deposit was recorded! Notifications with sound and vibration are working perfectly.',
         url: '/wallet',
+        record: false, // a test alert does not belong in the notification list
         type: 'finance',
         sound: '/sounds/cash.wav',
         vibrate: [250, 100, 250, 100, 250],
@@ -29,6 +30,7 @@ export async function POST(req) {
         title: '💬 Test Chat Message',
         body: 'Hello! Push notification with sound is working properly on your phone.',
         url: '/chat',
+        record: false,
         type: 'chat',
         sound: '/sounds/message.wav',
         vibrate: [200, 100, 200, 100, 200],

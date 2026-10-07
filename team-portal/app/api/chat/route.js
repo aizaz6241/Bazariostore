@@ -4,6 +4,7 @@ import ChatMessage from '@/lib/models/ChatMessage';
 import Member from '@/lib/models/Member';
 import { sendPushToUser, sendPushToAllExcept } from '@/lib/utils/push';
 import { storeChatPicture, deleteChatPictures } from '@/lib/utils/chatMedia';
+import { markChatNotificationRead } from '@/lib/utils/notifications';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,6 +77,7 @@ export async function GET(req) {
 
     // Mark unread messages in this conversation as read by the current user. Only when there
     // really is something unread, so an ordinary check never writes to the database.
+    let justRead = 0; // how many messages this request turned from unread to read
     try {
       const marked = await ChatMessage.updateMany(
         {
@@ -84,7 +86,11 @@ export async function GET(req) {
         },
         { $addToSet: { readBy: session._id } }
       );
+      justRead = marked?.modifiedCount || 0;
       if ((marked?.modifiedCount || 0) > 0) ({ count, cursor, sig } = await fingerprint());
+      // The chat is open in front of this person: its line in the notification list is read too.
+      // (First load of a chat, or something really was unread; an ordinary check writes nothing.)
+      if ((marked?.modifiedCount || 0) > 0 || !askedSig) await markChatNotificationRead(session._id, conversationId);
     } catch (readErr) {
       console.error('Mark read error:', readErr);
     }
@@ -117,6 +123,7 @@ export async function GET(req) {
         sig,
         cursor,
         count,
+        justRead,
         messages: [...changed.map((m) => ({ ...m, partial: true })), ...fresh],
       });
     }
@@ -138,6 +145,7 @@ export async function GET(req) {
       sig,
       cursor,
       count,
+      justRead,
       hasMore: count > messages.length,
       messages,
     });

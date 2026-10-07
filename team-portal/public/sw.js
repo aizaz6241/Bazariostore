@@ -1,6 +1,10 @@
 /* Bazario Team Portal - Service Worker & Push Notification Handler */
 
 const CACHE_NAME = 'bazario-team-v1';
+// A tapped notification leaves its target here for a moment, in case the app was asleep and
+// could not be told directly (iPhone). The app picks it up as soon as it is in front again.
+const NAV_CACHE = 'bazario-nav-v1';
+const PENDING_NAV_KEY = '/__pending-notification';
 const PRECACHE_ASSETS = [
   '/icons/icon-192.png',
   '/icons/icon-512.png',
@@ -26,7 +30,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) => {
       return Promise.all(
         keys.map((key) => {
-          if (key !== CACHE_NAME) {
+          if (key !== CACHE_NAME && key !== NAV_CACHE) {
             return caches.delete(key);
           }
         })
@@ -67,6 +71,7 @@ self.addEventListener('push', (event) => {
     data: {
       url: targetUrl,
       type: data.data?.type || 'general',
+      nid: data.data?.nid || '',
       timestamp: Date.now(),
       soundType: data.sound || '/sounds/notification.wav',
     },
@@ -96,27 +101,53 @@ self.addEventListener('push', (event) => {
   event.waitUntil(Promise.all([showPromise, broadcastPromise]));
 });
 
-// Notification click event handler
+// Notification click: bring the app to the front on the screen the notification is about.
+//
+// iPhone (Home Screen app) cannot be steered with `client.navigate()`, and a sleeping app may
+// miss a message, so the target is delivered three ways and the app uses whichever arrives first:
+//   1. kept for a moment in a small cache the app reads when it comes to the front
+//   2. sent to the open app as a message (the app then moves to that screen itself)
+//   3. if the app is not open at all, it is opened directly on that screen
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const targetUrl = event.notification.data?.url || '/dashboard';
+  const info = event.notification.data || {};
+  let targetUrl = info.url || '/dashboard';
+  try {
+    // only screens of this app
+    const u = new URL(targetUrl, self.location.origin);
+    targetUrl = u.origin === self.location.origin ? u.pathname + u.search + u.hash : '/dashboard';
+  } catch (e) {
+    targetUrl = '/dashboard';
+  }
+  const click = { url: targetUrl, nid: info.nid || '', id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, at: Date.now() };
 
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // If a window is already open, navigate and focus it
-      for (const client of clientList) {
+  const remember = caches
+    .open(NAV_CACHE)
+    .then((cache) => cache.put(PENDING_NAV_KEY, new Response(JSON.stringify(click), { headers: { 'Content-Type': 'application/json' } })))
+    .catch(() => {});
+
+  const open = self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clientList) => {
+    const mine = clientList.filter((c) => c.url && c.url.startsWith(self.location.origin));
+    const client = mine.find((c) => c.focused) || mine.find((c) => c.visibilityState === 'visible') || mine[0];
+
+    if (client) {
+      try {
+        client.postMessage({ type: 'NOTIFICATION_CLICK', click });
+      } catch (e) {}
+      try {
         if ('focus' in client) {
-          if (client.url.includes(self.location.origin)) {
-            client.navigate(targetUrl);
-            return client.focus();
-          }
+          await client.focus();
+          return;
         }
+      } catch (e) {
+        // could not bring it forward: open it below
       }
-      // If no window is open, open a new one
-      if (self.clients.openWindow) {
-        return self.clients.openWindow(targetUrl);
-      }
-    })
-  );
+    }
+    if (self.clients.openWindow) {
+      await self.clients.openWindow(targetUrl);
+    }
+  });
+
+  event.waitUntil(Promise.all([remember, open]));
 });

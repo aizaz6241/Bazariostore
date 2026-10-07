@@ -212,6 +212,11 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
   const totalBonusCostUSDT = r2(bonusCostUSDT);
   const totalWithdrawnUSDT = r2(sellerWithdrawUSDT + bonusCostUSDT + payoutUSDT);
   const balanceUSDT = r2(earnedUSDT + bonusUSDT - bonusCostUSDT - sellerWithdrawUSDT - payoutUSDT); // can be negative
+  // A partner carries an equal share of what members in minus owe: that part of the wallet is in
+  // the books but not in Binance yet, so it cannot be paid out today (see lib/utils/finance.js).
+  const ledgerWallet = ledger.wallets.find((w) => String(w.userId) === uid);
+  const heldForMembersUSDT = r2(ledgerWallet?.heldForMembersUSDT || 0);
+  const availableUSDT = r2(balanceUSDT - heldForMembersUSDT);
   const totalWithdrawnPKR = 0;
   const balancePKR = 0; // bonuses are paid in USDT now; PKR is shown for reference only
 
@@ -256,6 +261,8 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
     },
     balances: {
       balanceUSDT,
+      availableUSDT,
+      heldForMembersUSDT,
       totalEarnedUSDT,
       totalWithdrawnUSDT,
       totalSellerWithdrawUSDT,
@@ -314,6 +321,8 @@ export async function getWalletBalancesMap() {
     map.set(String(w.userId), {
       ...EMPTY_WALLET,
       balanceUSDT: r2(w.balanceUSDT),
+      availableUSDT: r2(w.balanceUSDT - (w.heldForMembersUSDT || 0)),
+      heldForMembersUSDT: r2(w.heldForMembersUSDT || 0),
       totalEarnedUSDT: r2(w.earnedUSDT + w.bonusUSDT),
       totalWithdrawnUSDT: r2(w.sellerWithdrawUSDT + w.bonusCostUSDT + w.payoutUSDT),
       totalSellerWithdrawUSDT: r2(w.sellerWithdrawUSDT),
@@ -341,6 +350,17 @@ export const EMPTY_WALLET = {
   totalEarnedINR: 0,
   totalWithdrawnINR: 0,
 };
+
+/** "Not enough" message; for a partner it says why less than the book balance can be taken. */
+export function insufficientText(amount, balances = {}) {
+  const available = balances.availableUSDT ?? balances.balanceUSDT ?? 0;
+  const held = balances.heldForMembersUSDT || 0;
+  const why =
+    held > 0
+      ? ` (₮${Number(balances.balanceUSDT || 0).toLocaleString()} in the books, of which ₮${held.toLocaleString()} is owed by members in minus and is not in Binance yet)`
+      : '';
+  return `Insufficient USDT balance. Requested: ₮${Number(amount).toLocaleString()} USDT, Available: ₮${Number(available).toLocaleString()} USDT${why}`;
+}
 
 /**
  * Record a payout taken from a wallet.
@@ -373,9 +393,10 @@ export async function recordWalletPayout({
   const currentWallet = await getWalletData({ userId: user._id });
   const balances = currentWallet.balances || {};
 
-  const available = balances.balanceUSDT || 0;
+  // For a partner this is the book balance minus the share carried for members in minus.
+  const available = balances.availableUSDT ?? balances.balanceUSDT ?? 0;
   if (numAmount > available) {
-    throw new Error(`Insufficient USDT balance. Requested: ₮${numAmount.toLocaleString()} USDT, Available: ₮${available.toLocaleString()} USDT`);
+    throw new Error(insufficientText(numAmount, balances));
   }
 
   const transaction = await WalletTransaction.create({
@@ -397,7 +418,7 @@ export async function recordWalletPayout({
   // the wallet below zero, it is taken back and refused.
   invalidateLedger();
   const after = await getWalletData({ userId: user._id });
-  if ((after?.balances?.balanceUSDT ?? 0) < -0.005 && available >= 0) {
+  if ((after?.balances?.availableUSDT ?? after?.balances?.balanceUSDT ?? 0) < -0.005 && available >= 0) {
     await WalletTransaction.deleteOne({ _id: transaction._id });
     invalidateLedger();
     await getWalletData({ userId: user._id });

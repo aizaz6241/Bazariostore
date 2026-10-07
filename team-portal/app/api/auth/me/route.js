@@ -47,15 +47,18 @@ export async function GET(req) {
     }
 
     // Recalculate live financial balances based on commission rules and pool shares (Admins & Members)
+    // (a plain copy: the account's stored wallet shape would drop the numbers it does not know,
+    // such as what is really available to a partner today)
+    const out = member.toObject();
     try {
       const { getWalletBalancesMap, EMPTY_WALLET } = await import('@/lib/utils/wallet');
       const wallets = await getWalletBalancesMap();
-      member.wallet = wallets.get(member._id.toString()) || { ...EMPTY_WALLET };
+      out.wallet = wallets.get(member._id.toString()) || { ...EMPTY_WALLET };
     } catch (wErr) {
       console.error('Wallet refresh error in auth/me:', wErr);
     }
 
-    return NextResponse.json({ member });
+    return NextResponse.json({ member: out });
   } catch (err) {
     console.error('Auth me error:', err);
     return NextResponse.json({ message: err.message }, { status: 500 });

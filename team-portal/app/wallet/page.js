@@ -283,7 +283,7 @@ export default function WalletPage() {
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center space-x-1.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>Available USDT Balance (₮)</span>
+                <span>Your Share (₮ USDT)</span>
               </span>
               <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
                 Binance P2P
@@ -294,9 +294,17 @@ export default function WalletPage() {
               <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-white">
                 {formatUSDT(balances.balanceUSDT)}
               </h2>
+              {(balances.heldForMembersUSDT || 0) > 0 ? (
+                <p className="text-xs text-amber-200 mt-1">
+                  This is your full share. You can take out <strong>{formatUSDT(balances.availableUSDT)}</strong> now:{' '}
+                  {formatUSDT(balances.heldForMembersUSDT)} of your share is with members who are in minus and comes back from their next
+                  deposits.
+                </p>
+              ) : (
               <p className="text-xs text-slate-300 mt-1 flex items-center gap-2">
                 <span>Your share of the USDT held in Binance. Can go below zero and settles from the next deposits.</span>
               </p>
+              )}
             </div>
           </div>
 

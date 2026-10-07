@@ -533,6 +533,37 @@ async function computeLedger() {
   const balanceUSDT = r6(inUSDT - sellerOutUSDT - payoutUSDT);
   const walletsUSDT = r6(wallets.reduce((s, w) => s + w.balanceUSDT, 0));
 
+  // ─── Members in minus: money the partners are carrying for them ───
+  // A member whose wallet is below zero owes that amount; it is not in Binance. The partners'
+  // wallets "in the books" still count it, so together they show more than Binance holds. What a
+  // partner can really use today is the book balance minus an equal share of everything members
+  // owe. When the members' minus comes back (from their next deposits), the book balance is
+  // available again.
+  const partnerIdSet = new Set(partners.map((p) => p.id));
+  const inMinus = wallets
+    .filter((w) => !partnerIdSet.has(w.userId) && w.balanceUSDT < -0.000001)
+    .map((w) => ({ userId: w.userId, name: w.name, deal: w.deal, owesUSDT: r6(-w.balanceUSDT) }))
+    .sort((a, b) => b.owesUSDT - a.owesUSDT);
+  const membersMinusUSDT = r6(inMinus.reduce((s, w) => s + w.owesUSDT, 0));
+  const membersPlusUSDT = r6(wallets.filter((w) => !partnerIdSet.has(w.userId) && w.balanceUSDT > 0).reduce((s, w) => s + w.balanceUSDT, 0));
+
+  let carriedSoFar = 0;
+  const partnerWallets = wallets.filter((w) => partnerIdSet.has(w.userId));
+  partnerWallets.forEach((w, i) => {
+    // equal shares; the last partner takes the remainder so the shares add up exactly
+    const share = i === partnerWallets.length - 1 ? r6(membersMinusUSDT - carriedSoFar) : r6(membersMinusUSDT / partnerWallets.length);
+    carriedSoFar = r6(carriedSoFar + share);
+    w.heldForMembersUSDT = share;
+    w.availableUSDT = r6(w.balanceUSDT - share);
+  });
+  wallets.forEach((w) => {
+    if (partnerIdSet.has(w.userId)) return;
+    w.heldForMembersUSDT = 0;
+    w.availableUSDT = w.balanceUSDT;
+  });
+  const partnersBookUSDT = r6(partnerWallets.reduce((s, w) => s + w.balanceUSDT, 0));
+  const partnersAvailableUSDT = r6(partnerWallets.reduce((s, w) => s + w.availableUSDT, 0));
+
   // ─── What real sellers can still ask to withdraw (store wallet, in $) ───
   let liabilityUSD = 0;
   let pendingWithdrawalUSD = 0;
@@ -584,12 +615,19 @@ async function computeLedger() {
       balanceUSDT,
       walletsUSDT,
       diffUSDT: r6(balanceUSDT - walletsUSDT),
+      // members below zero, and what that leaves the partners today
+      membersMinusUSDT,
+      membersMinusCount: inMinus.length,
+      membersPlusUSDT,
+      partnersBookUSDT,
+      partnersAvailableUSDT,
       depositCount,
       withdrawalCount,
       bonusUSDT: r6(bonusUSDT),
       bonusCount,
     },
     wallets,
+    membersInMinus: inMinus,
     entries,
     pending,
     skipped,

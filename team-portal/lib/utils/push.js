@@ -2,6 +2,7 @@ import webpush from 'web-push';
 import connectDB from '@/lib/db';
 import PushSubscription from '@/lib/models/PushSubscription';
 import Member from '@/lib/models/Member';
+import { recordNotifications } from '@/lib/utils/notifications';
 
 const VAPID_PUBLIC_KEY =
   process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ||
@@ -55,7 +56,12 @@ export function formatPayload({
 /**
  * Send push to a single subscription document. If expired (404/410), deletes it.
  */
-async function sendToSubscription(subDoc, payloadObj) {
+async function sendToSubscription(subDoc, payloadObj, notificationIds) {
+  // The id of this person's line in the notification list travels with the push, so a tap on
+  // the phone notification can mark that exact line as read.
+  const nid = notificationIds?.get(String(subDoc.memberId));
+  if (nid) payloadObj = { ...payloadObj, data: { ...payloadObj.data, nid } };
+
   const pushSubscription = {
     endpoint: subDoc.endpoint,
     keys: {
@@ -92,11 +98,13 @@ export async function sendPushToUser(userId, payload) {
   await connectDB();
 
   const formatted = formatPayload(payload);
+  // Also kept in the person's notification list (the bell), with or without a subscribed device
+  const noted = await recordNotifications([userId], payload);
   const subs = await PushSubscription.find({ memberId: userId }).lean();
   if (!subs.length) return [];
 
   const results = await Promise.allSettled(
-    subs.map((sub) => sendToSubscription(sub, formatted))
+    subs.map((sub) => sendToSubscription(sub, formatted, noted))
   );
   return results;
 }
@@ -108,12 +116,21 @@ export async function sendPushToAllExcept(excludeUserId, payload) {
   await connectDB();
 
   const formatted = formatPayload(payload);
+  let noted = new Map();
+  try {
+    const people = await Member.find(excludeUserId ? { active: true, _id: { $ne: excludeUserId } } : { active: true })
+      .select('_id')
+      .lean();
+    noted = await recordNotifications(people.map((m) => m._id), payload);
+  } catch (e) {
+    console.error('Notification list error:', e.message);
+  }
   const query = excludeUserId ? { memberId: { $ne: excludeUserId } } : {};
   const subs = await PushSubscription.find(query).lean();
   if (!subs.length) return [];
 
   const results = await Promise.allSettled(
-    subs.map((sub) => sendToSubscription(sub, formatted))
+    subs.map((sub) => sendToSubscription(sub, formatted, noted))
   );
   return results;
 }
@@ -129,11 +146,12 @@ export async function sendPushToRole(role, payload) {
   if (!memberIds.length) return [];
 
   const formatted = formatPayload(payload);
+  const noted = await recordNotifications(memberIds, payload);
   const subs = await PushSubscription.find({ memberId: { $in: memberIds } }).lean();
   if (!subs.length) return [];
 
   const results = await Promise.allSettled(
-    subs.map((sub) => sendToSubscription(sub, formatted))
+    subs.map((sub) => sendToSubscription(sub, formatted, noted))
   );
   return results;
 }

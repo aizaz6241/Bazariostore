@@ -1,12 +1,15 @@
 'use client';
 
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { useNotifications } from '@/components/NotificationManager';
 import VoiceRecorder from '@/components/VoiceRecorder';
 import AudioPlayer from '@/components/AudioPlayer';
 import { readCache, writeCache, dropCache } from '@/lib/clientCache';
 import { useRealtime, useRealtimeEvent } from '@/components/RealtimeProvider';
+import { useLiveRefresh } from '@/components/LiveProvider';
+import PaymentProofsPane from '@/components/PaymentProofsPane';
 import { getSavedMedia, saveMedia, dropSavedMedia } from '@/lib/mediaCache';
 import {
   Send,
@@ -31,6 +34,7 @@ import {
   Download,
   ZoomIn,
   Lock,
+  ReceiptText,
 } from 'lucide-react';
 
 // Pictures / voice notes already downloaded in this visit (message id -> data), so opening a
@@ -73,8 +77,46 @@ const formatLastSeen = (at) => {
   return `last seen ${d.toLocaleDateString([], { day: 'numeric', month: 'short' })} at ${time}`;
 };
 
+// Unread messages of a chat, shown on its row in the chat list
+function UnreadLabel({ count }) {
+  const n = Number(count) || 0;
+  if (n <= 0) return null;
+  return (
+    <span
+      className="!ml-auto shrink-0 inline-flex items-center gap-1 pl-1 pr-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[11px] font-bold shadow-sm"
+      aria-label={`${n} unread message${n === 1 ? '' : 's'}`}
+    >
+      <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-white text-emerald-700 flex items-center justify-center text-[11px] font-extrabold">
+        {n > 99 ? '99+' : n}
+      </span>
+      <span>unread</span>
+    </span>
+  );
+}
+
+// The open conversation lives in the address (/chat?chatType=...), so the phone's "back" (and the
+// swipe from the left edge on iPhone) returns to the chat list instead of leaving the chat screen.
 export default function ChatPage() {
+  return (
+    <Suspense fallback={null}>
+      <ChatPageInner />
+    </Suspense>
+  );
+}
+
+const chatUrlOf = (chat) =>
+  chat.type === 'proofs'
+    ? '/chat?chatType=proofs'
+    : chat.type === 'personal' && chat.contact?._id
+    ? `/chat?chatType=personal&contactId=${chat.contact._id}`
+    : `/chat?chatType=${chat.type === 'materials' ? 'materials' : 'group'}`;
+const chatKeyOf = (chat) => `${chat?.type || ''}:${chat?.contact?._id || ''}`;
+
+function ChatPageInner() {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
+  const urlChatType = searchParams.get('chatType') || '';
+  const urlContactId = searchParams.get('contactId') || '';
   const { playMessageSound, playCashSound } = useNotifications();
   const uid = user?._id || '';
   const contactsKey = `chat_contacts_${uid}`;
@@ -92,9 +134,31 @@ export default function ChatPage() {
     () => readCache(contactsKey)?.materialsGroup || { unreadCount: 0, lastMessage: null }
   );
   const [contactsLoaded, setContactsLoaded] = useState(() => !!readCache(contactsKey));
+  // "Payment Proofs" group (partners only): how many deposits still wait for their proof
+  const [proofsMeta, setProofsMeta] = useState(() => readCache(contactsKey)?.proofs || null);
 
   // Mobile View Flow (WhatsApp Style): 'list' (shows all chats) or 'chat' (inside active conversation)
   const [mobileView, setMobileView] = useState('list');
+  // On a wide screen the list and the conversation are side by side; on a phone only one shows
+  const [isDesktop, setIsDesktop] = useState(() => (typeof window !== 'undefined' ? window.matchMedia('(min-width: 768px)').matches : true));
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    const onChange = () => setIsDesktop(mq.matches);
+    onChange();
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
+  // Is the conversation really in front of the person? Only then is it loaded and marked as read:
+  // while the phone shows the chat LIST, nothing is read behind the person's back and the unread
+  // numbers stay until the chat is opened.
+  const paneVisible = isDesktop || mobileView === 'chat';
+  const paneVisibleRef = useRef(paneVisible);
+  paneVisibleRef.current = paneVisible;
+
+  // "N unread messages" line inside an opened chat: { chatKey, count, beforeId }
+  const [unreadDivider, setUnreadDivider] = useState(null);
+  const pendingUnreadRef = useRef(0); // unread count of the chat at the moment it was opened
+  const justOpenedRef = useRef(false); // the next answer is the first one since the chat was opened
 
   // Messages in current chat
   const [messages, setMessages] = useState([]);
@@ -148,6 +212,8 @@ export default function ChatPage() {
   const [, setMediaTick] = useState(0); // redraw when a picture / voice note turns out to be unavailable
 
   const isAdmin = user?.role === 'admin';
+  const isAdminRef = useRef(isAdmin);
+  isAdminRef.current = isAdmin;
 
   activeKeyRef.current = `${activeChat.type}:${activeChat.contact?._id || ''}`;
 
@@ -162,7 +228,9 @@ export default function ChatPage() {
   const lastSyncRef = useRef(0);
   // The id the server uses for the conversation that is open
   const conversationIdOf = (chat) =>
-    chat.type === 'materials'
+    chat.type === 'proofs'
+      ? 'payment_proofs'
+      : chat.type === 'materials'
       ? 'materials_group'
       : chat.type === 'personal'
       ? chat.contact?._id
@@ -178,6 +246,8 @@ export default function ChatPage() {
   groupMetaRef.current = groupMeta;
   const materialsMetaRef = useRef(materialsMeta);
   materialsMetaRef.current = materialsMeta;
+  const proofsMetaRef = useRef(proofsMeta);
+  proofsMetaRef.current = proofsMeta;
 
   // ─── Typing & online / last seen — ADMINS ONLY ───
   // The server sends these to admin accounts only, so for a member everything below stays
@@ -375,7 +445,9 @@ export default function ChatPage() {
         setContacts(data.contacts || []);
         setGroupMeta(group);
         setMaterialsMeta(materialsGroup);
-        writeCache(contactsKey, { contacts: data.contacts || [], group, materialsGroup });
+        proofsMetaRef.current = data.proofs || null;
+        setProofsMeta(data.proofs || null);
+        writeCache(contactsKey, { contacts: data.contacts || [], group, materialsGroup, proofs: data.proofs || null });
         if (typeof data.totalUnreadCount === 'number') {
           window.dispatchEvent(new CustomEvent('chat_unread_updated', { detail: data.totalUnreadCount }));
         }
@@ -386,6 +458,11 @@ export default function ChatPage() {
       setContactsLoaded(true);
     }
   };
+
+  // A new deposit / a proof added by the other partner: refresh the "N pending" label
+  useLiveRefresh(() => {
+    if (isAdminRef.current) fetchContacts();
+  });
 
   // The chat list changed on this screen (a pushed message, a chat that was opened): show it,
   // remember it and tell the navigation badge, without asking the server.
@@ -405,7 +482,7 @@ export default function ChatPage() {
       materialsMetaRef.current = m;
       setMaterialsMeta(m);
     }
-    writeCache(contactsKey, { contacts: c, group: g, materialsGroup: m });
+    writeCache(contactsKey, { contacts: c, group: g, materialsGroup: m, proofs: proofsMetaRef.current });
     const total = (g.unreadCount || 0) + (m.unreadCount || 0) + c.reduce((sum, x) => sum + (x.unreadCount || 0), 0);
     window.dispatchEvent(new CustomEvent('chat_unread_updated', { detail: total }));
   };
@@ -466,56 +543,83 @@ export default function ChatPage() {
     };
   }, []);
 
-  // ─── 1b. Deep-Linking & Notification Navigation ───
-  // Automatically activates the target conversation and enters chat room on mobile
+  // ─── 1b. Which chat is open: kept in the address ───
+  // Opening a chat adds one step to the browser history (/chat -> /chat?chatType=...), so "back"
+  // (the header arrow, the phone's back button, the iPhone edge swipe) lands on the chat list.
+  const openChat = (chat) => {
+    setActiveChat((prev) => (chatKeyOf(prev) === chatKeyOf(chat) ? prev : chat));
+    setMobileView('chat');
+    if (typeof window === 'undefined') return;
+    const url = chatUrlOf(chat);
+    if (window.location.pathname + window.location.search === url) return;
+    const alreadyInAChat = new URLSearchParams(window.location.search).has('chatType');
+    if (alreadyInAChat) {
+      // switching from one chat to another (desktop): stay one step above the list
+      window.history.replaceState({ __chatOpen: !!window.history.state?.__chatOpen }, '', url);
+    } else {
+      window.history.pushState({ __chatOpen: true }, '', url);
+    }
+  };
+
+  const closeChat = () => {
+    setMobileView('list');
+    if (typeof window === 'undefined') return;
+    if (!new URLSearchParams(window.location.search).has('chatType')) return;
+    if (window.history.state?.__chatOpen) window.history.back();
+    else window.history.replaceState(null, '', '/chat');
+  };
+
+  const chatFromParams = (ct, cid) => {
+    if (ct === 'materials') return { type: 'materials' };
+    if (ct === 'group') return { type: 'group' };
+    // partners only (the server refuses everyone else as well)
+    if (ct === 'proofs') return isAdminRef.current ? { type: 'proofs' } : null;
+    if (ct === 'personal' && cid) {
+      const match = contactsRef.current.find((c) => String(c._id) === String(cid));
+      return { type: 'personal', contact: match || { _id: cid, name: 'Direct Message', username: 'user', role: 'member', placeholder: true } };
+    }
+    return null;
+  };
+
+  // The address changed (a chat was opened, "back" was used, or a notification link was followed)
   useEffect(() => {
-    const handleUrlTarget = (overrideUrl) => {
-      try {
-        const queryStr =
-          overrideUrl && overrideUrl.includes('?')
-            ? overrideUrl.slice(overrideUrl.indexOf('?'))
-            : typeof window !== 'undefined'
-            ? window.location.search
-            : '';
-        if (!queryStr) return;
-        const params = new URLSearchParams(queryStr);
-        const ct = params.get('chatType');
-        const cid = params.get('contactId');
+    if (!urlChatType) {
+      setMobileView('list');
+      return;
+    }
+    const target = chatFromParams(urlChatType, urlContactId);
+    if (!target) return;
+    setActiveChat((prev) => (chatKeyOf(prev) === chatKeyOf(target) ? prev : target));
+    setMobileView('chat');
 
-        if (ct === 'materials') {
-          setActiveChat({ type: 'materials' });
-          setMobileView('chat');
-        } else if (ct === 'personal' && cid) {
-          const match = contacts.find((c) => c._id === cid);
-          setActiveChat({
-            type: 'personal',
-            contact: match || { _id: cid, name: 'Direct Message', username: 'user', role: 'member' },
-          });
-          setMobileView('chat');
-        } else if (ct === 'group') {
-          setActiveChat({ type: 'group' });
-          setMobileView('chat');
-        }
-      } catch (e) {
-        console.error('Failed to parse chat target from URL:', e);
-      }
+    // Arrived straight on a chat link (from a notification): put the chat list underneath it, so
+    // "back" shows the list and not whatever screen was open before.
+    if (typeof window !== 'undefined' && !window.history.state?.__chatOpen) {
+      const full = window.location.pathname + window.location.search;
+      window.history.replaceState(null, '', '/chat');
+      window.history.pushState({ __chatOpen: true }, '', full);
+    }
+  }, [urlChatType, urlContactId, isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A notification for another chat was tapped while this screen is already open
+  useEffect(() => {
+    const onOpenUrl = (e) => {
+      const url = e.detail?.url || '';
+      const q = url.includes('?') ? url.slice(url.indexOf('?')) : '';
+      const params = new URLSearchParams(q);
+      const target = chatFromParams(params.get('chatType'), params.get('contactId'));
+      if (target) openChat(target);
     };
+    window.addEventListener('portal_open_chat_url', onOpenUrl);
+    return () => window.removeEventListener('portal_open_chat_url', onOpenUrl);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    handleUrlTarget();
-
-    const onCustomEvent = (e) => {
-      if (e.detail?.url) {
-        handleUrlTarget(e.detail.url);
-      }
-    };
-    window.addEventListener('portal_open_chat_url', onCustomEvent);
-    window.addEventListener('popstate', () => handleUrlTarget());
-
-    return () => {
-      window.removeEventListener('portal_open_chat_url', onCustomEvent);
-      window.removeEventListener('popstate', () => handleUrlTarget());
-    };
-  }, [contacts]);
+  // The chat was opened from a link before the contact list arrived: fill in the real name
+  useEffect(() => {
+    if (activeChat.type !== 'personal' || !activeChat.contact?.placeholder) return;
+    const match = contacts.find((c) => String(c._id) === String(activeChat.contact._id));
+    if (match) setActiveChat({ type: 'personal', contact: match });
+  }, [contacts, activeChat]);
 
   // ─── 2. Fetch Messages for Current Active Chat ───
   // Someone else's messages just appeared in the open chat: highlight and chime
@@ -538,6 +642,13 @@ export default function ChatPage() {
   };
 
   const fetchMessages = async (quiet = false) => {
+    // Loading a chat also marks it as read on the server. While the phone shows the chat list the
+    // conversation is not in front of anyone, so it is left alone (and stays unread).
+    // "Payment Proofs" is not a message chat: its own screen loads its cards
+    if (!paneVisibleRef.current || activeChat.type === 'proofs') {
+      if (!quiet) setLoadingMessages(false);
+      return;
+    }
     try {
       if (!quiet) setLoadingMessages(true);
       lastMessagesFetchRef.current = Date.now();
@@ -563,6 +674,8 @@ export default function ChatPage() {
         const data = await res.json();
         // The user switched to another chat while this request was on its way: ignore it
         if (chatKey !== activeKeyRef.current) return;
+        const firstAnswer = justOpenedRef.current;
+        justOpenedRef.current = false;
         if (data.unchanged) return;
 
         const incoming = (data.messages || []).map(withMedia);
@@ -616,6 +729,21 @@ export default function ChatPage() {
           announceArrived(arrived);
         }
 
+        // First answer after opening a chat that had unread messages: remember where they start,
+        // so a "N unread messages" line can be shown above them and the chat opens at that line.
+        // (the chat list's number, or what the server says it has just marked as read)
+        const waiting = firstAnswer ? Math.max(pendingUnreadRef.current, Number(data.justRead) || 0) : 0;
+        pendingUnreadRef.current = 0;
+        if (waiting > 0) {
+          const theirs = next.filter((m) => !m.pending && !m.failed && String(m.senderId) !== String(user?._id));
+          const count = Math.min(waiting, theirs.length);
+          if (count > 0) {
+            skipAutoScrollRef.current = true; // the view goes to the line, not to the very end
+            firstScrollRef.current = false;
+            setUnreadDivider({ chatKey, count, beforeId: theirs[theirs.length - count]._id });
+          }
+        }
+
         prevMessagesLengthRef.current = next.length;
         messagesRef.current = next;
         setMessages(next);
@@ -644,6 +772,37 @@ export default function ChatPage() {
     setShowScrollBottom(false);
     setUnreadWhileScrolled(0);
     setLoadingOlder(false);
+
+    // How many messages were waiting in this chat at the moment it is opened (see the
+    // "N unread messages" line). Taken before loading, because loading marks them as read.
+    setUnreadDivider(null);
+    if (paneVisible) {
+      const conv = conversationIdOf(activeChat);
+      pendingUnreadRef.current =
+        conv === 'main_group'
+          ? groupMetaRef.current.unreadCount || 0
+          : conv === 'materials_group'
+          ? materialsMetaRef.current.unreadCount || 0
+          : contactsRef.current.find((x) => x.conversationId === conv)?.unreadCount || 0;
+    } else {
+      pendingUnreadRef.current = 0;
+    }
+    justOpenedRef.current = paneVisible;
+
+    if (activeChat.type === 'proofs') {
+      chatKeyRef.current = '';
+      messagesSigRef.current = '';
+      messagesCursorRef.current = 0;
+      hasMoreRef.current = false;
+      prevMessagesLengthRef.current = 0;
+      messagesRef.current = [];
+      pendingUnreadRef.current = 0;
+      justOpenedRef.current = false;
+      setHasMoreOlder(false);
+      setMessages([]);
+      setLoadingMessages(false);
+      return undefined;
+    }
 
     if (known) {
       chatKeyRef.current = chatKey;
@@ -687,7 +846,17 @@ export default function ChatPage() {
       syncAgainRef.current = false;
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [activeChat.type, activeChat.contact?._id]);
+  }, [activeChat.type, activeChat.contact?._id, paneVisible]);
+
+  // The chat opened with unread messages: start at the "unread" line instead of the very end
+  useLayoutEffect(() => {
+    if (!unreadDivider) return;
+    const line = document.getElementById('unread-divider');
+    const box = messagesContainerRef.current;
+    if (!line || !box) return;
+    const top = line.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop;
+    box.scrollTop = Math.max(0, top - Math.min(120, box.clientHeight * 0.25));
+  }, [unreadDivider?.beforeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── 2b. Realtime: messages pushed by the server ───
   // Ask the portal for the small update of the open chat (this also marks it as read). Several
@@ -717,7 +886,8 @@ export default function ChatPage() {
     if (!message || !message._id || !conversationId) return;
 
     const mine = String(message.senderId) === String(uid);
-    const isOpen = conversationId === activeConvRef.current;
+    // "open" = this conversation is in front of the person (on a phone: not the chat list)
+    const isOpen = conversationId === activeConvRef.current && paneVisibleRef.current;
     if (message.mediaUrl) rememberMedia(message._id, message.mediaUrl);
 
     // chat list: last message, and a badge unless the user is looking at that chat
@@ -791,7 +961,7 @@ export default function ChatPage() {
   useEffect(() => {
     if (mobileView !== 'chat') return;
     const el = messagesContainerRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && !document.getElementById('unread-divider')) el.scrollTop = el.scrollHeight;
   }, [mobileView]);
 
   // ─── "Load earlier messages" ───
@@ -1524,12 +1694,9 @@ export default function ChatPage() {
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
           {/* ── 1. PINNED: Team General Discussion ── */}
           <button
-            onClick={() => {
-              setActiveChat({ type: 'group' });
-              setMobileView('chat');
-            }}
+            onClick={() => openChat({ type: 'group' })}
             className={`w-full p-3.5 flex items-start space-x-3 text-left transition-all ${
-              activeChat.type === 'group'
+              activeChat.type === 'group' && paneVisible
                 ? 'bg-emerald-50/90 border-l-4 border-emerald-600'
                 : 'hover:bg-slate-50'
             }`}
@@ -1540,11 +1707,11 @@ export default function ChatPage() {
 
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-900 truncate">
+                <span className={`text-xs text-slate-900 truncate ${groupMeta.unreadCount > 0 ? 'font-extrabold' : 'font-bold'}`}>
                   Team General Discussion
                 </span>
                 {groupMeta.lastMessage && (
-                  <span className="text-[10px] text-slate-400 shrink-0 ml-1">
+                  <span className={`text-[10px] shrink-0 ml-1 ${groupMeta.unreadCount > 0 ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>
                     {formatMessageTime(groupMeta.lastMessage.createdAt)}
                   </span>
                 )}
@@ -1553,7 +1720,7 @@ export default function ChatPage() {
               {typingText('main_group') ? (
                 <p className="text-[11px] text-emerald-600 font-semibold truncate mt-0.5">{typingText('main_group')}</p>
               ) : (
-              <p className="text-[11px] text-slate-500 truncate mt-0.5">
+              <p className={`text-[11px] truncate mt-0.5 ${groupMeta.unreadCount > 0 ? 'text-slate-900 font-semibold' : 'text-slate-500'}`}>
                 {groupMeta.lastMessage
                   ? `${groupMeta.lastMessage.senderName}: ${
                       groupMeta.lastMessage.isDeleted
@@ -1572,21 +1739,14 @@ export default function ChatPage() {
                 <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-bold uppercase">
                   All Team
                 </span>
-                {groupMeta.unreadCount > 0 && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-600 text-white font-bold ml-auto shadow-xs">
-                    {groupMeta.unreadCount}
-                  </span>
-                )}
+                <UnreadLabel count={groupMeta.unreadCount} />
               </div>
             </div>
           </button>
 
           {/* ── 2. PINNED: Materials Group (Admins post photos, all view/download) ── */}
           <button
-            onClick={() => {
-              setActiveChat({ type: 'materials' });
-              setMobileView('chat');
-            }}
+            onClick={() => openChat({ type: 'materials' })}
             className={`w-full p-3.5 flex items-start space-x-3 text-left transition-all ${
               activeChat.type === 'materials'
                 ? 'bg-purple-50/90 border-l-4 border-purple-600'
@@ -1599,17 +1759,17 @@ export default function ChatPage() {
 
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-900 truncate">
+                <span className={`text-xs text-slate-900 truncate ${materialsMeta.unreadCount > 0 ? 'font-extrabold' : 'font-bold'}`}>
                   Materials Group
                 </span>
                 {materialsMeta.lastMessage && (
-                  <span className="text-[10px] text-slate-400 shrink-0 ml-1">
+                  <span className={`text-[10px] shrink-0 ml-1 ${materialsMeta.unreadCount > 0 ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>
                     {formatMessageTime(materialsMeta.lastMessage.createdAt)}
                   </span>
                 )}
               </div>
 
-              <p className="text-[11px] text-slate-500 truncate mt-0.5">
+              <p className={`text-[11px] truncate mt-0.5 ${materialsMeta.unreadCount > 0 ? 'text-slate-900 font-semibold' : 'text-slate-500'}`}>
                 {materialsMeta.lastMessage
                   ? `${materialsMeta.lastMessage.senderName}: ${
                       materialsMeta.lastMessage.isDeleted
@@ -1628,14 +1788,45 @@ export default function ChatPage() {
                 <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-medium">
                   View & Download
                 </span>
-                {materialsMeta.unreadCount > 0 && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-600 text-white font-bold ml-auto shadow-xs">
-                    {materialsMeta.unreadCount}
-                  </span>
-                )}
+                <UnreadLabel count={materialsMeta.unreadCount} />
               </div>
             </div>
           </button>
+
+          {/* ── 3. PINNED: Payment Proofs (partners only): one card per real seller deposit ── */}
+          {isAdmin && (
+            <button
+              onClick={() => openChat({ type: 'proofs' })}
+              className={`w-full p-3.5 flex items-start space-x-3 text-left transition-all ${
+                activeChat.type === 'proofs' && paneVisible ? 'bg-amber-50/90 border-l-4 border-amber-500' : 'hover:bg-slate-50'
+              }`}
+            >
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-white shrink-0 shadow-sm">
+                <ReceiptText className="w-6 h-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <span className={`text-xs text-slate-900 truncate ${proofsMeta?.draft > 0 ? 'font-extrabold' : 'font-bold'}`}>Payment Proofs</span>
+                  {proofsMeta?.latest?.depositAt && (
+                    <span className={`text-[10px] shrink-0 ml-1 ${proofsMeta.draft > 0 ? 'text-amber-700 font-bold' : 'text-slate-400'}`}>
+                      {formatMessageTime(proofsMeta.latest.depositAt)}
+                    </span>
+                  )}
+                </div>
+                <p className={`text-[11px] truncate mt-0.5 ${proofsMeta?.draft > 0 ? 'text-slate-900 font-semibold' : 'text-slate-500'}`}>
+                  {proofsMeta?.draft > 0
+                    ? `${proofsMeta.draft} deposit${proofsMeta.draft === 1 ? '' : 's'} waiting for USDT + screenshots`
+                    : 'Every deposit has its proof'}
+                </p>
+                <div className="mt-1 flex items-center space-x-1.5">
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold tracking-wide uppercase">Partners only</span>
+                  {proofsMeta?.draft > 0 && (
+                    <span className="!ml-auto shrink-0 px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold">{proofsMeta.draft} pending</span>
+                  )}
+                </div>
+              </div>
+            </button>
+          )}
 
           {/* Section Divider: Direct 1-on-1 Messages */}
           <div className="px-4 py-2 bg-slate-100/70 text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center justify-between">
@@ -1663,16 +1854,13 @@ export default function ChatPage() {
           ) : (
             filteredContacts.map((contact) => {
               const isSelected =
-                activeChat.type === 'personal' && activeChat.contact?._id === contact._id;
+                paneVisible && activeChat.type === 'personal' && activeChat.contact?._id === contact._id;
               const isContactAdmin = contact.role === 'admin';
 
               return (
                 <button
                   key={contact._id}
-                  onClick={() => {
-                    setActiveChat({ type: 'personal', contact });
-                    setMobileView('chat');
-                  }}
+                  onClick={() => openChat({ type: 'personal', contact })}
                   className={`w-full p-3.5 flex items-start space-x-3 text-left transition-all ${
                     isSelected
                       ? 'bg-purple-50/90 border-l-4 border-purple-600'
@@ -1702,11 +1890,11 @@ export default function ChatPage() {
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-900 truncate">
+                      <span className={`text-xs text-slate-900 truncate ${contact.unreadCount > 0 ? 'font-extrabold' : 'font-bold'}`}>
                         {contact.name}
                       </span>
                       {contact.lastMessage && (
-                        <span className="text-[10px] text-slate-400 shrink-0 ml-1">
+                        <span className={`text-[10px] shrink-0 ml-1 ${contact.unreadCount > 0 ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>
                           {formatMessageTime(contact.lastMessage.createdAt)}
                         </span>
                       )}
@@ -1715,7 +1903,7 @@ export default function ChatPage() {
                     {typingText(contact.conversationId, { short: true }) ? (
                       <p className="text-[11px] text-emerald-600 font-semibold truncate mt-0.5">typing…</p>
                     ) : (
-                    <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                    <p className={`text-[11px] truncate mt-0.5 ${contact.unreadCount > 0 ? 'text-slate-900 font-semibold' : 'text-slate-500'}`}>
                       {contact.lastMessage
                         ? `${
                             contact.lastMessage.senderId === user?._id ? 'You: ' : ''
@@ -1765,11 +1953,7 @@ export default function ChatPage() {
                       )}
                       <span className="text-[10px] text-slate-400">@{contact.username}</span>
 
-                      {contact.unreadCount > 0 && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-600 text-white font-bold ml-auto shadow-xs">
-                          {contact.unreadCount}
-                        </span>
-                      )}
+                      <UnreadLabel count={contact.unreadCount} />
                     </div>
                   </div>
                 </button>
@@ -1783,9 +1967,18 @@ export default function ChatPage() {
           RIGHT CHAT WINDOW: WhatsApp Active Room
           (Shown alongside left pane on Desktop, or as Screen 2 on Mobile)
       ─────────────────────────────────────────────────────────── */}
+      {activeChat.type === 'proofs' && isAdmin && (
+        <div className={`flex-1 min-w-0 ${mobileView === 'list' ? 'hidden md:flex' : 'flex'}`}>
+          <PaymentProofsPane
+            visible={paneVisible}
+            onBack={closeChat}
+            onCounts={(c) => setProofsMeta((prev) => ({ ...(prev || {}), draft: c?.draft || 0 }))}
+          />
+        </div>
+      )}
       <div
-        className={`flex-1 flex flex-col bg-slate-50/60 min-w-0 relative ${
-          mobileView === 'list' ? 'hidden md:flex' : 'flex'
+        className={`flex-1 flex-col bg-slate-50/60 min-w-0 relative ${
+          activeChat.type === 'proofs' && isAdmin ? 'hidden' : mobileView === 'list' ? 'hidden md:flex' : 'flex'
         }`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -1805,7 +1998,7 @@ export default function ChatPage() {
           <div className="flex items-center space-x-3 min-w-0">
             {/* Back Button on Mobile (Returns to Chats List) */}
             <button
-              onClick={() => setMobileView('list')}
+              onClick={closeChat}
               className="md:hidden p-1.5 -ml-1 text-slate-300 hover:text-white rounded-xl hover:bg-slate-800 transition"
               title="Back to all chats"
             >
@@ -2022,8 +2215,22 @@ export default function ChatPage() {
               // Admin or sender can edit/delete
               const canModify = (isAdmin || isMe) && !msg.isDeleted && !msg.pending && !msg.failed;
 
+              const startsUnread = unreadDivider && unreadDivider.beforeId === msg._id && unreadDivider.chatKey === activeKeyRef.current;
+
               return (
                 <React.Fragment key={msg._id}>
+                  {/* "N unread messages": everything below this line arrived while the chat was closed */}
+                  {startsUnread && (
+                    <div id="unread-divider" className="relative flex items-center justify-center my-4 select-none px-2" role="separator" aria-label={`${unreadDivider.count} unread messages`}>
+                      <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                        <div className="w-full border-t-2 border-emerald-500/70" />
+                      </div>
+                      <div className="relative px-4 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-full shadow-sm">
+                        {unreadDivider.count} unread message{unreadDivider.count === 1 ? '' : 's'}
+                      </div>
+                    </div>
+                  )}
+
                   {/* WhatsApp-Style Sticky Day Divider with Horizontal Rule */}
                   {isNewDay && (
                     <div

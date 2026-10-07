@@ -3,6 +3,7 @@ import { getAuthSession } from '@/lib/auth';
 import Member from '@/lib/models/Member';
 import ChatMessage from '@/lib/models/ChatMessage';
 import { syncEcommerceAdmins } from '@/lib/adminSync';
+import { proofCounts } from '@/lib/utils/paymentProofs';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,6 +80,16 @@ export async function GET(req) {
 
     const totalUnreadCount = Array.from(unreadByConv.values()).reduce((sum, n) => sum + (n || 0), 0);
 
+    // "Payment Proofs" group (partners only): how many deposits still wait for their proof
+    let proofs = null;
+    if (session.role === 'admin') {
+      try {
+        proofs = await proofCounts();
+      } catch (e) {
+        proofs = { draft: 0, latest: null };
+      }
+    }
+
     return NextResponse.json({
       contacts: enrichedContacts,
       group: {
@@ -90,6 +101,7 @@ export async function GET(req) {
         unreadCount: materialsUnreadCount,
       },
       totalUnreadCount,
+      proofs,
     });
   } catch (err) {
     console.error('Fetch chat contacts error:', err);

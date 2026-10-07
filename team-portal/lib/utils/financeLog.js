@@ -137,7 +137,7 @@ async function announce(line, admins) {
         sendPushToUser(a._id, {
           title,
           body,
-          url: '/finance',
+          url: line.meta?.url || '/finance', // a line can say which screen it is about
           type: 'finance',
           tag: `finlog-${sid(line._id)}`,
         })

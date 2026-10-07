@@ -26,6 +26,7 @@ import WalletModal from '@/components/WalletModal';
 import { readCache, writeCache } from '@/lib/clientCache';
 import { useLiveRefresh } from '@/components/LiveProvider';
 import DashboardInsights from '@/components/DashboardInsights';
+import DepositCalendar from '@/components/DepositCalendar';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -352,6 +353,9 @@ export default function DashboardPage() {
           </>
         )}
       </div>
+
+      {/* ─── PARTNERS: on which day how much came in ─── */}
+      {isAdmin && <DepositCalendar />}
 
       {/* ─── Binance analytics (partners: whole business, member: own stores) ─── */}
       <DashboardInsights finance={stats?.finance} isAdmin={isAdmin} />

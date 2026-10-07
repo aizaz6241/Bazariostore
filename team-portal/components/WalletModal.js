@@ -321,9 +321,16 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
                   <h3 className="text-3xl font-black tracking-tight text-white flex items-baseline gap-1.5">
                     <span>{formatUSDT(balances.balanceUSDT)}</span>
                   </h3>
+                  {(balances.heldForMembersUSDT || 0) > 0 ? (
+                    <p className="text-[11px] text-amber-200 mt-1">
+                      Full share. Can be taken out now: <strong>{formatUSDT(balances.availableUSDT)}</strong> — {formatUSDT(balances.heldForMembersUSDT)} of
+                      it is with members who are in minus and comes back from their next deposits.
+                    </p>
+                  ) : (
                   <p className="text-[11px] text-slate-300 mt-1 flex items-center gap-1.5">
                     <span>Share of the USDT held in Binance. Can go below zero; settles from the next deposits.</span>
                   </p>
+                  )}
                 </div>
               </div>
 

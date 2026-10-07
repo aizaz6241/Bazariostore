@@ -927,6 +927,89 @@ export default function FinancePage() {
             </div>
           </div>
 
+          {/* ── Members in minus: what the partners can really use today ── */}
+          {(t.membersMinusCount || 0) > 0 && (
+            <div className="bg-white rounded-3xl border border-red-200 overflow-hidden">
+              <div className="px-5 py-4 border-b border-red-100 bg-red-50/60 flex flex-wrap items-center justify-between gap-2">
+                <div className="font-bold text-red-900 text-sm flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>
+                    {t.membersMinusCount} {t.membersMinusCount === 1 ? 'member is' : 'members are'} in minus: {usdt(t.membersMinusUSDT)} owed
+                  </span>
+                </div>
+                <span className="text-[11px] text-red-900/70">This money is not in Binance. It comes back from their next deposits.</span>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
+                <div className="lg:col-span-2 p-5">
+                  <div className="text-[10px] uppercase font-bold text-slate-400 mb-2">Who is in minus</div>
+                  <div className="space-y-1.5">
+                    {(data.membersInMinus || []).map((m) => (
+                      <div key={m.userId} className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-slate-900">{m.name}</span>
+                        <span className="font-black text-red-600 tabular-nums">-{fmt(m.owesUSDT)}</span>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between text-xs pt-2 mt-2 border-t border-slate-100">
+                      <span className="font-bold text-slate-600">Total in minus</span>
+                      <span className="font-black text-red-700 tabular-nums">-{fmt(t.membersMinusUSDT)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="lg:col-span-3 p-5">
+                  <div className="text-[10px] uppercase font-bold text-slate-400 mb-2">Partners: share, and what can be taken out now</div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs min-w-[420px]">
+                      <thead className="text-slate-500 text-[10px] uppercase">
+                        <tr>
+                          <th className="text-left py-1.5">Partner</th>
+                          <th className="text-right py-1.5 px-2">Share</th>
+                          <th className="text-right py-1.5 px-2">With members in minus</th>
+                          <th className="text-right py-1.5 pl-2">Can take out now</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {data.wallets
+                          .filter((w) => partners.some((p) => p.id === w.userId))
+                          .map((w) => (
+                            <tr key={w.userId}>
+                              <td className="py-2 font-bold text-slate-900">{w.name}</td>
+                              <td className="py-2 px-2 text-right tabular-nums text-slate-600">{usdt(w.balanceUSDT)}</td>
+                              <td className="py-2 px-2 text-right tabular-nums text-red-600 font-bold">-{fmt(w.heldForMembersUSDT)}</td>
+                              <td className={`py-2 pl-2 text-right tabular-nums font-black text-sm ${w.availableUSDT < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                                {usdt(w.availableUSDT)}
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t border-slate-200 font-black">
+                          <td className="py-2">Both partners</td>
+                          <td className="py-2 px-2 text-right tabular-nums">{usdt(t.partnersBookUSDT)}</td>
+                          <td className="py-2 px-2 text-right tabular-nums text-red-700">-{fmt(t.membersMinusUSDT)}</td>
+                          <td className="py-2 pl-2 text-right tabular-nums text-sm">{usdt(t.partnersAvailableUSDT)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
+                    Binance holds <b className="text-slate-800">{usdt(t.balanceUSDT)}</b>
+                    {(t.membersPlusUSDT || 0) > 0 ? (
+                      <>
+                        , of which <b className="text-slate-800">{usdt(t.membersPlusUSDT)}</b> belongs to members with a positive wallet
+                      </>
+                    ) : null}
+    . The partners&apos; shares add up to <b className="text-slate-800">{usdt(t.partnersBookUSDT)}</b>, but{' '}
+                    <b className="text-slate-800">{usdt(t.membersMinusUSDT)}</b> of that is with members in minus, so{' '}
+                    <b className="text-slate-800">{usdt(t.partnersAvailableUSDT)}</b> can be taken out today. Nobody&apos;s share is reduced: when the
+                    members&apos; minus comes back, the full share can be taken out.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ── What sellers can still ask for ── */}
           <div
             className={`p-4 rounded-3xl border text-xs flex flex-wrap items-center gap-x-6 gap-y-1 ${
@@ -955,7 +1038,8 @@ export default function FinancePage() {
                     <th className="text-right px-3 py-2.5">Bonuses</th>
                     <th className="text-right px-3 py-2.5">Share of seller withdrawals</th>
                     <th className="text-right px-3 py-2.5">Payouts taken</th>
-                    <th className="text-right px-5 py-2.5">Balance</th>
+                    <th className="text-right px-3 py-2.5">Share (balance)</th>
+                    <th className="text-right px-5 py-2.5">Can take out now</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -969,8 +1053,14 @@ export default function FinancePage() {
                       <td className="text-right px-3 py-3 font-bold tabular-nums">{money(w.bonusUSDT - w.bonusCostUSDT)}</td>
                       <td className="text-right px-3 py-3 font-bold tabular-nums">{money(-w.sellerWithdrawUSDT)}</td>
                       <td className="text-right px-3 py-3 font-bold tabular-nums">{money(-w.payoutUSDT)}</td>
-                      <td className={`text-right px-5 py-3 font-black text-sm tabular-nums ${w.balanceUSDT < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                      <td className={`text-right px-3 py-3 font-black text-sm tabular-nums ${w.balanceUSDT < 0 ? 'text-red-600' : 'text-slate-900'}`}>
                         {usdt(w.balanceUSDT)}
+                      </td>
+                      <td className={`text-right px-5 py-3 font-black text-sm tabular-nums ${(w.availableUSDT ?? w.balanceUSDT) < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                        {usdt(w.availableUSDT ?? w.balanceUSDT)}
+                        {(w.heldForMembersUSDT || 0) > 0 && (
+                          <div className="text-[10px] font-semibold text-slate-400">{fmt(w.heldForMembersUSDT)} is with members in minus</div>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -982,7 +1072,8 @@ export default function FinancePage() {
                     <td className="text-right px-3 py-3 text-slate-400 tabular-nums">0.00</td>
                     <td className="text-right px-3 py-3 tabular-nums">-{fmt(t.sellerOutUSDT)}</td>
                     <td className="text-right px-3 py-3 tabular-nums">-{fmt(t.payoutUSDT)}</td>
-                    <td className="text-right px-5 py-3 text-sm tabular-nums">{usdt(t.walletsUSDT)}</td>
+                    <td className="text-right px-3 py-3 text-sm tabular-nums">{usdt(t.walletsUSDT)}</td>
+                    <td className="text-right px-5 py-3 text-sm tabular-nums">{usdt(t.balanceUSDT)}</td>
                   </tr>
                 </tfoot>
               </table>

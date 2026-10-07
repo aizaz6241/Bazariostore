@@ -7,7 +7,7 @@ import WalletTransaction from '@/lib/models/WalletTransaction';
 import RewardClaim from '@/lib/models/RewardClaim';
 import { Seller } from '@/lib/models/SharedModels';
 import { invalidateLedger, updateFinanceEntry, createManualEntry } from '@/lib/utils/finance';
-import { getWalletData, getWalletBalancesMap, recordWalletPayout } from '@/lib/utils/wallet';
+import { getWalletData, getWalletBalancesMap, recordWalletPayout, insufficientText } from '@/lib/utils/wallet';
 import { assignSeller, currentOwnerOf } from '@/lib/utils/sellerAssign';
 import { logFinance, actorFromSession, flushFinanceAlertsSoon } from '@/lib/utils/financeLog';
 import { ACTION_LABEL, canDecide } from '@/lib/utils/approvalRules';
@@ -720,7 +720,7 @@ export async function listApprovals({ session }) {
       pending.forEach((a, i) => {
         if (a.action !== 'payout' || !a.payeeId) return;
         const w = wallets.get(String(a.payeeId));
-        shapedPending[i].walletNow = w ? num(w.balanceUSDT) : 0;
+        shapedPending[i].walletNow = w ? num(w.availableUSDT ?? w.balanceUSDT) : 0;
       });
     } catch (e) {
       console.error('[approvals] wallet lookup failed:', e.message);
@@ -744,8 +744,8 @@ export async function assertPayoutPossible({ userId, amount }) {
   }
   invalidateLedger();
   const wallet = await getWalletData({ userId });
-  const available = wallet?.balances?.balanceUSDT || 0;
+  const available = wallet?.balances?.availableUSDT ?? wallet?.balances?.balanceUSDT ?? 0;
   if (Number(amount) > available) {
-    throw new Error(`Insufficient USDT balance. Requested: ₮${Number(amount).toLocaleString()} USDT, Available: ₮${available.toLocaleString()} USDT`);
+    throw new Error(insufficientText(amount, wallet?.balances));
   }
 }

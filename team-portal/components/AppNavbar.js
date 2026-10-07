@@ -27,6 +27,7 @@ import {
   VolumeX,
 } from 'lucide-react';
 import { useNotifications } from './NotificationManager';
+import NotificationBell from './NotificationBell';
 
 export default function AppNavbar() {
   const { user, logout } = useAuth();
@@ -238,110 +239,8 @@ export default function AppNavbar() {
                 <p className="text-[10px] text-slate-400">@{user.username}</p>
               </div>
 
-              {/* Notification & Sound Center Button */}
-              <div className="relative">
-                <button
-                  onClick={() => setIsNotifMenuOpen(!isNotifMenuOpen)}
-                  title={permission === 'granted' ? 'Notification & Sound Settings' : 'Enable Mobile Push Notifications'}
-                  className={`p-2 rounded-lg transition-all relative ${
-                    permission === 'granted'
-                      ? 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
-                      : 'text-amber-500 hover:text-amber-600 hover:bg-amber-50 animate-pulse'
-                  }`}
-                >
-                  <Bell className={`w-4 h-4 ${permission === 'granted' ? 'text-emerald-600' : 'text-amber-500'}`} />
-                  {permission !== 'granted' && (
-                    <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-amber-500 ring-2 ring-white animate-ping" />
-                  )}
-                </button>
-
-                {isNotifMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl shadow-2xl border border-slate-200 p-3.5 z-50 animate-in fade-in slide-in-from-top-2">
-                    <div className="flex items-center justify-between pb-2.5 border-b border-slate-100 mb-2.5">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-xs">
-                          🔔
-                        </div>
-                        <span className="text-xs font-bold text-slate-800">Alerts & Sounds</span>
-                      </div>
-                      <button
-                        onClick={() => setIsNotifMenuOpen(false)}
-                        className="p-1 text-slate-400 hover:text-slate-600"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="space-y-2">
-                      {permission !== 'granted' ? (
-                        <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200">
-                          <p className="text-[11px] text-amber-800 font-medium leading-relaxed">
-                            Push notifications are not active on this device.
-                          </p>
-                          <button
-                            onClick={() => {
-                              enableNotifications();
-                              setIsNotifMenuOpen(false);
-                            }}
-                            className="mt-2 w-full py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg text-xs font-bold shadow hover:from-emerald-500 hover:to-teal-500"
-                          >
-                            Enable Android Push
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-between p-2 bg-emerald-50/70 border border-emerald-200/60 rounded-xl">
-                          <span className="text-xs font-semibold text-emerald-800 flex items-center gap-1.5">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Push Notifications Active
-                          </span>
-                          <span className="text-[10px] bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
-                            Live
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Sound Toggle */}
-                      <button
-                        onClick={() => setSoundEnabled(!soundEnabled)}
-                        className="w-full flex items-center justify-between p-2 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors text-left"
-                      >
-                        <div className="flex items-center gap-2">
-                          {soundEnabled ? (
-                            <Volume2 className="w-4 h-4 text-emerald-600" />
-                          ) : (
-                            <VolumeX className="w-4 h-4 text-slate-400" />
-                          )}
-                          <span className="text-xs font-medium text-slate-700">Notification Sounds</span>
-                        </div>
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            soundEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                          }`}
-                        >
-                          {soundEnabled ? 'ON' : 'OFF'}
-                        </span>
-                      </button>
-
-                      {/* Test Sound & Push Buttons */}
-                      <div className="pt-1 flex gap-1.5">
-                        <button
-                          onClick={() => sendTestPush('message')}
-                          className="flex-1 py-1.5 px-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold transition-colors"
-                          title="Test Chat Sound & Push"
-                        >
-                          💬 Test Chat
-                        </button>
-                        <button
-                          onClick={() => sendTestPush('money')}
-                          className="flex-1 py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/70 rounded-lg text-[11px] font-semibold transition-colors"
-                          title="Test Money Sound & Push"
-                        >
-                          💰 Test Money
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
+              {/* Notifications: recent alerts (tap to open what they are about) + alert / sound settings */}
+              <NotificationBell />
 
               {/* Change Password Button */}
               <button

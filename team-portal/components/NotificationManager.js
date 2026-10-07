@@ -19,7 +19,17 @@ const NotificationContext = createContext({
   playNotificationSound: () => {},
   unreadChatCount: 0,
   refreshUnreadChatCount: () => {},
+  notifications: [],
+  unreadNotificationCount: 0,
+  refreshNotifications: () => {},
+  openNotification: () => {},
+  markAllNotificationsRead: () => {},
 });
+
+// Where a tapped phone notification leaves its target when the app was asleep (see public/sw.js)
+const NAV_CACHE = 'bazario-nav-v1';
+const PENDING_NAV_KEY = '/__pending-notification';
+const PENDING_NAV_MAX_AGE_MS = 2 * 60 * 1000;
 
 // Helper to convert base64 VAPID key to Uint8Array for pushManager
 function urlBase64ToUint8Array(base64String) {
@@ -48,6 +58,174 @@ export function NotificationProvider({ children }) {
 
   const audioCache = useRef({});
   const audioCtxRef = useRef(null);
+
+  // ─── Notification list (the bell) ───
+  const notifCacheKey = `notifications_${user?._id || ''}`;
+  const [notifications, setNotifications] = useState([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const lastNotifFetchRef = useRef(0);
+  const notifTimerRef = useRef(null);
+  const handledClicksRef = useRef(new Set());
+
+  const applyNotifications = useCallback(
+    (data) => {
+      if (!data || !Array.isArray(data.items)) return;
+      setNotifications(data.items);
+      setUnreadNotificationCount(Number(data.unread) || 0);
+      writeCache(notifCacheKey, { items: data.items, unread: Number(data.unread) || 0 });
+    },
+    [notifCacheKey]
+  );
+
+  const refreshNotifications = useCallback(async () => {
+    if (!user) return;
+    try {
+      const token = localStorage.getItem('portal_token');
+      if (!token) return;
+      lastNotifFetchRef.current = Date.now();
+      const res = await fetch('/api/notifications', { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+      if (res.ok) applyNotifications(await res.json());
+    } catch (_) {}
+  }, [user, applyNotifications]);
+
+  // Several things can ask for a refresh at the same moment: one request a little later is enough
+  const refreshNotificationsSoon = useCallback(
+    (delay = 1500) => {
+      clearTimeout(notifTimerRef.current);
+      notifTimerRef.current = setTimeout(() => {
+        if (!document.hidden) refreshNotifications();
+      }, delay);
+    },
+    [refreshNotifications]
+  );
+
+  const markNotificationsRead = useCallback(
+    async (ids) => {
+      const list = (ids || []).filter(Boolean).map(String);
+      if (!list.length) return;
+      // shown as read at once; the server answer then confirms it
+      setNotifications((prev) => prev.map((n) => (list.includes(String(n._id)) && !n.readAt ? { ...n, readAt: new Date().toISOString(), count: 0 } : n)));
+      setUnreadNotificationCount((c) => Math.max(0, c - 1));
+      try {
+        const token = localStorage.getItem('portal_token');
+        const res = await fetch('/api/notifications', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ action: 'read', ids: list }),
+        });
+        if (res.ok) applyNotifications(await res.json());
+      } catch (_) {}
+    },
+    [applyNotifications]
+  );
+
+  const markAllNotificationsRead = useCallback(async () => {
+    setNotifications((prev) => prev.map((n) => (n.readAt ? n : { ...n, readAt: new Date().toISOString(), count: 0 })));
+    setUnreadNotificationCount(0);
+    try {
+      const token = localStorage.getItem('portal_token');
+      const res = await fetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: 'read_all' }),
+      });
+      if (res.ok) applyNotifications(await res.json());
+    } catch (_) {}
+  }, [applyNotifications]);
+
+  // Go to the screen a notification is about (a chat link opens that exact conversation)
+  const goTo = useCallback(
+    (url) => {
+      const dest = typeof url === 'string' && url.startsWith('/') ? url : '/dashboard';
+      if (typeof window !== 'undefined' && window.location.pathname + window.location.search === dest) return;
+      // Already on the chat screen: it opens the conversation itself (and keeps "back" = chat list)
+      if (typeof window !== 'undefined' && window.location.pathname === '/chat' && dest.startsWith('/chat?')) {
+        window.dispatchEvent(new CustomEvent('portal_open_chat_url', { detail: { url: dest } }));
+        return;
+      }
+      try {
+        router.push(dest);
+      } catch (_) {
+        if (typeof window !== 'undefined') window.location.href = dest;
+      }
+    },
+    [router]
+  );
+
+  // Tapped in the bell list: mark it read and open what it is about
+  const openNotification = useCallback(
+    (n) => {
+      if (!n) return;
+      if (!n.readAt) markNotificationsRead([n._id]);
+      goTo(n.url);
+    },
+    [markNotificationsRead, goTo]
+  );
+
+  // A phone / desktop notification was tapped
+  const handleNotificationClick = useCallback(
+    (click) => {
+      if (!click || !click.url) return;
+      if (click.id) {
+        if (handledClicksRef.current.has(click.id)) return;
+        handledClicksRef.current.add(click.id);
+      }
+      setInAppToast(null);
+      if (click.nid) markNotificationsRead([click.nid]);
+      else refreshNotificationsSoon(800);
+      goTo(click.url);
+    },
+    [markNotificationsRead, refreshNotificationsSoon, goTo]
+  );
+
+  // The app came to the front: was it opened by tapping a notification while it was asleep?
+  const consumePendingClick = useCallback(async () => {
+    if (typeof window === 'undefined' || !('caches' in window)) return;
+    try {
+      const cache = await caches.open(NAV_CACHE);
+      const hit = await cache.match(PENDING_NAV_KEY);
+      if (!hit) return;
+      const click = await hit.json().catch(() => null);
+      await cache.delete(PENDING_NAV_KEY);
+      if (!click || Date.now() - (click.at || 0) > PENDING_NAV_MAX_AGE_MS) return;
+      handleNotificationClick(click);
+    } catch (_) {}
+  }, [handleNotificationClick]);
+
+  useEffect(() => {
+    if (!user) {
+      setNotifications([]);
+      setUnreadNotificationCount(0);
+      return undefined;
+    }
+    const saved = readCache(notifCacheKey);
+    if (saved && Array.isArray(saved.items)) {
+      setNotifications(saved.items);
+      setUnreadNotificationCount(Number(saved.unread) || 0);
+    }
+    refreshNotifications();
+    consumePendingClick();
+
+    const timer = setInterval(() => {
+      if (document.hidden) return;
+      if (Date.now() - lastNotifFetchRef.current >= 45000) refreshNotifications();
+    }, 15000);
+    const onFront = () => {
+      if (document.hidden) return;
+      consumePendingClick();
+      refreshNotifications();
+    };
+    document.addEventListener('visibilitychange', onFront);
+    window.addEventListener('focus', onFront);
+    window.addEventListener('pageshow', onFront);
+    return () => {
+      clearInterval(timer);
+      clearTimeout(notifTimerRef.current);
+      document.removeEventListener('visibilitychange', onFront);
+      window.removeEventListener('focus', onFront);
+      window.removeEventListener('pageshow', onFront);
+    };
+  }, [user?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Realtime: while the server pushes chat news, the badge is kept up to date by those pushes
   const pathname = usePathname();
@@ -118,6 +296,13 @@ export function NotificationProvider({ children }) {
       return next;
     });
   });
+  // Something happened that usually comes with a notification: bring the bell list up to date
+  useRealtimeEvent('chat:message', (payload) => {
+    if (!user || String(payload?.message?.senderId || '') === String(user._id)) return;
+    refreshNotificationsSoon(2000);
+  });
+  useRealtimeEvent('live:changed', () => refreshNotificationsSoon(2500));
+
   // The channel was (re)opened: count again once
   useRealtimeEvent('resync', () => {
     if (onChatPageRef.current || document.hidden) return;
@@ -328,6 +513,10 @@ export function NotificationProvider({ children }) {
       navigator.serviceWorker
         .register('/sw.js')
         .then((reg) => {
+          // pick up a newer notification handler without waiting for the browser's own check
+          try {
+            reg.update();
+          } catch (_) {}
           // If already granted, ensure push subscription is active on server
           if (Notification.permission === 'granted' && user) {
             reg.pushManager.getSubscription().then((sub) => {
@@ -359,6 +548,16 @@ export function NotificationProvider({ children }) {
             type: notif.dataType,
           });
           refreshUnreadChatCount();
+          refreshNotificationsSoon(1200);
+        } else if (event.data?.type === 'NOTIFICATION_CLICK') {
+          // a phone / desktop notification was tapped: open what it is about
+          handleNotificationClick(event.data.click);
+          if (typeof caches !== 'undefined') {
+            caches
+              .open(NAV_CACHE)
+              .then((c) => c.delete(PENDING_NAV_KEY))
+              .catch(() => {});
+          }
         }
       };
 
@@ -367,7 +566,7 @@ export function NotificationProvider({ children }) {
         navigator.serviceWorker.removeEventListener('message', handleSwMessage);
       };
     }
-  }, [user, playSound, subscribeDevice]);
+  }, [user, playSound, subscribeDevice, handleNotificationClick, refreshNotificationsSoon]);
 
   // Request permission and subscribe
   const enableNotifications = async () => {
@@ -465,6 +664,11 @@ export function NotificationProvider({ children }) {
         playNotificationSound,
         unreadChatCount,
         refreshUnreadChatCount,
+        notifications,
+        unreadNotificationCount,
+        refreshNotifications,
+        openNotification,
+        markAllNotificationsRead,
       }}
     >
       {children}
@@ -509,17 +713,8 @@ export function NotificationProvider({ children }) {
       {inAppToast && (
         <div
           onClick={() => {
-            const destUrl = inAppToast.url;
-            if (destUrl) {
-              if (typeof window !== 'undefined' && destUrl.startsWith('/chat')) {
-                window.dispatchEvent(new CustomEvent('portal_open_chat_url', { detail: { url: destUrl } }));
-              }
-              try {
-                router.push(destUrl);
-              } catch (_) {
-                if (typeof window !== 'undefined') window.location.href = destUrl;
-              }
-            }
+            if (inAppToast.url) goTo(inAppToast.url);
+            refreshNotificationsSoon(1500);
             setInAppToast(null);
           }}
           className="fixed top-4 left-4 right-4 max-w-md mx-auto z-50 cursor-pointer bg-slate-900/95 backdrop-blur-md border border-emerald-500/40 text-white p-3.5 rounded-2xl shadow-2xl flex items-start gap-3 animate-in fade-in slide-in-from-top-4 hover:border-emerald-400 transition-all"
