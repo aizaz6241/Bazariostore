@@ -3,7 +3,8 @@ import { getAuthSession } from '@/lib/auth';
 import Member from '@/lib/models/Member';
 import ChatMessage from '@/lib/models/ChatMessage';
 import { syncEcommerceAdmins } from '@/lib/adminSync';
-import { proofCounts } from '@/lib/utils/paymentProofs';
+import { proofCounts, myProofCounts } from '@/lib/utils/paymentProofs';
+import { openProofRequestCount, myProofRequestCounts } from '@/lib/utils/proofRequests';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,10 +86,17 @@ export async function GET(req) {
     if (session.role === 'admin') {
       try {
         proofs = await proofCounts();
+        proofs.requests = await openProofRequestCount();
       } catch (e) {
-        proofs = { draft: 0, latest: null };
+        proofs = { draft: 0, latest: null, requests: 0 };
       }
     }
+    // Everyone's OWN proofs group: the complete proofs of the person's own sellers
+    let myProofs = { total: 0, fresh: 0, latest: null, open: 0, answered: 0 };
+    try {
+      const [counts, reqs] = await Promise.all([myProofCounts(session._id), myProofRequestCounts(session._id)]);
+      myProofs = { ...counts, ...reqs };
+    } catch (e) {}
 
     return NextResponse.json({
       contacts: enrichedContacts,
@@ -102,6 +110,7 @@ export async function GET(req) {
       },
       totalUnreadCount,
       proofs,
+      myProofs,
     });
   } catch (err) {
     console.error('Fetch chat contacts error:', err);

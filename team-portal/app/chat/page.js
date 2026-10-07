@@ -10,6 +10,7 @@ import { readCache, writeCache, dropCache } from '@/lib/clientCache';
 import { useRealtime, useRealtimeEvent } from '@/components/RealtimeProvider';
 import { useLiveRefresh } from '@/components/LiveProvider';
 import PaymentProofsPane from '@/components/PaymentProofsPane';
+import MyProofsPane from '@/components/MyProofsPane';
 import { getSavedMedia, saveMedia, dropSavedMedia } from '@/lib/mediaCache';
 import {
   Send,
@@ -125,6 +126,8 @@ export default function ChatPage() {
 const chatUrlOf = (chat) =>
   chat.type === 'proofs'
     ? '/chat?chatType=proofs'
+    : chat.type === 'myproofs'
+    ? '/chat?chatType=myproofs'
     : chat.type === 'personal' && chat.contact?._id
     ? `/chat?chatType=personal&contactId=${chat.contact._id}`
     : `/chat?chatType=${chat.type === 'materials' ? 'materials' : 'group'}`;
@@ -154,6 +157,8 @@ function ChatPageInner() {
   const [contactsLoaded, setContactsLoaded] = useState(() => !!readCache(contactsKey));
   // "Payment Proofs" group (partners only): how many deposits still wait for their proof
   const [proofsMeta, setProofsMeta] = useState(() => readCache(contactsKey)?.proofs || null);
+  // Everyone's own proofs group: the complete proofs of the person's own sellers
+  const [myProofsMeta, setMyProofsMeta] = useState(() => readCache(contactsKey)?.myProofs || null);
 
   // Mobile View Flow (WhatsApp Style): 'list' (shows all chats) or 'chat' (inside active conversation)
   const [mobileView, setMobileView] = useState('list');
@@ -248,6 +253,8 @@ function ChatPageInner() {
   const conversationIdOf = (chat) =>
     chat.type === 'proofs'
       ? 'payment_proofs'
+      : chat.type === 'myproofs'
+      ? 'my_payment_proofs'
       : chat.type === 'materials'
       ? 'materials_group'
       : chat.type === 'personal'
@@ -266,6 +273,8 @@ function ChatPageInner() {
   materialsMetaRef.current = materialsMeta;
   const proofsMetaRef = useRef(proofsMeta);
   proofsMetaRef.current = proofsMeta;
+  const myProofsMetaRef = useRef(myProofsMeta);
+  myProofsMetaRef.current = myProofsMeta;
 
   // ─── Typing & online / last seen — ADMINS ONLY ───
   // The server sends these to admin accounts only, so for a member everything below stays
@@ -465,7 +474,9 @@ function ChatPageInner() {
         setMaterialsMeta(materialsGroup);
         proofsMetaRef.current = data.proofs || null;
         setProofsMeta(data.proofs || null);
-        writeCache(contactsKey, { contacts: data.contacts || [], group, materialsGroup, proofs: data.proofs || null });
+        myProofsMetaRef.current = data.myProofs || null;
+        setMyProofsMeta(data.myProofs || null);
+        writeCache(contactsKey, { contacts: data.contacts || [], group, materialsGroup, proofs: data.proofs || null, myProofs: data.myProofs || null });
         if (typeof data.totalUnreadCount === 'number') {
           window.dispatchEvent(new CustomEvent('chat_unread_updated', { detail: data.totalUnreadCount }));
         }
@@ -479,7 +490,7 @@ function ChatPageInner() {
 
   // A new deposit / a proof added by the other partner: refresh the "N pending" label
   useLiveRefresh(() => {
-    if (isAdminRef.current) fetchContacts();
+    fetchContacts();
   });
 
   // The chat list changed on this screen (a pushed message, a chat that was opened): show it,
@@ -500,7 +511,7 @@ function ChatPageInner() {
       materialsMetaRef.current = m;
       setMaterialsMeta(m);
     }
-    writeCache(contactsKey, { contacts: c, group: g, materialsGroup: m, proofs: proofsMetaRef.current });
+    writeCache(contactsKey, { contacts: c, group: g, materialsGroup: m, proofs: proofsMetaRef.current, myProofs: myProofsMetaRef.current });
     const total = (g.unreadCount || 0) + (m.unreadCount || 0) + c.reduce((sum, x) => sum + (x.unreadCount || 0), 0);
     window.dispatchEvent(new CustomEvent('chat_unread_updated', { detail: total }));
   };
@@ -592,6 +603,8 @@ function ChatPageInner() {
     if (ct === 'group') return { type: 'group' };
     // partners only (the server refuses everyone else as well)
     if (ct === 'proofs') return isAdminRef.current ? { type: 'proofs' } : null;
+    // everyone's own group (the proofs of the person's own sellers)
+    if (ct === 'myproofs') return { type: 'myproofs' };
     if (ct === 'personal' && cid) {
       const match = contactsRef.current.find((c) => String(c._id) === String(cid));
       return { type: 'personal', contact: match || { _id: cid, name: 'Direct Message', username: 'user', role: 'member', placeholder: true } };
@@ -663,7 +676,7 @@ function ChatPageInner() {
     // Loading a chat also marks it as read on the server. While the phone shows the chat list the
     // conversation is not in front of anyone, so it is left alone (and stays unread).
     // "Payment Proofs" is not a message chat: its own screen loads its cards
-    if (!paneVisibleRef.current || activeChat.type === 'proofs') {
+    if (!paneVisibleRef.current || activeChat.type === 'proofs' || activeChat.type === 'myproofs') {
       if (!quiet) setLoadingMessages(false);
       return;
     }
@@ -807,7 +820,7 @@ function ChatPageInner() {
     }
     justOpenedRef.current = paneVisible;
 
-    if (activeChat.type === 'proofs') {
+    if (activeChat.type === 'proofs' || activeChat.type === 'myproofs') {
       chatKeyRef.current = '';
       messagesSigRef.current = '';
       messagesCursorRef.current = 0;
@@ -1909,6 +1922,11 @@ function ChatPageInner() {
                 </p>
                 <div className="mt-1 flex items-center space-x-1.5">
                   <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 font-bold tracking-wide uppercase">Partners only</span>
+                  {proofsMeta?.requests > 0 && (
+                    <span className="shrink-0 px-2 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold">
+                      {proofsMeta.requests} request{proofsMeta.requests === 1 ? '' : 's'}
+                    </span>
+                  )}
                   {proofsMeta?.draft > 0 && (
                     <span className="!ml-auto shrink-0 px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold">{proofsMeta.draft} pending</span>
                   )}
@@ -1916,6 +1934,45 @@ function ChatPageInner() {
               </div>
             </button>
           )}
+
+          {/* ── 4. PINNED: the person's OWN proofs (complete proofs of his own sellers, view only) ── */}
+          {(() => {
+            const fresh = (myProofsMeta?.fresh || 0) + (myProofsMeta?.answered || 0);
+            return (
+              <button
+                onClick={() => openChat({ type: 'myproofs' })}
+                className={`w-full p-3.5 flex items-start space-x-3 text-left transition-all ${
+                  activeChat.type === 'myproofs' && paneVisible ? 'bg-emerald-50/90 border-l-4 border-emerald-600' : 'hover:bg-slate-50'
+                }`}
+              >
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center text-white shrink-0 shadow-sm">
+                  <ReceiptText className="w-6 h-6" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <span className={`text-xs text-slate-900 truncate ${fresh > 0 ? 'font-extrabold' : 'font-bold'}`}>{isAdmin ? 'My Payment Proofs' : 'Payment Proofs'}</span>
+                    {myProofsMeta?.latest?.at && (
+                      <span className={`text-[10px] shrink-0 ml-1 ${fresh > 0 ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>{formatMessageTime(myProofsMeta.latest.at)}</span>
+                    )}
+                  </div>
+                  <p className={`text-[11px] truncate mt-0.5 ${fresh > 0 ? 'text-slate-900 font-semibold' : 'text-slate-500'}`}>
+                    {myProofsMeta?.latest
+                      ? `${myProofsMeta.latest.storeName}: proof added`
+                      : 'Proofs of your own sellers appear here'}
+                  </p>
+                  <div className="mt-1 flex items-center space-x-1.5">
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-bold tracking-wide uppercase">My sellers</span>
+                    {myProofsMeta?.open > 0 && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-medium">
+                        {myProofsMeta.open} request{myProofsMeta.open === 1 ? '' : 's'} waiting
+                      </span>
+                    )}
+                    {fresh > 0 && <span className="!ml-auto shrink-0 px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">{fresh} new</span>}
+                  </div>
+                </div>
+              </button>
+            );
+          })()}
 
           {/* Section Divider: Direct 1-on-1 Messages */}
           <div className="px-4 py-2 bg-slate-100/70 text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center justify-between">
@@ -2061,13 +2118,23 @@ function ChatPageInner() {
           <PaymentProofsPane
             visible={paneVisible}
             onBack={closeChat}
-            onCounts={(c) => setProofsMeta((prev) => ({ ...(prev || {}), draft: c?.draft || 0 }))}
+            onCounts={(c) => setProofsMeta((prev) => ({ ...(prev || {}), draft: c?.draft || 0, requests: typeof c?.requests === 'number' ? c.requests : prev?.requests || 0 }))}
+          />
+        </div>
+      )}
+      {activeChat.type === 'myproofs' && (
+        <div className={`flex-1 min-w-0 ${mobileView === 'list' ? 'hidden md:flex' : 'flex'}`}>
+          <MyProofsPane
+            visible={paneVisible}
+            isPartner={isAdmin}
+            onBack={closeChat}
+            onSeen={(c) => setMyProofsMeta((prev) => ({ ...(prev || {}), fresh: 0, answered: 0, total: c?.total || 0, open: c?.open || 0 }))}
           />
         </div>
       )}
       <div
         className={`flex-1 flex-col bg-slate-50/60 min-w-0 relative ${
-          activeChat.type === 'proofs' && isAdmin ? 'hidden' : mobileView === 'list' ? 'hidden md:flex' : 'flex'
+          (activeChat.type === 'proofs' && isAdmin) || activeChat.type === 'myproofs' ? 'hidden' : mobileView === 'list' ? 'hidden md:flex' : 'flex'
         }`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}

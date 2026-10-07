@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthSession } from '@/lib/auth';
 import { listProofs } from '@/lib/utils/paymentProofs';
+import { openProofRequests } from '@/lib/utils/proofRequests';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +18,8 @@ export async function GET(req) {
       limit: searchParams.get('limit') || 60,
       before: searchParams.get('before'),
     });
+    // members' "payment made, proof missing" requests that still wait for an answer
+    data.requests = await openProofRequests().catch(() => []);
     return NextResponse.json(data);
   } catch (err) {
     console.error('Payment proofs list error:', err);

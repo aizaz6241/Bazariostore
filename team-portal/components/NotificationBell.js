@@ -32,7 +32,7 @@ function timeAgo(at) {
 // Where a tap leads, in words (so the row says what will open)
 function destinationLabel(n) {
   const url = n.url || '';
-  if (url.startsWith('/chat?chatType=proofs')) return 'Opens Payment Proofs';
+  if (url.startsWith('/chat?chatType=proofs') || url.startsWith('/chat?chatType=myproofs')) return 'Opens Payment Proofs';
   if (url.startsWith('/chat')) return n.groupKey === 'chat:materials' ? 'Opens Materials group' : 'Opens the chat';
   if (url.startsWith('/wallet')) return 'Opens Wallet';
   if (url.startsWith('/finance')) return 'Opens Finance';

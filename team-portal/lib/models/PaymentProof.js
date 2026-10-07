@@ -46,6 +46,9 @@ const paymentProofSchema = new mongoose.Schema(
     note: { type: String, default: '' },
     completedBy: { type: personSchema, default: () => ({}) },
     completedAt: { type: Date, default: null },
+    // the owner (member / partner the seller belongs to) sees a complete proof in his own group:
+    // false = he has not looked at it yet
+    seenByOwner: { type: Boolean, default: false },
 
     // every time the proof is filled in or changed (old screenshots are never deleted)
     history: [

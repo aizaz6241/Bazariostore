@@ -5,6 +5,7 @@ import { buildLedger } from '@/lib/utils/finance';
 import { submitAction } from '@/lib/utils/approvals';
 import { logFinance, flushFinanceAlertsSoon } from '@/lib/utils/financeLog';
 import { storeChatPicture, deleteChatPictures } from '@/lib/utils/chatMedia';
+import { closeRequestsForProof, MY_PROOFS_URL } from '@/lib/utils/proofRequests';
 
 /**
  * PAYMENT PROOFS (see lib/models/PaymentProof.js).
@@ -99,6 +100,13 @@ export async function syncPaymentProofs(ledger, { force = false } = {}) {
         } else if (have.status === 'draft' && (have.storeName !== fields.storeName || sid(have.ownerId) !== fields.ownerId || have.ownerName !== fields.ownerName)) {
           // still a draft: follow the deposit (seller moved to the correct store / owner assigned)
           await PaymentProof.updateOne({ sourceId: id, status: 'draft' }, { $set: fields });
+        } else if (have.status === 'complete' && (have.storeName !== fields.storeName || sid(have.ownerId) !== fields.ownerId)) {
+          // a complete proof follows its deposit too (deposit moved to the correct seller): it then
+          // shows in the right person's own group, as new
+          await PaymentProof.updateOne(
+            { sourceId: id, status: 'complete' },
+            { $set: { sellerId: fields.sellerId, storeName: fields.storeName, ownerId: fields.ownerId, ownerName: fields.ownerName, ownerRole: fields.ownerRole, seenByOwner: false } }
+          );
         }
       }
 
@@ -225,6 +233,66 @@ export async function listProofs({ status = 'all', limit = 60, before = null } =
   };
 }
 
+/**
+ * A person's OWN Payment Proofs group: the complete proofs of the sellers that belong to him.
+ * Never a draft, never someone else's seller. Read only. Looking marks them as seen.
+ */
+export async function listMyProofs({ session, limit = 60, markSeen = true } = {}) {
+  await connectDB();
+  const me = sid(session._id);
+  const size = Math.min(Math.max(parseInt(limit, 10) || 60, 1), 200);
+  const filter = { ownerId: me, status: 'complete' };
+  const [rows, total] = await Promise.all([
+    PaymentProof.find(filter).select('-screenshot.data -usdtScreenshot.data -history').sort({ depositAt: -1 }).limit(size + 1).lean(),
+    PaymentProof.countDocuments(filter),
+  ]);
+  const page = rows.slice(0, size);
+  const inlineIds = async (field) =>
+    new Set((await PaymentProof.find({ _id: { $in: page.map((r) => r._id) }, [field]: { $nin: ['', null] } }).select('_id').lean()).map((r) => sid(r._id)));
+  const [inline, inlineUsdt] = await Promise.all([inlineIds('screenshot.data'), inlineIds('usdtScreenshot.data')]);
+
+  const items = page.map((p) => {
+    const card = shape(
+      {
+        ...p,
+        history: [],
+        screenshot: { ...p.screenshot, data: inline.has(sid(p._id)) ? 'x' : '' },
+        usdtScreenshot: { ...p.usdtScreenshot, data: inlineUsdt.has(sid(p._id)) ? 'x' : '' },
+      },
+      null
+    );
+    delete card.ledger; // the finance ledger is not the owner's business here
+    delete card.changes;
+    card.isNew = p.seenByOwner !== true;
+    return card;
+  });
+  if (markSeen && items.some((x) => x.isNew)) {
+    await PaymentProof.updateMany({ ownerId: me, status: 'complete', seenByOwner: { $ne: true } }, { $set: { seenByOwner: true } });
+  }
+  return { total, hasMore: rows.length > size, items };
+}
+
+export async function myProofCounts(userId) {
+  await connectDB();
+  const me = sid(userId);
+  const [total, fresh, latest] = await Promise.all([
+    PaymentProof.countDocuments({ ownerId: me, status: 'complete' }),
+    PaymentProof.countDocuments({ ownerId: me, status: 'complete', seenByOwner: { $ne: true } }),
+    PaymentProof.findOne({ ownerId: me, status: 'complete' }).sort({ completedAt: -1 }).select('storeName completedAt usdt').lean(),
+  ]);
+  return { total, fresh, latest: latest ? { storeName: latest.storeName, at: latest.completedAt, usdt: latest.usdt } : null };
+}
+
+/** May this person open the screenshots of this proof? Partners: any. Others: their own complete ones. */
+export async function canSeeProofShots(session, id) {
+  if (!session) return false;
+  if (session.role === 'admin') return true;
+  await connectDB();
+  if (!id || !mongoose.Types.ObjectId.isValid(id)) return false;
+  const p = await PaymentProof.findById(id).select('ownerId status').lean();
+  return !!p && p.status === 'complete' && sid(p.ownerId) === sid(session._id);
+}
+
 export async function proofCounts() {
   await connectDB();
   const [draft, latest] = await Promise.all([
@@ -325,6 +393,7 @@ export async function completeProof({ session, id, usdtAmount, inrAmount, screen
   if (first) {
     proof.completedBy = by;
     proof.completedAt = new Date();
+    proof.seenByOwner = sid(proof.ownerId) === by.id; // the owner added it himself: nothing new for him
   }
   proof.history.push({
     at: new Date(),
@@ -351,6 +420,28 @@ export async function completeProof({ session, id, usdtAmount, inrAmount, screen
     meta: { url: PROOFS_URL },
   });
   await flushFinanceAlertsSoon();
+
+  if (first) {
+    // "payment made, proof missing" requests about this seller are answered by this proof
+    await closeRequestsForProof({ proof, by });
+    // the member the seller belongs to gets it in his own group (the other partner is told by the
+    // finance alert above)
+    if (proof.ownerId && proof.ownerRole === 'member' && sid(proof.ownerId) !== by.id) {
+      try {
+        const { sendPushToUser } = await import('@/lib/utils/push');
+        await sendPushToUser(proof.ownerId, {
+          title: `🧾 Payment proof added: ${proof.storeName}`,
+          body: `₮${fmt(usdt)} received${inr > 0 ? ` for ₹${fmt(inr)}` : ''}. Tap to see the screenshots.`,
+          url: MY_PROOFS_URL,
+          type: 'finance',
+          sound: '/sounds/cash.wav',
+          tag: `myproof-${sid(proof._id)}`,
+        });
+      } catch (e) {
+        console.error('[payment-proofs] owner alert failed:', e.message);
+      }
+    }
+  }
 
   // the card as the screens show it (with the ledger as it is now)
   const fresh = await buildLedger({ fresh: !dep.counted });

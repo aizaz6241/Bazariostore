@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAuthSession } from '@/lib/auth';
-import { inlineShot } from '@/lib/utils/paymentProofs';
+import { inlineShot, canSeeProofShots } from '@/lib/utils/paymentProofs';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +10,8 @@ export async function GET(req, { params }) {
   try {
     const session = await getAuthSession(req);
     if (!session) return new NextResponse('Unauthorized', { status: 401 });
-    if (session.role !== 'admin') return new NextResponse('Partners only', { status: 403 });
+    // partners: any proof. Anyone else: only the complete proofs of his own sellers
+    if (!(await canSeeProofShots(session, params.id))) return new NextResponse('Not allowed', { status: 403 });
     const kind = new URL(req.url).searchParams.get('kind') === 'usdt' ? 'usdt' : 'inr';
     const shot = await inlineShot(params.id, kind);
     if (!shot) return new NextResponse('Not found', { status: 404 });

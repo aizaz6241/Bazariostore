@@ -17,7 +17,7 @@ import { ChevronLeft, ReceiptText, Search, Store, User, CalendarClock, ImagePlus
  */
 
 const fmt = (n, d = 2) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
-const whenText = (d) => {
+export const whenText = (d) => {
   const x = new Date(d);
   if (Number.isNaN(x.getTime())) return '';
   return `${x.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}, ${x.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
@@ -237,7 +237,8 @@ function ProofForm({ proof, onSaved, onCancel }) {
   );
 }
 
-function ProofCard({ proof, onSaved, onView }) {
+// `readOnly`: the card as the seller's own member sees it (nothing to edit, no ledger remarks)
+export function ProofCard({ proof, onSaved, onView, readOnly = false }) {
   const [editing, setEditing] = useState(false);
   const draft = proof.status === 'draft';
   const ledger = proof.ledger || {};
@@ -259,7 +260,8 @@ function ProofCard({ proof, onSaved, onView }) {
             Proof complete
           </span>
         )}
-        {!draft && !editing && (
+        {readOnly && proof.isNew && <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">New</span>}
+        {!readOnly && !draft && !editing && (
           <button onClick={() => setEditing(true)} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold text-slate-500 hover:text-slate-800 hover:bg-slate-100">
             <Pencil className="w-3 h-3" />
             Edit
@@ -269,7 +271,7 @@ function ProofCard({ proof, onSaved, onView }) {
 
       <div className="space-y-1.5">
         <Row icon={Store} label="Seller">{proof.storeName}</Row>
-        <Row icon={User} label="Member">
+        {!readOnly && <Row icon={User} label="Member">
           {proof.ownerName ? (
             <>
               {proof.ownerName}
@@ -278,7 +280,7 @@ function ProofCard({ proof, onSaved, onView }) {
           ) : (
             <span className="text-amber-700">Seller not assigned yet</span>
           )}
-        </Row>
+        </Row>}
         <Row icon={CalendarClock} label="Date & time">{whenText(proof.depositAt)}</Row>
         <Row icon={ReceiptText} label="Deposit">
           ${fmt(real)} added to the store wallet
@@ -299,9 +301,9 @@ function ProofCard({ proof, onSaved, onView }) {
             {proof.note && <p className="text-[11px] text-slate-600 mt-1 break-words">Note: {proof.note}</p>}
             <p className="text-[10px] text-slate-400 mt-1">
               Added by {proof.completedBy || 'a partner'} · {whenText(proof.completedAt)}
-              {proof.changes > 0 && ` · changed ${proof.changes} time${proof.changes === 1 ? '' : 's'}`}
+              {!readOnly && proof.changes > 0 && ` · changed ${proof.changes} time${proof.changes === 1 ? '' : 's'}`}
             </p>
-            {differs && (
+            {!readOnly && differs && (
               <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mt-1.5">
                 The finance ledger now says ₮{fmt(ledger.usdt)} for this deposit.
               </p>
@@ -327,7 +329,7 @@ function ProofCard({ proof, onSaved, onView }) {
         </div>
       )}
 
-      {(draft || editing) && (
+      {!readOnly && (draft || editing) && (
         <ProofForm
           proof={proof}
           onCancel={editing ? () => setEditing(false) : null}
@@ -338,6 +340,80 @@ function ProofCard({ proof, onSaved, onView }) {
         />
       )}
     </article>
+  );
+}
+
+// A member (or a partner, for his own sellers) says: "payment was made, the proof is missing"
+function RequestCard({ request, onAnswered }) {
+  const [mode, setMode] = useState(''); // '' | 'done' | 'declined'
+  const [reply, setReply] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const answer = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const token = localStorage.getItem('portal_token');
+      const res = await fetch(`/api/proofs/requests/${request._id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: mode, reply }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || 'Could not answer the request');
+      onAnswered(request._id);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <li className="py-2.5">
+      <div className="flex items-start justify-between gap-3 text-xs">
+        <div className="min-w-0">
+          <p className="text-slate-900">
+            <b>{request.requesterName}</b> <span className="text-slate-500">({request.requesterRole})</span> says <b className="break-words">{request.storeName}</b> paid
+            {request.amount ? <> <b>{request.amount}</b></> : ''}
+            {request.paidOn ? ` on ${new Date(request.paidOn).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}` : ''}, but the proof is missing.
+          </p>
+          {request.note && <p className="text-[11px] text-slate-600 mt-0.5 break-words">“{request.note}”</p>}
+          <p className="text-[10px] text-slate-400 mt-0.5">Asked {whenText(request.createdAt)}</p>
+        </div>
+        {!mode && (
+          <div className="flex flex-col gap-1 shrink-0">
+            <button onClick={() => setMode('done')} className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold">
+              Mark done
+            </button>
+            <button onClick={() => setMode('declined')} className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-[11px] font-bold">
+              Not received
+            </button>
+          </div>
+        )}
+      </div>
+      {mode && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            maxLength={300}
+            value={reply}
+            onChange={(e) => setReply(e.target.value)}
+            placeholder={mode === 'declined' ? 'Reason (required), e.g. no payment received yet' : 'Reply (optional)'}
+            className="flex-1 min-w-[160px] p-2 rounded-lg border border-slate-300 bg-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+          <button onClick={answer} disabled={busy || (mode === 'declined' && !reply.trim())} className="px-3 py-2 rounded-lg bg-slate-900 text-white text-[11px] font-bold disabled:opacity-50">
+            {busy ? 'Sending…' : mode === 'done' ? 'Send: done' : 'Send: not received'}
+          </button>
+          <button onClick={() => setMode('')} disabled={busy} className="px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold">
+            Cancel
+          </button>
+        </div>
+      )}
+      {error && <p className="text-[11px] text-red-700 mt-1">{error}</p>}
+    </li>
   );
 }
 
@@ -364,7 +440,7 @@ export default function PaymentProofsPane({ visible, onBack, onCounts }) {
       if (mine !== requestNo.current) return;
       setData(json);
       writeCache(cacheKey, json, false);
-      onCountsRef.current?.(json.counts);
+      onCountsRef.current?.({ ...json.counts, requests: (json.requests || []).length });
     } catch (e) {
       if (!silent && mine === requestNo.current) setError(e.message);
     } finally {
@@ -396,12 +472,21 @@ export default function PaymentProofsPane({ visible, onBack, onCounts }) {
         counts.draft = Math.max(0, (counts.draft || 0) - 1);
         counts.complete = (counts.complete || 0) + 1;
       }
-      onCountsRef.current?.(counts);
+      onCountsRef.current?.({ ...counts, requests: (prev.requests || []).length });
       return { ...prev, items, counts };
     });
     load(true);
   };
 
+  const requests = data?.requests || [];
+  const dropRequest = (id) => {
+    setData((prev) => {
+      if (!prev) return prev;
+      const left = (prev.requests || []).filter((r) => r._id !== id);
+      onCountsRef.current?.({ ...prev.counts, requests: left.length });
+      return { ...prev, requests: left };
+    });
+  };
   const counts = data?.counts || { draft: 0, complete: 0 };
   const needle = q.trim().toLowerCase();
   const items = (data?.items || []).filter((p) => {
@@ -474,6 +559,19 @@ export default function PaymentProofsPane({ visible, onBack, onCounts }) {
             <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
             <p className="text-xs mt-2">Loading payment proofs…</p>
           </div>
+        )}
+        {requests.length > 0 && (
+          <section className="w-full max-w-2xl mx-auto bg-blue-50/70 border border-blue-200 rounded-2xl p-4" aria-label="Requests">
+            <h3 className="text-xs font-bold text-blue-900">
+              {requests.length} request{requests.length === 1 ? '' : 's'}: payment made, proof missing
+            </h3>
+            <p className="text-[11px] text-blue-900/70">Completing a proof of that seller answers its request by itself.</p>
+            <ul className="mt-1 divide-y divide-blue-200/70">
+              {requests.map((r) => (
+                <RequestCard key={r._id} request={r} onAnswered={dropRequest} />
+              ))}
+            </ul>
+          </section>
         )}
         {data && items.length === 0 && (
           <div className="py-14 text-center">
