@@ -1,9 +1,9 @@
 import mongoose from 'mongoose';
 
-const MONGO_URI = process.env.MONGO_URI;
+const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
 
 if (!MONGO_URI) {
-  console.warn('⚠️ Warning: MONGO_URI is not set in environment variables.');
+  console.warn('⚠️ Warning: MONGODB_URI / MONGO_URI is not set in environment variables.');
 }
 
 /**
