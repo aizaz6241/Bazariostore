@@ -164,15 +164,7 @@ export default function SellerSupport() {
     const onMessageDelete = (payload) => {
       const targetId = payload?.messageId || payload?._id;
       if (!targetId) return;
-      setMessages((prev) =>
-        Array.isArray(prev)
-          ? prev.map((m) =>
-              m._id === targetId
-                ? { ...m, isDeleted: true, text: '', attachment: null, attachmentName: '', attachmentType: null, deletedAt: payload.deletedAt || new Date() }
-                : m
-            )
-          : prev
-      );
+      setMessages((prev) => (Array.isArray(prev) ? prev.filter((m) => m._id !== targetId) : prev));
     };
 
 

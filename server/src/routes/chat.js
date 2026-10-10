@@ -98,6 +98,9 @@ export async function handleAutoReply(app, conv) {
 // Helper: Fetch messages with cursor-based pagination (latest-first query, returned chronologically)
 export async function fetchConversationMessages(query, { limit = 100, before = null } = {}) {
   const filter = { ...query };
+  if (filter.isDeleted === undefined) {
+    filter.isDeleted = { $ne: true };
+  }
   if (before) {
     const beforeDate = new Date(before);
     if (!isNaN(beforeDate.getTime())) {
@@ -780,11 +783,9 @@ async function clearConversation(req, conv, body) {
   const files = await deleteUnreferencedAttachments(urls);
 
   // Conversation preview: latest message that is still there, or an empty chat
-  const latest = await Message.findOne(scope).sort({ createdAt: -1 }).lean();
+  const latest = await Message.findOne({ ...scope, isDeleted: { $ne: true } }).sort({ createdAt: -1 }).lean();
   if (latest) {
-    conv.lastMessage = latest.isDeleted
-      ? '🚫 Message deleted'
-      : (latest.text || (latest.attachmentType === 'pdf' ? `📄 ${latest.attachmentName || 'PDF Document'}` : '📷 Image Attachment')).slice(0, 70);
+    conv.lastMessage = (latest.text || (latest.attachmentType === 'pdf' ? `📄 ${latest.attachmentName || 'PDF Document'}` : '📷 Image Attachment')).slice(0, 70);
     conv.lastSender = latest.sender;
     conv.lastAt = latest.createdAt;
   } else {
@@ -1029,9 +1030,25 @@ router.delete('/messages/:id', authSellerOrAdmin, async (req, res) => {
       await deleteUnreferencedAttachments([attachmentUrl]);
     }
 
-    // If conversation lastMessage was this, update it
+    // If conversation lastMessage was this, update it to previous non-deleted message
     if (msg.conversation) {
-      await Conversation.findByIdAndUpdate(msg.conversation, { lastMessage: '🚫 Message deleted' });
+      const conv = await Conversation.findById(msg.conversation);
+      if (conv) {
+        const latest = await Message.findOne({
+          conversation: msg.conversation,
+          isDeleted: { $ne: true },
+          _id: { $ne: msg._id },
+        }).sort({ createdAt: -1 }).lean();
+
+        if (latest) {
+          conv.lastMessage = (latest.text || (latest.attachmentType === 'pdf' ? `📄 ${latest.attachmentName || 'PDF Document'}` : '📷 Image Attachment')).slice(0, 70);
+          conv.lastSender = latest.sender;
+          conv.lastAt = latest.createdAt;
+        } else {
+          conv.lastMessage = '';
+        }
+        await conv.save();
+      }
     }
 
     const deletePayload = {

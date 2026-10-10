@@ -51,6 +51,8 @@ export default function ChatMessageBubble({ msg, isMe, myRole = 'seller', onRepl
     setIsSwiping(false);
   };
 
+  if (!msg || msg.isDeleted) return null;
+
   const isTriggered = Math.abs(dragOffset) >= 32;
 
   // Determine quoted author name
@@ -162,30 +164,21 @@ export default function ChatMessageBubble({ msg, isMe, myRole = 'seller', onRepl
             </div>
           )}
 
-          {/* Deleted State vs Regular Content */}
-          {msg.isDeleted ? (
-            <div className="chat-text-content" style={{ fontStyle: 'italic', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span>🚫</span> <span>This message was deleted by administrator</span>
-            </div>
-          ) : (
-            <>
-              {/* Attachment (Image or PDF) */}
-              {msg.attachment ? (
-                <ChatAttachment msg={msg} />
-              ) : typeof msg.text === 'string' &&
-                (msg.text.startsWith('http') ||
-                  msg.text.startsWith('/uploads/') ||
-                  msg.text.startsWith('img/') ||
-                  msg.text.startsWith('/img/')) &&
-                msg.text.match(/\.(jpeg|jpg|png|gif|webp|svg|pdf)(\?.*)?$/i) ? (
-                <ChatAttachment url={msg.text} />
-              ) : null}
+          {/* Attachment (Image or PDF) */}
+          {msg.attachment ? (
+            <ChatAttachment msg={msg} />
+          ) : typeof msg.text === 'string' &&
+            (msg.text.startsWith('http') ||
+              msg.text.startsWith('/uploads/') ||
+              msg.text.startsWith('img/') ||
+              msg.text.startsWith('/img/')) &&
+            msg.text.match(/\.(jpeg|jpg|png|gif|webp|svg|pdf)(\?.*)?$/i) ? (
+            <ChatAttachment url={msg.text} />
+          ) : null}
 
-              {/* Message Text Content */}
-              {msg.text && (!msg.text.match(/\.(jpeg|jpg|png|gif|webp|svg|pdf)(\?.*)?$/i) || msg.attachment) && (
-                <div className="chat-text-content">{msg.text}</div>
-              )}
-            </>
+          {/* Message Text Content */}
+          {msg.text && (!msg.text.match(/\.(jpeg|jpg|png|gif|webp|svg|pdf)(\?.*)?$/i) || msg.attachment) && (
+            <div className="chat-text-content">{msg.text}</div>
           )}
 
           {/* Timestamp & Edited Indicator & Seen Checkmarks */}

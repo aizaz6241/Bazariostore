@@ -354,15 +354,9 @@ export default function ChatInbox() {
     const onMessageDelete = (payload) => {
       const targetId = payload?.messageId || payload?._id;
       if (!targetId) return;
-      setMessages((prev) =>
-        Array.isArray(prev)
-          ? prev.map((m) =>
-              m._id === targetId
-                ? { ...m, isDeleted: true, text: '', attachment: null, attachmentName: '', attachmentType: null, deletedAt: payload.deletedAt || new Date() }
-                : m
-            )
-          : prev
-      );
+      setMessages((prev) => (Array.isArray(prev) ? prev.filter((m) => m._id !== targetId) : prev));
+      if (activeTab === 'sellers') loadSellerConvos();
+      else if (activeTab === 'team') loadTeamMembers();
     };
 
     const onMessagesSeen = ({ conversationId, guestId: seenGuestId, seenAt }) => {
@@ -627,9 +621,9 @@ export default function ChatInbox() {
       await api(`/chat/messages/${msg._id}`, {
         method: 'DELETE',
       });
-      setMessages((prev) =>
-        prev.map((m) => (m._id === msg._id ? { ...m, isDeleted: true, text: '', attachment: null, attachmentName: '', attachmentType: null } : m))
-      );
+      setMessages((prev) => prev.filter((m) => m._id !== msg._id));
+      if (activeTab === 'sellers') loadSellerConvos();
+      else if (activeTab === 'team') loadTeamMembers();
     } catch (err) {
       alert(err.message || 'Failed to delete message');
     }
