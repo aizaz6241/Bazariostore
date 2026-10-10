@@ -22,6 +22,7 @@
     "nodemailer": "^9.0.5",
     "pdfkit": "^0.19.1",
     "socket.io": "^4.7.5",
-    "uploadthing": "^7.7.4"
+    "uploadthing": "^7.7.4",
+    "web-push": "^3.6.7"
   }
 }

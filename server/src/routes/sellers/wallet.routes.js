@@ -266,6 +266,11 @@ router.post('/wallet/withdraw', authSellerOrAdmin, async (req, res) => {
     const seller = await getSellerFromReq(req);
     if (!seller) return res.status(404).json({ message: 'Seller not found. Please log in again.' });
 
+    // A store whose registration is not approved yet cannot withdraw
+    if (seller.status === 'pending_approval' || seller.registrationRejectedAt) {
+      return res.status(403).json({ message: 'Your store registration is not approved yet, so withdrawals are not available.' });
+    }
+
     // ─── UNCONFIRMED ORDERS WITHDRAWAL BLOCKER ───
     const unconfirmedOrders = await Order.find({
       $or: [
@@ -1149,6 +1154,14 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Seller not found' });
     let seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
+
+    // A store whose registration is not approved (still waiting, or rejected) gets no wallet money
+    // (A debit stays allowed so money added by mistake can still be taken back.)
+    if (type === 'credit' && (seller.status === 'pending_approval' || seller.registrationRejectedAt)) {
+      return res.status(400).json({
+        message: `${seller.storeName || 'This store'} is not a registered seller yet (registration ${seller.registrationRejectedAt ? 'rejected' : 'waiting for approval'}). Approve the registration first; funds cannot be added to its wallet.`,
+      });
+    }
 
     seller.wallet = seller.wallet || {};
     const balanceBeforeAdjust = seller.wallet.balance || 0;

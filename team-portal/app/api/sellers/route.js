@@ -50,8 +50,12 @@ export async function GET(req) {
     // Pending orders for every listed seller in ONE query (was one query per seller)
     const pendingAgg = sellerIds.length
       ? await Order.aggregate([
-          { $match: { seller: { $in: sellerIds }, status: { $in: ['pending', 'processing', 'unfulfilled', 'payment_pending'] } } },
-          { $group: { _id: '$seller', n: { $sum: 1 } } },
+          // the order's own store, plus stores that only have items in a multi-store order
+          { $match: { $or: [{ seller: { $in: sellerIds } }, { 'items.seller': { $in: sellerIds } }], status: { $in: ['pending', 'processing', 'unfulfilled', 'payment_pending'] } } },
+          { $project: { s: { $setUnion: [[{ $ifNull: ['$seller', null] }], { $ifNull: ['$items.seller', []] }] } } },
+          { $unwind: '$s' },
+          { $match: { s: { $in: sellerIds } } },
+          { $group: { _id: '$s', n: { $sum: 1 } } },
         ])
       : [];
     const pendingBySeller = new Map(pendingAgg.map((o) => [String(o._id), o.n]));
@@ -83,6 +87,8 @@ export async function GET(req) {
           binance: sellerBinance(ledgerStats, s._id),
           wallet: {
             balance: s.wallet?.balance || 0,
+            // locked in confirmed orders (processing fund)
+            locked: s.wallet?.processingFund || 0,
             totalDeposited,
             totalWithdrawn,
             netRemaining,

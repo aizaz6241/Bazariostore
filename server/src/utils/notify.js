@@ -1,4 +1,5 @@
 import Notification from '../models/Notification.js';
+import { sendPush } from './push.js';
 
 export async function notify(app, { recipientType = 'admin', sellerId = null, type = 'system', title, body = '', link = '' }) {
   try {
@@ -22,6 +23,15 @@ export async function notify(app, { recipientType = 'admin', sellerId = null, ty
         io.to('admins').emit('notify', n);
       }
     }
+    // Phone push as well (admin devices, or this seller's devices)
+    sendPush({
+      to: recipientType === 'seller' ? 'seller' : 'admin',
+      sellerId,
+      title: title || 'Bazario',
+      body,
+      url: link || (recipientType === 'seller' ? '/seller' : '/admin'),
+      tag: `n-${n._id}`,
+    });
     return n;
   } catch (e) {
     console.error('notify failed:', e.message);

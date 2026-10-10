@@ -1069,6 +1069,7 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
     const finalReferral = (assignedReferralCode || referralCode || seller.securityDeposit?.referralCode || '').trim();
 
     seller.status = 'active';
+    seller.registrationRejectedAt = undefined;
     seller.verified = true;
     if (commissionRate !== undefined) seller.commissionRate = Number(commissionRate);
 
@@ -1294,6 +1295,7 @@ router.post('/:id/reject', authAdmin('sellers'), async (req, res) => {
     const wasApproved = await isApprovedSeller(seller);
 
     seller.status = 'suspended';
+    seller.registrationRejectedAt = new Date();
     seller.freezeReason = reason || 'KYC verification or document review rejected by platform administrator.';
 
     if (!wasApproved) {

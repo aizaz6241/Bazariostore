@@ -7,6 +7,7 @@ import Ic from '../components/Icons.jsx';
 import FloatingChatWidget from '../components/FloatingChatWidget.jsx';
 import NotificationToast from '../components/NotificationToast.jsx';
 import { playNotificationSound } from '../utils/audio.js';
+import { enablePush, pushState } from '../utils/push.js';
 
 const NAV = [
   { to: '/admin', icon: 'grid', label: 'Dashboard', end: true },
@@ -45,6 +46,11 @@ export default function AdminLayout() {
   const [toasts, setToasts] = useState([]);
   const [notif, setNotif] = useState({ items: [], unread: 0 });
   const [bellOpen, setBellOpen] = useState(false);
+  // Phone push: silently re-register when already allowed; otherwise show an "Enable alerts" button
+  const [pushPerm, setPushPerm] = useState(() => pushState());
+  useEffect(() => {
+    if (pushState() === 'granted') enablePush('admin').then(setPushPerm);
+  }, []);
   const bellRef = useRef(null);
 
   const addToast = (toast) => {
@@ -185,6 +191,16 @@ export default function AdminLayout() {
             <b className="show-on-mobile" style={{ fontSize: 14 }}>Bazario Admin</b>
           </div>
           <span className="admin-top-right">
+            {pushPerm !== 'granted' && pushPerm !== 'unsupported' && (
+              <button
+                type="button"
+                onClick={async () => setPushPerm(await enablePush('admin', { ask: true }))}
+                title={pushPerm === 'denied' ? 'Notifications are blocked in this browser/phone settings' : 'Get phone notifications'}
+                style={{ border: '1px solid #f59e0b', background: '#fffbeb', color: '#92400e', borderRadius: 999, padding: '4px 10px', fontSize: 12, fontWeight: 700, marginRight: 6 }}
+              >
+                🔔 {pushPerm === 'denied' ? 'Alerts blocked' : 'Enable alerts'}
+              </button>
+            )}
             <span className="bell-wrap" ref={bellRef}>
               <button className="bell" onClick={() => { setBellOpen(!bellOpen); }} aria-label="Notifications">
                 <Ic name="bell" size={20} />
@@ -194,7 +210,14 @@ export default function AdminLayout() {
                 <div className="bell-panel">
                   <div className="bell-head">
                     <b>Notifications</b>
-                    <button onClick={() => { api('/notifications/read-all', { method: 'POST' }).then(loadNotif); }}>Mark all read</button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // show it at once, then confirm with the server
+                        setNotif((cur) => ({ ...cur, unread: 0, items: (cur.items || []).map((x) => ({ ...x, read: true })) }));
+                        api('/notifications/read-all', { method: 'POST' }).catch(() => {}).finally(loadNotif);
+                      }}
+                    >Mark all read</button>
                   </div>
                   {notif.items.length === 0 && <p className="muted-sm bell-empty">No notifications yet.</p>}
                   {notif.items.map((n) => (
@@ -202,7 +225,8 @@ export default function AdminLayout() {
                       key={n._id}
                       className={'bell-item' + (n.read ? '' : ' unread')}
                       onClick={() => {
-                        api(`/notifications/${n._id}/read`, { method: 'POST' }).then(loadNotif);
+                        if (!n.read) setNotif((cur) => ({ ...cur, unread: Math.max(0, (cur.unread || 0) - 1), items: cur.items.map((x) => (x._id === n._id ? { ...x, read: true } : x)) }));
+                        api(`/notifications/${n._id}/read`, { method: 'POST' }).catch(() => {}).finally(loadNotif);
                         setBellOpen(false);
                         if (n.link) navigate(n.link);
                       }}

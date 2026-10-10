@@ -10,6 +10,7 @@ import SellerAppModal from '../components/SellerAppModal.jsx';
 import CurrencySelector from '../components/CurrencySelector.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 import { playNotificationSound } from '../utils/audio.js';
+import { enablePush, pushState } from '../utils/push.js';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
 import { getLiveStoreVisitors } from '../utils/liveMetrics.js';
 
@@ -51,6 +52,11 @@ export default function SellerLayout() {
   };
   const [unreadChat, setUnreadChat] = useState(0);
   const [toasts, setToasts] = useState([]);
+  // Phone push: silently re-register when already allowed; otherwise show an "Enable alerts" button
+  const [pushPerm, setPushPerm] = useState(() => pushState());
+  useEffect(() => {
+    if (pushState() === 'granted' && localStorage.getItem('ng_seller_token')) enablePush('seller').then(setPushPerm);
+  }, []);
   const [liveShoppers, setLiveShoppers] = useState(() => getLiveStoreVisitors(seller?._id, 14));
 
   useEffect(() => {
@@ -467,6 +473,16 @@ export default function SellerLayout() {
             </button>
 
             {/* Desktop Quick Settings / Profile */}
+            {pushPerm !== 'granted' && pushPerm !== 'unsupported' && (
+              <button
+                type="button"
+                onClick={async () => setPushPerm(await enablePush('seller', { ask: true }))}
+                title={pushPerm === 'denied' ? 'Notifications are blocked in this browser/phone settings' : 'Get phone notifications'}
+                style={{ border: '1px solid #f59e0b', background: '#fffbeb', color: '#92400e', borderRadius: 999, padding: '4px 10px', fontSize: 12, fontWeight: 700, marginRight: 6 }}
+              >
+                🔔 {pushPerm === 'denied' ? 'Alerts blocked' : 'Enable alerts'}
+              </button>
+            )}
             <Link to="/seller/settings" className="seller-user-pill" title="Store & Account Settings">
               <span className="seller-user-initial">{seller?.ownerName?.[0] || 'U'}</span>
               <span className="seller-user-email-text hide-on-laptop">{seller?.ownerName || seller?.email}</span>

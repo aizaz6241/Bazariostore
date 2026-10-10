@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLiveRefresh } from '@/components/LiveProvider';
 import { useAuth } from '@/components/AuthProvider';
+import SellerOrdersModal from '@/components/SellerOrdersModal';
 import {
   Users,
   Search,
@@ -53,6 +54,8 @@ export default function SellersPage() {
     details: '',
   });
   const [noteLoading, setNoteLoading] = useState(false);
+  // Pending orders + wallet popup
+  const [ordersSeller, setOrdersSeller] = useState(null);
 
   const isAdmin = user?.role === 'admin';
 
@@ -402,15 +405,18 @@ export default function SellersPage() {
                       </td>
 
                       <td className="py-3 px-4 text-center">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        <button
+                          type="button"
+                          onClick={() => setOrdersSeller(seller)}
+                          title="See pending orders and wallet"
+                          className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold underline-offset-2 hover:underline ${
                             seller.pendingOrdersCount > 0
                               ? 'bg-amber-100 text-amber-800'
                               : 'bg-slate-100 text-slate-500'
                           }`}
                         >
                           {seller.pendingOrdersCount}
-                        </span>
+                        </button>
                       </td>
 
                       <td className="py-3 px-4 text-center">
@@ -500,7 +506,10 @@ export default function SellersPage() {
                       Net: <strong className="text-brand-700">₮{(seller.binance?.netUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
                     </span>
                     <span className="text-slate-500">
-                      Orders: <strong className="text-amber-600">{seller.pendingOrdersCount}</strong>
+                      Orders:{' '}
+                      <button type="button" onClick={() => setOrdersSeller(seller)} className="font-bold text-amber-600 underline underline-offset-2">
+                        {seller.pendingOrdersCount}
+                      </button>
                     </span>
                     <span
                       className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${
@@ -624,9 +633,15 @@ export default function SellersPage() {
                         <Clock className="w-3.5 h-3.5" />
                         <span>Pending Orders:</span>
                       </span>
-                      <span className="font-bold text-amber-600">
-                        {seller.pendingOrdersCount} orders
-                      </span>
+                      <button type="button" onClick={() => setOrdersSeller(seller)} className="font-bold text-amber-600 underline underline-offset-2">
+                        {seller.pendingOrdersCount} orders →
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Wallet available / locked:</span>
+                      <button type="button" onClick={() => setOrdersSeller(seller)} className="font-bold text-slate-700">
+                        ${(seller.wallet?.balance || 0).toFixed(2)} / <span className="text-amber-600">${(seller.wallet?.locked || 0).toFixed(2)}</span>
+                      </button>
                     </div>
 
                     {isAdmin && (
@@ -948,6 +963,7 @@ export default function SellersPage() {
           </div>
         </div>
       )}
+      {ordersSeller && <SellerOrdersModal seller={ordersSeller} onClose={() => setOrdersSeller(null)} />}
     </div>
   );
 }

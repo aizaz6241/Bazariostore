@@ -5,6 +5,7 @@ import Seller from '../models/Seller.js';
 import Admin from '../models/Admin.js';
 import { authAdmin, authSeller, authSellerOrAdmin } from '../middleware/auth.js';
 import { notify } from '../utils/notify.js';
+import { sendPush } from '../utils/push.js';
 import { audit } from '../utils/audit.js';
 import { deleteAttachmentFiles, attachmentLocation } from '../services/uploads.js';
 import { asText } from '../middleware/sanitize.js';
@@ -247,6 +248,15 @@ router.post('/seller/send', authSeller, async (req, res) => {
     });
     await message.save();
 
+    // Phone push to the admins: new seller support message
+    sendPush({
+      to: 'admin',
+      title: `💬 ${seller.storeName || seller.ownerName || 'Seller'} (Seller Support)`,
+      body: cleanText ? cleanText.slice(0, 140) : (attachment ? '📎 Sent an attachment' : 'New message'),
+      url: `/admin/chat?c=${conv._id}`,
+      tag: `chat-${conv._id}`,
+    });
+
     // Broadcast via socket.io
     const io = req.app.get('io');
     if (io) {
@@ -432,6 +442,18 @@ router.post('/admin/conversations/:id/reply', authAdmin('chat'), async (req, res
       } : null,
     });
     await message.save();
+
+    // Phone push to the seller: reply from support
+    if (conv.seller) {
+      sendPush({
+        to: 'seller',
+        sellerId: conv.seller,
+        title: '💬 Bazario Support',
+        body: cleanText ? cleanText.slice(0, 140) : (message.attachment ? '📎 Sent an attachment' : 'New message'),
+        url: '/seller/support',
+        tag: `chat-${conv._id}`,
+      });
+    }
 
     // Broadcast via socket.io
     const io = req.app.get('io');

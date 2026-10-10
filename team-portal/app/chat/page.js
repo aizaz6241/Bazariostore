@@ -186,6 +186,11 @@ function ChatPageInner() {
   // Messages in current chat
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
+  const composerRef = useRef(null);
+  // shrink the message box back to one line after sending
+  useEffect(() => {
+    if (!inputText && composerRef.current) composerRef.current.style.height = 'auto';
+  }, [inputText]);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -2742,12 +2747,24 @@ function ChatPageInner() {
               )}
 
               {/* Text Input */}
-              <input
-                type="text"
+              <textarea
+                ref={composerRef}
+                rows={1}
                 value={inputText}
                 onChange={(e) => {
                   setInputText(e.target.value);
                   reportTyping(e.target.value);
+                  // grow with the text (up to ~6 lines), like WhatsApp
+                  e.target.style.height = 'auto';
+                  e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
+                }}
+                onKeyDown={(e) => {
+                  // Enter sends on a computer; Shift+Enter (and Enter on a phone) adds a new line
+                  const touch = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+                  if (e.key === 'Enter' && !e.shiftKey && !touch && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    if (inputText.trim()) e.currentTarget.form?.requestSubmit();
+                  }
                 }}
                 onBlur={() => reportTyping('')}
                 onPaste={handlePasteEvent}
@@ -2761,7 +2778,7 @@ function ChatPageInner() {
                     ? 'Message team (Ctrl+V screenshot anywhere)...'
                     : `Message ${activeChat.contact?.name || 'privately'} (Ctrl+V screenshot)...`
                 }
-                className="flex-1 min-w-0 px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-2xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                className="flex-1 min-w-0 px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-2xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition resize-none leading-snug max-h-[150px] overflow-y-auto"
               />
 
               {/* Send Button */}

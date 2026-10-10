@@ -147,6 +147,81 @@ async function clampCounters(sellerId) {
  * Carry the fix out.
  * @returns {Promise<{ledger:object, before:object, after:object, storeName:string, sellerId:string}>}
  */
+// ─── What the sellers see on the store website after a move / reverse ───
+// The wrong seller gets a "debit" line in the wallet history and a chat message, exactly like a
+// Direct Debit from the admin panel; the correct seller gets a credit message. The debit line is a
+// manual wallet correction with no USDT, so the finance ledger never counts it as a payout.
+async function tellSellers({ doc, from, to, mode, amount, fromBalance, toBalance, by, note }) {
+  const db = mongoose.connection.db;
+  const now = new Date();
+  const money = (n) => `$${r2(n).toLocaleString('en-US')}`;
+  const line = '━━━━━━━━━━━━━━━━━━━━━━━━━';
+
+  const sendChat = async (seller, text, preview) => {
+    let conv = await db.collection('conversations').findOne({ seller: seller._id, type: { $in: ['seller', null] } });
+    if (!conv) conv = await db.collection('conversations').findOne({ seller: seller._id });
+    if (!conv) {
+      const ins = await db.collection('conversations').insertOne({
+        type: 'seller', seller: seller._id, storeName: seller.storeName || '', sellerName: seller.ownerName || '',
+        sellerEmail: seller.email || '', subject: 'General Seller Support & Operations', status: 'open',
+        unreadForAdmin: 0, unreadForSeller: 0, lastMessage: '', lastSender: 'admin', lastAt: now, createdAt: now, updatedAt: now,
+      });
+      conv = { _id: ins.insertedId };
+    }
+    await db.collection('messages').insertOne({
+      conversation: conv._id, seller: seller._id, sender: 'admin', senderName: by || 'Admin', text,
+      attachment: null, attachmentType: null, isEdited: false, isDeleted: false, isAutoReply: false, isSeen: false,
+      createdAt: now, updatedAt: now,
+    });
+    await db.collection('conversations').updateOne(
+      { _id: conv._id },
+      { $set: { lastMessage: preview, lastSender: 'admin', lastAt: now, updatedAt: now }, $inc: { unreadForSeller: 1 } }
+    );
+  };
+  const sendNote = (seller, title, body) =>
+    db.collection('notifications').insertOne({
+      recipientType: 'seller', seller: seller._id, type: 'withdrawal', title, body, link: '/seller/wallet', read: false, createdAt: now, updatedAt: now,
+    });
+
+  const why = mode === 'move'
+    ? `This deposit was added to your store by mistake and has been moved to the correct store.`
+    : `This deposit was added by mistake (no payment was received), so it has been reversed.`;
+
+  // 1. wrong seller: a debit line in the wallet history
+  await withdrawalsCol().insertOne({
+    type: 'withdrawal',
+    seller: from._id,
+    storeName: from.storeName || '',
+    amount,
+    approvedAmount: amount,
+    helpingAmount: 0,
+    balanceAfter: fromBalance,
+    isManualAdjustment: true,
+    status: 'approved',
+    adminNote: `Debit — ${why}${note ? ` (${note})` : ''}`,
+    transactionRef: '',
+    depositFixOf: doc._id,
+    processedAt: now,
+    processedBy: by || 'Admin',
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  // 2. chat + notification to the wrong seller
+  await sendChat(from,
+    `${line}\n💸 DIRECT WALLET DEBIT (-)\n${line}\nAmount: -${money(amount)}\nNew Available Balance: ${money(fromBalance)}\nReason / Note: ${why}${note ? `\nNote: ${note}` : ''}\nProcessed By: ${by || 'Admin'}\n${line}`,
+    `💸 Debit: ${money(amount)}`);
+  await sendNote(from, '💳 Wallet Debited (-)', `${money(amount)} has been deducted from your wallet. ${why} Balance: ${money(fromBalance)}`);
+
+  // 3. correct seller: told that the deposit is now in its wallet
+  if (mode === 'move' && to) {
+    await sendChat(to,
+      `${line}\n💰 DIRECT WALLET CREDIT (+)\n${line}\nAmount: +${money(amount)}\nNew Available Balance: ${money(toBalance)}\nReason / Note: Your deposit was first added to another store by mistake; it is now in your wallet.\nProcessed By: ${by || 'Admin'}\n${line}`,
+      `💰 Credit: ${money(amount)}`);
+    await sendNote(to, '💳 Wallet Credited (+)', `${money(amount)} has been added to your wallet (your deposit was moved to the correct store). Balance: ${money(toBalance)}`);
+  }
+}
+
 export async function fixDeposit({ id, mode, toSellerId, pkrRate, note = '', by = '' }) {
   const info = await inspectDepositFix({ id, mode, toSellerId });
   const { doc, from, to, amount, helping, opOut, opIn } = info;
@@ -220,6 +295,17 @@ export async function fixDeposit({ id, mode, toSellerId, pkrRate, note = '', by 
   }
 
   await clampCounters(from._id);
+
+  // The sellers are told on the store website (history line + chat). Never blocks the fix itself.
+  try {
+    await tellSellers({
+      doc, from, to, mode, amount, by, note: cleanNote,
+      fromBalance: num(fromNow?.wallet?.balance),
+      toBalance: num(toNow?.wallet?.balance),
+    });
+  } catch (e) {
+    console.error('deposit fix: seller notice failed', e?.message);
+  }
 
   // 4. the ledger divides it again for the correct owner (or drops it, when reversed)
   await FinanceSplit.deleteOne({ sourceId: doc._id });

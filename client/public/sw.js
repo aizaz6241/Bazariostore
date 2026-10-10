@@ -1,5 +1,5 @@
-// Bazario PWA Service Worker (v10 - Forced Cache Invalidation)
-const CACHE_NAME = 'bazario-cache-v10';
+// Bazario PWA Service Worker (v11 - push notifications)
+const CACHE_NAME = 'bazario-cache-v11';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -83,5 +83,40 @@ self.addEventListener('fetch', (event) => {
           return caches.match('/index.html');
         });
       })
+  );
+});
+
+
+// ─── Push notifications (admin + seller phones) ───
+self.addEventListener('push', (event) => {
+  let d = {};
+  try { d = event.data ? event.data.json() : {}; } catch { d = { title: 'Bazario', body: event.data ? event.data.text() : '' }; }
+  const title = d.title || 'Bazario';
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: d.body || '',
+      icon: d.icon || '/icon-192.svg',
+      badge: '/icon-192.svg',
+      tag: d.tag || undefined,
+      renotify: !!d.tag,
+      vibrate: [200, 100, 200],
+      data: { url: d.url || '/' },
+    })
+  );
+});
+
+// Tap on a notification: open (or focus) the app on the page it is about
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = new URL((event.notification.data && event.notification.data.url) || '/', self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if (c.url.startsWith(self.location.origin) && 'focus' in c) {
+          return c.focus().then(() => (c.navigate ? c.navigate(target) : null));
+        }
+      }
+      return self.clients.openWindow ? self.clients.openWindow(target) : null;
+    })
   );
 });

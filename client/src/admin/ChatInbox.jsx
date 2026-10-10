@@ -26,7 +26,10 @@ export default function ChatInbox() {
 
   // Seller Support State
   const [sellerConvos, setSellerConvos] = useState([]);
-  const [selectedSellerId, setSelectedSellerId] = useState(null);
+  // ?c=<conversation id> (from a phone notification) opens that chat directly
+  const [selectedSellerId, setSelectedSellerId] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get('c') || null; } catch { return null; }
+  });
 
   // Team & Super Admin State
   const [teamMembers, setTeamMembers] = useState([]);

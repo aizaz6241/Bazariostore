@@ -88,6 +88,8 @@ const sellerSchema = new mongoose.Schema(
     // Previous Store Seller Flag (Amounts in wallet must NOT be converted to USDT / added to Admin USDT Wallet)
     isPreviousStoreSeller: { type: Boolean, default: false },
     freezeReason: { type: String, default: '' },
+    // Set when an admin rejects the registration (cleared on approval). Such a store gets no wallet money.
+    registrationRejectedAt: Date,
     frozenAt: Date,
     frozenBy: String,
     // Official Seller Warnings (shown in top announcement bar)

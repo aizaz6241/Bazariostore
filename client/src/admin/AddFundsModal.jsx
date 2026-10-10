@@ -45,6 +45,8 @@ export default function AddFundsModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  // Second step: the admin must confirm the exact seller before anything is sent
+  const [confirming, setConfirming] = useState(false);
 
   // Keep sellersList updated
   useEffect(() => {
@@ -65,15 +67,18 @@ export default function AddFundsModal({
     if (!isOpen) {
       setError('');
       setSuccessMsg('');
+      setConfirming(false);
+      // Never carry the last seller over to the next adjustment
+      setSelectedSellerId('');
       return;
     }
 
-    if (preselectedSellerId) {
-      setSelectedSellerId(preselectedSellerId);
-    } else if (sellersList.length > 0 && !selectedSellerId) {
-      setSelectedSellerId(sellersList[0]._id);
-    }
-  }, [isOpen, preselectedSellerId, sellersList]);
+    // No seller is picked automatically: the admin must choose one every time
+    if (preselectedSellerId) setSelectedSellerId(preselectedSellerId);
+  }, [isOpen, preselectedSellerId]);
+
+  // Any change after "Review" sends the admin back to the review step
+  useEffect(() => { setConfirming(false); }, [selectedSellerId, type, usdAmount, inrAmount, helpingAmount, usdtReceived, binanceInr]);
 
   // ESC key listener
   useEffect(() => {
@@ -87,7 +92,10 @@ export default function AddFundsModal({
 
   if (!isOpen) return null;
 
-  const selectedSeller = sellersList.find((s) => String(s._id) === String(selectedSellerId)) || sellersList[0];
+  // Only stores whose registration is approved can get wallet money
+  // (A debit can still pick any store, so money added by mistake can be taken back.)
+  const eligibleSellers = type === 'debit' ? sellersList : sellersList.filter((s) => s.status !== 'pending_approval' && !s.registrationRejectedAt);
+  const selectedSeller = eligibleSellers.find((s) => String(s._id) === String(selectedSellerId)) || null;
   const currentBalance = selectedSeller?.wallet?.balance || 0;
   const isDebit = type === 'debit';
 
@@ -136,8 +144,8 @@ export default function AddFundsModal({
     setError('');
     setSuccessMsg('');
 
-    if (!selectedSellerId) {
-      return setError('Please select a target merchant store.');
+    if (!selectedSellerId || !selectedSeller) {
+      return setError('Please select the seller first (step 1 at the top).');
     }
 
     const amt = parseFloat(usdAmount);
@@ -145,8 +153,10 @@ export default function AddFundsModal({
       return setError('Please enter a valid amount greater than 0.');
     }
 
-    if (isDebit && amt > currentBalance) {
-      // allow with warning or block
+    // Step 1 of submit: show the seller + amount and ask for a second click
+    if (!confirming) {
+      setConfirming(true);
+      return;
     }
 
     setSubmitting(true);
@@ -236,13 +246,27 @@ export default function AddFundsModal({
             </label>
 
             <SellerSelectDropdown
-              sellers={sellersList}
+              sellers={eligibleSellers}
               value={selectedSellerId}
               onChange={(id) => setSelectedSellerId(id)}
               inrRate={INR_RATE}
               hideOwner={true}
               placeholder="-- Choose target merchant store --"
             />
+            {selectedSeller ? (
+              <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 10, border: '2px solid #2563eb', background: '#eff6ff' }}>
+                <div style={{ fontSize: 12, color: '#1e40af', fontWeight: 700 }}>SELECTED SELLER</div>
+                <div style={{ fontSize: 17, fontWeight: 800, color: '#0f172a' }}>{selectedSeller.storeName || selectedSeller.name}</div>
+                <div style={{ fontSize: 13, color: '#334155' }}>
+                  {[selectedSeller.name, selectedSeller.email, selectedSeller.phone].filter(Boolean).join(' · ')}
+                </div>
+                <div style={{ fontSize: 13, color: '#334155' }}>Current balance: <b>${Number(currentBalance).toFixed(2)}</b></div>
+              </div>
+            ) : (
+              <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 10, border: '2px dashed #dc2626', background: '#fef2f2', color: '#b91c1c', fontWeight: 700, fontSize: 13 }}>
+                ⚠️ No seller selected. Choose the seller first. (For a credit only approved sellers are listed.)
+              </div>
+            )}
           </div>
 
           {/* 2. TRANSACTION TYPE TOGGLE (Credit vs Debit) */}
@@ -497,6 +521,17 @@ export default function AddFundsModal({
             </div>
           </div>
 
+          {confirming && selectedSeller && (
+            <div style={{ margin: '4px 0 12px', padding: '12px 14px', borderRadius: 10, border: `2px solid ${isDebit ? '#dc2626' : '#16a34a'}`, background: isDebit ? '#fef2f2' : '#f0fdf4' }}>
+              <div style={{ fontWeight: 800, fontSize: 15, color: '#0f172a' }}>
+                Please check: {isDebit ? 'DEBIT' : 'CREDIT'} ${parsedUsd ? parsedUsd.toFixed(2) : '0.00'} {isDebit ? 'from' : 'to'}
+              </div>
+              <div style={{ fontWeight: 900, fontSize: 18, color: isDebit ? '#b91c1c' : '#15803d' }}>{selectedSeller.storeName || selectedSeller.name}</div>
+              <div style={{ fontSize: 13, color: '#334155' }}>{[selectedSeller.name, selectedSeller.email].filter(Boolean).join(' · ')}</div>
+              <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>Is this the right seller? Press the button again to confirm, or change the seller above.</div>
+            </div>
+          )}
+
           {/* Modal Actions */}
           <div className="afm-footer">
             <button type="button" className="afm-btn-cancel" onClick={onClose} disabled={submitting}>
@@ -505,10 +540,14 @@ export default function AddFundsModal({
             <button
               type="submit"
               className={`afm-btn-submit ${isDebit ? 'debit' : 'credit'}`}
-              disabled={submitting || !usdAmount || parseFloat(usdAmount) <= 0}
+              disabled={submitting || !selectedSeller || !usdAmount || parseFloat(usdAmount) <= 0}
             >
               {submitting ? (
                 'Processing Adjustment...'
+              ) : !selectedSeller ? (
+                'Select a seller first'
+              ) : !confirming ? (
+                `Review → ${selectedSeller.storeName || selectedSeller.name}`
               ) : isDebit ? (
                 `💸 Confirm Debit -$${parsedUsd ? parsedUsd.toFixed(2) : '0.00'} USD`
               ) : (

@@ -72,7 +72,8 @@ async function sendToSubscription(subDoc, payloadObj, notificationIds) {
 
   try {
     const stringPayload = JSON.stringify(payloadObj);
-    await webpush.sendNotification(pushSubscription, stringPayload);
+    // high urgency + 1 day TTL: delivered at once, also to a sleeping phone (iPhone)
+    await webpush.sendNotification(pushSubscription, stringPayload, { TTL: 86400, urgency: 'high' });
     return { success: true, id: subDoc._id };
   } catch (err) {
     // 410 Gone or 404 Not Found indicates subscription expired / revoked
@@ -93,7 +94,7 @@ async function sendToSubscription(subDoc, payloadObj, notificationIds) {
 /**
  * Send push notification to a specific user (all their registered devices).
  */
-export async function sendPushToUser(userId, payload) {
+async function sendPushToUserNow(userId, payload) {
   if (!userId) return [];
   await connectDB();
 
@@ -112,7 +113,7 @@ export async function sendPushToUser(userId, payload) {
 /**
  * Send push notification to all users EXCEPT a specific user (e.g. sender of a group chat).
  */
-export async function sendPushToAllExcept(excludeUserId, payload) {
+async function sendPushToAllExceptNow(excludeUserId, payload) {
   await connectDB();
 
   const formatted = formatPayload(payload);
@@ -138,7 +139,7 @@ export async function sendPushToAllExcept(excludeUserId, payload) {
 /**
  * Send push notification to all users having a specific role (e.g. 'admin').
  */
-export async function sendPushToRole(role, payload) {
+async function sendPushToRoleNow(role, payload) {
   await connectDB();
 
   const members = await Member.find({ role, active: true }).select('_id').lean();
@@ -157,3 +158,27 @@ export async function sendPushToRole(role, payload) {
 }
 
 export { VAPID_PUBLIC_KEY };
+
+
+// ─── Keep the serverless function alive until the push is really sent ───
+// On Vercel a promise that is not awaited is frozen as soon as the response goes out, so a push
+// was sometimes sent only when the next request woke the function up (= "notification arrives
+// when I open the portal"). waitUntil() keeps the function running until the push is delivered.
+// (Same hook @vercel/functions uses; outside Vercel it is simply not there.)
+function keepAlive(promise) {
+  try {
+    const ctx = globalThis[Symbol.for('@vercel/request-context')]?.get?.();
+    if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(promise.catch(() => {}));
+  } catch {}
+  return promise;
+}
+
+export function sendPushToUser(userId, payload) {
+  return keepAlive(sendPushToUserNow(userId, payload));
+}
+export function sendPushToAllExcept(excludeUserId, payload) {
+  return keepAlive(sendPushToAllExceptNow(excludeUserId, payload));
+}
+export function sendPushToRole(role, payload) {
+  return keepAlive(sendPushToRoleNow(role, payload));
+}
