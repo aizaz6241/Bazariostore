@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { resetSocketSession } from './socket.js';
 
 const Ctx = createContext(null);
 
@@ -82,12 +83,18 @@ export function AuthProvider({ children }) {
     const handleStorageChange = () => {
       refreshAuth();
     };
+    // Another tab logged in / out as admin or seller: this tab's live connection must not keep
+    // listening as the previous account.
+    const handleOtherTab = (e) => {
+      if (e.key === null || e.key === 'ng_admin_token' || e.key === 'ng_seller_token') resetSocketSession();
+      refreshAuth();
+    };
 
-    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('storage', handleOtherTab);
     window.addEventListener('auth-change', handleStorageChange);
 
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('storage', handleOtherTab);
       window.removeEventListener('auth-change', handleStorageChange);
     };
   }, [refreshAuth]);
@@ -136,6 +143,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem('ng_seller_token', token);
     localStorage.setItem('ng_seller', JSON.stringify(s));
     localStorage.setItem('ng_active_portal', 'seller');
+    resetSocketSession();
     setSeller(s);
     setActivePortal('seller');
     triggerAuthChange();
@@ -150,6 +158,7 @@ export function AuthProvider({ children }) {
   const logoutSeller = () => {
     localStorage.removeItem('ng_seller_token');
     localStorage.removeItem('ng_seller');
+    resetSocketSession();
     if (localStorage.getItem('ng_active_portal') === 'seller') {
       localStorage.removeItem('ng_active_portal');
       setActivePortal(null);
@@ -169,6 +178,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem('ng_admin', JSON.stringify(a));
     if (a?.name) localStorage.setItem('ng_admin_name', a.name);
     localStorage.setItem('ng_active_portal', 'admin');
+    resetSocketSession();
     setAdmin(a);
     setActivePortal('admin');
     triggerAuthChange();
@@ -178,6 +188,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('ng_admin_token');
     localStorage.removeItem('ng_admin');
     localStorage.removeItem('ng_admin_name');
+    resetSocketSession();
     if (localStorage.getItem('ng_active_portal') === 'admin') {
       localStorage.removeItem('ng_active_portal');
       setActivePortal(null);
@@ -195,6 +206,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('ng_admin');
     localStorage.removeItem('ng_admin_name');
     localStorage.removeItem('ng_active_portal');
+    resetSocketSession();
     setUser(null);
     setSeller(null);
     setAdmin(null);

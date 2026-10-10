@@ -309,6 +309,11 @@ io.on('connection', (socket) => {
     return false;
   };
 
+  // Leave every room this socket joined that matches `test` (its own private room is kept).
+  const leaveRooms = (test) => {
+    for (const r of [...socket.rooms]) if (r !== socket.id && test(r)) socket.leave(r);
+  };
+
   socket.on('seller:join', async ({ token, sellerId } = {}) => {
     try {
       if (!token) return;
@@ -322,6 +327,12 @@ io.on('connection', (socket) => {
         id = String(sellerId);
       }
       if (id) {
+        if (payload.t === 'seller') {
+          // A seller session must never stay inside admin rooms (e.g. an admin logged out and a
+          // seller logged in on the same browser tab), nor inside another seller's room.
+          leaveRooms((r) => r === 'admins' || r.startsWith('admin:') || (r.startsWith('seller:') && r !== `seller:${id}`));
+          delete socket.data.adminId;
+        }
         socket.join(`seller:${id}`);
         socket.data.sellerId = id;
         socket.data.isSeller = payload.t === 'seller';
@@ -346,6 +357,16 @@ io.on('connection', (socket) => {
       if (!token) return;
       const payload = await verifySocketToken(token);
       if (payload && payload.t === 'admin') {
+        // Switching from a seller session to an admin one: drop the seller's room.
+        if (socket.data.isSeller) {
+          leaveRooms((r) => r.startsWith('seller:'));
+          socket.data.isSeller = false;
+          delete socket.data.sellerId;
+        }
+        // a different admin on the same socket: drop the previous admin's private room
+        if (socket.data.adminId && String(socket.data.adminId) !== String(payload.id)) {
+          leaveRooms((r) => r === `admin:${socket.data.adminId}`);
+        }
         socket.data.isAdmin = true;
         socket.data.adminId = payload.id;
         socket.join('admins');

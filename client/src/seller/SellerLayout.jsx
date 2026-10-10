@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useNavigate, Link, Navigate } from 'react-router-dom';
 import { sapi } from '../api.js';
 import { useAuth } from '../auth.jsx';
@@ -42,6 +42,13 @@ export default function SellerLayout() {
       return null;
     }
   });
+  // id of the seller logged in right now (a ref so socket handlers never see a stale one)
+  const sellerIdRef = useRef(seller?._id || null);
+  sellerIdRef.current = seller?._id || null;
+  const isMine = (msg) => {
+    const id = msg?.seller?._id || msg?.seller;
+    return Boolean(id && sellerIdRef.current && String(id) === String(sellerIdRef.current));
+  };
   const [unreadChat, setUnreadChat] = useState(0);
   const [toasts, setToasts] = useState([]);
   const [liveShoppers, setLiveShoppers] = useState(() => getLiveStoreVisitors(seller?._id, 14));
@@ -89,6 +96,8 @@ export default function SellerLayout() {
     const socket = getSocket();
 
     const onMessage = (msg) => {
+      // only this seller's own conversation may raise a toast
+      if (!isMine(msg)) return;
       if (msg.sender === 'admin') {
         playNotificationSound('chat');
         setUnreadChat((prev) => prev + 1);
@@ -191,7 +200,11 @@ export default function SellerLayout() {
   useEffect(() => {
     if (!token || !seller?._id) return;
     const socket = getSocket();
-    const join = () => socket.emit('seller:join', { token, sellerId: seller._id });
+    // fresh read: after logout / account switch a reconnect must not re-join with the old token
+    const join = () => {
+      const t = localStorage.getItem('ng_seller_token');
+      if (t && t === token) socket.emit('seller:join', { token: t, sellerId: seller._id });
+    };
     // اگر socket پہلے سے connected ہو تو فوراً join کریں
     if (socket.connected) join();
     // disconnect/reconnect کی صورت میں دوبارہ join کریں

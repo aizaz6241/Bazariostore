@@ -334,6 +334,11 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
             (conv?._id && String(msg.conversation) === String(conv._id)) ||
             (msg.sender === 'admin' || msg.sender === 'staff');
           if (!isForThisGuest) return;
+        } else {
+          // logged-in seller: only this seller's own conversation
+          const msgSellerId = msg.seller?._id || msg.seller;
+          const mySellerId = currentSeller?._id || (() => { try { return JSON.parse(localStorage.getItem('ng_seller') || 'null')?._id; } catch { return null; } })();
+          if (!msgSellerId || !mySellerId || String(msgSellerId) !== String(mySellerId)) return;
         }
 
         setMessages((prev) => {

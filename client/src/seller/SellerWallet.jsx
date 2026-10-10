@@ -244,8 +244,10 @@ export default function SellerWallet() {
     // This is a safety net in case SellerLayout's join hasn't fired yet
     const sellerData = (() => { try { return JSON.parse(localStorage.getItem('ng_seller') || 'null'); } catch { return null; } })();
     const joinRoom = () => {
-      if (token && sellerData?._id) {
-        socket.emit('seller:join', { token, sellerId: sellerData._id });
+      // fresh read: never re-join with a token that was logged out after this screen opened
+      const t = localStorage.getItem('ng_seller_token');
+      if (t && t === token && sellerData?._id) {
+        socket.emit('seller:join', { token: t, sellerId: sellerData._id });
       }
     };
     if (socket.connected) joinRoom();

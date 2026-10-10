@@ -64,7 +64,12 @@ export default function AdminLayout() {
     }
     loadNotif();
     const socket = getSocket();
-    const join = () => socket.emit('admin:join', { token });
+    // read the token when joining, not when this screen opened: after a logout / account switch
+    // a reconnect must never re-join the admin room with the old admin's token
+    const join = () => {
+      const t = localStorage.getItem('ng_admin_token');
+      if (t) socket.emit('admin:join', { token: t });
+    };
     join();
     socket.on('connect', join);
 

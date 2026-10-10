@@ -34,7 +34,9 @@ export default function OrderDetail() {
 
     const adminToken = localStorage.getItem('ng_admin_token');
     const rejoin = () => {
-      if (adminToken) socket.emit('admin:join', { token: adminToken });
+      // fresh read: the admin may have logged out since this screen opened
+      const t = localStorage.getItem('ng_admin_token');
+      if (t && t === adminToken) socket.emit('admin:join', { token: t });
     };
     if (socket.connected) rejoin();
     socket.on('connect', rejoin);

@@ -18,9 +18,20 @@ import { slugify, calculateHealthStatus } from './helpers.js';
 
 const router = express.Router();
 
-// perf: the six KYC file fields hold base64 images (up to ~1.5 MB each). They are never sent in
+// perf: the KYC file fields hold large base64 images (up to ~2-5 MB each). They are never sent in
 // list responses; the admin UI loads them on demand via GET /api/sellers/:id/kyc (or GET /api/sellers/:id).
-const KYC_FILE_FIELDS = ['idDocumentUrl', 'idCard', 'passportDocumentUrl', 'passport', 'bankStatementUrl', 'bankStatement'];
+const KYC_FILE_FIELDS = [
+  'idDocumentUrl',
+  'idCard',
+  'passportDocumentUrl',
+  'passport',
+  'bankStatementUrl',
+  'bankStatement',
+  'aadhaarFront',
+  'aadhaarBack',
+  'panFront',
+  'panBack',
+];
 const SELLER_LIST_SELECT = ['-passwordHash', ...KYC_FILE_FIELDS.map((f) => `-kycDocuments.${f}`)].join(' ');
 
 // ─── Team portal link: who a seller belongs to ───
@@ -105,8 +116,17 @@ router.get('/', authAdmin('sellers'), async (req, res) => {
         .select('_id')
         .lean();
 
-    const [sellers, withId, withPassport, withBank, productCounts, allOrders] = await Promise.all([
+    const hasSingleDoc = (field) =>
+      Seller.find({ [`kycDocuments.${field}`]: { $nin: ['', null] } })
+        .select('_id')
+        .lean();
+
+    const [sellers, withAadhaarFront, withAadhaarBack, withPanFront, withPanBack, withId, withPassport, withBank, productCounts, allOrders] = await Promise.all([
       Seller.find().select(SELLER_LIST_SELECT).sort({ createdAt: -1 }),
+      hasSingleDoc('aadhaarFront'),
+      hasSingleDoc('aadhaarBack'),
+      hasSingleDoc('panFront'),
+      hasSingleDoc('panBack'),
       hasDoc('idCard', 'idDocumentUrl'),
       hasDoc('passport', 'passportDocumentUrl'),
       hasDoc('bankStatement', 'bankStatementUrl'),
@@ -115,6 +135,10 @@ router.get('/', authAdmin('sellers'), async (req, res) => {
     ]);
 
     const idSet = (rows) => new Set(rows.map((r) => String(r._id)));
+    const kycAadhaarFrontSet = idSet(withAadhaarFront);
+    const kycAadhaarBackSet = idSet(withAadhaarBack);
+    const kycPanFrontSet = idSet(withPanFront);
+    const kycPanBackSet = idSet(withPanBack);
     const kycIdSet = idSet(withId);
     const kycPassportSet = idSet(withPassport);
     const kycBankSet = idSet(withBank);
@@ -163,8 +187,12 @@ router.get('/', authAdmin('sellers'), async (req, res) => {
         plainPassword: '',
         // Tells the UI which documents exist without shipping the files themselves
         kycAvailable: {
-          idCard: kycIdSet.has(id),
-          passport: kycPassportSet.has(id),
+          aadhaarFront: kycAadhaarFrontSet.has(id) || kycIdSet.has(id),
+          aadhaarBack: kycAadhaarBackSet.has(id),
+          panFront: kycPanFrontSet.has(id) || kycPassportSet.has(id),
+          panBack: kycPanBackSet.has(id),
+          idCard: kycIdSet.has(id) || kycAadhaarFrontSet.has(id),
+          passport: kycPassportSet.has(id) || kycPanFrontSet.has(id),
           bankStatement: kycBankSet.has(id),
         },
         productCount: productCountMap.get(id) || 0,
@@ -189,7 +217,15 @@ router.get('/:id/kyc', authAdmin('sellers'), async (req, res, next) => {
     const seller = await Seller.findById(req.params.id).select('kycDocuments storeName ownerName');
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
     const obj = seller.toObject();
-    res.json({ _id: obj._id, kycDocuments: obj.kycDocuments || {} });
+    const kyc = obj.kycDocuments || {};
+    const normalizedKyc = {
+      ...kyc,
+      aadhaarFront: kyc.aadhaarFront || kyc.idCard || kyc.idDocumentUrl || '',
+      panFront: kyc.panFront || kyc.passport || kyc.passportDocumentUrl || '',
+      idCard: kyc.idCard || kyc.idDocumentUrl || kyc.aadhaarFront || '',
+      passport: kyc.passport || kyc.passportDocumentUrl || kyc.panFront || '',
+    };
+    res.json({ _id: obj._id, kycDocuments: normalizedKyc });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

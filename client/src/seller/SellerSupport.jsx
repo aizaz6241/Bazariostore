@@ -129,6 +129,9 @@ export default function SellerSupport() {
 
     const onNewMessage = (msg) => {
       if (!msg) return;
+      // only messages of this seller's own conversation belong in this thread
+      const msgSellerId = msg.seller?._id || msg.seller;
+      if (!msgSellerId || !seller?._id || String(msgSellerId) !== String(seller._id)) return;
       setMessages((prev) => {
         if (!Array.isArray(prev)) return [msg];
         if (prev.some((m) => m?._id === msg?._id)) return prev;

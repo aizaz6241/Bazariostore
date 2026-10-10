@@ -47,13 +47,40 @@ export default function Applications() {
 
   // perf: the sellers list no longer carries the KYC files themselves (they are large base64 images).
   // `kycAvailable` says which documents exist; the file is fetched only when the admin opens it.
+  const getDocTitle = (docType) => {
+    switch (docType) {
+      case 'aadhaarFront': return '🪪 Aadhaar Card (Front Side)';
+      case 'aadhaarBack': return '🪪 Aadhaar Card (Back Side)';
+      case 'panFront': return '📑 PAN Card (Front Side)';
+      case 'panBack': return '📑 PAN Card (Back Side)';
+      case 'idCard': return '🪪 National ID / Aadhaar Front (Legacy)';
+      case 'passport': return '🛂 Passport / PAN Front (Legacy)';
+      case 'bankStatement': return '🏦 Bank Account Statement / Passbook';
+      default: return '📄 KYC Document';
+    }
+  };
+
   const kycValue = (s, docType) => {
     const k = s?.kycDocuments || {};
-    if (docType === 'idCard') return k.idCard || k.idDocumentUrl || '';
-    if (docType === 'passport') return k.passport || k.passportDocumentUrl || '';
-    return k.bankStatement || k.bankStatementUrl || '';
+    if (docType === 'aadhaarFront') return k.aadhaarFront || k.idCard || k.idDocumentUrl || '';
+    if (docType === 'aadhaarBack') return k.aadhaarBack || '';
+    if (docType === 'panFront') return k.panFront || k.passport || k.passportDocumentUrl || '';
+    if (docType === 'panBack') return k.panBack || '';
+    if (docType === 'idCard') return k.idCard || k.idDocumentUrl || k.aadhaarFront || '';
+    if (docType === 'passport') return k.passport || k.passportDocumentUrl || k.panFront || '';
+    if (docType === 'bankStatement') return k.bankStatement || k.bankStatementUrl || '';
+    return k[docType] || '';
   };
-  const hasKyc = (s, docType) => Boolean(kycValue(s, docType) || s?.kycAvailable?.[docType]);
+
+  const hasKyc = (s, docType) => {
+    if (kycValue(s, docType)) return true;
+    if (s?.kycAvailable?.[docType]) return true;
+    if (docType === 'aadhaarFront' && (s?.kycAvailable?.idCard || kycValue(s, 'idCard'))) return true;
+    if (docType === 'panFront' && (s?.kycAvailable?.passport || kycValue(s, 'passport'))) return true;
+    if (docType === 'idCard' && (s?.kycAvailable?.aadhaarFront || kycValue(s, 'aadhaarFront'))) return true;
+    if (docType === 'passport' && (s?.kycAvailable?.panFront || kycValue(s, 'panFront'))) return true;
+    return false;
+  };
 
   const openKycDoc = async (s, docType) => {
     let docUrl = kycValue(s, docType);
@@ -66,12 +93,15 @@ export default function Applications() {
         setSellers((prev) => prev.map((it) => (it._id === s._id ? { ...it, kycDocuments: { ...(it.kycDocuments || {}), ...full } } : it)));
       } catch (e) {
         console.error(e);
-        alert('Could not load this document: ' + e.message);
+        alert('Could not load this document: ' + (e.message || 'Network error'));
         return;
       }
     }
-    if (!docUrl) return;
-    setKycDocModal({ seller: s, docType, docUrl });
+    if (!docUrl) {
+      alert(`No ${getDocTitle(docType)} found for this merchant.`);
+      return;
+    }
+    setKycDocModal({ seller: s, docType, docUrl, title: getDocTitle(docType) });
   };
 
   const loadSellers = () => {
@@ -185,7 +215,7 @@ export default function Applications() {
         <div>
           <h2>⏳ New Merchant Applications &amp; KYC Verification</h2>
           <p className="muted">
-            Review self-registration submissions, verify KYC identity documents (National ID, Passport, Bank Statement), and configure security deposits upon onboarding approval.
+            Review self-registration submissions, verify KYC identity documents (Aadhaar Card, PAN Card, National ID, Bank Statement), and configure security deposits upon onboarding approval.
           </p>
         </div>
       </div>
@@ -334,41 +364,55 @@ export default function Applications() {
                     )}
                   </td>
                   <td>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {hasKyc(s, 'idCard') ? (
-                        <button
-                          type="button"
-                          onClick={() => openKycDoc(s, 'idCard')}
-                          style={{ padding: '3px 8px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
-                        >
-                          🪪 View ID
-                        </button>
-                      ) : (
-                        <small className="muted-sm">No ID</small>
-                      )}
-                      {hasKyc(s, 'passport') ? (
-                        <button
-                          type="button"
-                          onClick={() => openKycDoc(s, 'passport')}
-                          style={{ padding: '3px 8px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
-                        >
-                          🛂 View Passport
-                        </button>
-                      ) : (
-                        <small className="muted-sm">No Passport</small>
-                      )}
-                      {hasKyc(s, 'bankStatement') ? (
-                        <button
-                          type="button"
-                          onClick={() => openKycDoc(s, 'bankStatement')}
-                          style={{ padding: '3px 8px', background: '#eff6ff', border: '1px solid #93c5fd', borderRadius: 4, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', color: '#1d4ed8' }}
-                        >
-                          🏦 Bank Statement
-                        </button>
-                      ) : (
-                        <small className="muted-sm">No Statement</small>
-                      )}
-                    </div>
+                    {(() => {
+                      const hasAadhaarFront = hasKyc(s, 'aadhaarFront');
+                      const hasAadhaarBack = hasKyc(s, 'aadhaarBack');
+                      const hasPanFront = hasKyc(s, 'panFront');
+                      const hasPanBack = hasKyc(s, 'panBack');
+                      const hasBank = hasKyc(s, 'bankStatement');
+                      const hasIdCard = hasKyc(s, 'idCard') && !hasAadhaarFront;
+                      const hasPassport = hasKyc(s, 'passport') && !hasPanFront;
+
+                      const docButtons = [
+                        { key: 'aadhaarFront', label: '🪪 Aadhaar Front', show: hasAadhaarFront, bg: '#eff6ff', border: '#bfdbfe', color: '#1d4ed8' },
+                        { key: 'aadhaarBack', label: '🪪 Aadhaar Back', show: hasAadhaarBack, bg: '#eff6ff', border: '#bfdbfe', color: '#1d4ed8' },
+                        { key: 'panFront', label: '📑 PAN Front', show: hasPanFront, bg: '#fef3c7', border: '#fde68a', color: '#92400e' },
+                        { key: 'panBack', label: '📑 PAN Back', show: hasPanBack, bg: '#fef3c7', border: '#fde68a', color: '#92400e' },
+                        { key: 'idCard', label: '🪪 View ID', show: hasIdCard, bg: '#f1f5f9', border: '#cbd5e1', color: '#334155' },
+                        { key: 'passport', label: '🛂 Passport', show: hasPassport, bg: '#f1f5f9', border: '#cbd5e1', color: '#334155' },
+                        { key: 'bankStatement', label: '🏦 Statement', show: hasBank, bg: '#f0fdf4', border: '#bbf7d0', color: '#166534' },
+                      ].filter((d) => d.show);
+
+                      if (docButtons.length === 0) {
+                        return <small className="muted-sm" style={{ color: '#94a3b8' }}>No Documents</small>;
+                      }
+
+                      return (
+                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', maxWidth: 220 }}>
+                          {docButtons.map((d) => (
+                            <button
+                              key={d.key}
+                              type="button"
+                              onClick={() => openKycDoc(s, d.key)}
+                              style={{
+                                padding: '3px 7px',
+                                background: d.bg,
+                                border: `1px solid ${d.border}`,
+                                color: d.color,
+                                borderRadius: 4,
+                                fontSize: 11,
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap',
+                              }}
+                              title={`Click to view ${d.label}`}
+                            >
+                              {d.label}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td>
                     <small>{fmtDate(s.createdAt)}</small>
@@ -684,28 +728,22 @@ export default function Applications() {
       {/* ─── Modal 3: View KYC Documents ─── */}
       {kycDocModal && (
         <div className="admin-modal-overlay" onClick={() => setKycDocModal(null)}>
-          <div className="admin-modal-box" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
+          <div className="admin-modal-box" style={{ maxWidth: 680 }} onClick={(e) => e.stopPropagation()}>
             <div className="modal-top">
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontSize: 22 }}>📄</span>
                 <div>
                   <h3 style={{ margin: 0, fontSize: 16 }}>
-                    KYC Document: <b>
-                      {kycDocModal.docType === 'idCard'
-                        ? 'National ID / Aadhaar / DL'
-                        : kycDocModal.docType === 'bankStatement'
-                        ? 'Bank Account Statement / Passbook'
-                        : 'Passport / Proof of Address'}
-                    </b>
+                    KYC Document: <b>{kycDocModal.title || getDocTitle(kycDocModal.docType)}</b>
                   </h3>
-                  <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>Merchant: {kycDocModal.seller.storeName} ({kycDocModal.seller.ownerName})</p>
+                  <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>Merchant: {kycDocModal.seller.storeName} ({kycDocModal.seller.ownerName}) &bull; {kycDocModal.seller.email}</p>
                 </div>
               </div>
               <button onClick={() => setKycDocModal(null)} className="btn-close-modal">✕</button>
             </div>
 
             <div style={{ padding: '20px', textAlign: 'center', background: '#0f172a', borderRadius: '0 0 8px 8px' }}>
-              {kycDocModal.docUrl?.toLowerCase().endsWith('.pdf') ? (
+              {kycDocModal.docUrl?.toLowerCase().endsWith('.pdf') || kycDocModal.docUrl?.startsWith('data:application/pdf') ? (
                 <div style={{ padding: '30px 20px', color: '#fff' }}>
                   <p style={{ fontSize: 15, marginBottom: 14 }}>📄 PDF Document Uploaded</p>
                   <a
@@ -718,11 +756,23 @@ export default function Applications() {
                   </a>
                 </div>
               ) : (
-                <img
-                  src={kycDocModal.docUrl}
-                  alt="KYC Document Preview"
-                  style={{ maxWidth: '100%', maxHeight: 480, objectFit: 'contain', borderRadius: 6 }}
-                />
+                <div>
+                  <img
+                    src={kycDocModal.docUrl}
+                    alt={kycDocModal.title || 'KYC Document Preview'}
+                    style={{ maxWidth: '100%', maxHeight: 500, objectFit: 'contain', borderRadius: 6, background: '#1e293b' }}
+                  />
+                  <div style={{ marginTop: 12 }}>
+                    <a
+                      href={kycDocModal.docUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: '#93c5fd', fontSize: 12, textDecoration: 'underline', fontWeight: 600 }}
+                    >
+                      Open Full Size Image ↗
+                    </a>
+                  </div>
+                </div>
               )}
             </div>
           </div>

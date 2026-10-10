@@ -1,3 +1,4 @@
+import { resetSocketSession } from './socket.js';
 export function getApiBase() {
   const customUrl = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
   if (customUrl) return customUrl;
@@ -47,11 +48,13 @@ async function request(path, opts = {}, token) {
         localStorage.removeItem('ng_admin');
         localStorage.removeItem('ng_admin_name');
         if (localStorage.getItem('ng_active_portal') === 'admin') localStorage.removeItem('ng_active_portal');
+        resetSocketSession();
         window.dispatchEvent(new Event('auth-change'));
       } else if (token && token === localStorage.getItem('ng_seller_token')) {
         localStorage.removeItem('ng_seller_token');
         localStorage.removeItem('ng_seller');
         if (localStorage.getItem('ng_active_portal') === 'seller') localStorage.removeItem('ng_active_portal');
+        resetSocketSession();
         window.dispatchEvent(new Event('auth-change'));
       } else if (token && token === localStorage.getItem('ng_user_token')) {
         localStorage.removeItem('ng_user_token');
