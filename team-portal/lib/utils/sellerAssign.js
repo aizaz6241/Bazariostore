@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { connectDB } from '@/lib/db';
 import SellerAssignment from '@/lib/models/SellerAssignment';
 import Member from '@/lib/models/Member';
@@ -16,6 +17,23 @@ export async function currentOwnerOf(sellerId) {
 }
 
 /**
+ * A seller stays with its owner for good once its first deposit has come in (agreed 10 Oct 2026):
+ * until then a wrong choice can still be corrected. Throws when the move is not allowed.
+ */
+export async function assertSellerCanMove(sellerId, targetMemberId) {
+  const current = await currentOwnerOf(sellerId);
+  if (!current || current.memberId === sid(targetMemberId)) return; // first owner, or no change
+  if (!mongoose.Types.ObjectId.isValid(String(sellerId))) throw new Error('Seller not found');
+  const dep = await mongoose.connection.db.collection('withdrawals').findOne(
+    { seller: new mongoose.Types.ObjectId(String(sellerId)), type: 'deposit', status: { $in: ['approved', 'completed'] } },
+    { projection: { _id: 1 } }
+  );
+  if (dep) {
+    throw new Error(`This seller already belongs to ${current.name} and has deposits, so it cannot be moved to someone else.`);
+  }
+}
+
+/**
  * Give a seller to a partner / member (the previous owner, if any, is marked "transferred").
  * Same steps the Sellers page has always done; moved here so an approved request can run them too.
  * @param {{sellerId:string, memberId:string, by:{memberId:string,name:string}}} p
@@ -26,6 +44,7 @@ export async function assignSeller({ sellerId, memberId, by }) {
   const [seller, targetMember] = await Promise.all([Seller.findById(sellerId), Member.findById(memberId)]);
   if (!seller) throw new Error('Seller not found');
   if (!targetMember) throw new Error('Target member not found');
+  await assertSellerCanMove(sellerId, memberId);
 
   // The deal agreement is strictly configured on the Member (not the seller).
   // The assigned store automatically inherits the member's commission agreement.

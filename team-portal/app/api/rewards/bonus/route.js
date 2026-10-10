@@ -26,6 +26,11 @@ export async function POST(req) {
       return NextResponse.json({ message: 'Member not found' }, { status: 404 });
     }
 
+    // A partner never gives a bonus to himself (the other partner would pay half of it)
+    if (String(targetMember._id) === String(session._id)) {
+      return NextResponse.json({ message: 'You cannot give a bonus to yourself. The other partner has to give it.' }, { status: 403 });
+    }
+
     const numAmount = Number(amountPKR);
     const cleanReason = reason || 'Admin Special Performance Bonus';
 

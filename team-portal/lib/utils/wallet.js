@@ -137,13 +137,18 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
     const pctText = `${Number(share.pct.toFixed(2))}%`;
     const myCover = (e.reserveCovers || []).find((c) => String(c.userId) === uid);
 
+    // A referral share: commission from (or part of the withdrawal of) a member this person brought.
+    // Not his own client, so the client totals are left alone.
+    const isReferral = !!share.referralOf;
     if (isDeposit) {
       earnedUSDT += share.amountUSDT;
-      totalClientDepositsINR += e.inr;
-      totalClientDepositsUSDT += e.usdt;
+      if (!isReferral) {
+        totalClientDepositsINR += e.inr;
+        totalClientDepositsUSDT += e.usdt;
+      }
     } else {
       sellerWithdrawUSDT += share.amountUSDT;
-      totalClientWithdrawalsUSDT += e.usdt;
+      if (!isReferral) totalClientWithdrawalsUSDT += e.usdt;
     }
 
     rawTransactions.push({
@@ -156,9 +161,14 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
       sellerId: e.sellerId,
       storeName: e.storeName,
       sourceRef: e.ref || e.id,
-      description: isDeposit
+      description: isReferral
+        ? isDeposit
+          ? `Referral commission from ${e.owner ? e.owner.name : 'your member'} (${e.storeName})`
+          : `Referral part of a seller withdrawal: ${e.owner ? e.owner.name : 'your member'} (${e.storeName})`
+        : isDeposit
         ? `Deposit share ${pctText} from ${e.storeName}`
         : `Seller withdrawal share ${pctText}: ${e.storeName}`,
+      referral: isReferral,
       details: isDeposit
         ? `${share.label} of ₮${e.usdt.toFixed(2)} USDT received on Binance${e.inr > 0 ? ` (₹${e.inr.toLocaleString('en-US')} INR @ ${e.rate})` : ''}`
         : `${share.label} of ₮${e.usdt.toFixed(2)} USDT paid to the seller from Binance${e.inr > 0 ? ` (₹${e.inr.toLocaleString('en-US')} INR @ ${e.rate})` : ''}${

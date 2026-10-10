@@ -15,6 +15,8 @@ import {
   getBackupSettings,
   updateBackupSettings,
 } from '../services/backup.service.js';
+import { runCloudBackup, listCloudBackups, cloudBackupReady } from '../services/cloudBackup.js';
+import { mirrorStatus } from '../services/mirror.js';
 
 const router = Router();
 
@@ -195,6 +197,44 @@ router.post('/upload-restore', checkBackupAuth, superAdminOnly, upload.single('b
     res.json({ ok: true, message: 'Database restored from uploaded file successfully!', result });
   } catch (err) {
     res.status(500).json({ message: `Restore failed: ${err.message}` });
+  }
+});
+
+// ─── Live mirror database status ───
+router.get('/mirror', checkBackupAuth, (req, res) => res.json(mirrorStatus()));
+
+// ─── Cloud backups (encrypted, kept on UploadThing — outside the Render server) ───
+router.get('/cloud', checkBackupAuth, async (req, res) => {
+  try {
+    const list = await listCloudBackups();
+    res.json({
+      ready: cloudBackupReady(),
+      backups: list.map((b) => ({ id: String(b._id), name: b.name, size: b.size, rawSize: b.rawSize, documentsCount: b.documentsCount, createdAt: b.createdAt, reason: b.reason })),
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.post('/cloud/run', checkBackupAuth, async (req, res) => {
+  try {
+    const doc = await runCloudBackup(`manual by ${req.admin?.name || 'admin'}`);
+    await audit(req, 'cloud_backup', 'system', doc.name, { size: doc.size, documents: doc.documentsCount });
+    res.json({ ok: true, message: `Cloud backup stored: ${doc.name}`, backup: { name: doc.name, size: doc.size } });
+  } catch (err) {
+    res.status(500).json({ message: `Cloud backup failed: ${err.message}` });
+  }
+});
+
+// The file is encrypted: the link is only useful together with BACKUP_ENCRYPTION_KEY
+router.get('/cloud/:id/link', checkBackupAuth, superAdminOnly, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Not found' });
+    const b = await mongoose.connection.db.collection('cloudbackups').findOne({ _id: new mongoose.Types.ObjectId(String(req.params.id)), status: 'stored' });
+    if (!b) return res.status(404).json({ message: 'Not found' });
+    res.json({ url: b.url, name: b.name });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 

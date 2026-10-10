@@ -49,8 +49,12 @@ export default function MembersPage() {
     phone: '',
     role: 'member',
     commissionLabel: 'pkr_1to1',
+    referredBy: '',
+    referralPct: '',
   });
   const [createLoading, setCreateLoading] = useState(false);
+  // Second step before sending: everything is shown once more (the referral can never be changed)
+  const [createConfirm, setCreateConfirm] = useState(false);
 
   // Quick switch of commission agreement for Admin
   const handleUpdateCommissionLabel = async (memberId, newLabel) => {
@@ -145,6 +149,17 @@ export default function MembersPage() {
   const handleCreateMember = async (e) => {
     e?.preventDefault();
     if (!createForm.name.trim()) return;
+    if (createForm.referredBy) {
+      const pct = Number(createForm.referralPct);
+      if (!(pct >= 1 && pct <= 20) || Math.round(pct * 2) !== pct * 2) {
+        alert('Commission must be between 1% and 20% (whole or half percent, e.g. 5 or 2.5).');
+        return;
+      }
+    }
+    if (!createConfirm) {
+      setCreateConfirm(true);
+      return;
+    }
 
     try {
       setCreateLoading(true);
@@ -155,16 +170,21 @@ export default function MembersPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(createForm),
+        body: JSON.stringify({
+          ...createForm,
+          referredBy: createForm.commissionLabel === 'pkr_1to1' ? createForm.referredBy : '',
+          referralPct: createForm.commissionLabel === 'pkr_1to1' && createForm.referredBy ? Number(createForm.referralPct) : 0,
+        }),
       });
 
       if (res.ok) {
         const created = await res.json().catch(() => ({}));
         setIsCreateModalOpen(false);
-        setCreateForm({ name: '', username: '', password: '', phone: '', role: 'member', commissionLabel: 'pkr_1to1' });
+        setCreateConfirm(false);
+        setCreateForm({ name: '', username: '', password: '', phone: '', role: 'member', commissionLabel: 'pkr_1to1', referredBy: '', referralPct: '' });
         fetchData();
-        // No password typed: a random one was made. It is shown only this once.
-        if (created.generatedPassword) alert(created.message);
+        // The member is made once the other partner approves (and a random password is shown only now)
+        alert(created.message || 'Sent for approval.');
       } else {
         const data = await res.json();
         alert(data.message || 'Failed to create member');
@@ -421,6 +441,15 @@ export default function MembersPage() {
                           </span>
                         )}
                       </div>
+                      {(member.referredBy || members.some((x) => String(x.referredBy) === String(member._id))) && (
+                        <p className="text-[11px] text-indigo-700 mt-0.5">
+                          {member.referredBy &&
+                            `🤝 Referred by ${members.find((x) => String(x._id) === String(member.referredBy))?.name || '—'} (${member.referralPct}%)`}
+                          {member.referredBy && members.some((x) => String(x.referredBy) === String(member._id)) ? ' • ' : ''}
+                          {members.some((x) => String(x.referredBy) === String(member._id)) &&
+                            `Brought: ${members.filter((x) => String(x.referredBy) === String(member._id)).map((x) => `${x.name} (${x.referralPct}%)`).join(', ')}`}
+                        </p>
+                      )}
                       <p className="text-xs text-slate-400 mt-0.5">
                         @{member.username} {member.phone && `• ${member.phone}`}
                       </p>
@@ -871,7 +900,7 @@ export default function MembersPage() {
                 </label>
                 <select
                   value={createForm.commissionLabel}
-                  onChange={(e) => setCreateForm({ ...createForm, commissionLabel: e.target.value })}
+                  onChange={(e) => { setCreateConfirm(false); setCreateForm({ ...createForm, commissionLabel: e.target.value, referredBy: '', referralPct: '' }); }}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
                 >
                   <option value="pkr_1to1">🇵🇰 1:1 PKR Deal (₹100k INR deposit = Rs 100,000 to member, paid in USDT)</option>
@@ -884,10 +913,72 @@ export default function MembersPage() {
                 </p>
               </div>
 
+              {createForm.commissionLabel === 'pkr_1to1' && (
+                <div className="rounded-2xl border-2 border-indigo-200 bg-indigo-50/50 p-3 space-y-2.5">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Referred by (who brought this member) *</label>
+                    <select
+                      value={createForm.referredBy}
+                      onChange={(e) => { setCreateConfirm(false); setCreateForm({ ...createForm, referredBy: e.target.value }); }}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-medium"
+                    >
+                      <option value="">— No referrer —</option>
+                      {members
+                        .filter((m) => m.role === 'member' && m.active !== false && (m.commissionLabel || 'pkr_1to1') === 'pkr_1to1')
+                        .map((m) => (
+                          <option key={m._id} value={m._id}>
+                            {m.name} (@{m.username})
+                          </option>
+                        ))}
+                    </select>
+                    <p className="text-[11px] text-slate-500 mt-1">Only active 1:1 PKR members can be referrers. Partners and 50% members cannot.</p>
+                  </div>
+                  {createForm.referredBy && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">Referral commission % * (1% – 20%)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="20"
+                        step="0.5"
+                        required
+                        value={createForm.referralPct}
+                        onChange={(e) => { setCreateConfirm(false); setCreateForm({ ...createForm, referralPct: e.target.value }); }}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm"
+                        placeholder="e.g. 5"
+                      />
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Taken from this member&apos;s own share of every deposit (never from the partners). He also bears the same % of this member&apos;s part of every seller withdrawal.
+                      </p>
+                    </div>
+                  )}
+                  <p className="text-[11px] font-semibold text-red-600">⚠ The referral is set only now and can NEVER be changed later.</p>
+                </div>
+              )}
+
+              {createConfirm && (
+                <div className="rounded-2xl border-2 border-amber-400 bg-amber-50 p-3 text-xs text-slate-800 space-y-1">
+                  <div className="font-bold text-sm">Please check before sending:</div>
+                  <div>Name: <b>{createForm.name}</b></div>
+                  <div>Deal: <b>{createForm.commissionLabel === 'inr_50' ? '50% member' : '1:1 PKR member'}</b></div>
+                  {createForm.commissionLabel === 'pkr_1to1' && (
+                    <div>
+                      Referral:{' '}
+                      <b>
+                        {createForm.referredBy
+                          ? `${members.find((m) => m._id === createForm.referredBy)?.name || '?'} — ${createForm.referralPct}%`
+                          : 'none'}
+                      </b>
+                    </div>
+                  )}
+                  <div className="text-[11px] text-slate-600 pt-1">The other partner has to approve it before the member is created. The referral can never be changed afterwards.</div>
+                </div>
+              )}
+
               <div className="flex justify-end space-x-2 pt-3">
                 <button
                   type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
+                  onClick={() => { setIsCreateModalOpen(false); setCreateConfirm(false); }}
                   className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
                 >
                   Cancel
@@ -897,7 +988,7 @@ export default function MembersPage() {
                   disabled={createLoading}
                   className="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white shadow-sm"
                 >
-                  {createLoading ? 'Creating...' : 'Create Member Account'}
+                  {createLoading ? 'Sending...' : createConfirm ? 'Confirm & send for approval' : 'Review'}
                 </button>
               </div>
             </form>

@@ -25,12 +25,10 @@ export async function GET(req) {
       const myAssignments = await SellerAssignment.find({ memberId: session._id, status: 'active' });
       const assignedSellerIds = myAssignments.map((a) => a.sellerId);
       sellersQuery = { _id: { $in: assignedSellerIds } };
-
-      // Trigger automatic milestone check for this member
-      evaluateMemberMilestones(session._id).catch((err) =>
-        console.error('Milestone evaluation background error:', err)
-      );
     }
+
+    // Reward check for everyone (members and partners); at most once a minute, never blocks the list
+    evaluateMemberMilestones().catch((err) => console.error('Reward check background error:', err));
 
     // Only real client stores are listed; test / demo seller accounts are hidden.
     const sellers = await Seller.find({ ...sellersQuery, ...CLIENT_SELLER_FILTER }).select('-kycDocuments').sort({ createdAt: -1 }).limit(500);

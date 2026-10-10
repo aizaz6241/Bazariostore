@@ -8,6 +8,8 @@ import { syncEcommerceAdmins } from '@/lib/adminSync';
 import { loadTeamStats } from '@/lib/utils/teamStats';
 import { logFinance, flushFinanceAlertsSoon } from '@/lib/utils/financeLog';
 import crypto from 'crypto';
+import { submitAction } from '@/lib/utils/approvals';
+import { checkReferral } from '@/lib/utils/referralRules';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,7 +50,9 @@ export async function GET(req) {
   }
 }
 
-// POST /api/members — Admin creates a new team member
+// POST /api/members — Admin asks to create a new team member. The member is created only when
+// the OTHER partner approves (two-person rule). The referral (1:1 members only) is set here, once,
+// and can never be changed later.
 export async function POST(req) {
   try {
     const session = await getAuthSession(req);
@@ -56,16 +60,15 @@ export async function POST(req) {
       return NextResponse.json({ message: 'Forbidden. Admin access required.' }, { status: 403 });
     }
 
-    const { name, username, password, phone, role, commissionLabel } = await req.json();
+    const { name, username, password, phone, commissionLabel, referredBy, referralPct } = await req.json();
 
     if (!name || !name.trim()) {
       return NextResponse.json({ message: 'Member name is required' }, { status: 400 });
     }
 
-    // Auto-generate username and password if not provided
     const cleanName = name.trim();
-    const cleanUsername = (username || cleanName.toLowerCase().replace(/[^a-z0-9]/g, '') + Math.floor(100 + Math.random() * 900)).trim();
-    // No shared default password any more: when none is typed, a random one is made and shown once.
+    const cleanUsername = (username || cleanName.toLowerCase().replace(/[^a-z0-9]/g, '') + Math.floor(100 + Math.random() * 900)).trim().toLowerCase();
+    // No shared default password: when none is typed, a random one is made and shown once.
     const typedPassword = typeof password === 'string' ? password.trim() : '';
     if (typedPassword && typedPassword.length < 6) {
       return NextResponse.json({ message: 'Password must be at least 6 characters long' }, { status: 400 });
@@ -74,50 +77,44 @@ export async function POST(req) {
     const cleanPassword = typedPassword || generatedPassword;
     const cleanCommissionLabel = ['inr_50', 'pkr_1to1'].includes(commissionLabel) ? commissionLabel : 'pkr_1to1';
 
-    const existing = await Member.findOne({ username: cleanUsername });
-    if (existing) {
+    if (await Member.findOne({ username: cleanUsername }).lean()) {
       return NextResponse.json({ message: `Username "${cleanUsername}" is already taken` }, { status: 400 });
     }
 
+    // Referral: checked now and checked again when the other partner approves
+    const hasRef = !!referredBy;
+    if (hasRef) {
+      const referrer = await Member.findById(referredBy).select('name role active commissionLabel').lean().catch(() => null);
+      if (!referrer) return NextResponse.json({ message: 'Referrer not found' }, { status: 400 });
+      const chk = checkReferral({ deal: cleanCommissionLabel, referrer, pct: referralPct });
+      if (!chk.ok) return NextResponse.json({ message: chk.reason }, { status: 400 });
+    }
+
     const passwordHash = await hashPassword(cleanPassword);
-
-    const newMember = await Member.create({
-      name: cleanName,
-      username: cleanUsername,
-      passwordHash,
-      phone: phone || '',
-      // Partners (admins) come only from the store admin panel's Staff list. Anyone created here
-      // is a team member: an extra admin would pause every finance split.
-      role: 'member',
-      commissionLabel: cleanCommissionLabel,
-      wallet: {
-        balancePKR: 0,
-        totalDepositsPKR: 0,
-        totalWithdrawalsPKR: 0,
-        totalBonusesPKR: 0,
-      },
-    });
-
-    await logFinance({
+    const out = await submitAction({
       session,
-      action: 'member.created',
-      summary: `Created member “${cleanName}” (${cleanCommissionLabel === 'inr_50' ? '50% member' : '1:1 PKR member'})`,
-      entity: 'member',
-      entityId: newMember._id,
-      after: { name: cleanName, username: cleanUsername, deal: cleanCommissionLabel },
+      action: 'member_create',
+      payload: {
+        name: cleanName,
+        username: cleanUsername,
+        passwordHash,
+        phone: phone || '',
+        commissionLabel: cleanCommissionLabel,
+        referredBy: hasRef ? String(referredBy) : '',
+        referralPct: hasRef ? Number(referralPct) : 0,
+      },
+      gated: true,
     });
-    await flushFinanceAlertsSoon();
 
-    const safeMember = newMember.toObject();
-    delete safeMember.passwordHash;
-
-    return NextResponse.json({
-      message: generatedPassword
-        ? `Member created. Username: ${cleanUsername} — Password: ${generatedPassword} (shown only once, note it down now).`
-        : 'Member created successfully',
-      member: safeMember,
-      generatedPassword,
-    }, { status: 201 });
+    return NextResponse.json(
+      {
+        message: `${out.message}${generatedPassword ? ` Username: ${cleanUsername} — Password: ${generatedPassword} (shown only once, note it down now).` : ''}`,
+        pending: out.pending,
+        username: cleanUsername,
+        generatedPassword,
+      },
+      { status: 202 }
+    );
   } catch (err) {
     console.error('Create member error:', err);
     return NextResponse.json({ message: err.message }, { status: 500 });

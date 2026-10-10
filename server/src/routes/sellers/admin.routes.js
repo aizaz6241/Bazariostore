@@ -1113,7 +1113,14 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
     if (ownerMember) {
       const assignments = portalAssignmentsCol();
       const current = await assignments.findOne({ sellerId: seller._id, status: 'active' });
-      if (current && String(current.memberId) !== String(ownerMember._id) && wasApproved) {
+      // A seller stays with its owner for good once its first deposit has come in
+      const hasDeposit =
+        current && String(current.memberId) !== String(ownerMember._id)
+          ? await Withdrawal.exists({ seller: seller._id, type: 'deposit', status: { $in: ['approved', 'completed'] } })
+          : null;
+      if (hasDeposit) {
+        approvalNotices.push('The owner (Assigned To) was not changed: this seller already has deposits, so it stays with its current owner.');
+      } else if (current && String(current.memberId) !== String(ownerMember._id) && wasApproved) {
         // Moving an approved seller to another owner changes who earns from it: two people
         const previousOwner = await portalMembersCol().findOne({ _id: current.memberId }).catch(() => null);
         const asked = await requestApproval(req, {

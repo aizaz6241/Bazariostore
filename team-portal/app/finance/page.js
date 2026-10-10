@@ -215,7 +215,7 @@ function AddEntryModal({ data, onClose, onSaved }) {
       usdt: Number(amount),
       inr: Number(inr) || 0,
       pkrRate: Number(pkrRate) || 0,
-      owner: owner ? { id: owner.id, name: owner.name, role: owner.role === 'partner' ? 'admin' : 'member', deal: owner.deal } : null,
+      owner: owner ? { id: owner.id, name: owner.name, role: owner.role === 'partner' ? 'admin' : 'member', deal: owner.deal, referral: owner.referral || null } : null,
       partners: data.partners,
       previousStore: !!seller?.previousStore,
     });
@@ -432,7 +432,7 @@ function FixDepositModal({ row, data, onClose, onSaved }) {
       usdt: row.usdt,
       inr: row.inr || 0,
       pkrRate: row.pkrRate > 0 ? row.pkrRate : Number(pkrRate) || 0,
-      owner: { id: owner.id, name: owner.name, role: owner.role === 'partner' ? 'admin' : 'member', deal: owner.deal },
+      owner: { id: owner.id, name: owner.name, role: owner.role === 'partner' ? 'admin' : 'member', deal: owner.deal, referral: owner.referral || null },
       partners: data.partners,
       previousStore: false,
     });

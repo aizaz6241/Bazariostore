@@ -27,6 +27,38 @@ export default function Backup() {
   const [retention, setRetention] = useState(48);
   const [savingSettings, setSavingSettings] = useState(false);
 
+  // Cloud backups (encrypted copies outside the Render server)
+  const [cloud, setCloud] = useState({ ready: true, backups: [] });
+  const [cloudBusy, setCloudBusy] = useState(false);
+  const loadCloud = () => {
+    api('/backup/cloud').then(setCloud).catch(() => {});
+    api('/backup/mirror').then(setMirror).catch(() => {});
+  };
+  // Live mirror database (second Atlas account)
+  const [mirror, setMirror] = useState(null);
+  const runCloudNow = async () => {
+    setCloudBusy(true);
+    setError('');
+    setOk('');
+    try {
+      const r = await api('/backup/cloud/run', { method: 'POST', timeout: 180000 });
+      setOk(r.message || 'Cloud backup stored');
+      loadCloud();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCloudBusy(false);
+    }
+  };
+  const openCloudFile = async (b) => {
+    try {
+      const r = await api(`/backup/cloud/${b.id}/link`);
+      window.open(r.url, '_blank');
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const loadData = async () => {
     try {
       setError('');
@@ -49,6 +81,7 @@ export default function Backup() {
 
   useEffect(() => {
     loadData();
+    loadCloud();
   }, []);
 
   const handleCreateBackup = async () => {
@@ -409,6 +442,89 @@ export default function Backup() {
         {stats?.settings?.lastHourlyBackupAt && (
           <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #e2e8f0', fontSize: 12, color: '#64748b' }}>
             <span>🕒 Last automated hourly backup taken: <b>{fmtDate(stats.settings.lastHourlyBackupAt)}</b></span>
+          </div>
+        )}
+      </div>
+
+      {/* Live mirror database */}
+      {mirror && (
+        <div className="card" style={{ padding: '14px 20px', marginBottom: 20, border: `2px solid ${mirror.state === 'live' ? '#16a34a' : mirror.enabled ? '#f59e0b' : '#cbd5e1'}` }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <h3 style={{ margin: 0, fontSize: 16 }}>
+              🪞 Mirror database:{' '}
+              {!mirror.enabled ? 'OFF' : mirror.state === 'live' ? '✅ LIVE (every change copied within seconds)' : mirror.state === 'full-copy' ? '⏳ copying everything…' : mirror.state === 'starting' ? '⏳ starting…' : '⚠️ problem'}
+            </h3>
+            <button className="btn-ghost" onClick={loadCloud}>Refresh</button>
+          </div>
+          <div style={{ fontSize: 12, color: '#475569', marginTop: 6, lineHeight: 1.7 }}>
+            {!mirror.enabled && <div>Set MIRROR_MONGO_URI on the server (Render → Environment) to switch it on.</div>}
+            {mirror.mirrorHost && <div>Copy kept on: <b>{mirror.mirrorHost}</b></div>}
+            {mirror.lastFullCopyAt && (
+              <div>
+                Last full copy: <b>{fmtDate(mirror.lastFullCopyAt)}</b>
+                {mirror.lastFullCopy ? ` — ${Number(mirror.lastFullCopy.documents).toLocaleString()} records in ${mirror.lastFullCopy.collections} collections` : ''}
+              </div>
+            )}
+            {mirror.lastEventAt && <div>Last change copied: <b>{fmtDate(mirror.lastEventAt)}</b> ({Number(mirror.eventsApplied).toLocaleString()} since the server started)</div>}
+            {mirror.lastCheckAt && (
+              <div>
+                Last full check: <b>{fmtDate(mirror.lastCheckAt)}</b> —{' '}
+                {mirror.lastCheckDiffs?.length ? <span style={{ color: '#b91c1c' }}>differences found and repaired: {mirror.lastCheckDiffs.map((d) => d.name).join(', ')}</span> : 'every collection matches'}
+              </div>
+            )}
+            {mirror.error && <div style={{ color: '#b91c1c' }}>Error: {mirror.error}</div>}
+          </div>
+        </div>
+      )}
+
+      {/* Cloud backups: the safe copies */}
+      <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 28, border: '2px solid #16a34a' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 16 }}>☁️ Cloud backups — safe copies ({cloud.backups.length})</h3>
+            <p style={{ margin: '4px 0 0', fontSize: 12, color: '#64748b' }}>
+              Every 6 hours, encrypted, stored outside the Render server (they survive restarts and deploys). Kept: all from the last 7 days, one per day for 90 days, one per month for ever.
+            </p>
+          </div>
+          <button className="btn-primary" onClick={runCloudNow} disabled={cloudBusy}>
+            {cloudBusy ? 'Backing up…' : '☁️ Back up now'}
+          </button>
+        </div>
+        {!cloud.ready && (
+          <div style={{ padding: '12px 20px', background: '#fef2f2', color: '#b91c1c', fontSize: 13, fontWeight: 600 }}>
+            ⚠️ Cloud backups are OFF: set UPLOADTHING_TOKEN and BACKUP_ENCRYPTION_KEY on the server (Render → Environment).
+          </div>
+        )}
+        {cloud.backups.length === 0 ? (
+          <p style={{ padding: '14px 20px', fontSize: 13, color: '#64748b', margin: 0 }}>No cloud backup yet.</p>
+        ) : (
+          <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+            <table className="table" style={{ width: '100%', fontSize: 13 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', padding: '8px 20px' }}>Date</th>
+                  <th style={{ textAlign: 'right', padding: '8px 12px' }}>Records</th>
+                  <th style={{ textAlign: 'right', padding: '8px 12px' }}>Size</th>
+                  <th style={{ textAlign: 'left', padding: '8px 12px' }}>Made by</th>
+                  <th style={{ padding: '8px 20px' }} />
+                </tr>
+              </thead>
+              <tbody>
+                {cloud.backups.map((b) => (
+                  <tr key={b.id}>
+                    <td style={{ padding: '8px 20px' }}>{fmtDate(b.createdAt)}</td>
+                    <td style={{ textAlign: 'right', padding: '8px 12px' }}>{Number(b.documentsCount || 0).toLocaleString()}</td>
+                    <td style={{ textAlign: 'right', padding: '8px 12px' }}>{(Number(b.size || 0) / 1024 / 1024).toFixed(2)} MB</td>
+                    <td style={{ padding: '8px 12px', color: '#64748b' }}>{b.reason}</td>
+                    <td style={{ padding: '8px 20px', textAlign: 'right' }}>
+                      <button className="btn-ghost" onClick={() => openCloudFile(b)} title="Encrypted file — open with: node server/scripts/decrypt-backup.mjs <file>">
+                        <Ic name="download" size={14} /> File
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

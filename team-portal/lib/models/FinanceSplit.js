@@ -14,6 +14,8 @@ const shareSchema = new mongoose.Schema(
     label: { type: String, default: '' },
     pct: { type: Number, default: 0 },
     amountUSDT: { type: Number, required: true },
+    // Referral commission: this share was taken out of that member's share (his id)
+    referralOf: { type: String, default: '' },
   },
   { _id: false }
 );
@@ -33,6 +35,9 @@ const financeSplitSchema = new mongoose.Schema(
     ownerName: { type: String, default: '' },
     ownerRole: { type: String, default: '' },
     ownerDeal: { type: String, default: '' },
+    // The owner's referral at the time of the split ({ id, name, pct } or null) — kept so a
+    // later re-split (e.g. a corrected PKR rate) divides it the same way
+    ownerReferral: { type: mongoose.Schema.Types.Mixed, default: null },
     shares: { type: [shareSchema], default: [] },
     // Entry typed in by an admin on the Finance screen (not linked to a store wallet transaction)
     manual: { type: Boolean, default: false },

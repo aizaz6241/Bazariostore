@@ -139,7 +139,7 @@ async function computeLedger() {
 
   const [partnerDocs, memberDocs, sellers, assignments, docs, splitDocs, payoutDocs, claimDocs, reserveDocs] = await Promise.all([
     Member.find({ role: 'admin', active: true }).sort({ createdAt: 1 }).select('name username email').lean(),
-    Member.find({}).select('name username role commissionLabel active wallet').lean(),
+    Member.find({}).select('name username role commissionLabel active wallet referredBy referralPct').lean(),
     Seller.find({}).select('storeName ownerName wallet isTestAccount accountType isPreviousStoreSeller').lean(),
     SellerAssignment.find({ status: 'active' }).select('sellerId memberId').lean(),
     Withdrawal.find({
@@ -159,6 +159,16 @@ async function computeLedger() {
   const partnersOk = partners.length === 2;
 
   const memberMap = new Map(memberDocs.map((m) => [sid(m._id), m]));
+  // Referral of a 1:1 member: who brought him and at what %. Only while both are active 1:1
+  // members (a referrer whose account is switched off earns nothing on new splits).
+  const referralOf = (m) => {
+    if (!m || m.role !== 'member' || (m.commissionLabel || 'pkr_1to1') !== 'pkr_1to1') return null;
+    const pct = num(m.referralPct);
+    if (!m.referredBy || !(pct > 0)) return null;
+    const r = memberMap.get(sid(m.referredBy));
+    if (!r || r.active === false || r.role !== 'member' || (r.commissionLabel || 'pkr_1to1') !== 'pkr_1to1' || sid(r._id) === sid(m._id)) return null;
+    return { id: sid(r._id), name: r.name, pct };
+  };
   const sellerMap = new Map(sellers.map((s) => [sid(s._id), s]));
   const ownerBySeller = new Map(assignments.map((a) => [sid(a.sellerId), sid(a.memberId)]));
   const splitMap = new Map(splitDocs.map((s) => [sid(s.sourceId), s]));
@@ -213,11 +223,11 @@ async function computeLedger() {
     let owner = null;
     if (existing) {
       if (existing.ownerId) {
-        owner = { id: sid(existing.ownerId), name: existing.ownerName, role: existing.ownerRole, deal: existing.ownerDeal };
+        owner = { id: sid(existing.ownerId), name: existing.ownerName, role: existing.ownerRole, deal: existing.ownerDeal, referral: existing.ownerReferral || null };
       }
     } else {
       const m = memberMap.get(ownerBySeller.get(sid(doc.seller)) || '');
-      if (m) owner = { id: sid(m._id), name: m.name, role: m.role, deal: m.commissionLabel || 'pkr_1to1' };
+      if (m) owner = { id: sid(m._id), name: m.name, role: m.role, deal: m.commissionLabel || 'pkr_1to1', referral: referralOf(m) };
     }
 
     const base = {
@@ -300,6 +310,7 @@ async function computeLedger() {
               ownerName: owner ? owner.name : '',
               ownerRole: owner ? owner.role : '',
               ownerDeal: owner ? owner.deal || '' : '',
+              ownerReferral: owner && owner.referral ? owner.referral : null,
               shares,
             },
           },
@@ -418,7 +429,7 @@ async function computeLedger() {
       isManual: true,
       manual: true,
       note: sp.note || '',
-      owner: sp.ownerId ? { id: sid(sp.ownerId), name: sp.ownerName, role: sp.ownerRole, deal: sp.ownerDeal } : null,
+      owner: sp.ownerId ? { id: sid(sp.ownerId), name: sp.ownerName, role: sp.ownerRole, deal: sp.ownerDeal, referral: sp.ownerReferral || null } : null,
       ref: 'manual',
       shares: (sp.shares || []).map((x) => ({ ...x, userId: sid(x.userId) })),
     });
@@ -672,6 +683,7 @@ async function computeLedger() {
       name: m.name,
       role: m.role === 'admin' ? 'partner' : 'member',
       deal: m.role === 'member' ? m.commissionLabel || 'pkr_1to1' : '',
+      referral: referralOf(m), // so the Finance screen preview divides like the server
     }))
     .sort((a, b) => (a.role === b.role ? a.name.localeCompare(b.name) : a.role === 'partner' ? -1 : 1));
 
@@ -820,9 +832,16 @@ export async function createManualEntry({ kind, sellerId, ownerId, inrAmount, us
 
   let owner = null;
   if (ownerId && mongoose.Types.ObjectId.isValid(ownerId)) {
-    const m = await Member.findById(ownerId).select('name role commissionLabel active').lean();
+    const m = await Member.findById(ownerId).select('name role commissionLabel active referredBy referralPct').lean();
     if (!m || m.active === false) throw new Error('Selected person was not found');
-    owner = { id: sid(m._id), name: m.name, role: m.role, deal: m.commissionLabel || 'pkr_1to1' };
+    owner = { id: sid(m._id), name: m.name, role: m.role, deal: m.commissionLabel || 'pkr_1to1', referral: null };
+    // same referral rule as every other deposit / withdrawal of this member
+    if (m.role === 'member' && (m.commissionLabel || 'pkr_1to1') === 'pkr_1to1' && m.referredBy && num(m.referralPct) > 0) {
+      const r = await Member.findById(m.referredBy).select('name role commissionLabel active').lean();
+      if (r && r.active !== false && r.role === 'member' && (r.commissionLabel || 'pkr_1to1') === 'pkr_1to1' && sid(r._id) !== sid(m._id)) {
+        owner.referral = { id: sid(r._id), name: r.name, pct: num(m.referralPct) };
+      }
+    }
   }
   if (!owner && !partnersPayAll) throw new Error('Choose who this seller belongs to');
 
@@ -850,6 +869,7 @@ export async function createManualEntry({ kind, sellerId, ownerId, inrAmount, us
     ownerName: owner ? owner.name : '',
     ownerRole: owner ? owner.role : '',
     ownerDeal: owner ? owner.deal || '' : '',
+    ownerReferral: owner && owner.referral ? owner.referral : null,
     shares: split.shares,
     manual: true,
     note: String(note || '').trim().slice(0, 300),

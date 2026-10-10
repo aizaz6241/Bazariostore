@@ -159,29 +159,10 @@ router.get('/seller/thread', authSeller, async (req, res) => {
       { $set: { conversation: conv._id } }
     );
 
-    // Mark admin messages as seen by seller
-    const now = new Date();
-    const seenRes = await Message.updateMany(
-      {
-        $or: [{ conversation: conv._id }, { seller: seller._id }],
-        sender: { $in: ['admin', 'staff'] },
-        isSeen: { $ne: true },
-      },
-      { $set: { isSeen: true, seenAt: now, seenBy: 'seller' } }
-    );
-
-    if (conv.unreadForSeller > 0 || seenRes.modifiedCount > 0) {
-      conv.unreadForSeller = 0;
-      await conv.save();
-      const io = req.app.get('io');
-      if (io) {
-        io.to('admins').emit('messages:seen', {
-          conversationId: conv._id,
-          sellerId: seller._id,
-          seenAt: now,
-        });
-      }
-    }
+    // Loading the thread does NOT mark anything as seen: the chat widget loads it in the background
+    // on every page (closed), which used to give the admin a blue "seen" tick for pictures the seller
+    // never looked at — and cleared the seller's unread badge. Seen is set only by /seller/read and
+    // the 'seller:read' socket event, which the app sends while the chat is really open on screen.
 
     const { limit, before } = req.query;
     const { messages, hasMore } = await fetchConversationMessages(

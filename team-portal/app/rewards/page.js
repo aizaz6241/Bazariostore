@@ -22,7 +22,11 @@ import {
 export default function RewardsPage() {
   const { user } = useAuth();
   const [claims, setClaims] = useState([]);
-  const [weeklyProgress, setWeeklyProgress] = useState(null);
+  const [progress, setProgress] = useState([]);
+  // Fixing a mistake: { claim, mode: 'edit' | 'reverse' | 'move', memberId, amountPKR, reason }
+  const [fix, setFix] = useState(null);
+  const [fixBusy, setFixBusy] = useState(false);
+  const [fixMsg, setFixMsg] = useState('');
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -54,7 +58,7 @@ export default function RewardsPage() {
       if (rewardsRes.ok) {
         const data = await rewardsRes.json();
         setClaims(data.claims || []);
-        setWeeklyProgress(data.weeklyProgress);
+        setProgress(data.progress || []);
       }
 
       if (membersRes && membersRes.ok) {
@@ -127,6 +131,42 @@ export default function RewardsPage() {
     }
   };
 
+  // Fix a mistake: change a waiting reward, or take back / move an approved one (partner approves)
+  const submitFix = async (e) => {
+    e?.preventDefault();
+    if (!fix) return;
+    setFixBusy(true);
+    setFixMsg('');
+    try {
+      const token = localStorage.getItem('portal_token');
+      const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+      const res =
+        fix.mode === 'edit'
+          ? await fetch(`/api/rewards/${fix.claim._id}`, {
+              method: 'PATCH',
+              headers,
+              body: JSON.stringify({ memberId: fix.memberId, amountPKR: fix.amountPKR, note: fix.reason }),
+            })
+          : await fetch(`/api/rewards/${fix.claim._id}/correct`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ action: fix.mode, memberId: fix.memberId, reason: fix.reason }),
+            });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setFixMsg(data.message || 'Could not save');
+        return;
+      }
+      setFix(null);
+      alert(data.message || 'Saved');
+      fetchData();
+    } catch (err) {
+      setFixMsg(err.message);
+    } finally {
+      setFixBusy(false);
+    }
+  };
+
   // Admin awards custom direct bonus
   const handleGrantCustomBonus = async (e) => {
     e?.preventDefault();
@@ -184,8 +224,8 @@ export default function RewardsPage() {
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
             {isAdmin
-              ? 'Review automated agent milestone claims, approve payouts, and award team bonuses.'
-              : 'Track milestone targets and weekly sprint progress. Approved rewards credit directly to your wallet.'}
+              ? 'Rewards are created automatically (pending). Approve, change, move or take back — every correction is logged.'
+              : 'Your sellers’ progress towards the next reward. Approved rewards are added to your wallet.'}
           </p>
         </div>
 
@@ -200,83 +240,79 @@ export default function RewardsPage() {
         )}
       </div>
 
-      {/* Weekly Sprint Progress Card (For Member) */}
-      {!isAdmin && weeklyProgress && (
-        <div className="order-2 bg-gradient-to-br from-amber-500 via-amber-600 to-yellow-600 rounded-3xl p-6 text-white shadow-xl shadow-amber-600/20">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center space-x-2">
-                <Flame className="w-5 h-5 text-yellow-200 fill-yellow-200" />
-                <span className="text-xs font-black uppercase tracking-wider text-yellow-100">
-                  Weekly Sprint Challenge
-                </span>
-              </div>
-              <h2 className="text-2xl font-black mt-1">₹5 Lakh Combined Deposit Target</h2>
-              <p className="text-xs sm:text-sm text-yellow-100/90 mt-0.5">
-                Reach ₹500,000 INR across all your sellers this week to qualify for a{' '}
-                <span className="underline font-bold text-white">Rs 5,000 PKR Weekend Reward</span>.
-              </p>
-            </div>
-
-            <div className="bg-black/20 backdrop-blur px-4 py-2 rounded-2xl text-center shrink-0 self-start sm:self-auto">
-              <span className="text-[10px] uppercase font-bold text-yellow-200 block">Progress</span>
-              <span className="text-2xl font-black">{weeklyProgress.percentage}%</span>
-            </div>
-          </div>
-
-          {/* Progress bar */}
-          <div className="w-full bg-black/20 rounded-full h-3.5 mt-4 p-0.5">
-            <div
-              className="bg-white h-full rounded-full transition-all duration-700 shadow-sm"
-              style={{ width: `${weeklyProgress.percentage}%` }}
-            />
-          </div>
-
-          <div className="flex justify-between items-center mt-2 text-xs text-yellow-100 font-medium">
-            <span>Volume: ₹{weeklyProgress.currentINR.toLocaleString()} INR</span>
-            <span>
-              {weeklyProgress.remainingINR > 0
-                ? `₹${weeklyProgress.remainingINR.toLocaleString()} remaining`
-                : '🎉 100% Target Met! Approval pending.'}
-            </span>
-            <span className="font-bold">Goal: ₹500,000 INR</span>
-          </div>
+      {/* Progress towards the next reward, per seller */}
+      <div className="order-2 bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
+          <Flame className="w-5 h-5 text-amber-500" />
+          <h3 className="font-bold text-slate-900 text-sm">Progress per seller (from 1 Oct 2026, real money only)</h3>
         </div>
-      )}
+        {progress.length === 0 ? (
+          <p className="p-5 text-xs text-slate-400">No real deposits yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 text-slate-500">
+                <tr>
+                  <th className="text-left px-4 py-2">Seller</th>
+                  {isAdmin && <th className="text-left px-4 py-2">Owner</th>}
+                  <th className="text-left px-4 py-2">$300 reward (real $)</th>
+                  <th className="text-right px-4 py-2">Today (INR)</th>
+                  <th className="text-right px-4 py-2">This week (INR)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {progress.map((p) => (
+                  <tr key={p.sellerId}>
+                    <td className="px-4 py-2 font-semibold text-slate-800">{p.storeName}</td>
+                    {isAdmin && <td className="px-4 py-2 text-slate-600">{p.ownerName || '—'}</td>}
+                    <td className="px-4 py-2">
+                      {p.wallet300Done ? (
+                        <span className="text-emerald-600 font-bold">✓ reached (${Number(p.realUSD).toFixed(2)})</span>
+                      ) : (
+                        <div className="min-w-[140px]">
+                          <div className="flex justify-between text-[11px] text-slate-500">
+                            <span>${Number(p.realUSD).toFixed(2)} / $300</span>
+                            <span>${Math.max(0, 300 - p.realUSD).toFixed(2)} left</span>
+                          </div>
+                          <div className="w-full bg-slate-100 rounded-full h-1.5 mt-1">
+                            <div className="bg-amber-500 h-1.5 rounded-full" style={{ width: `${Math.min(100, (p.realUSD / 300) * 100)}%` }} />
+                          </div>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-right">₹{Math.round(p.todayINR).toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-2 text-right">₹{Math.round(p.weekINR).toLocaleString('en-IN')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
-      {/* Pre-set Rules Explainer Cards (Positioned below claims on mobile) */}
+      {/* Reward rules */}
       <div className="order-5 sm:order-3 grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200/80 shadow-sm">
-          <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs mb-2">
-            1
-          </div>
-          <h4 className="font-bold text-slate-900 text-sm">Individual Seller Milestones</h4>
+          <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-xs mb-2">1</div>
+          <h4 className="font-bold text-slate-900 text-sm">$300 wallet reward</h4>
           <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-            • 1 Lakh INR deposit → <strong>1,000 PKR</strong><br />
-            • 2 Lakh INR deposit → <strong>2,000 PKR</strong><br />
-            • 3 Lakh INR deposit → <strong>3,000 PKR</strong>
+            When a seller&apos;s <strong>real</strong> deposits (helping not counted) reach <strong>$300</strong> →{' '}
+            <strong>5,000 PKR</strong>. Once per seller.
           </p>
         </div>
-
         <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200/80 shadow-sm">
-          <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold text-xs mb-2">
-            2
-          </div>
-          <h4 className="font-bold text-slate-900 text-sm">Weekly Collective Target</h4>
+          <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs mb-2">2</div>
+          <h4 className="font-bold text-slate-900 text-sm">Daily target (one seller, one day)</h4>
           <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-            When all sellers combined reach <strong>₹5 Lakh INR</strong> within 7 days, get a{' '}
-            <strong>5,000 PKR</strong> weekend award!
+            ₹1L → <strong>1,000</strong> • ₹2L → <strong>2,000</strong> • ₹3L → <strong>3,000</strong> • ₹4L → <strong>4,000</strong> • ₹5L+ → <strong>5,000 PKR</strong>
+            <br />Only the highest tier of the day. Given after the day ends (India time).
           </p>
         </div>
-
         <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200/80 shadow-sm">
-          <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold text-xs mb-2">
-            3
-          </div>
-          <h4 className="font-bold text-slate-900 text-sm">First Seller 5 Orders</h4>
+          <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold text-xs mb-2">3</div>
+          <h4 className="font-bold text-slate-900 text-sm">Weekly target (one seller)</h4>
           <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-            When your first assigned seller completes <strong>5 successful orders</strong>, unlock a{' '}
-            <strong>5,000 PKR</strong> starter booster.
+            <strong>₹5 Lakh</strong> real INR from Monday to Sunday → <strong>5,000 PKR</strong>, given after the week ends.
           </p>
         </div>
       </div>
@@ -316,6 +352,11 @@ export default function RewardsPage() {
                       </span>
                       <h4 className="font-bold text-slate-900 text-base mt-2">{claim.title}</h4>
                       <p className="text-xs text-slate-500 mt-0.5">{claim.description}</p>
+                      {isAdmin && claim.withdrawnAfterCount > 0 && (
+                        <p className="text-[11px] text-red-600 bg-red-50 rounded-lg px-2 py-1 mt-1.5 font-semibold">
+                          ⚠ This seller withdrew ${Number(claim.withdrawnAfterUSD).toFixed(2)} ({claim.withdrawnAfterCount} withdrawal{claim.withdrawnAfterCount > 1 ? 's' : ''}) since then. Check before approving.
+                        </p>
+                      )}
                     </div>
 
                     <div className="text-right shrink-0">
@@ -348,6 +389,14 @@ export default function RewardsPage() {
                     >
                       <Check className="w-4 h-4" />
                       <span>{approvingId === claim._id ? 'Crediting...' : 'Approve & Credit'}</span>
+                    </button>
+
+                    <button
+                      onClick={() => { setFixMsg(''); setFix({ claim, mode: 'edit', memberId: claim.memberId?._id || '', amountPKR: claim.amountPKR, reason: '' }); }}
+                      className="py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs"
+                      title="Wrong person or amount? Change it before approving"
+                    >
+                      Change
                     </button>
 
                     <button
@@ -405,6 +454,12 @@ export default function RewardsPage() {
                       Recipient: {claim.memberId?.name} •{' '}
                       {new Date(claim.approvedAt || claim.createdAt).toLocaleDateString()}
                     </p>
+                    {isAdmin && claim.warning && claim.status === 'approved' && (
+                      <p className="text-[11px] text-red-600 bg-red-50 rounded-lg px-2 py-1 mt-1 font-semibold">⚠ {claim.warning}</p>
+                    )}
+                    {isAdmin && claim.status === 'approved' && claim.withdrawnAfterCount > 0 && (
+                      <p className="text-[11px] text-amber-700 mt-1">Seller withdrew ${Number(claim.withdrawnAfterUSD).toFixed(2)} since this reward.</p>
+                    )}
                     {claim.adminNote && (
                       <p className="text-[11px] text-slate-500 italic mt-1">Note: {claim.adminNote}</p>
                     )}
@@ -421,17 +476,137 @@ export default function RewardsPage() {
                   </span>
                   <span
                     className={`text-[10px] block font-bold uppercase ${
-                      claim.status === 'approved' ? 'text-emerald-700' : 'text-red-600'
+                      claim.status === 'approved' ? 'text-emerald-700' : claim.status === 'reversed' ? 'text-slate-500' : 'text-red-600'
                     }`}
                   >
-                    {claim.status}
+                    {claim.status === 'reversed' ? 'taken back' : claim.status}
                   </span>
+                  {isAdmin && claim.status === 'approved' && (
+                    <div className="flex gap-1.5 justify-end mt-2">
+                      <button
+                        onClick={() => { setFixMsg(''); setFix({ claim, mode: 'move', memberId: '', reason: '' }); }}
+                        className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold"
+                        title="Given to the wrong person? Move it to the right one (the other partner approves)"
+                      >
+                        Move
+                      </button>
+                      <button
+                        onClick={() => { setFixMsg(''); setFix({ claim, mode: 'reverse', reason: '' }); }}
+                        className="px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-[11px] font-semibold"
+                        title="Given by mistake? Take it back (the other partner approves)"
+                      >
+                        Take back
+                      </button>
+                    </div>
+                  )}
+                  {Array.isArray(claim.history) && claim.history.length > 0 && (
+                    <div className="mt-1.5 space-y-0.5">
+                      {claim.history.map((h, i) => (
+                        <p key={i} className="text-[10px] text-slate-400">
+                          {new Date(h.at).toLocaleDateString()} · {h.action}
+                          {h.to?.name ? ` → ${h.to.name}` : ''}
+                          {h.by ? ` · ${h.by}` : ''}
+                          {h.note ? ` · “${h.note}”` : ''}
+                        </p>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* ─── MODAL: Fix a mistake ─── */}
+      {fix && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => !fixBusy && setFix(null)}>
+          <form onSubmit={submitFix} onClick={(e) => e.stopPropagation()} className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-slate-200 space-y-3.5">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">
+                  {fix.mode === 'edit' ? 'Change this waiting reward' : fix.mode === 'move' ? 'Move reward to another person' : 'Take back this reward'}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {fix.claim.title} — Rs {Number(fix.claim.amountPKR).toLocaleString()} PKR — now with <strong>{fix.claim.memberId?.name}</strong>
+                </p>
+              </div>
+              <button type="button" onClick={() => setFix(null)} className="p-1 rounded-lg text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {(fix.mode === 'edit' || fix.mode === 'move') && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">{fix.mode === 'move' ? 'Give it to *' : 'Person'}</label>
+                <select
+                  value={fix.memberId}
+                  required={fix.mode === 'move'}
+                  onChange={(e) => setFix({ ...fix, memberId: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                >
+                  <option value="">— choose —</option>
+                  {members
+                    .filter((m) => fix.mode !== 'move' || String(m._id) !== String(fix.claim.memberId?._id))
+                    .map((m) => (
+                      <option key={m._id} value={m._id}>
+                        {m.name} ({m.role})
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+
+            {fix.mode === 'edit' && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Amount (PKR)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={fix.amountPKR}
+                  onChange={(e) => setFix({ ...fix, amountPKR: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                />
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Reason {fix.mode === 'edit' ? '(optional)' : '*'}</label>
+              <input
+                value={fix.reason}
+                required={fix.mode !== 'edit'}
+                minLength={fix.mode !== 'edit' ? 3 : undefined}
+                onChange={(e) => setFix({ ...fix, reason: e.target.value })}
+                placeholder="e.g. given to the wrong member by mistake"
+                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+              />
+            </div>
+
+            <p className="text-[11px] text-slate-500 bg-slate-50 rounded-xl p-2.5">
+              {fix.mode === 'edit'
+                ? 'Nothing is counted yet, so the change is saved at once (it is written to the activity log).'
+                : fix.mode === 'move'
+                ? 'Goes to the other partner for approval. Then it leaves this person’s wallet and goes to the chosen person (same amount and PKR rate).'
+                : 'Goes to the other partner for approval. Then the reward is no longer counted: it leaves this person’s wallet and the partners get their 50 / 50 cost back. The record is kept.'}
+            </p>
+
+            {fixMsg && <p className="text-xs text-red-600 bg-red-50 rounded-xl p-2.5">{fixMsg}</p>}
+
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setFix(null)} className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100">
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={fixBusy}
+                className={`px-4 py-2 rounded-xl text-xs font-semibold text-white ${fix.mode === 'reverse' ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'} disabled:opacity-50`}
+              >
+                {fixBusy ? 'Saving…' : fix.mode === 'edit' ? 'Save change' : 'Send for approval'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* ─── MODAL: Admin Direct Bonus ─── */}
       {isBonusModalOpen && (

@@ -91,20 +91,32 @@ router.post('/', authSellerOrAdmin, uploadLimit, upload.array('files', 5), async
 
     let results = [];
 
-    // Attempt UploadThing first if token configured
+    // UploadThing is the real storage. The server's own disk on Render is wiped on every deploy /
+    // restart, so a file kept only there disappears later (the seller then sees no picture while
+    // the admin's side shows it was sent and seen). With a token we therefore never fall back to
+    // the disk: we retry once and otherwise report the failure so the sender can send it again.
     if (process.env.UPLOADTHING_TOKEN) {
-      try {
-        const utResults = await uploadBuffers(req.files);
-        results = utResults.map((r, i) => ({
-          url: r.url,
-          key: r.key,
-          name: req.files[i].originalname,
-          type: kinds[i].type,
-          size: req.files[i].size,
-        }));
-      } catch (utErr) {
-        console.warn('UploadThing upload failed, falling back to local storage:', utErr.message);
+      let lastErr = null;
+      for (let attempt = 1; attempt <= 2 && !results.length; attempt += 1) {
+        try {
+          const utResults = await uploadBuffers(req.files);
+          results = utResults.map((r, i) => ({
+            url: r.url,
+            key: r.key,
+            name: req.files[i].originalname,
+            type: kinds[i].type,
+            size: req.files[i].size,
+          }));
+        } catch (utErr) {
+          lastErr = utErr;
+          console.warn(`UploadThing upload failed (attempt ${attempt}):`, utErr.message);
+        }
       }
+      if (!results.length) {
+        return res.status(502).json({ message: `Picture upload failed (${lastErr?.message || 'storage error'}). Please try again.` });
+      }
+    } else if (process.env.RENDER || process.env.NODE_ENV === 'production') {
+      console.error('⚠️ UPLOADTHING_TOKEN is not set: uploads are kept on the server disk and will be LOST on the next deploy/restart.');
     }
 
     // Fallback: save to local disk if UploadThing was skipped or failed

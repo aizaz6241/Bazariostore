@@ -22,6 +22,10 @@ const rewardClaimSchema = new mongoose.Schema(
         'weekly_5lakh_sprint',  // All sellers reach 500,000 INR in 1 week -> 5,000 PKR
         'first_seller_5orders', // First seller completes 5 orders -> 5,000 PKR
         'custom_bonus',         // Admin direct bonus
+        // ── reward system of 10 Oct 2026 ──
+        'wallet_300',           // seller's real deposits reach $300 -> 5,000 PKR (once per seller)
+        'daily_target',         // ₹1L–5L+ real INR in one day -> 1,000–5,000 PKR
+        'weekly_target',        // ₹5L+ real INR in one week -> 5,000 PKR
       ],
       required: true,
     },
@@ -40,7 +44,8 @@ const rewardClaimSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['pending', 'approved', 'rejected'],
+      // reversed = it was approved, then taken back (kept for the record, never counted)
+      enum: ['pending', 'approved', 'rejected', 'reversed'],
       default: 'pending',
       index: true,
     },
@@ -61,6 +66,31 @@ const rewardClaimSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Day / week / date the reward is for (new reward system)
+    periodKey: { type: String, default: '' },
+    // Extra amount for a day whose total went up after the first reward was approved
+    topupOf: { type: String, default: '' },
+    // Set by the reward check when an approved reward is no longer due (shown to the admins)
+    warning: { type: String, default: '' },
+    // Closed by the reward check (no longer due) — reopened by it if it becomes due again
+    closedBySystem: { type: Boolean, default: false },
+    // Created by the reward check (not typed in by an admin)
+    autoCreated: { type: Boolean, default: false },
+    // Taken back after approval
+    reversedAt: { type: Date, default: null },
+    reversedBy: { type: String, default: '' },
+    reverseReason: { type: String, default: '' },
+    // Every correction (member changed, amount changed, reversed, moved): who, when, what
+    history: [
+      {
+        at: { type: Date, default: Date.now },
+        by: { type: String, default: '' },
+        action: { type: String, default: '' },
+        note: { type: String, default: '' },
+        from: { type: mongoose.Schema.Types.Mixed, default: null },
+        to: { type: mongoose.Schema.Types.Mixed, default: null },
+      },
+    ],
     // Deduplication key to prevent creating duplicate claims for the same milestone
     claimKey: {
       type: String,

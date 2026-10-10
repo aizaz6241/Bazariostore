@@ -216,7 +216,9 @@ export default function ChatAttachment({ msg, url: directUrl, type: directType, 
             </div>
             <div className="cif-info">
               <span className="cif-name">{filename}</span>
-              <small className="cif-hint">Click to view or download photo</small>
+              <small className="cif-hint">
+                {imgError ? 'This picture is no longer available. Please ask for it to be sent again.' : 'Click to view or download photo'}
+              </small>
             </div>
             <button
               type="button"

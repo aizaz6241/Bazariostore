@@ -18,9 +18,16 @@ export async function POST(req, { params }) {
     const { id } = params;
     const body = await req.json().catch(() => ({}));
 
+    // A partner never approves his own reward: the other partner does
+    const own = await RewardClaim.findById(id).select('memberId').lean();
+    if (own && String(own.memberId) === String(session._id)) {
+      return NextResponse.json({ message: 'This reward is yours. The other partner has to approve it.' }, { status: 403 });
+    }
+
     // 1. Atomic status update prevents race condition and double-crediting
     const claim = await RewardClaim.findOneAndUpdate(
-      { _id: id, status: { $ne: 'approved' } },
+      // only a waiting (or earlier rejected) reward; a taken-back one is never approved again
+      { _id: id, status: { $in: ['pending', 'rejected'] } },
       {
         $set: {
           status: 'approved',
@@ -37,7 +44,7 @@ export async function POST(req, { params }) {
       if (!existing) {
         return NextResponse.json({ message: 'Reward claim not found' }, { status: 404 });
       }
-      return NextResponse.json({ message: 'This reward has already been approved' }, { status: 400 });
+      return NextResponse.json({ message: existing.status === 'reversed' ? 'This reward was taken back; it cannot be approved again' : 'This reward has already been approved' }, { status: 400 });
     }
 
     const memberId = claim.memberId._id || claim.memberId;

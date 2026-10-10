@@ -45,53 +45,65 @@ export async function createBackup(type = 'manual') {
 
   ensureBackupDir();
 
+  // MEMORY-SAFE: the snapshot is written to the file one document at a time (database cursor →
+  // file stream). It used to load EVERY collection into memory and then turn the whole thing into
+  // one giant string — with chat voice notes / pictures / KYC images in the database that is
+  // hundreds of MB, which on the 512 MB Render server ended in "out of memory" restarts.
+  // Same file format as before (bazario-ejson-v1), so restore and download work unchanged.
   const db = mongoose.connection.db;
   const dbName = db.databaseName || 'bazario';
   const collectionsList = await db.listCollections().toArray();
 
-  const backupData = {
-    version: '1.0',
-    format: 'bazario-ejson-v1',
-    type,
-    createdAt: new Date().toISOString(),
-    database: dbName,
-    stats: {
-      collectionsCount: 0,
-      documentsCount: 0,
-    },
-    collections: {},
-  };
+  const createdAt = new Date().toISOString();
+  const timestamp = formatTimestamp(new Date());
+  const filename = `backup-${type}-${timestamp}.json`;
+  const filePath = path.join(BACKUPS_DIR, filename);
+  const tmpPath = `${filePath}.part`;
+
+  const out = fs.createWriteStream(tmpPath, { encoding: 'utf-8' });
+  const write = (chunk) =>
+    new Promise((resolve, reject) => {
+      if (out.write(chunk)) return resolve();
+      out.once('drain', resolve);
+      out.once('error', reject);
+    });
 
   let totalDocs = 0;
   let totalCollections = 0;
-
-  for (const item of collectionsList) {
-    const colName = item.name;
-    // Skip system internal collections
-    if (colName.startsWith('system.')) continue;
-
-    const col = db.collection(colName);
-    const docs = await col.find({}).toArray();
-
-    backupData.collections[colName] = docs;
-    totalDocs += docs.length;
-    totalCollections += 1;
+  try {
+    await write(`{"version":"1.0","format":"bazario-ejson-v1","type":${JSON.stringify(type)},"createdAt":${JSON.stringify(createdAt)},"database":${JSON.stringify(dbName)},"filename":${JSON.stringify(filename)},"collections":{`);
+    let firstCol = true;
+    for (const item of collectionsList) {
+      const colName = item.name;
+      // Skip system internal collections
+      if (colName.startsWith('system.')) continue;
+      await write(`${firstCol ? '' : ','}${JSON.stringify(colName)}:[`);
+      firstCol = false;
+      let firstDoc = true;
+      const cursor = db.collection(colName).find({}, { batchSize: 100 });
+      for await (const doc of cursor) {
+        await write(`${firstDoc ? '' : ','}${EJSON.stringify(doc, { relaxed: false })}`);
+        firstDoc = false;
+        totalDocs += 1;
+      }
+      await write(']');
+      totalCollections += 1;
+    }
+    await write(`},"stats":{"collectionsCount":${totalCollections},"documentsCount":${totalDocs}}}`);
+    await new Promise((resolve, reject) => out.end((err) => (err ? reject(err) : resolve())));
+    fs.renameSync(tmpPath, filePath);
+  } catch (err) {
+    out.destroy();
+    try { fs.unlinkSync(tmpPath); } catch {}
+    throw err;
   }
 
-  backupData.stats.collectionsCount = totalCollections;
-  backupData.stats.documentsCount = totalDocs;
-
-  const timestamp = formatTimestamp(new Date());
-  const filename = `backup-${type}-${timestamp}.json`;
-  backupData.filename = filename;
-
-  const filePath = path.join(BACKUPS_DIR, filename);
-
-  // Serialize using MongoDB Extended JSON to preserve exact ObjectIds, Dates, and nested types
-  const serialized = EJSON.stringify(backupData, { relaxed: false });
-  fs.writeFileSync(filePath, serialized, 'utf-8');
-
   const fileStat = fs.statSync(filePath);
+  // small side file so the backup list never has to open the big file
+  try {
+    fs.writeFileSync(`${filePath}.meta`, JSON.stringify({ type, createdAt, database: dbName, collectionsCount: totalCollections, documentsCount: totalDocs }));
+  } catch {}
+  const backupData = { createdAt };
 
   // If this was an hourly backup, perform auto-retention cleanup
   if (type === 'hourly') {
@@ -139,8 +151,14 @@ export async function listBackups() {
       let dbName = 'bazario';
 
       try {
-        const raw = fs.readFileSync(filePath, 'utf-8');
-        const parsed = EJSON.parse(raw);
+        // Read the small side file; a big backup file is never loaded just to list it
+        const metaPath = `${filePath}.meta`;
+        if (!fs.existsSync(metaPath) && stat.size > 5 * 1024 * 1024) throw new Error('no meta');
+        const raw = fs.readFileSync(fs.existsSync(metaPath) ? metaPath : filePath, 'utf-8');
+        const parsedRaw = EJSON.parse(raw);
+        const parsed = fs.existsSync(metaPath)
+          ? { type: parsedRaw.type, createdAt: parsedRaw.createdAt, database: parsedRaw.database, stats: parsedRaw }
+          : parsedRaw;
         if (parsed.type) type = parsed.type;
         if (parsed.createdAt) createdAt = parsed.createdAt;
         if (parsed.database) dbName = parsed.database;
@@ -196,6 +214,7 @@ export function getSafeBackupPath(filename) {
 export async function deleteBackupFile(filename) {
   const filePath = getSafeBackupPath(filename);
   fs.unlinkSync(filePath);
+  try { fs.unlinkSync(`${filePath}.meta`); } catch {}
   return { ok: true, deleted: filename };
 }
 
@@ -221,6 +240,7 @@ export async function enforceHourlyRetention() {
     for (const item of toRemove) {
       try {
         fs.unlinkSync(item.filePath);
+        try { fs.unlinkSync(`${item.filePath}.meta`); } catch {}
         console.log(`[Backup Retention] Deleted old hourly backup: ${item.filename}`);
       } catch (err) {
         console.error(`[Backup Retention] Failed to delete ${item.filename}:`, err.message);

@@ -9,12 +9,13 @@ import RewardClaim from '@/lib/models/RewardClaim';
 import { Seller } from '@/lib/models/SharedModels';
 import { invalidateLedger, buildLedger, updateFinanceEntry, createManualEntry } from '@/lib/utils/finance';
 import { getWalletData, getWalletBalancesMap, recordWalletPayout, insufficientText } from '@/lib/utils/wallet';
-import { assignSeller, currentOwnerOf } from '@/lib/utils/sellerAssign';
+import { assignSeller, currentOwnerOf, assertSellerCanMove } from '@/lib/utils/sellerAssign';
 import { logFinance, actorFromSession, flushFinanceAlertsSoon } from '@/lib/utils/financeLog';
 import { ACTION_LABEL, canDecide } from '@/lib/utils/approvalRules';
 import { syncEcommerceAdmins } from '@/lib/adminSync';
 import { isFinancePartner } from '@/lib/partners';
 import { inspectDepositFix, fixDeposit, ownerWords } from '@/lib/utils/depositFix';
+import { checkReferral } from '@/lib/utils/referralRules';
 
 /**
  * TWO-PERSON APPROVALS
@@ -39,6 +40,12 @@ const oid = (v) => new mongoose.Types.ObjectId(String(v));
 const withdrawalsCol = () => mongoose.connection.db.collection('withdrawals');
 
 const INTERRUPTED_MS = 2 * 60 * 1000;
+// never written to the activity log
+const redact = (p) => {
+  if (!p || typeof p !== 'object') return {};
+  const { passwordHash, ...rest } = p;
+  return passwordHash ? { ...rest, password: '(set)' } : rest;
+};
 const samePersonId = (a, b) => !!a && !!b && String(a) === String(b);
 
 // ───────────────────────── Snapshots (for "before" / "after") ─────────────────────────
@@ -262,6 +269,66 @@ async function describe(action, payload) {
     };
   }
 
+  if (action === 'member_create') {
+    const name = String(p.name || '').trim();
+    const username = String(p.username || '').trim().toLowerCase();
+    if (!name || !username || !p.passwordHash) throw new Error('Name, username and password are required');
+    const deal = p.commissionLabel === 'inr_50' ? 'inr_50' : 'pkr_1to1';
+    if (await Member.exists({ username })) throw new Error(`Username "${username}" is already taken`);
+    let referrer = null;
+    if (p.referredBy) {
+      referrer = isId(p.referredBy) ? await Member.findById(p.referredBy).select('name role active commissionLabel').lean() : null;
+      if (!referrer) throw new Error('Referrer not found');
+    }
+    const chk = checkReferral({ deal, referrer, pct: p.referralPct });
+    if (!chk.ok) throw new Error(chk.reason);
+    const dealWord = deal === 'inr_50' ? '50% member' : '1:1 PKR member';
+    return {
+      summary: `Create member “${name}” (${dealWord})${referrer ? ` — referred by ${referrer.name} at ${chk.pct}%` : ' — no referrer'}`,
+      details: [
+        `Username: ${username}`,
+        referrer
+          ? `${referrer.name} gets ${chk.pct}% of ${name}'s share of every deposit and bears ${chk.pct}% of ${name}'s part of every seller withdrawal. This can never be changed later.`
+          : 'No referral (cannot be added later).',
+      ],
+      targetId: `member:${username}`,
+      payeeId: '',
+      sellerId: '',
+      storeName: '',
+    };
+  }
+
+  if (action === 'bonus_reverse' || action === 'bonus_move') {
+    const claim = isId(p.id) ? await RewardClaim.findById(p.id).lean() : null;
+    if (!claim) throw new Error('Reward not found');
+    if (claim.status !== 'approved') throw new Error('Only an approved reward can be taken back or moved (a pending one can simply be changed or rejected)');
+    const reason = String(p.reason || '').trim();
+    if (reason.length < 3) throw new Error('Write the reason');
+    const holder = await Member.findById(claim.memberId).select('name').lean();
+    const line = `“${claim.title}” — Rs ${money(claim.amountPKR)} PKR — now with ${holder ? holder.name : 'Unknown'}`;
+    if (action === 'bonus_reverse') {
+      return {
+        summary: `Take back the reward ${line}`,
+        details: [`Reason: ${reason}`, 'The reward is kept for the record but no longer counted: it leaves this person’s wallet and the partners get their 50 / 50 cost back.'],
+        targetId: sid(claim._id),
+        payeeId: '',
+        sellerId: sid(claim.sellerId),
+        storeName: '',
+      };
+    }
+    const target = isId(p.memberId) ? await Member.findById(p.memberId).select('name').lean() : null;
+    if (!target) throw new Error('Choose the person who should get this reward');
+    if (sid(target._id) === sid(claim.memberId)) throw new Error('This reward is already with that person');
+    return {
+      summary: `Move the reward ${line} → to ${target.name}`,
+      details: [`Reason: ${reason}`, `It leaves ${holder ? holder.name : 'the current person'}’s wallet and goes to ${target.name}’s wallet (same amount and PKR rate).`],
+      targetId: sid(claim._id),
+      payeeId: '',
+      sellerId: sid(claim.sellerId),
+      storeName: '',
+    };
+  }
+
   if (action === 'payout_reverse') {
     const tx = isId(p.id) ? await WalletTransaction.findById(p.id).lean() : null;
     if (!tx || tx.type !== 'debit' || tx.category !== 'payout_withdrawal') throw new Error('Payout not found');
@@ -288,6 +355,7 @@ async function describe(action, payload) {
     ]);
     if (!seller) throw new Error('Seller not found');
     if (!target) throw new Error('Target member not found');
+    await assertSellerCanMove(p.sellerId, p.memberId);
     return {
       summary: current
         ? `Move seller “${seller.storeName}” from ${current.name} to ${target.name}`
@@ -507,6 +575,90 @@ async function performAction(action, payload, { requester, approver = null, appr
     out.after = { reserveUSDT: action === 'reserve_add' ? before + amount : before - amount, amountUSDT: amount, source: move.source || '' };
     out.entity = 'reserve';
     out.entityId = sid(move._id);
+  } else if (action === 'member_create') {
+    const deal = p.commissionLabel === 'inr_50' ? 'inr_50' : 'pkr_1to1';
+    const hasRef = !!p.referredBy;
+    const created = await Member.create({
+      name: String(p.name).trim(),
+      username: String(p.username).trim().toLowerCase(),
+      passwordHash: p.passwordHash,
+      phone: String(p.phone || ''),
+      role: 'member',
+      commissionLabel: deal,
+      referredBy: hasRef ? oid(p.referredBy) : null,
+      referralPct: hasRef ? num(p.referralPct) : 0,
+      referralSetAt: hasRef ? new Date() : null,
+      wallet: { balancePKR: 0, totalDepositsPKR: 0, totalWithdrawalsPKR: 0, totalBonusesPKR: 0 },
+    });
+    out.entity = 'member';
+    out.entityId = sid(created._id);
+    out.after = { name: created.name, username: created.username, deal, referredBy: hasRef ? sid(p.referredBy) : '', referralPct: hasRef ? num(p.referralPct) : 0 };
+    out.result = { memberId: sid(created._id) };
+    // the password hash is not kept in the request once the member exists
+    if (approvalId) await FinanceApproval.updateOne({ _id: approvalId }, { $unset: { 'payload.passwordHash': 1 } }).catch(() => {});
+    invalidateLedger();
+  } else if (action === 'bonus_reverse' || action === 'bonus_move') {
+    const claim = await RewardClaim.findById(p.id).lean();
+    if (!claim) throw new Error('Reward not found');
+    const who = approver ? `${by} (approved by ${approver.name})` : by;
+    const reason = String(p.reason || '').trim().slice(0, 300);
+    out.before = { memberId: sid(claim.memberId), status: claim.status, amountPKR: claim.amountPKR, pkrRate: claim.finPkrRate || 0 };
+    const fromMember = await Member.findById(claim.memberId).select('name').lean();
+    let toMember = null;
+    let done;
+    if (action === 'bonus_reverse') {
+      // only an approved reward can be taken back (two clicks can never do it twice)
+      done = await RewardClaim.updateOne(
+        { _id: claim._id, status: 'approved' },
+        {
+          $set: { status: 'reversed', reversedAt: new Date(), reversedBy: who, reverseReason: reason },
+          $push: { history: { at: new Date(), by: who, action: 'reversed', note: reason, from: { memberId: sid(claim.memberId) }, to: null } },
+        }
+      );
+      if (!done.modifiedCount) throw new Error('This reward is not approved any more (already taken back?)');
+      await Member.updateOne({ _id: claim.memberId }, { $inc: { 'wallet.balancePKR': -num(claim.amountPKR), 'wallet.totalBonusesPKR': -num(claim.amountPKR) } });
+      out.after = { ...out.before, status: 'reversed', reason };
+    } else {
+      toMember = await Member.findById(p.memberId).select('name').lean();
+      if (!toMember) throw new Error('Person not found');
+      done = await RewardClaim.updateOne(
+        { _id: claim._id, status: 'approved', memberId: claim.memberId },
+        {
+          $set: { memberId: toMember._id },
+          $push: { history: { at: new Date(), by: who, action: 'moved', note: reason, from: { memberId: sid(claim.memberId), name: fromMember?.name || '' }, to: { memberId: sid(toMember._id), name: toMember.name } } },
+        }
+      );
+      if (!done.modifiedCount) throw new Error('This reward was changed in the meantime. Nothing was moved; please try again.');
+      await Member.updateOne({ _id: claim.memberId }, { $inc: { 'wallet.balancePKR': -num(claim.amountPKR), 'wallet.totalBonusesPKR': -num(claim.amountPKR) } });
+      await Member.updateOne({ _id: toMember._id }, { $inc: { 'wallet.balancePKR': num(claim.amountPKR), 'wallet.totalBonusesPKR': num(claim.amountPKR) } });
+      out.after = { ...out.before, memberId: sid(toMember._id), reason };
+    }
+    // the locked 50 / 50 split goes; the ledger divides it again (or drops it when taken back)
+    await FinanceSplit.deleteOne({ sourceId: claim._id });
+    invalidateLedger();
+    out.ledger = await buildLedger({ fresh: true });
+    out.entity = 'bonus';
+    out.entityId = sid(claim._id);
+    try {
+      const { sendPushToUser } = await import('@/lib/utils/push');
+      const amount = Number(claim.amountPKR).toLocaleString();
+      sendPushToUser(claim.memberId, {
+        title: `↩️ Reward ${action === 'bonus_reverse' ? 'taken back' : 'moved'}: Rs ${amount} PKR`,
+        body: `“${claim.title}” is no longer in your wallet. Reason: ${reason}`,
+        url: '/rewards',
+        type: 'finance',
+      }).catch(() => {});
+      if (toMember) {
+        sendPushToUser(toMember._id, {
+          title: `🎁 Reward added: Rs ${amount} PKR`,
+          body: `“${claim.title}” was moved to your wallet.`,
+          url: '/rewards',
+          type: 'finance',
+        }).catch(() => {});
+      }
+    } catch (pushErr) {
+      console.error('Reward correction push error:', pushErr);
+    }
   } else if (action === 'payout_reverse') {
     const tx = await WalletTransaction.findById(p.id).lean();
     if (!tx) throw new Error('Payout not found');
@@ -631,7 +783,7 @@ export async function submitAction({ session, action, payload, gated }) {
     entityId: approval._id,
     sellerId: info.sellerId || '',
     storeName: info.storeName || '',
-    after: { action, payload: payload || {} },
+    after: { action, payload: redact(payload) },
     meta: { needsApproval: true, approvalId: sid(approval._id) },
   });
   await flushFinanceAlertsSoon();

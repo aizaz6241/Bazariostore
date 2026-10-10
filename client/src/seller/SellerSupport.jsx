@@ -28,6 +28,21 @@ export default function SellerSupport() {
   const textInputRef = useRef(null);
   const isNearBottomRef = useRef(true);
 
+  // Coming back to this screen (phone unlocked / tab shown): now the seller really sees the chat
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
+      try {
+        const s = getSocket();
+        if (s) s.emit('seller:read', { sellerId: seller?._id });
+      } catch {}
+      setUnreadChat(0);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [seller?._id]);
+
   const scrollToBottom = (behavior = 'smooth') => {
     if (scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior });
@@ -66,13 +81,15 @@ export default function SellerSupport() {
           });
         }
 
-        // Mark read
-        sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
-        try {
-          const s = getSocket();
-          if (s) s.emit('seller:read', { sellerId: seller?._id || res.conversation?.seller });
-        } catch {}
-        if (typeof setUnreadChat === 'function') setUnreadChat(0);
+        // Mark read — only while this page is really on screen (not a background tab / locked phone)
+        if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+          sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
+          try {
+            const s = getSocket();
+            if (s) s.emit('seller:read', { sellerId: seller?._id || res.conversation?.seller });
+          } catch {}
+          if (typeof setUnreadChat === 'function') setUnreadChat(0);
+        }
       })
       .catch((e) => console.error(e))
       .finally(() => setLoading(false));
@@ -140,11 +157,13 @@ export default function SellerSupport() {
       if (isNearBottomRef.current) {
         setTimeout(() => scrollToBottom('smooth'), 50);
       }
-      sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
-      try {
-        if (socket) socket.emit('seller:read', { sellerId: seller?._id, conversationId: msg.conversation });
-      } catch {}
-      if (typeof setUnreadChat === 'function') setUnreadChat(0);
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
+        try {
+          if (socket) socket.emit('seller:read', { sellerId: seller?._id, conversationId: msg.conversation });
+        } catch {}
+        if (typeof setUnreadChat === 'function') setUnreadChat(0);
+      }
     };
 
     const onMessageEdit = (payload) => {

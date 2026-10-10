@@ -18,10 +18,19 @@ export async function POST(req, { params }) {
       return NextResponse.json({ message: 'Reward claim not found' }, { status: 404 });
     }
     const statusBefore = claim.status;
+    // An approved reward is already in someone's wallet: it is taken back with "Take back"
+    // (the other partner approves), never by a one-person reject.
+    if (statusBefore !== 'pending') {
+      return NextResponse.json(
+        { message: statusBefore === 'approved' ? 'This reward is already approved. Use “Take back” or “Move to another person” (the other partner approves it).' : 'This reward is already closed.' },
+        { status: 400 }
+      );
+    }
 
     claim.status = 'rejected';
     claim.adminNote = body.adminNote || 'Declined by Admin';
     claim.rejectedAt = new Date();
+    claim.history = [...(claim.history || []), { at: new Date(), by: session.name || '', action: 'rejected', note: claim.adminNote }];
     await claim.save();
 
     await logFinance({

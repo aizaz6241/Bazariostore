@@ -30,6 +30,9 @@ export async function PUT(req, { params }) {
     }
 
     const previousLabel = member.commissionLabel || 'pkr_1to1';
+    if (previousLabel !== commissionLabel && (member.referredBy || (await Member.exists({ referredBy: member._id })))) {
+      return NextResponse.json({ message: 'This member is part of a referral, so the 1:1 deal cannot be changed.' }, { status: 400 });
+    }
     member.commissionLabel = commissionLabel;
     await member.save();
     forgetSessions(member._id);

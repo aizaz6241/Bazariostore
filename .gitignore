@@ -27,3 +27,6 @@ scratch/
 database_backup_full/
 .next/
 */.next/
+
+# database backups downloaded to this computer (sensitive)
+db-backups/

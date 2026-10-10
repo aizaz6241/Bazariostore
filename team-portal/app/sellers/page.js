@@ -96,6 +96,16 @@ export default function SellersPage() {
   // Handle Admin Assigning Seller to a Member (Deal agreement is inherited from Member)
   const handleAssignSeller = async () => {
     if (!assignModalSeller || !selectedMemberId) return;
+    // Clear confirmation: once the seller's first deposit comes in, it stays with this owner for good
+    const target = members.find((m) => m._id === selectedMemberId);
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm(
+        `Give “${assignModalSeller.storeName}” to ${target ? target.name : 'this member'}?\n\nOnce this seller's first deposit comes in, it stays with ${target ? target.name : 'this owner'} for good and can never be moved.`
+      )
+    ) {
+      return;
+    }
 
     try {
       setAssignLoading(true);

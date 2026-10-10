@@ -68,6 +68,12 @@ const memberSchema = new mongoose.Schema(
       totalWithdrawalsPKR: { type: Number, default: 0 },
       totalBonusesPKR: { type: Number, default: 0 },
     },
+    // ── Referral (1:1 PKR members only), set once when the member is created, never changed ──
+    // The 1:1 member who brought this member; he gets referralPct % OF THIS MEMBER'S share of
+    // every deposit (and bears the same % of this member's part of every seller withdrawal).
+    referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'PortalMember', default: null, index: true },
+    referralPct: { type: Number, default: 0 },
+    referralSetAt: { type: Date, default: null },
     lastLoginAt: {
       type: Date,
       default: null,

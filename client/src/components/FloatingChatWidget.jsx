@@ -349,7 +349,7 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
 
         if (!isOpen && (msg.sender === 'admin' || msg.sender === 'staff')) {
           setUnreadCount((prev) => prev + 1);
-        } else if (isOpen) {
+        } else if (isOpen && (typeof document === 'undefined' || document.visibilityState === 'visible')) {
           if (sellerToken) {
             sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
             socket?.emit?.('seller:read', { conversationId: conv?._id });

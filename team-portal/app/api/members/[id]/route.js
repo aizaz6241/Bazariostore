@@ -4,6 +4,7 @@ import Member from '@/lib/models/Member';
 import SellerAssignment from '@/lib/models/SellerAssignment';
 import mongoose from 'mongoose';
 import { logFinance, flushFinanceAlertsSoon } from '@/lib/utils/financeLog';
+import FinanceSplit from '@/lib/models/FinanceSplit';
 
 export const dynamic = 'force-dynamic';
 
@@ -85,6 +86,10 @@ export async function PATCH(req, { params }) {
     }
 
     // 5. Commission Agreement Label (Deal between Admin and Member: 'pkr_1to1' or 'inr_50')
+    // A member in a referral (brought by someone, or who brought someone) keeps his 1:1 deal.
+    if (commissionLabel && commissionLabel !== beforeState.commissionLabel && (member.referredBy || (await Member.exists({ referredBy: member._id })))) {
+      return NextResponse.json({ message: 'This member is part of a referral, so the 1:1 deal cannot be changed.' }, { status: 400 });
+    }
     if (commissionLabel && ['inr_50', 'pkr_1to1'].includes(commissionLabel)) {
       if (commissionLabel !== beforeState.commissionLabel) changes.push(`deal changed to ${commissionLabel === 'inr_50' ? '50% member' : '1:1 PKR member'}`);
       member.commissionLabel = commissionLabel;
@@ -149,6 +154,21 @@ export async function DELETE(req, { params }) {
       return NextResponse.json({
         message: 'Cannot delete primary platform administrator account from team management.',
       }, { status: 400 });
+    }
+
+    // Safeguard 3: a member with money history or in a referral is never deleted (his wallet,
+    // finance shares and payouts point to him). Switch the account off instead.
+    const idStr = String(member._id);
+    const [hasShares, isReferrer, hasPayouts] = await Promise.all([
+      FinanceSplit.exists({ $or: [{ 'shares.userId': member._id }, { ownerId: member._id }] }),
+      Member.exists({ referredBy: member._id }),
+      mongoose.connection.db.collection('portalwallettransactions').findOne({ userId: { $in: [member._id, idStr] } }, { projection: { _id: 1 } }),
+    ]);
+    if (hasShares || isReferrer || member.referredBy || hasPayouts) {
+      return NextResponse.json(
+        { message: `“${member.name}” has money history or is part of a referral, so the account cannot be deleted (it would break the finance). Switch the account off instead.` },
+        { status: 400 }
+      );
     }
 
     const hadSellers = await SellerAssignment.countDocuments({ memberId: member._id, status: 'active' });

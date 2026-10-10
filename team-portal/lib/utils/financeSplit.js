@@ -8,6 +8,8 @@
  *   - 1:1 PKR member         -> member gets (INR deposited) PKR, converted to USDT at that
  *                               day's PKR/USDT rate; the rest is split 50/50 by the partners
  *   - nobody (unassigned)    -> partners 50% + 50%
+ *   - referral (1:1 members only): the member who brought this member gets X% OF THE MEMBER'S
+ *     share (never of the partners'); on a seller withdrawal he also bears X% of the member's part
  *
  * Seller withdrawal (money OUT), charged on the full amount, the mirror of the deposit:
  *   - previous-store seller  -> partners 50% + 50%
@@ -82,9 +84,19 @@ export function computeSplit({ kind, usdt, inr = 0, pkrRate = 0, owner = null, p
       if (!(Number(inr) > 0) || !(Number(pkrRate) > 0)) return { ok: false, reason: 'pkr_rate' };
       // 1 INR deposited = 1 PKR for the member, paid in USDT at that day's rate.
       // 1 INR withdrawn by the seller = 1 PKR taken from the member, the same way.
-      const memberUsdt = Math.min(total, Number(inr) / Number(pkrRate));
-      push(member, 'member', `1:1 PKR (Rs ${Number(inr).toLocaleString('en-US')} @ ${pkrRate})`, memberUsdt);
-      const rest = total - shares[0].amountUSDT;
+      const memberUsdt = r6(Math.min(total, Number(inr) / Number(pkrRate)));
+      const ref = owner.referral;
+      const refPct = ref ? Number(ref.pct) : 0;
+      const label = `1:1 PKR (Rs ${Number(inr).toLocaleString('en-US')} @ ${pkrRate})`;
+      if (ref && ref.id && String(ref.id) !== ownerId && refPct > 0 && refPct <= 20 && String(ref.id) !== p1.id && String(ref.id) !== p2.id) {
+        const refUsdt = r6((memberUsdt * refPct) / 100);
+        push(member, 'member', `${label}, after ${refPct}% referral to ${ref.name}`, memberUsdt - refUsdt);
+        push({ id: String(ref.id), name: ref.name }, 'member', `Referral ${refPct}% of ${owner.name}'s share`, refUsdt);
+        shares[shares.length - 1].referralOf = ownerId;
+      } else {
+        push(member, 'member', label, memberUsdt);
+      }
+      const rest = total - memberUsdt;
       push(p1, 'partner', 'Partner share (half of rest)', rest * 0.5);
       return finish(p2, 'Partner share (half of rest)');
     }

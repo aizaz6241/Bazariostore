@@ -25,6 +25,7 @@ import {
   BellOff,
   Volume2,
   VolumeX,
+  UserPlus,
 } from 'lucide-react';
 import { useNotifications } from './NotificationManager';
 import NotificationBell from './NotificationBell';
@@ -79,6 +80,8 @@ export default function AppNavbar() {
     { href: '/wallet', label: 'Wallet', icon: Wallet },
     { href: '/analytics', label: 'Analytics', icon: BarChart3 },
     ...(isAdmin ? [{ href: '/members', label: 'Members', icon: UserCheck }] : []),
+    // referral overview: a 1:1 member sees the members he brought, a partner sees every referral
+    ...(isAdmin || (user?.commissionLabel || 'pkr_1to1') === 'pkr_1to1' ? [{ href: '/my-members', label: isAdmin ? 'Referrals' : 'My Members', icon: UserPlus }] : []),
     ...(isAdmin ? [{ href: '/finance', label: 'Finance', icon: Landmark }] : []),
   ];
 

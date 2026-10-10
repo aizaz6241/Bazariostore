@@ -55,6 +55,8 @@ import sellerRoutes from './routes/sellers.js';
 import treasuryRoutes from './routes/treasury.js';
 import backupRoutes from './routes/backup.js';
 import { createBackup, getBackupSettings, updateBackupSettings } from './services/backup.service.js';
+import { scheduleCloudBackups } from './services/cloudBackup.js';
+import { startMirror } from './services/mirror.js';
 
 import { Conversation, Message } from './models/Chat.js';
 import Seller from './models/Seller.js';
@@ -132,6 +134,9 @@ if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
       if (mongoose.connection.readyState !== 1) return;
       const settings = await getBackupSettings();
       if (!settings.autoBackupEnabled) return;
+      // A restart must not trigger an extra backup right away (it did every time, 30 s after start)
+      const last = settings.lastHourlyBackupAt ? new Date(settings.lastHourlyBackupAt).getTime() : 0;
+      if (last && Date.now() - last < 55 * 60 * 1000) return;
 
       console.log('⏰ [Backup Scheduler] Triggering automated hourly database backup...');
       const backup = await createBackup('hourly');
@@ -148,8 +153,14 @@ if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
   }, 2 * 60 * 1000);
 
   setInterval(runHourlyBackupJob, 60 * 60 * 1000);
-  // Initial check 30 seconds after server startup
-  setTimeout(runHourlyBackupJob, 30 * 1000);
+  // First check 10 minutes after start (not while the server is still warming up)
+  setTimeout(runHourlyBackupJob, 10 * 60 * 1000);
+
+  // Encrypted copy of the database in the cloud every 6 hours (survives Render restarts / deploys)
+  scheduleCloudBackups();
+
+  // Live mirror: every change also written to the second database (MIRROR_MONGO_URI)
+  startMirror().catch((e) => console.error('Mirror start failed:', e.message));
 }
 
 // Health check. Until the database has connected ONCE after a start, this answers 503. A host
