@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useLiveRefresh } from '@/components/LiveProvider';
 import { useAuth } from '@/components/AuthProvider';
 import SellerOrdersModal from '@/components/SellerOrdersModal';
+import { SellerAnalyticsView, SellerDetailDrawer } from '@/components/SellerAnalytics';
 import {
   Users,
   Search,
@@ -32,9 +33,6 @@ export default function SellersPage() {
   const { user } = useAuth();
   const [sellers, setSellers] = useState([]);
   const [members, setMembers] = useState([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [viewMode, setViewMode] = useState('compact');
   const [loading, setLoading] = useState(true);
 
   // Assignment Modal State (Admin only)
@@ -127,6 +125,7 @@ export default function SellersPage() {
         setAssignModalSeller(null);
         setSelectedMemberId('');
         fetchData();
+        loadAnalytics(scope, true);
         // Moving a seller that already has an owner waits for the other partner
         if (okData.pendingApproval) alert(okData.message);
       } else {
@@ -186,556 +185,118 @@ export default function SellersPage() {
     }
   };
 
-  // Filter sellers
-  const filteredSellers = sellers.filter((s) => {
-    const term = searchTerm.trim().toLowerCase();
-    const matchesSearch =
-      !term ||
-      s.storeName?.toLowerCase().includes(term) ||
-      s.ownerName?.toLowerCase().includes(term) ||
-      s.email?.toLowerCase().includes(term) ||
-      s.phone?.toLowerCase().includes(term) ||
-      s.assignment?.privateNotes?.customName?.toLowerCase().includes(term);
+  // Seller analytics: "My sellers" for everyone, "All sellers" (the business) for partners
+  const [scope, setScope] = useState('mine');
+  const [analytics, setAnalytics] = useState({}); // scope -> answer
+  const [analyticsError, setAnalyticsError] = useState('');
+  const [openSeller, setOpenSeller] = useState(null);
 
-    if (!matchesSearch) return false;
+  const loadAnalytics = async (which = scope, silent = false) => {
+    try {
+      if (!silent) setAnalyticsError('');
+      const token = localStorage.getItem('portal_token');
+      const res = await fetch(`/api/sellers/analytics?scope=${which}`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || 'Could not load seller analytics');
+      setAnalytics((prev) => ({ ...prev, [which]: json }));
+    } catch (e) {
+      if (!silent) setAnalyticsError(e.message);
+    }
+  };
 
-    if (statusFilter === 'assigned') return Boolean(s.assignment);
-    if (statusFilter === 'unassigned') return !s.assignment;
-    return true;
-  });
+  useEffect(() => {
+    if (!user) return;
+    loadAnalytics(scope);
+  }, [scope, user?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const memberWalletMap = new Map();
-  members.forEach((m) => {
-    const earned = m.netBalancePKR ?? ((m.totalDepositsINR || 0) - (m.totalWithdrawalsINR || 0) + (m.totalBonusesPKR || 0));
-    memberWalletMap.set(m._id?.toString(), earned);
-  });
+  useLiveRefresh(() => loadAnalytics(scope, true));
+
+  const directory = new Map(sellers.map((x) => [String(x._id), x]));
+  const current = analytics[scope];
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-5 animate-fade-in pb-10">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-            {isAdmin ? 'Seller Directory & Store Assignments' : 'My Assigned Clients'}
-          </h1>
+          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">{scope === 'all' ? 'All sellers' : 'My sellers'}</h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            {isAdmin
-              ? 'Distribute incoming merchant applications to team members and monitor performance.'
-              : 'Track your clients live deposits, withdrawals, pending orders and manage private CRM notes.'}
+            {scope === 'all'
+              ? 'Every real client seller of the business. Real Binance USDT only: test accounts and helping amounts are not counted.'
+              : isAdmin
+              ? 'The sellers that belong to you, and what you earned from each. Real Binance USDT only.'
+              : 'Your sellers: what they deposited and withdrew, and what you earned from each. Real Binance USDT only.'}
           </p>
         </div>
-
-        {/* Search, Filter & View Controls */}
-        <div className="flex items-center flex-wrap gap-2">
-          <div className="relative flex-1 sm:w-64">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search store, owner or alias..."
-              className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            />
+        {isAdmin && (
+          <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 self-start lg:self-auto">
+            {[
+              { key: 'mine', label: 'My sellers' },
+              { key: 'all', label: 'All sellers (business)' },
+            ].map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setScope(t.key)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition ${scope === t.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
-
-          {isAdmin && (
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs sm:text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            >
-              <option value="all">All Stores</option>
-              <option value="assigned">Assigned</option>
-              <option value="unassigned">Unassigned (New)</option>
-            </select>
-          )}
-
-          {/* View Mode Toggle */}
-          <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200">
-            <button
-              onClick={() => setViewMode('compact')}
-              className={`p-2 rounded-lg text-xs font-semibold flex items-center gap-1 transition ${
-                viewMode === 'compact'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-              title="Compact Quick-Scan View"
-            >
-              <List className="w-4 h-4" />
-              <span className="hidden sm:inline">Compact</span>
-            </button>
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`p-2 rounded-lg text-xs font-semibold flex items-center gap-1 transition ${
-                viewMode === 'grid'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-500 hover:text-slate-800'
-              }`}
-              title="Card Grid View"
-            >
-              <LayoutGrid className="w-4 h-4" />
-              <span className="hidden sm:inline">Cards</span>
-            </button>
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* Sellers Listing */}
-      {loading ? (
-        <div className="py-20 text-center text-slate-400 text-sm">
-          Loading client stores and live analytics...
+      {analyticsError && !current && <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-xs text-red-700">{analyticsError}</div>}
+
+      {!current ? (
+        <div className="space-y-3 animate-pulse" aria-label="Loading">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-24 rounded-3xl bg-slate-200/70" />
+            ))}
+          </div>
+          <div className="h-72 rounded-3xl bg-slate-200/60" />
+          <div className="h-64 rounded-3xl bg-slate-200/50" />
         </div>
-      ) : filteredSellers.length === 0 ? (
+      ) : current.sellers.length === 0 && !loading ? (
         <div className="py-16 text-center bg-white rounded-3xl border border-slate-200 p-8">
           <Users className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-          <p className="text-base font-bold text-slate-700">No sellers found</p>
+          <p className="text-base font-bold text-slate-700">No sellers yet</p>
           <p className="text-xs text-slate-400 mt-1">
-            {searchTerm
-              ? 'Try changing your search terms or filters.'
+            {scope === 'all'
+              ? 'No client sellers are registered yet.'
               : isAdmin
-              ? 'No sellers are currently registered on the ecommerce platform.'
+              ? 'No seller is assigned to you yet. Choose yourself under “Assigned To” when approving a seller, or switch to “All sellers”.'
               : 'You have not been assigned any sellers yet. Admin will assign new seller applications to you soon.'}
           </p>
         </div>
-      ) : viewMode === 'compact' ? (
-        /* ── COMPACT LIST / TABLE VIEW (Fast Scanning, Zero Endless Scroll) ── */
-        <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm">
-          {/* Desktop & Tablet Table */}
-          <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase font-bold text-[10px] tracking-wider">
-                <tr>
-                  <th className="py-3 px-4">Store & Owner</th>
-                  <th className="py-3 px-4">Health</th>
-                  <th className="py-3 px-4 text-center">Active Deal</th>
-                  {isAdmin && <th className="py-3 px-4">Assigned Member (Wallet)</th>}
-                  <th className="py-3 px-4 text-right">Deposited</th>
-                  <th className="py-3 px-4 text-right">Withdrawn</th>
-                  <th className="py-3 px-4 text-right">Net in Binance</th>
-                  <th className="py-3 px-4 text-center">Orders</th>
-                  <th className="py-3 px-4 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {filteredSellers.map((seller) => {
-                  const privateNote = seller.assignment?.privateNotes || {};
-                  const healthScore = seller.accountHealth?.score ?? 100;
-                  const assignedMemberId = seller.assignment?.member?._id?.toString();
-                  const memberWallet = assignedMemberId ? memberWalletMap.get(assignedMemberId) : null;
-                  const activeDealLabel = seller.assignment?.commissionLabel || seller.assignment?.member?.commissionLabel;
-
-                  return (
-                    <tr key={seller._id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                          <span>{privateNote.customName || seller.storeName}</span>
-                          {privateNote.customName && privateNote.customName !== seller.storeName && (
-                            <span className="text-[10px] text-slate-400 font-normal">
-                              ({seller.storeName})
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-slate-500 flex items-center gap-2">
-                          <span>{seller.ownerName}</span>
-                          {privateNote.location && (
-                            <span className="text-[10px] text-slate-400 font-normal">
-                              • 📍 {privateNote.location}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      <td className="py-3 px-4">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            healthScore >= 80
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : healthScore >= 50
-                              ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                              : 'bg-red-50 text-red-700 border border-red-200'
-                          }`}
-                        >
-                          <HeartPulse className="w-3 h-3" />
-                          {healthScore}%
-                        </span>
-                      </td>
-
-                      {/* Active Deal inherited from assigned Member */}
-                      <td className="py-3 px-4 text-center">
-                        {seller.assignment?.member ? (
-                          <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                              activeDealLabel === 'inr_50'
-                                ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            }`}
-                            title={`Deal set on staff: ${seller.assignment.member.name}`}
-                          >
-                            {activeDealLabel === 'inr_50' ? '🇮🇳 50% INR Deal' : '🇵🇰 1:1 PKR Deal'}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                            🏛️ Platform Treasury
-                          </span>
-                        )}
-                      </td>
-
-                      {isAdmin && (
-                        <td className="py-3 px-4">
-                          {seller.assignment?.member ? (
-                            <div>
-                              <span className="font-bold text-slate-800 text-xs block">
-                                {seller.assignment.member.name}
-                              </span>
-                              {memberWallet !== undefined && memberWallet !== null && (
-                                <span className="text-[10px] font-semibold text-emerald-600 flex items-center gap-0.5">
-                                  <Wallet className="w-2.5 h-2.5" />
-                                  <span>Rs. {memberWallet.toLocaleString()} earned</span>
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-[11px] font-bold text-red-500 bg-red-50 px-2 py-0.5 rounded-md border border-red-100">
-                              Unassigned
-                            </span>
-                          )}
-                        </td>
-                      )}
-
-                      <td className="py-3 px-4 text-right font-bold text-emerald-600">
-                        ₮{(seller.binance?.depositUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </td>
-
-                      <td className="py-3 px-4 text-right text-slate-600">
-                        ₮{(seller.binance?.withdrawUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </td>
-
-                      <td className="py-3 px-4 text-right font-bold text-brand-700">
-                        ₮{(seller.binance?.netUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </td>
-
-                      <td className="py-3 px-4 text-center">
-                        <button
-                          type="button"
-                          onClick={() => setOrdersSeller(seller)}
-                          title="See pending orders and wallet"
-                          className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold underline-offset-2 hover:underline ${
-                            seller.pendingOrdersCount > 0
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-slate-100 text-slate-500'
-                          }`}
-                        >
-                          {seller.pendingOrdersCount}
-                        </button>
-                      </td>
-
-                      <td className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={() => openNoteModal(seller)}
-                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
-                            title="Memory Note"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                          {isAdmin && (
-                            <button
-                              onClick={() => {
-                                setAssignModalSeller(seller);
-                                setSelectedMemberId(seller.assignment?.member?._id || '');
-                              }}
-                              className="p-1.5 rounded-lg bg-purple-50 hover:bg-purple-100 text-purple-700 transition"
-                              title="Reassign Store"
-                            >
-                              <UserPlus className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Mobile Condensed Cards (80% less vertical space!) */}
-          <div className="block md:hidden divide-y divide-slate-100">
-            {filteredSellers.map((seller) => {
-              const privateNote = seller.assignment?.privateNotes || {};
-              const healthScore = seller.accountHealth?.score ?? 100;
-              const assignedMemberId = seller.assignment?.member?._id?.toString();
-              const memberWallet = assignedMemberId ? memberWalletMap.get(assignedMemberId) : null;
-
-              return (
-                <div key={seller._id} className="p-3 hover:bg-slate-50/80 transition flex flex-col gap-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="font-bold text-slate-900 text-xs sm:text-sm truncate">
-                        {privateNote.customName || seller.storeName}
-                      </div>
-                      <div className="text-[11px] text-slate-500">
-                        {seller.ownerName}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span
-                        className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                          healthScore >= 80
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-amber-50 text-amber-700'
-                        }`}
-                      >
-                        {healthScore}%
-                      </span>
-                      <button
-                        onClick={() => openNoteModal(seller)}
-                        className="p-1.5 rounded-lg bg-slate-100 text-slate-600"
-                        title="Memory Note"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                      </button>
-                      {isAdmin && (
-                        <button
-                          onClick={() => {
-                            setAssignModalSeller(seller);
-                            setSelectedMemberId(seller.assignment?.member?._id || '');
-                          }}
-                          className="p-1.5 rounded-lg bg-purple-50 text-purple-700"
-                          title="Assign"
-                        >
-                          <UserPlus className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11px] bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-100">
-                    <span className="text-slate-500">
-                      Net: <strong className="text-brand-700">₮{(seller.binance?.netUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-                    </span>
-                    <span className="text-slate-500">
-                      Orders:{' '}
-                      <button type="button" onClick={() => setOrdersSeller(seller)} className="font-bold text-amber-600 underline underline-offset-2">
-                        {seller.pendingOrdersCount}
-                      </button>
-                    </span>
-                    <span
-                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${
-                        (seller.assignment?.commissionLabel || seller.assignment?.member?.commissionLabel) === 'inr_50'
-                          ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                          : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                      }`}
-                    >
-                      {(seller.assignment?.commissionLabel || seller.assignment?.member?.commissionLabel) === 'inr_50' ? '🇮🇳 50%' : '🇵🇰 1:1'}
-                    </span>
-                    {isAdmin && (
-                      <span className="text-slate-500 truncate max-w-[100px]">
-                        Staff: <strong className="text-slate-800">{seller.assignment?.member?.name?.split(' ')[0] || 'None'}</strong>
-                        {memberWallet !== undefined && memberWallet !== null && (
-                          <span className="text-[9px] text-emerald-600 block">
-                            Rs. {memberWallet.toLocaleString()}
-                          </span>
-                        )}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
       ) : (
-        /* ── GRID CARDS VIEW (Full Details) ── */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-          {filteredSellers.map((seller) => {
-            const privateNote = seller.assignment?.privateNotes || {};
-            const healthScore = seller.accountHealth?.score ?? 100;
-            const assignedMemberId = seller.assignment?.member?._id?.toString();
-            const memberWallet = assignedMemberId ? memberWalletMap.get(assignedMemberId) : null;
+        <SellerAnalyticsView
+          data={current}
+          directory={directory}
+          isPartner={isAdmin}
+          scope={scope}
+          onOpen={(s) => setOpenSeller(s)}
+          onNote={(dir) => openNoteModal(dir)}
+          onOrders={(dir) => setOrdersSeller(dir)}
+          onAssign={(dir) => {
+            setAssignModalSeller(dir);
+            setSelectedMemberId(dir.assignment?.member?._id || '');
+          }}
+        />
+      )}
 
-            return (
-              <div
-                key={seller._id}
-                className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between"
-              >
-                <div>
-                  {/* Top info row */}
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      {/* Member Alias or Real Store Name */}
-                      <h3 className="font-bold text-slate-900 text-base flex items-center gap-1.5">
-                        <span>{privateNote.customName || seller.storeName}</span>
-                        {privateNote.customName && privateNote.customName !== seller.storeName && (
-                          <span className="text-[10px] text-slate-400 font-normal">
-                            ({seller.storeName})
-                          </span>
-                        )}
-                      </h3>
-                      <p className="text-xs text-slate-500 font-medium">{seller.ownerName}</p>
-                    </div>
-
-                    {/* Account Health Pill */}
-                    <div
-                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center space-x-1 ${
-                        healthScore >= 80
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : healthScore >= 50
-                          ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                          : 'bg-red-50 text-red-700 border border-red-200'
-                      }`}
-                    >
-                      <HeartPulse className="w-3 h-3" />
-                      <span>{healthScore}% Health</span>
-                    </div>
-                  </div>
-
-                  {/* Private Memory Badges (if saved by member) */}
-                  {(privateNote.location || privateNote.occupation || privateNote.age) && (
-                    <div className="flex flex-wrap gap-1.5 mt-2.5">
-                      {privateNote.location && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-medium">
-                          📍 {privateNote.location}
-                        </span>
-                      )}
-                      {privateNote.occupation && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-medium">
-                          💼 {privateNote.occupation}
-                        </span>
-                      )}
-                      {privateNote.age && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-medium">
-                          🎂 {privateNote.age} yrs
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Real Binance USDT of this store (finance ledger), not the store wallet */}
-                  <div className="grid grid-cols-3 gap-2 bg-slate-50 rounded-2xl p-3 my-4 border border-slate-100 text-center">
-                    <div>
-                      <span className="text-[10px] text-slate-400 block font-medium">Deposited</span>
-                      <span className="text-xs sm:text-sm font-bold text-emerald-600">
-                        ₮{(seller.binance?.depositUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-
-                    <div>
-                      <span className="text-[10px] text-slate-400 block font-medium">Withdrawn</span>
-                      <span className="text-xs sm:text-sm font-bold text-slate-700">
-                        ₮{(seller.binance?.withdrawUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-
-                    <div>
-                      <span className="text-[10px] text-slate-400 block font-medium">Net in Binance</span>
-                      <span className="text-xs sm:text-sm font-bold text-brand-700">
-                        ₮{(seller.binance?.netUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Order & Contact status */}
-                  <div className="space-y-1.5 text-xs text-slate-600">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-400 flex items-center space-x-1">
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>Pending Orders:</span>
-                      </span>
-                      <button type="button" onClick={() => setOrdersSeller(seller)} className="font-bold text-amber-600 underline underline-offset-2">
-                        {seller.pendingOrdersCount} orders →
-                      </button>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-400">Wallet available / locked:</span>
-                      <button type="button" onClick={() => setOrdersSeller(seller)} className="font-bold text-slate-700">
-                        ${(seller.wallet?.balance || 0).toFixed(2)} / <span className="text-amber-600">${(seller.wallet?.locked || 0).toFixed(2)}</span>
-                      </button>
-                    </div>
-
-                    {isAdmin && (
-                      <div className="flex items-center justify-between pt-1">
-                        <span className="text-slate-400">Assigned Member:</span>
-                        <div className="text-right">
-                          <span className="font-semibold text-slate-800 block">
-                            {seller.assignment?.member?.name || (
-                              <span className="text-red-500 font-bold">Unassigned</span>
-                            )}
-                          </span>
-                          {memberWallet !== undefined && memberWallet !== null && (
-                            <span className="text-[10px] text-emerald-600 font-semibold flex items-center justify-end gap-1">
-                              <Wallet className="w-2.5 h-2.5" />
-                              <span>Rs. {memberWallet.toLocaleString()} earned</span>
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Active Deal inherited from assigned Member */}
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="text-slate-400">Commission Rule:</span>
-                      {seller.assignment?.member ? (
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                            (seller.assignment?.commissionLabel || seller.assignment?.member?.commissionLabel) === 'inr_50'
-                              ? 'bg-amber-50 text-amber-800 border border-amber-200'
-                              : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          }`}
-                        >
-                          {(seller.assignment?.commissionLabel || seller.assignment?.member?.commissionLabel) === 'inr_50'
-                            ? '🇮🇳 50% INR (Staff Deal)'
-                            : '🇵🇰 1:1 PKR (Staff Deal)'}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200">
-                          🏛️ Platform Treasury Pool
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Private Details Preview */}
-                  {privateNote.details && (
-                    <div className="mt-3 p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/50 text-[11px] text-amber-900 leading-snug">
-                      <span className="font-bold block text-[10px] uppercase text-amber-800">
-                        Private Memory Note:
-                      </span>
-                      {privateNote.details}
-                    </div>
-                  )}
-                </div>
-
-                {/* Card Actions Footer */}
-                <div className="pt-4 mt-2 border-t border-slate-100 flex items-center justify-between gap-2">
-                  {/* Private Memory Note Button */}
-                  <button
-                    onClick={() => openNoteModal(seller)}
-                    className="flex-1 py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center justify-center space-x-1 transition"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    <span>Memory Note</span>
-                  </button>
-
-                  {/* Admin Re-assign Button */}
-                  {isAdmin && (
-                    <button
-                      onClick={() => {
-                        setAssignModalSeller(seller);
-                        setSelectedMemberId(seller.assignment?.member?._id || '');
-                      }}
-                      className="py-2 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-semibold text-xs flex items-center space-x-1 transition"
-                    >
-                      <UserPlus className="w-3.5 h-3.5" />
-                      <span>{seller.assignment ? 'Reassign' : 'Assign'}</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      {openSeller && (
+        <SellerDetailDrawer
+          seller={openSeller}
+          scope={scope}
+          isPartner={isAdmin}
+          dirEntry={directory.get(openSeller.sellerId)}
+          onClose={() => setOpenSeller(null)}
+          onNote={(dir) => openNoteModal(dir)}
+          onOrders={(dir) => setOrdersSeller(dir)}
+        />
       )}
 
       {/* ─── MODAL: Admin Assign Seller to Member ─── */}

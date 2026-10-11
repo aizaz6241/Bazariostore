@@ -381,7 +381,7 @@ function ChangeTable({ before, after }) {
 
 const LOG_OPEN_KEY = 'portal_finance_log_open';
 
-export function ActivityLog({ tick }) {
+export function ActivityLog({ tick, defaultOpen = false }) {
   const [rows, setRows] = useState([]);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -393,10 +393,14 @@ export function ActivityLog({ tick }) {
   const [search, setSearch] = useState('');
 
   useEffect(() => {
+    if (defaultOpen) {
+      setExpanded(true);
+      return;
+    }
     try {
       setExpanded(localStorage.getItem(LOG_OPEN_KEY) === '1');
     } catch (e) {}
-  }, []);
+  }, [defaultOpen]);
   const toggle = () => {
     setExpanded((v) => {
       try {

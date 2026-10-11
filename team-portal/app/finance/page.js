@@ -19,6 +19,9 @@ import {
   Trash2,
   X,
   ArrowLeftRight,
+  Store,
+  RotateCcw,
+  Ban,
 } from 'lucide-react';
 import { computeSplit } from '@/lib/utils/financeSplit';
 import { useLiveRefresh, LiveBadge } from '@/components/LiveProvider';
@@ -814,7 +817,7 @@ function BinanceShareCharts({ data, reserveInUse }) {
       <div className="bg-white rounded-2xl border border-slate-200 p-4">
         <h3 className="text-sm font-bold text-slate-900">Who owns the USDT in Binance</h3>
         <p className="text-[11px] text-slate-400 mb-3">Each person’s share (balance){reserveInUse ? ' and the reserve' : ''}</p>
-        <DonutChart slices={slices} format={fmtU} totalLabel="Shares in plus" emptyText="No share in plus" />
+        <DonutChart vertical slices={slices} format={fmtU} totalLabel="Shares in plus" emptyText="No share in plus" />
         {minus.length > 0 && (
           <p className="text-[11px] text-red-600 mt-2">
             In minus: {minus.map((w) => `${w.name} ${fmtU(w.balanceUSDT)}`).join(', ')}
@@ -854,6 +857,147 @@ function BinanceShareCharts({ data, reserveInUse }) {
   );
 }
 
+/**
+ * What the sellers can still ask to withdraw (their store wallets, in $) next to what Binance
+ * holds. Not the partners' money: a promise the business has to be able to keep.
+ */
+function StoreWalletsCard({ liability, binanceUSDT }) {
+  const [open, setOpen] = React.useState(false);
+  const total = Number(liability.totalUSD) || 0;
+  const waiting = Number(liability.pendingWithdrawalUSD) || 0;
+  const held = Math.max(0, Number(binanceUSDT) || 0);
+  const covered = total > 0 ? Math.min(100, (held / total) * 100) : 100;
+  const short = total > held + 0.005;
+  const gap = Math.max(0, total - held);
+  const rows = liability.sellers || [];
+  return (
+    <div className={`rounded-3xl border overflow-hidden ${short ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200 bg-white'}`}>
+      <div className="px-5 py-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <Store className="w-4 h-4 text-amber-600" /> What sellers can still withdraw
+          </h3>
+          <p className="text-[11px] text-slate-500 mt-0.5 max-w-2xl">
+            The money in the {liability.sellerCount} client sellers’ store wallets. They can ask to take it out at any time, so Binance should hold enough before the team takes payouts.
+          </p>
+        </div>
+        <span className={`px-3 py-1 rounded-full text-[11px] font-bold ${short ? 'bg-amber-500 text-white' : 'bg-emerald-100 text-emerald-800'}`}>
+          {short ? `Binance covers ${covered.toFixed(0)}%` : 'Fully covered'}
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-slate-200/70 border-y border-slate-200/70">
+        <div className="bg-white px-5 py-3.5">
+          <div className="text-[10px] uppercase font-bold text-slate-400">In store wallets</div>
+          <div className="text-xl font-black tabular-nums text-slate-900">${fmt(total)}</div>
+          <div className="text-[11px] text-slate-500">across {liability.sellerCount} client sellers</div>
+        </div>
+        <div className="bg-white px-5 py-3.5">
+          <div className="text-[10px] uppercase font-bold text-slate-400">Already asked to withdraw</div>
+          <div className={`text-xl font-black tabular-nums ${waiting > 0 ? 'text-orange-600' : 'text-slate-900'}`}>${fmt(waiting)}</div>
+          <div className="text-[11px] text-slate-500">{waiting > 0 ? 'waiting to be paid' : 'nothing waiting'}</div>
+        </div>
+        <div className="bg-white px-5 py-3.5">
+          <div className="text-[10px] uppercase font-bold text-slate-400">In Binance now</div>
+          <div className="text-xl font-black tabular-nums text-emerald-700">{usdt(held)}</div>
+          <div className={`text-[11px] ${short ? 'text-amber-700 font-semibold' : 'text-slate-500'}`}>{short ? `${usdt(gap)} less than the store wallets` : 'more than the store wallets'}</div>
+        </div>
+      </div>
+      <div className="px-5 py-3">
+        <div className="h-2.5 rounded-full bg-slate-200 overflow-hidden" title={`Binance covers ${covered.toFixed(1)}% of the store wallets`}>
+          <div className={`h-full rounded-full ${short ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${Math.max(2, covered)}%` }} />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 mt-2">
+          <p className={`text-[11px] ${short ? 'text-amber-900' : 'text-slate-500'}`}>
+            {short
+              ? 'Store wallets hold more than Binance. Keep enough USDT back before paying team payouts.'
+              : 'Binance holds more than every store wallet together.'}
+          </p>
+          {rows.length > 0 && (
+            <button type="button" onClick={() => setOpen((v) => !v)} className="text-[11px] font-bold text-slate-700 hover:text-slate-900 underline underline-offset-2">
+              {open ? 'Hide sellers' : `See by seller (${rows.length})`}
+            </button>
+          )}
+        </div>
+      </div>
+      {open && rows.length > 0 && (
+        <div className="border-t border-slate-200/70 bg-white overflow-x-auto">
+          <table className="w-full text-xs min-w-[480px]">
+            <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase">
+              <tr>
+                <th className="text-left px-5 py-2">Seller</th>
+                <th className="text-left px-3 py-2">Owner</th>
+                <th className="text-right px-3 py-2">Store wallet</th>
+                <th className="text-right px-5 py-2">Asked to withdraw</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td className="px-5 py-2 font-bold text-slate-900">{r.storeName}</td>
+                  <td className="px-3 py-2 text-slate-600">{r.ownerName || <span className="text-red-600 font-semibold">No owner</span>}</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-bold">${fmt(r.balanceUSD)}</td>
+                  <td className={`px-5 py-2 text-right tabular-nums ${r.pendingWithdrawalUSD > 0 ? 'text-orange-600 font-bold' : 'text-slate-300'}`}>{r.pendingWithdrawalUSD > 0 ? `$${fmt(r.pendingWithdrawalUSD)}` : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One person's share of the Binance money, as a card (phones) */
+function ShareCard({ w, partner, reserveInUse, reserveCol, totalPlus }) {
+  const bal = Number(w.balanceUSDT) || 0;
+  const avail = w.availableUSDT ?? bal;
+  const pct = totalPlus > 0 && bal > 0 ? (bal / totalPlus) * 100 : 0;
+  const line = (label, v, cls = '') => (
+    <div className="flex items-center justify-between text-[11px] py-0.5">
+      <span className="text-slate-500">{label}</span>
+      <span className={`font-bold tabular-nums ${cls || (v < 0 ? 'text-red-600' : 'text-slate-800')}`}>
+        {v < 0 ? '−' : v > 0 ? '+' : ''}
+        {fmt(Math.abs(v))}
+      </span>
+    </div>
+  );
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="font-bold text-slate-900 text-sm truncate">{w.name}</div>
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">{dealText(w)}</span>
+        </div>
+        <div className="text-right">
+          <div className={`text-lg font-black tabular-nums ${bal < 0 ? 'text-red-600' : 'text-slate-900'}`}>{usdt(bal)}</div>
+          {pct > 0 && <div className="text-[10px] text-slate-400">{pct.toFixed(0)}% of all shares</div>}
+        </div>
+      </div>
+      <div className="mt-2 border-t border-slate-100 pt-2">
+        {line('Earned from deposits', w.earnedUSDT)}
+        {Math.abs(w.bonusUSDT - w.bonusCostUSDT) > 0.004 && line('Bonuses', w.bonusUSDT - w.bonusCostUSDT)}
+        {w.sellerWithdrawUSDT > 0.004 && line('Share of seller withdrawals', -w.sellerWithdrawUSDT)}
+        {w.payoutUSDT > 0.004 && line('Payouts taken', -w.payoutUSDT)}
+        {reserveInUse && partner && Math.abs(reserveCol(w)) > 0.004 && line('Reserve', reserveCol(w))}
+      </div>
+      <div className="mt-2 flex items-center justify-between rounded-xl bg-emerald-50 px-3 py-2">
+        <span className="text-[11px] font-bold text-emerald-900">Can take out now</span>
+        <span className={`text-sm font-black tabular-nums ${avail < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{usdt(avail)}</span>
+      </div>
+    </div>
+  );
+}
+
+const FINANCE_TABS = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'transactions', label: 'Transactions' },
+  { key: 'payouts', label: 'Payouts' },
+  { key: 'reserve', label: 'Reserve pool' },
+  { key: 'attention', label: 'Needs attention' },
+  { key: 'activity', label: 'Activity log' },
+];
+const PAGE = 50;
+
 export default function FinancePage() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
@@ -869,12 +1013,32 @@ export default function FinancePage() {
   // Goes up whenever the approvals list and the activity log should be read again
   const [tick, setTick] = useState(0);
 
+  // Which part of the page is shown (kept in the address: /finance?tab=payouts)
+  const [tab, setTabState] = useState('overview');
+  useEffect(() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get('tab');
+      if (t && FINANCE_TABS.some((x) => x.key === t)) setTabState(t);
+    } catch (_) {}
+  }, []);
+  const setTab = (t) => {
+    setTabState(t);
+    try {
+      const u = new URL(window.location.href);
+      if (t === 'overview') u.searchParams.delete('tab');
+      else u.searchParams.set('tab', t);
+      window.history.replaceState(window.history.state, '', u.pathname + u.search);
+    } catch (_) {}
+  };
+  const [shown, setShown] = useState(PAGE); // transactions shown (newest first)
+
   // Table filters
   const [q, setQ] = useState('');
   const [fType, setFType] = useState('all');
   const [fOwner, setFOwner] = useState('all');
   const [fFrom, setFFrom] = useState('');
   const [fTo, setFTo] = useState('');
+  useEffect(() => setShown(PAGE), [q, fType, fOwner, fFrom, fTo]);
 
   // Each request gets a number; an answer is used only if nothing newer was asked meanwhile, so a
   // background refresh can never put older numbers back over a change you just saved.
@@ -1015,6 +1179,7 @@ export default function FinancePage() {
     return true;
   });
   const filtersOn = q || fType !== 'all' || fOwner !== 'all' || fFrom || fTo;
+  const shownRows = rows.slice(0, shown);
 
   // signed amount of one person in one entry (+ money for them, − money from them)
   const signed = (e, sh) => {
@@ -1193,7 +1358,46 @@ export default function FinancePage() {
             </div>
           </div>
 
-          {/* ── Reserve pool ── */}
+          {/* ── Sections ── */}
+          <div className="sticky top-16 z-30 -mx-1 px-1 py-2 bg-slate-50/90 backdrop-blur">
+            <div className="flex gap-1.5 overflow-x-auto bg-white border border-slate-200 rounded-2xl p-1.5">
+              {FINANCE_TABS.map((x) => {
+                const n =
+                  x.key === 'attention'
+                    ? (data.pending || []).length
+                    : x.key === 'transactions'
+                    ? data.entries.length
+                    : x.key === 'payouts'
+                    ? data.payouts.length
+                    : 0;
+                return (
+                  <button
+                    key={x.key}
+                    type="button"
+                    onClick={() => setTab(x.key)}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition ${
+                      tab === x.key ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    {x.label}
+                    {n > 0 && (
+                      <span
+                        className={`min-w-[18px] px-1 rounded-full text-[10px] text-center ${
+                          x.key === 'attention' ? 'bg-amber-500 text-white' : tab === x.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                        }`}
+                      >
+                        {n}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {tab === 'reserve' && (
+            <>
+{/* ── Reserve pool ── */}
           <div className="bg-white rounded-3xl border border-indigo-200 overflow-hidden">
             <div className="px-5 py-4 border-b border-indigo-100 bg-indigo-50/60 flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -1325,7 +1529,12 @@ export default function FinancePage() {
             </div>
           </div>
 
-          {/* ── People in minus: what the partners can really use today ── */}
+                      </>
+          )}
+
+          {tab === 'overview' && (
+            <>
+{/* ── People in minus: what the partners can really use today ── */}
           {(t.membersMinusCount || 0) > 0 && (
             <div className="bg-white rounded-3xl border border-red-200 overflow-hidden">
               <div className="px-5 py-4 border-b border-red-100 bg-red-50/60 flex flex-wrap items-center justify-between gap-2">
@@ -1433,28 +1642,35 @@ export default function FinancePage() {
           )}
 
           {/* ── What sellers can still ask for ── */}
-          <div
-            className={`p-4 rounded-3xl border text-xs flex flex-wrap items-center gap-x-6 gap-y-1 ${
-              short ? 'bg-amber-50 border-amber-300 text-amber-900' : 'bg-white border-slate-200 text-slate-700'
-            }`}
-          >
-            <span className="font-bold">Seller store wallets (what they can still ask to withdraw):</span>
-            <span>
-              <b>${fmt(liability.totalUSD)}</b> across {liability.sellerCount} client sellers
-            </span>
-            <span>
-              Already requested, waiting: <b>${fmt(liability.pendingWithdrawalUSD)}</b>
-            </span>
-            {short && <span className="font-bold">More than the USDT in Binance — keep enough back before paying team payouts.</span>}
-          </div>
+          <StoreWalletsCard liability={liability} binanceUSDT={t.balanceUSDT} />
 
           {/* ── Charts: who owns what, money in / out ── */}
           <BinanceShareCharts data={data} reserveInUse={reserveInUse} />
 
           {/* ── Whose money is it ── */}
           <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 font-bold text-slate-900 text-sm">Whose share is in Binance</div>
-            <div className="overflow-x-auto">
+            <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm">Whose share is in Binance</h3>
+                <p className="text-[11px] text-slate-500">
+                  Each person’s part of the {usdt(t.balanceUSDT)} in Binance: earned − withdrawals share − payouts = share.
+                </p>
+              </div>
+            </div>
+            {/* phones: one card per person */}
+            <div className="md:hidden p-3 grid grid-cols-1 gap-3">
+              {data.wallets.map((w) => (
+                <ShareCard
+                  key={w.userId}
+                  w={w}
+                  partner={partnerIds.has(w.userId)}
+                  reserveInUse={reserveInUse}
+                  reserveCol={reserveCol}
+                  totalPlus={data.wallets.reduce((s2, x) => s2 + Math.max(0, x.balanceUSDT || 0), 0)}
+                />
+              ))}
+            </div>
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-xs min-w-[640px]">
                 <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase">
                   <tr>
@@ -1472,8 +1688,17 @@ export default function FinancePage() {
                   {data.wallets.map((w) => (
                     <tr key={w.userId} className="hover:bg-slate-50/60">
                       <td className="px-5 py-3">
-                        <b className="text-slate-900">{w.name}</b>
-                        <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">{dealText(w)}</span>
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-xs font-black shrink-0" style={{ background: colorForSlot(data.wallets.indexOf(w)) }}>
+                            {String(w.name || '?').charAt(0).toUpperCase()}
+                          </span>
+                          <div className="min-w-0">
+                            <b className="text-slate-900">{w.name}</b>
+                            <div>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">{dealText(w)}</span>
+                            </div>
+                          </div>
+                        </div>
                       </td>
                       <td className="text-right px-3 py-3 font-bold tabular-nums">{money(w.earnedUSDT)}</td>
                       <td className="text-right px-3 py-3 font-bold tabular-nums">{money(w.bonusUSDT - w.bonusCostUSDT)}</td>
@@ -1527,7 +1752,12 @@ export default function FinancePage() {
             </div>
           </div>
 
-          {/* ── Waiting for an amount, a rate or an owner ── */}
+                      </>
+          )}
+
+          {tab === 'attention' && (
+            <>
+{/* ── Waiting for an amount, a rate or an owner ── */}
           {data.pending.length > 0 && (
             <div className="bg-amber-50/70 rounded-3xl border border-amber-200 overflow-hidden">
               <div className="px-5 py-4 border-b border-amber-200 font-bold text-amber-900 text-sm flex items-center gap-2">
@@ -1592,7 +1822,12 @@ export default function FinancePage() {
             </div>
           )}
 
-          {/* ── Transactions table ── */}
+                      </>
+          )}
+
+          {tab === 'transactions' && (
+            <>
+{/* ── Transactions table ── */}
           <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
             <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -1614,15 +1849,26 @@ export default function FinancePage() {
             </div>
 
             <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/60 flex flex-wrap items-end gap-3 text-xs">
-              <label className="font-bold text-slate-500">
+              <div className="font-bold text-slate-500">
                 <span className="block text-[10px] uppercase mb-1">Type</span>
-                <select value={fType} onChange={(e) => setFType(e.target.value)} className="p-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-700">
-                  <option value="all">All types</option>
-                  <option value="deposit">Deposits</option>
-                  <option value="seller_withdrawal">Seller withdrawals</option>
-                  <option value="bonus">Bonuses</option>
-                </select>
-              </label>
+                <div className="flex gap-1 flex-wrap">
+                  {[
+                    { k: 'all', l: 'All', n: allEntries.length },
+                    { k: 'deposit', l: 'Deposits', n: allEntries.filter((x) => x.kind === 'deposit').length },
+                    { k: 'seller_withdrawal', l: 'Withdrawals', n: allEntries.filter((x) => x.kind === 'seller_withdrawal').length },
+                    { k: 'bonus', l: 'Bonuses', n: allEntries.filter((x) => x.kind === 'bonus').length },
+                  ].map((c) => (
+                    <button
+                      key={c.k}
+                      type="button"
+                      onClick={() => setFType(c.k)}
+                      className={`px-2.5 py-2 rounded-xl border text-xs font-bold whitespace-nowrap ${fType === c.k ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                    >
+                      {c.l} <span className="opacity-60">{c.n}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
               <label className="font-bold text-slate-500">
                 <span className="block text-[10px] uppercase mb-1">Belongs to</span>
                 <select value={fOwner} onChange={(e) => setFOwner(e.target.value)} className="p-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-700">
@@ -1658,7 +1904,53 @@ export default function FinancePage() {
               )}
             </div>
 
-            <div className="overflow-x-auto">
+            {/* phones: one card per entry */}
+            <div className="md:hidden divide-y divide-slate-100">
+              {rows.length === 0 && <p className="py-10 text-center text-xs text-slate-400">{allEntries.length === 0 ? 'Nothing counted yet.' : 'No entries match these filters.'}</p>}
+              {shownRows.map((e) => {
+                const ms = memberShare(e);
+                return (
+                  <div key={e.id} className="px-4 py-3 text-xs">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <b className="text-slate-900">{e.storeName}</b>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${KIND_STYLE[e.kind]}`}>{KIND_LABEL[e.kind]}</span>
+                          {e.manual && <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[9px] font-bold uppercase">Manual</span>}
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">
+                          {day(e.date)} • {e.owner ? e.owner.name : '—'}
+                          {e.inr > 0 ? ` • ₹${fmt(e.inr, 0)} @ ${e.rate}` : ''}
+                        </div>
+                        {waitingByEntry.has(e.id) && (
+                          <div className="mt-1">
+                            <WaitingTag approval={waitingByEntry.get(e.id)} />
+                          </div>
+                        )}
+                      </div>
+                      <div className={`text-sm font-black tabular-nums shrink-0 ${e.kind === 'deposit' ? 'text-emerald-600' : e.kind === 'bonus' ? 'text-amber-600' : 'text-red-600'}`}>
+                        {e.kind === 'deposit' ? '+' : e.kind === 'bonus' ? '' : '−'}
+                        {fmt(e.usdt)}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5 text-[11px]">
+                      {partners.map((p) => (
+                        <span key={p.id} className="text-slate-500">
+                          {p.name}: <b>{money(shareOf(e, p.id), 2)}</b>
+                        </span>
+                      ))}
+                      {ms && (
+                        <span className="text-slate-500">
+                          {ms.name}: <b>{money(ms.value, 2)}</b>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-xs min-w-[980px]">
                 <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase">
                   <tr>
@@ -1686,7 +1978,7 @@ export default function FinancePage() {
                       </td>
                     </tr>
                   )}
-                  {rows.map((e) => {
+                  {shownRows.map((e) => {
                     const ms = memberShare(e);
                     return (
                       <React.Fragment key={e.id}>
@@ -1830,99 +2122,156 @@ export default function FinancePage() {
                 )}
               </table>
             </div>
+            {rows.length > shown && (
+              <div className="px-5 py-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="text-slate-500">
+                  Showing {shown} of {rows.length} • the totals count all {rows.length}
+                </span>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setShown((n) => n + PAGE)} className="px-3 py-2 rounded-xl bg-slate-900 text-white font-bold">
+                    Show {Math.min(PAGE, rows.length - shown)} more
+                  </button>
+                  <button type="button" onClick={() => setShown(rows.length)} className="px-3 py-2 rounded-xl bg-slate-100 text-slate-700 font-bold">
+                    Show all
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* ── Team payouts ── */}
-          {data.payouts.length > 0 && (
-            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
-              <div className="px-5 py-4 border-b border-slate-100 font-bold text-slate-900 text-sm">Payouts to members / partners ({data.payouts.length})</div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs min-w-[640px]">
-                  <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase">
-                    <tr>
-                      <th className="text-left px-5 py-2.5">Date</th>
-                      <th className="text-left px-3 py-2.5">Person</th>
-                      <th className="text-left px-3 py-2.5">Note</th>
-                      <th className="text-left px-3 py-2.5">Recorded by</th>
-                      <th className="text-right px-3 py-2.5">USDT</th>
-                      <th className="text-right px-5 py-2.5"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
+            </>
+          )}
+
+          {tab === 'payouts' && (
+            <div className="space-y-4">
+              {/* who took how much */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                <div className="bg-white rounded-3xl border border-slate-200 p-5">
+                  <div className="text-[10px] uppercase font-bold text-slate-400">Paid out to the team</div>
+                  <p className="text-2xl font-black text-amber-600 tabular-nums mt-1">{usdt(t.payoutUSDT)}</p>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    {data.payouts.length} payout{data.payouts.length === 1 ? '' : 's'} counted
+                    {(data.reversedPayouts || []).length ? ` • ${data.reversedPayouts.length} reversed (not counted)` : ''}
+                  </p>
+                  <div className="mt-3 p-3 rounded-2xl bg-slate-50 border border-slate-100 text-[11px] text-slate-600 leading-relaxed space-y-1">
+                    <p>
+                      <b className="text-slate-800">Your own payout</b> (Wallet → Record payout) is counted at once and lowers only your wallet.
+                    </p>
+                    <p>
+                      <b className="text-slate-800">A member</b> can only ask: pay on Binance first, then approve the request above.
+                    </p>
+                    <p>
+                      <b className="text-slate-800">Reverse</b> a payout written by mistake: the other partner approves, the row stays for the record.
+                    </p>
+                  </div>
+                </div>
+                <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-200 p-5">
+                  <h3 className="text-sm font-bold text-slate-900">Payouts per person</h3>
+                  <p className="text-[11px] text-slate-400 mb-3">Real USDT taken out of Binance, all time</p>
+                  <BarList
+                    items={Object.values(
+                      data.payouts.reduce((acc, p) => {
+                        const k = String(p.userId || p.name);
+                        acc[k] = acc[k] || { id: k, name: p.name, value: 0, n: 0 };
+                        acc[k].value += Number(p.amountUSDT) || 0;
+                        acc[k].n += 1;
+                        return acc;
+                      }, {})
+                    )
+                      .sort((x, y) => y.value - x.value)
+                      .map((x) => ({ ...x, color: '#eda100', sub: `${x.n} payout${x.n === 1 ? '' : 's'}` }))}
+                    format={(v) => usdt(v)}
+                    emptyText="No payouts yet"
+                  />
+                </div>
+              </div>
+
+              {/* every payout */}
+              <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-100">
+                  <h3 className="font-bold text-slate-900 text-sm">Every payout ({data.payouts.length})</h3>
+                  <p className="text-[11px] text-slate-500">Newest first</p>
+                </div>
+                {data.payouts.length === 0 ? (
+                  <p className="py-12 text-center text-xs text-slate-400">No payouts recorded yet.</p>
+                ) : (
+                  <div className="divide-y divide-slate-100">
                     {[...data.payouts].reverse().map((p) => (
-                      <tr key={p.id} className="hover:bg-slate-50/60">
-                        <td className="px-5 py-3 text-slate-600 whitespace-nowrap">{day(p.date)}</td>
-                        <td className="px-3 py-3 font-bold text-slate-900">{p.name}</td>
-                        <td className="px-3 py-3 text-slate-500">
-                          {p.note || '—'}
+                      <div key={p.id} className="px-5 py-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs hover:bg-slate-50/60">
+                        <span className="w-9 h-9 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center font-black shrink-0">{String(p.name || '?').charAt(0)}</span>
+                        <div className="min-w-0 flex-1">
+                          <div className="font-bold text-slate-900">{p.name}</div>
+                          <div className="text-[11px] text-slate-500">
+                            {day(p.date)}
+                            {p.processedBy ? ` • recorded by ${p.processedBy}` : ''}
+                            {p.note ? ` • ${p.note}` : ''}
+                          </div>
                           {waitingByEntry.get(p.id) && (
                             <div className="mt-1">
                               <WaitingTag approval={waitingByEntry.get(p.id)} />
                             </div>
                           )}
-                        </td>
-                        <td className="px-3 py-3 text-slate-500 whitespace-nowrap">{p.processedBy || '—'}</td>
-                        <td className="px-3 py-3 text-right font-black text-amber-700 tabular-nums">-{fmt(p.amountUSDT)}</td>
-                        <td className="px-5 py-3 text-right">
-                          {!waitingByEntry.get(p.id) && (
-                            <button
-                              disabled={busyId === p.id}
-                              onClick={() => reversePayout(p)}
-                              className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 text-[11px] font-bold hover:bg-slate-50 disabled:opacity-60"
-                              title="This payout was written by mistake or the money was never sent"
-                            >
-                              Reverse
-                            </button>
-                          )}
-                        </td>
-                      </tr>
+                        </div>
+                        <span className="font-black text-amber-700 tabular-nums text-sm">−{fmt(p.amountUSDT)}</span>
+                        {!waitingByEntry.get(p.id) && (
+                          <button
+                            disabled={busyId === p.id}
+                            onClick={() => reversePayout(p)}
+                            className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 text-slate-700 text-[11px] font-bold hover:bg-red-50 hover:border-red-200 hover:text-red-700 disabled:opacity-60 flex items-center gap-1"
+                            title="This payout was written by mistake or the money was never sent"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" /> Reverse
+                          </button>
+                        )}
+                      </div>
                     ))}
-                  </tbody>
-                </table>
+                  </div>
+                )}
               </div>
-            </div>
-          )}
 
-          {/* ── Payouts that were taken back: kept for the record, not counted ── */}
-          {(data.reversedPayouts || []).length > 0 && (
-            <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
-              <div className="px-5 py-4 border-b border-slate-100 text-sm">
-                <span className="font-bold text-slate-900">Reversed payouts ({data.reversedPayouts.length})</span>
-                <span className="text-[11px] text-slate-500 ml-2">kept for the record, not counted anywhere</span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs min-w-[560px]">
-                  <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase">
-                    <tr>
-                      <th className="text-left px-5 py-2.5">Recorded</th>
-                      <th className="text-left px-3 py-2.5">Person</th>
-                      <th className="text-left px-3 py-2.5">Reversed</th>
-                      <th className="text-left px-3 py-2.5">Reason</th>
-                      <th className="text-right px-5 py-2.5">USDT</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
+              {/* taken back: kept for the record, not counted */}
+              {(data.reversedPayouts || []).length > 0 && (
+                <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
+                  <div className="px-5 py-4 border-b border-slate-100">
+                    <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                      <Ban className="w-4 h-4 text-slate-400" /> Reversed payouts ({data.reversedPayouts.length})
+                    </h3>
+                    <p className="text-[11px] text-slate-500">Kept for the record. Not counted anywhere: the money went back to the wallet.</p>
+                  </div>
+                  <div className="divide-y divide-slate-100">
                     {[...data.reversedPayouts].reverse().map((p) => (
-                      <tr key={p.id} className="text-slate-500">
-                        <td className="px-5 py-3 whitespace-nowrap">{day(p.date)}</td>
-                        <td className="px-3 py-3 font-bold text-slate-700">{p.name}</td>
-                        <td className="px-3 py-3">
-                          {p.reversedAt ? day(p.reversedAt) : '—'}
-                          {p.reversedBy ? ` • ${p.reversedBy}` : ''}
-                        </td>
-                        <td className="px-3 py-3">{p.reverseReason || '—'}</td>
-                        <td className="px-5 py-3 text-right font-bold tabular-nums line-through">{fmt(p.amountUSDT)}</td>
-                      </tr>
+                      <div key={p.id} className="px-5 py-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-bold text-slate-700">{p.name}</div>
+                          <div className="text-[11px]">
+                            Recorded {day(p.date)} • reversed {p.reversedAt ? day(p.reversedAt) : '—'}
+                            {p.reversedBy ? ` by ${p.reversedBy}` : ''}
+                          </div>
+                          {p.reverseReason && <div className="text-[11px] text-slate-600 mt-0.5">Reason: {p.reverseReason}</div>}
+                        </div>
+                        <span className="font-bold tabular-nums line-through">{fmt(p.amountUSDT)}</span>
+                      </div>
                     ))}
-                  </tbody>
-                </table>
-              </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          <HiddenEntries rows={data.skipped} busyId={busyId} onBringBack={(row) => act(row.id, 'unskip', {}, row.kind)} />
-          <ExcludedTestSellers rows={data.excludedTest} />
-          <ActivityLog tick={tick} />
+          {tab === 'attention' && (
+            <>
+              {(data.pending || []).length === 0 && (
+                <div className="bg-white rounded-3xl border border-emerald-200 p-6 text-center">
+                  <CheckCircle className="w-8 h-8 text-emerald-500 mx-auto" />
+                  <p className="text-sm font-bold text-slate-900 mt-2">Nothing waiting</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Every deposit and withdrawal has its real USDT and is counted.</p>
+                </div>
+              )}
+              <HiddenEntries rows={data.skipped} busyId={busyId} onBringBack={(row) => act(row.id, 'unskip', {}, row.kind)} />
+              <ExcludedTestSellers rows={data.excludedTest} />
+            </>
+          )}
+          {tab === 'activity' && <ActivityLog tick={tick} defaultOpen />}
         </>
       )}
 

@@ -30,7 +30,7 @@ export default function MobileBottomNav() {
   const navItems = [
     { href: '/dashboard', label: 'Home', icon: LayoutDashboard },
     { href: '/chat', label: 'Chats', icon: MessageSquare },
-    ...(isAdmin ? [] : [{ href: '/sellers', label: 'Sellers', icon: Users }]),
+    { href: '/sellers', label: 'Sellers', icon: Users },
     { href: '/wallet', label: 'Wallet', icon: Wallet },
     { href: '/analytics', label: 'Analytics', icon: BarChart3 },
     { href: '/rewards', label: 'Rewards', icon: Award },
@@ -58,12 +58,12 @@ export default function MobileBottomNav() {
               <div className={`p-1 rounded-xl transition-all relative ${isActive ? 'bg-brand-50 scale-105' : ''}`}>
                 <Icon className="w-5 h-5" />
                 {item.href === '/chat' && unreadChatCount > 0 && (
-                  <span className="absolute -top-1 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-emerald-600 text-white text-[10px] font-bold rounded-full ring-2 ring-white shadow-xs">
+                  <span className="absolute -top-1 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full ring-2 ring-white shadow-xs">
                     {unreadChatCount > 99 ? '99+' : unreadChatCount}
                   </span>
                 )}
               </div>
-              <span className="text-[10px] mt-0.5 tracking-tight font-medium">{item.label}</span>
+              <span className="text-[10px] mt-0.5 tracking-tight font-medium truncate max-w-full px-0.5">{item.label}</span>
             </Link>
           );
         })}

@@ -657,12 +657,24 @@ async function computeLedger() {
   let liabilityUSD = 0;
   let pendingWithdrawalUSD = 0;
   let realSellerCount = 0;
+  const liabilityRows = [];
   for (const s of sellers) {
     if (!isRealSeller(s)) continue;
     realSellerCount += 1;
     liabilityUSD += num(s.wallet?.balance);
     pendingWithdrawalUSD += num(s.wallet?.pendingWithdrawal);
+    if (num(s.wallet?.balance) > 0.005 || num(s.wallet?.pendingWithdrawal) > 0.005) {
+      const ownerDoc = memberMap.get(ownerBySeller.get(sid(s._id)) || '');
+      liabilityRows.push({
+        id: sid(s._id),
+        storeName: s.storeName || 'Store',
+        ownerName: ownerDoc ? ownerDoc.name : '',
+        balanceUSD: r2(num(s.wallet?.balance)),
+        pendingWithdrawalUSD: r2(num(s.wallet?.pendingWithdrawal)),
+      });
+    }
   }
+  liabilityRows.sort((a, b) => b.balanceUSD - a.balanceUSD);
 
   // ─── Choices for the "Add entry" form, and client sellers that still have no owner ───
   const sellerOptions = sellers
@@ -740,6 +752,8 @@ async function computeLedger() {
       totalUSD: r2(liabilityUSD),
       pendingWithdrawalUSD: r2(pendingWithdrawalUSD),
       sellerCount: realSellerCount,
+      // biggest store wallets first (what each seller could still ask to withdraw)
+      sellers: liabilityRows.slice(0, 50),
     },
   };
 

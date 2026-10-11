@@ -1,6 +1,6 @@
 /* Bazario Team Portal - Service Worker & Push Notification Handler */
 
-const CACHE_NAME = 'bazario-team-v2';
+const CACHE_NAME = 'bazario-team-v3';
 // A tapped notification leaves its target here for a moment, in case the app was asleep and
 // could not be told directly (iPhone). The app picks it up as soon as it is in front again.
 const NAV_CACHE = 'bazario-nav-v1';
@@ -72,7 +72,14 @@ self.addEventListener('push', (event) => {
   const tag = isChat ? `chat-${info.conversationId}` : data.tag || `bazario-${Date.now()}`;
   const targetUrl = info.url || data.url || '/dashboard';
 
+  // Is the portal open and in front of the person right now? Then the app itself shows the
+  // message (toast + its own sound): the phone notification is still shown, but silently, so
+  // the same message does not ring twice.
+  const windowsP = self.clients.matchAll({ type: 'window', includeUncontrolled: true }).catch(() => []);
+
   const build = async () => {
+    const windows = await windowsP;
+    const inFront = windows.some((c) => c.visibilityState === 'visible' && (c.focused || c.focused === undefined));
     let lines = [];
     let count = 1;
     if (isChat) {
@@ -101,7 +108,8 @@ self.addEventListener('push', (event) => {
       sound,
       vibrate,
       tag,
-      renotify: true,
+      renotify: !inFront,
+      silent: inFront,
       requireInteraction: false,
       timestamp: Date.now(),
       data: {
@@ -129,20 +137,28 @@ self.addEventListener('push', (event) => {
     return self.registration.showNotification(title, options);
   };
 
-  // Broadcast to any open windows so in-app sound and live updates trigger immediately
-  const broadcastPromise = self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-    clients.forEach((client) => {
-      client.postMessage({
-        type: 'PUSH_NOTIFICATION_RECEIVED',
-        notification: {
-          title,
-          body,
-          url: targetUrl,
-          sound,
-          dataType: info.type,
-        },
+  // Tell the app, but only a window that is on screen right now. (An iPhone keeps a sleeping app's
+  // messages and hands them all over when it is opened again: that is what made old
+  // notifications ring again the moment the app was opened.) The time goes along so the app can
+  // drop anything that arrives late anyway.
+  const broadcastPromise = windowsP.then((clients) => {
+    clients
+      .filter((client) => client.visibilityState === 'visible')
+      .forEach((client) => {
+        client.postMessage({
+          type: 'PUSH_NOTIFICATION_RECEIVED',
+          sentAt: Date.now(),
+          notification: {
+            title: textOf(data.title, 120) || 'Bazario Team',
+            body: textOf(info.line || data.body, 300),
+            url: targetUrl,
+            sound,
+            dataType: info.type || data.type || 'general',
+            nid: info.nid || '',
+            conversationId: info.conversationId || '',
+          },
+        });
       });
-    });
   });
 
   event.waitUntil(Promise.all([build(), broadcastPromise]));

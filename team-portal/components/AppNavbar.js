@@ -74,7 +74,7 @@ export default function AppNavbar() {
   const navLinks = [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/chat', label: 'Chats', icon: MessageSquare },
-    ...(isAdmin ? [] : [{ href: '/sellers', label: 'Sellers', icon: Users }]),
+    { href: '/sellers', label: 'Sellers', icon: Users },
     { href: '/models', label: 'Models', icon: ImageIcon },
     { href: '/rewards', label: 'Rewards', icon: Award },
     { href: '/wallet', label: 'Wallet', icon: Wallet },
@@ -147,7 +147,7 @@ export default function AppNavbar() {
               </div>
               <div>
                 <span className="font-bold text-slate-900 text-lg leading-tight block">Bazario</span>
-                <span className="text-xs font-medium text-slate-500 block lg:hidden xl:block -mt-1 whitespace-nowrap">Operations Hub</span>
+                <span className="text-xs font-medium text-slate-500 hidden sm:block lg:hidden 2xl:block -mt-1 whitespace-nowrap">Operations Hub</span>
               </div>
             </Link>
 
@@ -178,10 +178,10 @@ export default function AppNavbar() {
                   }`}
                 >
                   {/* icons come back on wide screens; at laptop width the labels need the room */}
-                  <Icon className="w-4 h-4 hidden xl:block" />
+                  <Icon className="w-4 h-4 hidden 2xl:block" />
                   <span>{item.label}</span>
                   {item.href === '/chat' && unreadChatCount > 0 && (
-                    <span className="ml-1 px-1.5 py-0.2 bg-emerald-600 text-white text-[10px] font-extrabold rounded-full animate-pulse shadow-xs">
+                    <span className="ml-1 min-w-[18px] text-center px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-extrabold rounded-full shadow-xs">
                       {unreadChatCount > 99 ? '99+' : unreadChatCount}
                     </span>
                   )}
@@ -197,7 +197,7 @@ export default function AppNavbar() {
               <button
                 type="button"
                 onClick={() => setIsWalletModalOpen(true)}
-                className="hidden sm:flex lg:hidden xl:flex items-center space-x-2 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 px-3 py-1.5 rounded-full hover:border-amber-300 hover:shadow-sm transition-all text-left group"
+                className="hidden sm:flex lg:hidden 2xl:flex items-center space-x-2 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 px-3 py-1.5 rounded-full hover:border-amber-300 hover:shadow-sm transition-all text-left group"
                 title="Click to view Admin Wallet & Transaction History"
               >
                 <div className="w-5 h-5 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-700 group-hover:scale-110 transition-transform">
@@ -238,7 +238,7 @@ export default function AppNavbar() {
               <div className="w-9 h-9 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 font-semibold text-sm">
                 {user.name?.charAt(0).toUpperCase() || 'U'}
               </div>
-              <div className="hidden xl:block text-left">
+              <div className="hidden 2xl:block text-left">
                 <p className="text-xs font-semibold text-slate-800 leading-tight">{user.name}</p>
                 <p className="text-[10px] text-slate-400">@{user.username}</p>
               </div>

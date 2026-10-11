@@ -289,7 +289,7 @@ export function LineLegend({ items }) {
  * @param format value -> text
  * @param totalLabel small text under the total in the middle
  */
-export function DonutChart({ slices, format = (v) => String(v), totalLabel = 'Total', emptyText = 'Nothing in this period' }) {
+export function DonutChart({ slices, format = (v) => String(v), totalLabel = 'Total', emptyText = 'Nothing in this period', vertical = false }) {
   const [active, setActive] = useState(null);
   const total = slices.reduce((s, x) => s + x.value, 0);
 
@@ -322,7 +322,7 @@ export function DonutChart({ slices, format = (v) => String(v), totalLabel = 'To
   const pctText = (p) => (p >= 10 ? `${p.toFixed(0)}%` : `${p.toFixed(1)}%`);
 
   return (
-    <div className="flex flex-col sm:flex-row items-center gap-5">
+    <div className={`flex flex-col items-center gap-5 ${vertical ? '' : 'sm:flex-row'}`}>
       <div className="relative shrink-0" style={{ width: SIZE, height: SIZE }}>
         <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} role="img" aria-label={`${totalLabel}: ${format(total)}`}>
           <g transform={`rotate(-90 ${SIZE / 2} ${SIZE / 2})`}>

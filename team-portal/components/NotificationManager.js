@@ -50,7 +50,12 @@ export function NotificationProvider({ children }) {
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [soundEnabled, setSoundEnabledState] = useState(true);
   const [showPromptBanner, setShowPromptBanner] = useState(false);
-  const [inAppToast, setInAppToast] = useState(null); // { title, body, url, type }
+  // In-app notifications while the portal is in use: a small stack at the top (newest first)
+  const [toasts, setToasts] = useState([]); // [{ id, title, body, url, type, count }]
+  const toastTimers = useRef(new Map());
+  const recentUrlRef = useRef(new Map()); // url -> when a toast for it was shown (no double toasts)
+  const recentNidRef = useRef(new Map()); // notification id -> when it was shown as a toast
+  const lastSoundRef = useRef(0);
   const [loadingAction, setLoadingAction] = useState(false);
   const [unreadChatCount, setUnreadChatCount] = useState(() => {
     return readCache('portal_total_unread_chat') || 0;
@@ -77,6 +82,41 @@ export function NotificationProvider({ children }) {
     [notifCacheKey]
   );
 
+  // New lines in the bell since the last look: shown as a toast while the portal is in use.
+  // The first look (opening the app, coming back to it) only takes note of what is there: those
+  // were already seen as phone notifications, so they do not ring again.
+  const seenRef = useRef(new Map()); // notification id -> lastAt
+  const baselineRef = useRef(true);
+  const showToastRef = useRef(null);
+  const chimeRef = useRef(null);
+  const isOpenChatRef = useRef(() => false);
+  const announceNew = (data) => {
+    const items = Array.isArray(data?.items) ? data.items : [];
+    const key = (n) => String(n.lastAt || '');
+    if (baselineRef.current) {
+      seenRef.current = new Map(items.map((n) => [String(n._id), key(n)]));
+      baselineRef.current = false;
+      return;
+    }
+    const now = Date.now();
+    const fresh = items.filter((n) => !n.readAt && seenRef.current.get(String(n._id)) !== key(n) && now - new Date(n.lastAt).getTime() < 3 * 60000);
+    items.forEach((n) => seenRef.current.set(String(n._id), key(n)));
+    if (typeof document !== 'undefined' && document.hidden) return;
+    let rang = false;
+    for (const n of fresh.slice(0, 3).reverse()) {
+      const nidAt = recentNidRef.current.get(String(n._id));
+      if (nidAt && now - nidAt < 60000) continue; // already shown when the push arrived
+      if (isOpenChatRef.current(n.url)) continue;
+      const urlAt = n.url ? recentUrlRef.current.get(n.url) : null;
+      if (urlAt && now - urlAt < 15000) continue; // the live message was already shown
+      showToastRef.current?.({ title: n.title, body: n.body, url: n.url, type: n.type, merge: false });
+      if (!rang) {
+        chimeRef.current?.(n.type === 'finance' ? 'cash' : n.type === 'chat' ? 'message' : 'notification', n.url);
+        rang = true;
+      }
+    }
+  };
+
   const refreshNotifications = useCallback(async () => {
     if (!user) return;
     try {
@@ -84,9 +124,13 @@ export function NotificationProvider({ children }) {
       if (!token) return;
       lastNotifFetchRef.current = Date.now();
       const res = await fetch('/api/notifications', { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
-      if (res.ok) applyNotifications(await res.json());
+      if (res.ok) {
+        const data = await res.json();
+        announceNew(data);
+        applyNotifications(data);
+      }
     } catch (_) {}
-  }, [user, applyNotifications]);
+  }, [user, applyNotifications]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Several things can ask for a refresh at the same moment: one request a little later is enough
   const refreshNotificationsSoon = useCallback(
@@ -152,6 +196,70 @@ export function NotificationProvider({ children }) {
     [router]
   );
 
+  // Is this chat link the conversation that is open on the screen right now?
+  const isOpenChat = useCallback((url) => {
+    if (typeof window === 'undefined' || window.location.pathname !== '/chat' || !String(url || '').startsWith('/chat?')) return false;
+    try {
+      const now = new URLSearchParams(window.location.search);
+      const it = new URLSearchParams(String(url).slice(String(url).indexOf('?')));
+      if (!now.get('chatType')) return false; // the chat list, no conversation open
+      return now.get('chatType') === it.get('chatType') && (now.get('contactId') || '') === (it.get('contactId') || '');
+    } catch (_) {
+      return false;
+    }
+  }, []);
+
+  const dropToast = useCallback((id) => {
+    clearTimeout(toastTimers.current.get(id));
+    toastTimers.current.delete(id);
+    setToasts((list) => list.filter((t) => t.id !== id));
+  }, []);
+
+  /**
+   * Show something that just came in. Several messages of the same chat within a few seconds
+   * become one toast ("3 new messages") instead of a pile.
+   */
+  const toastsRef = useRef([]);
+  toastsRef.current = toasts;
+  const armToast = useCallback(
+    (id) => {
+      clearTimeout(toastTimers.current.get(id));
+      toastTimers.current.set(
+        id,
+        setTimeout(() => dropToast(id), 6500)
+      );
+    },
+    [dropToast]
+  );
+  const showToast = useCallback(
+    (t) => {
+      if (!t || !t.title) return false;
+      const now = Date.now();
+      const url = t.url || '';
+      const key = url || `${t.title}|${t.body}`;
+      const before = recentUrlRef.current.get(key);
+      recentUrlRef.current.set(key, now);
+      if (recentUrlRef.current.size > 200) recentUrlRef.current.delete(recentUrlRef.current.keys().next().value);
+      const list = toastsRef.current;
+      const existing = url && before && now - before < 8000 ? list.find((x) => x.url === url) : null;
+      let next;
+      let id;
+      if (existing) {
+        id = existing.id;
+        const updated = { ...existing, title: t.title || existing.title, body: t.body || existing.body, count: (existing.count || 1) + (t.merge === false ? 0 : 1) };
+        next = [updated, ...list.filter((x) => x.id !== id)];
+      } else {
+        id = `${now}-${Math.random().toString(36).slice(2, 7)}`;
+        next = [{ id, title: t.title, body: t.body || '', url, type: t.type || 'general', count: 1 }, ...list].slice(0, 3);
+      }
+      toastsRef.current = next;
+      setToasts(next);
+      armToast(id);
+      return true;
+    },
+    [armToast]
+  );
+
   // Tapped in the bell list: mark it read and open what it is about
   const openNotification = useCallback(
     (n) => {
@@ -170,7 +278,7 @@ export function NotificationProvider({ children }) {
         if (handledClicksRef.current.has(click.id)) return;
         handledClicksRef.current.add(click.id);
       }
-      setInAppToast(null);
+      setToasts([]);
       if (click.nid) markNotificationsRead([click.nid]);
       else refreshNotificationsSoon(800);
       goTo(click.url);
@@ -203,6 +311,7 @@ export function NotificationProvider({ children }) {
       setNotifications(saved.items);
       setUnreadNotificationCount(Number(saved.unread) || 0);
     }
+    baselineRef.current = true;
     refreshNotifications();
     consumePendingClick();
 
@@ -211,7 +320,11 @@ export function NotificationProvider({ children }) {
       if (Date.now() - lastNotifFetchRef.current >= 45000) refreshNotifications();
     }, 15000);
     const onFront = () => {
-      if (document.hidden) return;
+      if (document.hidden) {
+        // whatever arrives while the app is away is seen as a phone notification
+        baselineRef.current = true;
+        return;
+      }
       consumePendingClick();
       refreshNotifications();
     };
@@ -300,6 +413,27 @@ export function NotificationProvider({ children }) {
   useRealtimeEvent('chat:message', (payload) => {
     if (!user || String(payload?.message?.senderId || '') === String(user._id)) return;
     refreshNotificationsSoon(2000);
+    // and show it at once (the phone notification comes a moment later, or not at all on a computer)
+    const m = payload?.message || {};
+    const conv = String(payload?.conversationId || m.conversationId || '');
+    if (!conv || document.hidden) return;
+    const preview = m.isDeleted
+      ? 'Message deleted'
+      : m.messageType === 'image'
+      ? `📷 ${m.text ? String(m.text).slice(0, 80) : 'Photo'}`
+      : m.messageType === 'voice'
+      ? '🎤 Voice message'
+      : String(m.text || '').slice(0, 160);
+    let t;
+    if (conv === 'main_group') t = { title: '👥 Team group', body: `${m.senderName || 'Someone'}: ${preview}`, url: '/chat?chatType=group' };
+    else if (conv === 'materials_group') t = { title: '📁 Materials Group', body: `${m.senderName || 'Admin'}: ${preview}`, url: '/chat?chatType=materials' };
+    else if (conv.startsWith('personal_')) {
+      const other = conv.replace(/^personal_/, '').split('_').find((x) => x !== String(user._id)) || String(m.senderId || '');
+      t = { title: `💬 ${m.senderName || 'Message'}`, body: preview, url: `/chat?chatType=personal&contactId=${other}` };
+    }
+    if (!t || isOpenChat(t.url)) return;
+    showToast({ ...t, type: 'chat' });
+    chime('message', t.url);
   });
   useRealtimeEvent('live:changed', () => refreshNotificationsSoon(2500));
 
@@ -457,6 +591,34 @@ export function NotificationProvider({ children }) {
   const playCashSound = useCallback(() => playSound('cash'), [playSound]);
   const playNotificationSound = useCallback(() => playSound('notification'), [playSound]);
 
+  // One sound per thing that came in (the live message and its push arrive a moment apart)
+  const chimedRef = useRef(new Map());
+  const chime = useCallback(
+    (type = 'message', url = '') => {
+      const now = Date.now();
+      if (now - lastSoundRef.current < 1200) return;
+      if (url && now - (chimedRef.current.get(url) || 0) < 6000) return;
+      lastSoundRef.current = now;
+      if (url) chimedRef.current.set(url, now);
+      playSound(type);
+    },
+    [playSound]
+  );
+  chimeRef.current = chime;
+  showToastRef.current = showToast;
+  isOpenChatRef.current = isOpenChat;
+
+  // The number on the app icon (iPhone / Android Home Screen app): unread chats + other alerts
+  useEffect(() => {
+    if (typeof navigator === 'undefined') return;
+    const others = notifications.filter((n) => !n.readAt && n.type !== 'chat').length;
+    const n = (Number(unreadChatCount) || 0) + others;
+    try {
+      if (n > 0 && navigator.setAppBadge) navigator.setAppBadge(n).catch(() => {});
+      else if (navigator.clearAppBadge) navigator.clearAppBadge().catch(() => {});
+    } catch (_) {}
+  }, [unreadChatCount, notifications]);
+
   // Subscribe device to server push notifications
   const subscribeDevice = useCallback(async () => {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
@@ -537,18 +699,18 @@ export function NotificationProvider({ children }) {
       // Listen for push notifications while in foreground
       const handleSwMessage = (event) => {
         if (event.data?.type === 'PUSH_NOTIFICATION_RECEIVED') {
-          const notif = event.data.notification;
-          const soundType = notif.dataType === 'finance' ? 'cash' : 'message';
-          playSound(soundType);
-
-          setInAppToast({
-            title: notif.title,
-            body: notif.body,
-            url: notif.url,
-            type: notif.dataType,
-          });
+          const notif = event.data.notification || {};
           refreshUnreadChatCount();
           refreshNotificationsSoon(1200);
+          // Only something that arrives now, while the portal is on screen. (Messages kept by the
+          // phone while the app slept are old news: the person already saw them on the lock screen.)
+          const late = event.data.sentAt && Date.now() - event.data.sentAt > 10000;
+          if (document.hidden || late) return;
+          // the conversation open on the screen shows (and chimes) its own messages
+          if (isOpenChat(notif.url)) return;
+          if (notif.nid) recentNidRef.current.set(String(notif.nid), Date.now());
+          showToast({ title: notif.title, body: notif.body, url: notif.url, type: notif.dataType });
+          chime(notif.dataType === 'finance' ? 'cash' : notif.dataType === 'chat' ? 'message' : 'notification');
         } else if (event.data?.type === 'NOTIFICATION_CLICK') {
           // a phone / desktop notification was tapped: open what it is about
           handleNotificationClick(event.data.click);
@@ -566,7 +728,7 @@ export function NotificationProvider({ children }) {
         navigator.serviceWorker.removeEventListener('message', handleSwMessage);
       };
     }
-  }, [user, playSound, subscribeDevice, handleNotificationClick, refreshNotificationsSoon]);
+  }, [user, playSound, subscribeDevice, handleNotificationClick, refreshNotificationsSoon, isOpenChat, showToast]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Request permission and subscribe
   const enableNotifications = async () => {
@@ -585,10 +747,10 @@ export function NotificationProvider({ children }) {
         const ok = await subscribeDevice();
         if (ok) {
           playNotificationSound();
-          setInAppToast({
-            title: '🔔 Notifications Active!',
-            body: 'You will receive sound notifications for all team messages, deposits and bonuses.',
-            url: '/chat',
+          showToast({
+            title: '🔔 Notifications are on',
+            body: 'You will get a notification for team messages, deposits, payouts and approvals.',
+            url: '',
             type: 'success',
           });
         }
@@ -624,7 +786,7 @@ export function NotificationProvider({ children }) {
         } else {
           playMessageSound();
         }
-        setInAppToast({
+        showToast({
           title: type === 'money' ? '💰 Test Deposit Alert' : '💬 Test Message Notification',
           body: data.message,
           url: type === 'money' ? '/wallet' : '/chat',
@@ -641,14 +803,7 @@ export function NotificationProvider({ children }) {
     }
   };
 
-  // Auto-dismiss in-app toast
-  useEffect(() => {
-    if (!inAppToast) return;
-    const timer = setTimeout(() => {
-      setInAppToast(null);
-    }, 4500);
-    return () => clearTimeout(timer);
-  }, [inAppToast]);
+
 
   return (
     <NotificationContext.Provider
@@ -709,38 +864,47 @@ export function NotificationProvider({ children }) {
         </div>
       )}
 
-      {/* Foreground In-App Toast */}
-      {inAppToast && (
-        <div
-          onClick={() => {
-            if (inAppToast.url) goTo(inAppToast.url);
-            refreshNotificationsSoon(1500);
-            setInAppToast(null);
-          }}
-          className="fixed top-4 left-4 right-4 max-w-md mx-auto z-50 cursor-pointer bg-slate-900/95 backdrop-blur-md border border-emerald-500/40 text-white p-3.5 rounded-2xl shadow-2xl flex items-start gap-3 animate-in fade-in slide-in-from-top-4 hover:border-emerald-400 transition-all"
-        >
-          <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
-            {inAppToast.type === 'finance' ? (
-              <span className="text-base">💰</span>
-            ) : inAppToast.type === 'success' ? (
-              <CheckCircle className="w-5 h-5 text-emerald-400" />
-            ) : (
-              <Bell className="w-5 h-5 text-teal-400" />
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-bold text-xs text-slate-100 truncate">{inAppToast.title}</div>
-            <div className="text-[11px] text-slate-300 mt-0.5 line-clamp-2">{inAppToast.body}</div>
-          </div>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setInAppToast(null);
-            }}
-            className="p-1 text-slate-400 hover:text-white"
-          >
-            <X className="w-4 h-4" />
-          </button>
+      {/* What just came in, while the portal is in use (also kept in the bell) */}
+      {toasts.length > 0 && (
+        <div className="fixed top-3 left-3 right-3 sm:left-auto sm:right-4 sm:w-[380px] z-[1100] space-y-2 pointer-events-none" style={{ paddingTop: 'env(safe-area-inset-top)' }} aria-live="polite">
+          {toasts.map((t) => {
+            const icon = t.type === 'finance' ? '💰' : t.type === 'chat' ? '💬' : t.type === 'chat_request' ? '🔐' : t.type === 'approval' ? '✅' : t.type === 'success' ? '✅' : '🔔';
+            return (
+              <div
+                key={t.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  if (t.url) goTo(t.url);
+                  refreshNotificationsSoon(1500);
+                  dropToast(t.id);
+                }}
+                onMouseEnter={() => clearTimeout(toastTimers.current.get(t.id))}
+                onMouseLeave={() => armToast(t.id)}
+                className="pointer-events-auto cursor-pointer bg-slate-900/95 backdrop-blur-md border border-white/10 text-white p-3 rounded-2xl shadow-2xl flex items-start gap-3 animate-in fade-in slide-in-from-top-4 hover:border-emerald-400/60 transition-colors"
+              >
+                <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center shrink-0 text-base">{icon}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-xs text-white truncate">
+                    {t.title}
+                    {t.count > 1 && <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-red-500 text-[10px]">{t.count} new</span>}
+                  </div>
+                  {t.body && <div className="text-[11px] text-slate-300 mt-0.5 line-clamp-2 break-words">{t.body}</div>}
+                  <div className="text-[10px] text-emerald-300/90 mt-1 font-semibold">{t.url ? 'Tap to open' : 'Saved in the bell'}</div>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    dropToast(t.id);
+                  }}
+                  className="p-1 text-slate-400 hover:text-white shrink-0"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
     </NotificationContext.Provider>
