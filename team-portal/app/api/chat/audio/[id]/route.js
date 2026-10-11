@@ -21,7 +21,8 @@ export async function GET(req, { params }) {
       msg &&
       (msg.conversationId === 'main_group' ||
         msg.conversationId === 'materials_group' ||
-        (msg.conversationId || '').replace(/^personal_/, '').split('_').includes(myId));
+        (msg.conversationId || '').replace(/^personal_/, '').split('_').includes(myId) ||
+        (session.role === 'admin' && /^personal_/.test(msg.conversationId || '')));
     if (!allowed || msg.isDeleted || msg.messageType !== 'voice' || !(msg.mediaSize > 0)) {
       return new NextResponse('Not found', { status: 404 });
     }

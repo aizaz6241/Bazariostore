@@ -161,6 +161,40 @@ export default function SellerLogin() {
     }
   };
 
+  // ─── Already applied with this email? ───
+  // Asked before the documents are uploaded (and when the email field is left), so somebody who
+  // already sent an application is told at once that it was received and is waiting for approval.
+  const [emailNotice, setEmailNotice] = useState(null); // { code, message, application }
+  const checkEmail = async (value) => {
+    const clean = String(value || '').trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(clean)) return null;
+    try {
+      const res = await api('/sellers/register/check-email', { method: 'POST', body: { email: clean }, timeout: 15000 });
+      return res?.exists ? res : null;
+    } catch {
+      return null; // never stop a registration because this check failed
+    }
+  };
+  const showAlreadyApplied = (answer, fallbackEmail) => {
+    const app = answer?.application || {};
+    setSubmittedInfo({
+      already: true,
+      storeName: app.storeName || regForm.storeName,
+      ownerName: app.ownerName || regForm.ownerName,
+      email: app.email || fallbackEmail || regForm.email,
+      phone: regForm.phone,
+      submittedOn: app.submittedAt ? new Date(app.submittedAt).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : '',
+    });
+    setEmail(app.email || fallbackEmail || regForm.email); // pre-filled for when it is approved
+    setEmailNotice(null);
+    setErr('');
+    setMode('submitted');
+  };
+  const onRegEmailBlur = async () => {
+    const answer = await checkEmail(regForm.email);
+    setEmailNotice(answer ? { code: answer.code, message: answer.message, application: answer.application } : null);
+  };
+
   const handleRegister = async (e) => {
     e.preventDefault();
     setErr('');
@@ -176,6 +210,15 @@ export default function SellerLogin() {
       return;
     }
     setLoading(true);
+    // Already an account / application for this email: say so, do not upload the documents again
+    const existing = await checkEmail(regForm.email);
+    if (existing) {
+      setLoading(false);
+      if (existing.code === 'APPLICATION_PENDING') return showAlreadyApplied(existing, regForm.email);
+      setEmailNotice({ code: existing.code, message: existing.message, application: existing.application });
+      setErr(existing.message);
+      return;
+    }
     try {
       // documents on a slow mobile connection: up to 2 minutes
       const res = await api('/sellers/register', {
@@ -208,14 +251,18 @@ export default function SellerLogin() {
       });
     } catch (e) {
       const msg = e.message || '';
+      if (e.code === 'APPLICATION_PENDING') {
+        showAlreadyApplied(e.data, regForm.email);
+        return;
+      }
       if (/timed out|unable to connect/i.test(msg)) {
         // The answer did not arrive, but the registration may well have been saved. Sending the
         // form again would then only say "this email already exists".
         setErr(
           'The connection was too slow to get the answer. Your registration may already have been received: wait one minute, then try to Sign In with this email. If it says "pending admin approval", it worked — no need to register again.'
         );
-      } else if (/already exists/i.test(msg)) {
-        setErr('This email is already registered. If you just submitted the form, it was received: your account is waiting for admin approval.');
+      } else if (e.code === 'APPLICATION_REJECTED' || e.code === 'ALREADY_REGISTERED' || /already exists/i.test(msg)) {
+        setErr(msg);
       } else {
         setErr(msg || 'Registration failed. Please check your information and try again.');
       }
@@ -416,10 +463,12 @@ export default function SellerLogin() {
             </div>
 
             <h3 style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', marginBottom: 6 }}>
-              Application Successfully Submitted!
+              {submittedInfo?.already ? 'Application Already Submitted' : 'Application Successfully Submitted!'}
             </h3>
             <p style={{ fontSize: 13.5, color: '#64748b', marginBottom: 18, lineHeight: 1.5 }}>
-              Your merchant registration request has been forwarded to the Super Admin team.
+              {submittedInfo?.already
+                ? `You have already applied with this email${submittedInfo.submittedOn ? ` on ${submittedInfo.submittedOn}` : ''}. Your application was received and is waiting for admin approval — there is no need to register again.`
+                : 'Your merchant registration request has been forwarded to the Super Admin team.'}
             </p>
 
             {/* Crucial Notice: Direct Sign-in Not Active */}
@@ -608,10 +657,48 @@ export default function SellerLogin() {
                 <input
                   type="email"
                   value={regForm.email}
-                  onChange={(e) => setRegForm({ ...regForm, email: e.target.value })}
+                  onChange={(e) => {
+                    setRegForm({ ...regForm, email: e.target.value });
+                    if (emailNotice) setEmailNotice(null);
+                  }}
+                  onBlur={onRegEmailBlur}
                   placeholder="owner@domain.com"
                   required
                 />
+                {emailNotice && (
+                  <div
+                    style={{
+                      marginTop: 6,
+                      padding: '9px 11px',
+                      borderRadius: 8,
+                      fontSize: 12,
+                      lineHeight: 1.45,
+                      background: emailNotice.code === 'APPLICATION_REJECTED' ? '#fef2f2' : '#fffbeb',
+                      border: `1px solid ${emailNotice.code === 'APPLICATION_REJECTED' ? '#fecaca' : '#fde68a'}`,
+                      color: emailNotice.code === 'APPLICATION_REJECTED' ? '#991b1b' : '#92400e',
+                    }}
+                  >
+                    {emailNotice.message}
+                    {emailNotice.code === 'APPLICATION_PENDING' && (
+                      <button
+                        type="button"
+                        onClick={() => showAlreadyApplied(emailNotice, regForm.email)}
+                        style={{ display: 'block', marginTop: 6, background: 'none', border: 'none', padding: 0, color: '#b45309', fontWeight: 800, textDecoration: 'underline', cursor: 'pointer', fontSize: 12 }}
+                      >
+                        See my application status →
+                      </button>
+                    )}
+                    {emailNotice.code === 'ALREADY_REGISTERED' && (
+                      <button
+                        type="button"
+                        onClick={() => { setEmail(regForm.email); setMode('login'); setEmailNotice(null); setErr(''); }}
+                        style={{ display: 'block', marginTop: 6, background: 'none', border: 'none', padding: 0, color: '#b45309', fontWeight: 800, textDecoration: 'underline', cursor: 'pointer', fontSize: 12 }}
+                      >
+                        Go to Sign In →
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="field">
                 <label>Phone / WhatsApp *</label>

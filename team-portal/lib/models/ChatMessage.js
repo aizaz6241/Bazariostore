@@ -1,5 +1,22 @@
 import mongoose from 'mongoose';
 
+// A reply (WhatsApp style): a small copy of the message being answered, taken when the reply is
+// sent. It stays readable even after older messages are no longer loaded; if the original is
+// deleted the copy says so (see app/api/chat/[id]/route.js).
+const replySchema = new mongoose.Schema(
+  {
+    messageId: { type: mongoose.Schema.Types.ObjectId, default: null },
+    senderId: { type: mongoose.Schema.Types.ObjectId, default: null },
+    senderName: { type: String, default: '' },
+    messageType: { type: String, default: 'text' },
+    text: { type: String, default: '' }, // the text, or a picture's caption (shortened)
+    audioDuration: { type: Number, default: 0 },
+    thumb: { type: String, default: '' }, // a tiny picture (link or small data) for a photo
+    deleted: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
 const chatMessageSchema = new mongoose.Schema(
   {
     chatType: {
@@ -104,6 +121,11 @@ const chatMessageSchema = new mongoose.Schema(
       recipientMemberName: { type: String, default: '' },
       recipientMemberId: { type: mongoose.Schema.Types.ObjectId, ref: 'PortalMember', default: null },
     },
+    // The message this one answers (null when it is not a reply)
+    replyTo: {
+      type: replySchema,
+      default: null,
+    },
     // Seen / Read By list (populated with member info for Messenger-style floating bubbles)
     readBy: [
       {
@@ -118,5 +140,6 @@ const chatMessageSchema = new mongoose.Schema(
 chatMessageSchema.index({ conversationId: 1, createdAt: -1 });
 chatMessageSchema.index({ conversationId: 1, updatedAt: -1 }); // fast "did anything change?" check for chat polling
 chatMessageSchema.index({ updatedAt: -1 }); // "what changed just now, in any chat" (realtime channel on the store server)
+chatMessageSchema.index({ 'replyTo.messageId': 1 }, { sparse: true }); // replies to a message that is edited / deleted
 
 export default mongoose.models.PortalChatMessage || mongoose.model('PortalChatMessage', chatMessageSchema);

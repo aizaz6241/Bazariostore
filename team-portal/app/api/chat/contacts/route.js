@@ -5,6 +5,7 @@ import ChatMessage from '@/lib/models/ChatMessage';
 import { syncEcommerceAdmins } from '@/lib/adminSync';
 import { proofCounts, myProofCounts } from '@/lib/utils/paymentProofs';
 import { openProofRequestCount, myProofRequestCounts } from '@/lib/utils/proofRequests';
+import { chatStatesFor, requestCounts } from '@/lib/utils/chatAccess';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,6 +55,16 @@ export async function GET(req) {
       ),
     ]);
 
+    // Member <-> member chats are locked unless a request went through: where each one stands
+    let states = new Map();
+    let chatRequests = null;
+    try {
+      [states, chatRequests] = await Promise.all([chatStatesFor(session, contacts), requestCounts(session)]);
+    } catch (e) {
+      console.error('Chat access state error:', e.message);
+    }
+    const viewerIsAdmin = session.role === 'admin';
+
     const lastByConv = new Map(lastDocs.filter(Boolean).map((d) => [d.conversationId, d]));
     const unreadByConv = new Map(unreadAgg.map((x) => [x._id, x.n]));
 
@@ -62,10 +73,13 @@ export async function GET(req) {
       return {
         _id: contact._id,
         name: contact.name,
-        username: contact.username,
+        // Members never get another member's username or phone number (so nobody can take a
+        // number and message outside the portal); the partners see everything.
+        ...(viewerIsAdmin ? { username: contact.username, phone: contact.phone } : contact.role === 'admin' ? { username: contact.username } : {}),
         role: contact.role,
-        phone: contact.phone,
         avatar: contact.avatar,
+        // member viewing another member: open / locked / waiting / incoming request / blocked
+        ...(!viewerIsAdmin && contact.role !== 'admin' ? { chat: states.get(String(contact._id)) || { state: 'locked' } } : {}),
         // a member's deal is the partners' business only (members never see each other's deal)
         ...(session.role === 'admin' ? { commissionLabel: contact.commissionLabel || 'pkr_1to1' } : {}),
         conversationId,
@@ -112,6 +126,7 @@ export async function GET(req) {
       totalUnreadCount,
       proofs,
       myProofs,
+      chatRequests,
     });
   } catch (err) {
     console.error('Fetch chat contacts error:', err);

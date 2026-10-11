@@ -45,7 +45,9 @@ export async function GET(req) {
         doc &&
         (doc.conversationId === 'main_group' ||
           doc.conversationId === 'materials_group' ||
-          (doc.conversationId || '').replace(/^personal_/, '').split('_').includes(myId));
+          (doc.conversationId || '').replace(/^personal_/, '').split('_').includes(myId) ||
+          // partners may read every 1-on-1 chat (see "Member chats")
+          (session.role === 'admin' && /^personal_/.test(doc.conversationId || '')));
       // a picture on the file storage is answered with its link
       const value = doc ? doc.mediaUrl || doc.mediaLink || '' : '';
       if (!allowed || doc.isDeleted || !value) {

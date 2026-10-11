@@ -7,6 +7,7 @@ import { storeChatPicture, deleteChatPictures } from '@/lib/utils/chatMedia';
 import { markChatNotificationRead } from '@/lib/utils/notifications';
 import mongoose from 'mongoose';
 import { finishVoiceUpload, voiceLinkOf, deleteVoiceOf } from '@/lib/utils/chatAudio';
+import { canSendPersonal, idsOfConversation } from '@/lib/utils/chatAccess';
 
 export const dynamic = 'force-dynamic';
 // a long voice note is put together and saved when its message is sent: give that a little time
@@ -14,6 +15,10 @@ export const maxDuration = 60;
 
 const FIRST_PAGE = 50; // messages sent when a chat is opened
 const OLDER_PAGE = 60; // messages per "Load earlier messages"
+// "Seen by": members do not get each other's username (only the name)
+const readersOf = (session) => (session.role === 'admin' ? 'name username avatar role' : 'name avatar role');
+const REPLY_TEXT_MAX = 200;
+const REPLY_THUMB_MAX = 20000; // a tiny picture made by the phone (about 80 px)
 
 // GET /api/chat — fetch messages
 export async function GET(req) {
@@ -28,9 +33,20 @@ export async function GET(req) {
     const targetMemberId = searchParams.get('targetMemberId'); // Target user ID
 
     let conversationId = 'main_group';
+    // A partner reading a chat between two members (after a report, for example). Read only:
+    // nothing is marked as read, so the members never see that it was looked at.
+    const watching = chatType === 'watch';
 
     if (chatType === 'materials') {
       conversationId = 'materials_group';
+    } else if (watching) {
+      if (session.role !== 'admin') {
+        return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
+      }
+      conversationId = String(searchParams.get('conversationId') || '');
+      if (!idsOfConversation(conversationId)) {
+        return NextResponse.json({ message: 'conversationId is required' }, { status: 400 });
+      }
     } else if (chatType === 'personal') {
       if (!targetMemberId) {
         return NextResponse.json({ message: 'targetMemberId is required for personal chat' }, { status: 400 });
@@ -39,6 +55,7 @@ export async function GET(req) {
       const parts = [session._id.toString(), targetMemberId.toString()].sort();
       conversationId = `personal_${parts.join('_')}`;
     }
+    const readers = readersOf(session);
 
     // Older page ("Load earlier messages"): the messages just before the oldest one on screen.
     // Text only; pictures and voice notes are fetched separately by /api/chat/media.
@@ -47,7 +64,7 @@ export async function GET(req) {
       const pageSize = Math.min(Math.max(parseInt(searchParams.get('limit'), 10) || OLDER_PAGE, 1), 100);
       const page = await ChatMessage.find({ conversationId, createdAt: { $lt: new Date(beforeMs) } })
         .select('-mediaUrl -mediaKey')
-        .populate('readBy', 'name username avatar role')
+        .populate('readBy', readers)
         .sort({ createdAt: -1 })
         .limit(pageSize + 1)
         .lean();
@@ -61,7 +78,7 @@ export async function GET(req) {
     }
 
     // "Mark as read" button of a phone notification: only mark, send nothing back
-    if (searchParams.get('markOnly') === '1') {
+    if (searchParams.get('markOnly') === '1' && !watching) {
       const marked = await ChatMessage.updateMany({ conversationId, readBy: { $ne: session._id } }, { $addToSet: { readBy: session._id } });
       await markChatNotificationRead(session._id, conversationId).catch(() => {});
       return NextResponse.json({ conversationId, read: marked?.modifiedCount || 0 });
@@ -89,7 +106,7 @@ export async function GET(req) {
     // Mark unread messages in this conversation as read by the current user. Only when there
     // really is something unread, so an ordinary check never writes to the database.
     let justRead = 0; // how many messages this request turned from unread to read
-    try {
+    if (!watching) try {
       const marked = await ChatMessage.updateMany(
         {
           conversationId,
@@ -115,14 +132,14 @@ export async function GET(req) {
       const [fresh, changed] = await Promise.all([
         ChatMessage.find({ conversationId, createdAt: { $gt: afterDate } })
           .select('-mediaUrl -mediaKey')
-          .populate('readBy', 'name username avatar role')
+          .populate('readBy', readers)
           .sort({ createdAt: 1 })
           .limit(300)
           .lean(),
         // Older messages that were edited, deleted or read: sent without their media
         ChatMessage.find({ conversationId, createdAt: { $lte: afterDate }, updatedAt: { $gt: afterDate } })
           .select('-mediaUrl -mediaKey')
-          .populate('readBy', 'name username avatar role')
+          .populate('readBy', readers)
           .sort({ createdAt: 1 })
           .limit(300)
           .lean(),
@@ -145,7 +162,7 @@ export async function GET(req) {
     // messages" pages back through the history.
     const newest = await ChatMessage.find({ conversationId })
       .select('-mediaUrl -mediaKey')
-      .populate('readBy', 'name username avatar role')
+      .populate('readBy', readers)
       .sort({ createdAt: -1 })
       .limit(FIRST_PAGE)
       .lean();
@@ -174,7 +191,7 @@ export async function POST(req) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
 
-    const { chatType, targetMemberId, messageType: askedType, text, mediaUrl, audioDuration, uploadId } = await req.json();
+    const { chatType, targetMemberId, messageType: askedType, text, mediaUrl, audioDuration, uploadId, replyToId, replyThumb } = await req.json();
     // Only ordinary messages can be sent from the chat box. "System" messages (bonus announcements
     // and the like) are written by the server itself, never by whoever is typing.
     const messageType = ['text', 'image', 'voice'].includes(askedType) ? askedType : 'text';
@@ -201,9 +218,14 @@ export async function POST(req) {
         return NextResponse.json({ message: 'Target user ID is required for personal chat' }, { status: 400 });
       }
 
-      const targetMember = await Member.findById(targetMemberId).select('_id').lean();
+      const targetMember = await Member.findById(targetMemberId).select('_id role').lean();
       if (!targetMember) {
         return NextResponse.json({ message: 'Recipient user not found' }, { status: 404 });
+      }
+      // Member <-> member: only while the chat is open (approved by a partner and accepted)
+      const access = await canSendPersonal(session, targetMember);
+      if (!access.ok) {
+        return NextResponse.json({ message: access.message, locked: !!access.locked }, { status: 403 });
       }
 
       const parts = [session._id.toString(), targetMemberId.toString()].sort();
@@ -217,6 +239,32 @@ export async function POST(req) {
 
     if (messageType === 'text' && (!text || !text.trim())) {
       return NextResponse.json({ message: 'Message text cannot be empty' }, { status: 400 });
+    }
+
+    // A reply: a small copy of the message being answered, made here from the real message (it
+    // must be in the same chat). A picture keeps a tiny preview, never the photo itself.
+    let replyTo = null;
+    if (replyToId && mongoose.Types.ObjectId.isValid(String(replyToId))) {
+      const original = await ChatMessage.findOne({ _id: replyToId, conversationId })
+        .select('senderId senderName messageType text mediaLink audioDuration isDeleted')
+        .lean();
+      if (original) {
+        let thumb = '';
+        if (original.messageType === 'image' && !original.isDeleted) {
+          if (/^https:\/\//i.test(original.mediaLink || '')) thumb = original.mediaLink;
+          else if (typeof replyThumb === 'string' && replyThumb.length <= REPLY_THUMB_MAX && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(replyThumb)) thumb = replyThumb;
+        }
+        replyTo = {
+          messageId: original._id,
+          senderId: original.senderId,
+          senderName: original.senderName,
+          messageType: original.messageType,
+          text: original.isDeleted ? '' : String(original.text || '').slice(0, REPLY_TEXT_MAX),
+          audioDuration: original.audioDuration || 0,
+          thumb,
+          deleted: !!original.isDeleted,
+        };
+      }
     }
 
     // A picture goes to the file storage and the message keeps only its link. If that is not
@@ -255,6 +303,7 @@ export async function POST(req) {
       mediaMime: voice ? voice.mime : '',
       mediaSize: voice ? voice.size : 0,
       audioDuration: audioDuration || 0,
+      replyTo,
       readBy: [session._id],
     });
     if (voice) await voice.attach(newMsg._id);
@@ -331,7 +380,7 @@ export async function POST(req) {
     delete sent.mediaUrl;
     delete sent.mediaKey;
     // "seen by" starts with the sender: no need to ask the database who that is
-    sent.readBy = [{ _id: session._id, name: session.name, username: session.username, avatar: session.avatar, role: session.role }];
+    sent.readBy = [{ _id: session._id, name: session.name, ...(session.role === 'admin' ? { username: session.username } : {}), avatar: session.avatar, role: session.role }];
 
     return NextResponse.json(
       {

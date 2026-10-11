@@ -66,6 +66,9 @@ async function request(path, opts = {}, token) {
     const msg = data?.message || data?.error || (res.status === 404 ? 'API route not found (404)' : `Server request failed (status ${res.status})`);
     const err = new Error(msg);
     err.status = res.status;
+    // the server's extra details (for example `code`), so a screen can react to a specific case
+    err.code = data?.code || '';
+    err.data = data;
     throw err;
   }
   return data;

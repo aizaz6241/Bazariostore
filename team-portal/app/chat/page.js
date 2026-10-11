@@ -11,6 +11,7 @@ import { useRealtime, useRealtimeEvent } from '@/components/RealtimeProvider';
 import { useLiveRefresh } from '@/components/LiveProvider';
 import PaymentProofsPane from '@/components/PaymentProofsPane';
 import MyProofsPane from '@/components/MyProofsPane';
+import MemberChatsPane from '@/components/MemberChatsPane';
 import { getSavedMedia, saveMedia, dropSavedMedia } from '@/lib/mediaCache';
 import {
   Send,
@@ -36,6 +37,12 @@ import {
   ZoomIn,
   Lock,
   ReceiptText,
+  Reply,
+  Flag,
+  UserX,
+  MessageSquareLock,
+  Hourglass,
+  CheckCircle2,
 } from 'lucide-react';
 
 // Pictures / voice notes already downloaded in this visit (message id -> data), so opening a
@@ -96,6 +103,47 @@ const formatLastSeen = (at) => {
   return `last seen ${d.toLocaleDateString([], { day: 'numeric', month: 'short' })} at ${time}`;
 };
 
+// What a quoted message looks like in one line ("🎤 Voice message 0:45", "📷 Photo"...)
+const durationOf = (sec) => {
+  const s = Math.max(0, Math.round(Number(sec) || 0));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+const quoteLine = (q) => {
+  if (!q) return '';
+  if (q.deleted || q.isDeleted) return 'This message was deleted';
+  if (q.messageType === 'voice') return `🎤 Voice message${q.audioDuration ? ` ${durationOf(q.audioDuration)}` : ''}`;
+  if (q.messageType === 'image') return q.text ? `📷 ${q.text}` : '📷 Photo';
+  return q.text || '';
+};
+// A tiny copy of a picture for the reply box (about 80 px), made on the phone
+const makeThumb = (src) =>
+  new Promise((resolve) => {
+    if (!src || !String(src).startsWith('data:image')) return resolve('');
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, 80 / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.width * scale));
+        c.height = Math.max(1, Math.round(img.height * scale));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        const out = c.toDataURL('image/jpeg', 0.6);
+        resolve(out.length <= 20000 ? out : '');
+      } catch (e) {
+        resolve('');
+      }
+    };
+    img.onerror = () => resolve('');
+    img.src = src;
+  });
+// "until Mon 14 Oct, 3:05 PM"
+const untilText = (d) => {
+  const x = new Date(d);
+  if (!d || isNaN(x.getTime())) return '';
+  return `${x.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}, ${x.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+};
+const isSystemMsg = (m) => String(m?.messageType || '').startsWith('system');
+
 // Unread messages of a chat, shown on its row in the chat list
 function UnreadLabel({ count }) {
   const n = Number(count) || 0;
@@ -113,6 +161,130 @@ function UnreadLabel({ count }) {
   );
 }
 
+// Member <-> member chat: a small label on the chat list row
+function ChatStateTag({ chat }) {
+  const st = chat?.state;
+  const map = {
+    open: ['bg-emerald-100 text-emerald-800', chat?.expiresAt ? `Open • until ${untilText(chat.expiresAt)}` : 'Open'],
+    waiting_admin: ['bg-amber-100 text-amber-800', 'Waiting for admin'],
+    waiting_member: ['bg-amber-100 text-amber-800', 'Waiting for answer'],
+    incoming: ['bg-blue-600 text-white', 'Chat request'],
+    blocked: ['bg-red-100 text-red-700', 'Blocked'],
+    locked: ['bg-slate-100 text-slate-500', '🔒 Locked'],
+  };
+  const [cls, label] = map[st] || map.locked;
+  return <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold ${cls}`}>{label}</span>;
+}
+
+// Member <-> member chat that is not open: what the member can do instead of typing
+function ChatGate({ gate, name, busy, reason, setReason, onRequest, onAnswer, onUnblock }) {
+  const box = 'p-3 rounded-2xl border text-xs space-y-2.5';
+  if (gate.state === 'loading') {
+    return (
+      <div className="p-3 flex items-center justify-center text-slate-400 text-xs gap-2">
+        <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+      </div>
+    );
+  }
+  if (gate.state === 'incoming') {
+    return (
+      <div className={`${box} bg-blue-50 border-blue-200 text-slate-800`}>
+        <p>
+          <b>{gate.fromName || name}</b> wants to chat with you about:
+          <span className="block mt-1 p-2 rounded-xl bg-white border border-blue-100 text-slate-700">“{gate.reason}”</span>
+        </p>
+        <p className="text-[11px] text-slate-500">If you accept, you can message each other. If you decline, the chat stays closed.</p>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onAnswer('accept')}
+            className="flex-1 px-3 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold disabled:opacity-50"
+          >
+            Accept
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onAnswer('decline')}
+            className="flex-1 px-3 py-2.5 rounded-xl bg-white border border-slate-200 hover:bg-red-50 hover:text-red-700 text-slate-700 font-bold disabled:opacity-50"
+          >
+            Decline
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (gate.state === 'waiting_admin' || gate.state === 'waiting_member') {
+    return (
+      <div className={`${box} bg-amber-50 border-amber-200 text-slate-800`}>
+        <p className="flex items-start gap-2">
+          <Hourglass className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <span>
+            {gate.state === 'waiting_admin'
+              ? 'Your chat request is waiting for an admin to approve it.'
+              : `Approved. Waiting for ${name} to accept your chat request.`}
+            <span className="block text-[11px] text-slate-500 mt-0.5">About: “{gate.reason}”</span>
+          </span>
+        </p>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onAnswer('cancel')}
+          className="px-3 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold disabled:opacity-50"
+        >
+          Cancel request
+        </button>
+      </div>
+    );
+  }
+  if (gate.state === 'blocked') {
+    return (
+      <div className={`${box} bg-red-50 border-red-200 text-slate-800 flex items-center justify-between gap-3 space-y-0`}>
+        <span>You blocked {name}. You cannot chat while the block is on.</span>
+        <button type="button" disabled={busy} onClick={onUnblock} className="px-3 py-2 rounded-xl bg-white border border-slate-200 font-semibold shrink-0 disabled:opacity-50">
+          Unblock
+        </button>
+      </div>
+    );
+  }
+  // locked: ask for a chat
+  return (
+    <div className={`${box} bg-slate-50 border-slate-200 text-slate-800`}>
+      <p className="flex items-start gap-2">
+        <Lock className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
+        <span>
+          Chats between members open only with an admin's approval.
+          <span className="block text-[11px] text-slate-500 mt-0.5">Write what you want to talk about with {name}. An admin approves it, then {name} accepts.</span>
+        </span>
+      </p>
+      <div className="flex items-end gap-2">
+        <textarea
+          rows={1}
+          value={reason}
+          maxLength={300}
+          onChange={(e) => {
+            setReason(e.target.value);
+            e.target.style.height = 'auto';
+            e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+          }}
+          placeholder="What is it about? (required)"
+          className="flex-1 min-w-0 px-3.5 py-2.5 bg-white border border-slate-200 rounded-2xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-none"
+        />
+        <button
+          type="button"
+          disabled={busy || reason.trim().length < 3}
+          onClick={onRequest}
+          className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-40 shrink-0 flex items-center gap-1.5"
+        >
+          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+          Request to chat
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // The open conversation lives in the address (/chat?chatType=...), so the phone's "back" (and the
 // swipe from the left edge on iPhone) returns to the chat list instead of leaving the chat screen.
 export default function ChatPage() {
@@ -124,7 +296,9 @@ export default function ChatPage() {
 }
 
 const chatUrlOf = (chat) =>
-  chat.type === 'proofs'
+  chat.type === 'requests'
+    ? '/chat?chatType=requests'
+    : chat.type === 'proofs'
     ? '/chat?chatType=proofs'
     : chat.type === 'myproofs'
     ? '/chat?chatType=myproofs'
@@ -159,6 +333,8 @@ function ChatPageInner() {
   const [proofsMeta, setProofsMeta] = useState(() => readCache(contactsKey)?.proofs || null);
   // Everyone's own proofs group: the complete proofs of the person's own sellers
   const [myProofsMeta, setMyProofsMeta] = useState(() => readCache(contactsKey)?.myProofs || null);
+  // Member <-> member chats: partners -> { pending, reports }; member -> { incoming }
+  const [chatRequestsMeta, setChatRequestsMeta] = useState(() => readCache(contactsKey)?.chatRequests || null);
 
   // Mobile View Flow (WhatsApp Style): 'list' (shows all chats) or 'chat' (inside active conversation)
   const [mobileView, setMobileView] = useState('list');
@@ -217,6 +393,19 @@ function ChatPageInner() {
   const [deleteConfirmMsg, setDeleteConfirmMsg] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
+  // Reply (WhatsApp style): the message being answered, shown above the message box
+  const [replyingTo, setReplyingTo] = useState(null); // { message, thumb }
+  const swipeRef = useRef(null); // the bubble being swiped right on a phone
+  const [jumpToast, setJumpToast] = useState('');
+
+  // Member <-> member chats: request / accept / block / report
+  const [requestReason, setRequestReason] = useState('');
+  const [gateBusy, setGateBusy] = useState(false);
+  const [reportMode, setReportMode] = useState(false); // choosing messages to report
+  const [reportPicked, setReportPicked] = useState([]); // message ids
+  const [reportNote, setReportNote] = useState('');
+  const [reportSending, setReportSending] = useState(false);
+
   const messagesContainerRef = useRef(null);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -256,7 +445,9 @@ function ChatPageInner() {
   const lastSyncRef = useRef(0);
   // The id the server uses for the conversation that is open
   const conversationIdOf = (chat) =>
-    chat.type === 'proofs'
+    chat.type === 'requests'
+      ? 'member_chats'
+      : chat.type === 'proofs'
       ? 'payment_proofs'
       : chat.type === 'myproofs'
       ? 'my_payment_proofs'
@@ -280,6 +471,8 @@ function ChatPageInner() {
   proofsMetaRef.current = proofsMeta;
   const myProofsMetaRef = useRef(myProofsMeta);
   myProofsMetaRef.current = myProofsMeta;
+  const chatRequestsMetaRef = useRef(chatRequestsMeta);
+  chatRequestsMetaRef.current = chatRequestsMeta;
 
   // ─── Typing & online / last seen — ADMINS ONLY ───
   // The server sends these to admin accounts only, so for a member everything below stays
@@ -481,7 +674,9 @@ function ChatPageInner() {
         setProofsMeta(data.proofs || null);
         myProofsMetaRef.current = data.myProofs || null;
         setMyProofsMeta(data.myProofs || null);
-        writeCache(contactsKey, { contacts: data.contacts || [], group, materialsGroup, proofs: data.proofs || null, myProofs: data.myProofs || null });
+        chatRequestsMetaRef.current = data.chatRequests || null;
+        setChatRequestsMeta(data.chatRequests || null);
+        writeCache(contactsKey, { contacts: data.contacts || [], group, materialsGroup, proofs: data.proofs || null, myProofs: data.myProofs || null, chatRequests: data.chatRequests || null });
         if (typeof data.totalUnreadCount === 'number') {
           window.dispatchEvent(new CustomEvent('chat_unread_updated', { detail: data.totalUnreadCount }));
         }
@@ -516,7 +711,7 @@ function ChatPageInner() {
       materialsMetaRef.current = m;
       setMaterialsMeta(m);
     }
-    writeCache(contactsKey, { contacts: c, group: g, materialsGroup: m, proofs: proofsMetaRef.current, myProofs: myProofsMetaRef.current });
+    writeCache(contactsKey, { contacts: c, group: g, materialsGroup: m, proofs: proofsMetaRef.current, myProofs: myProofsMetaRef.current, chatRequests: chatRequestsMetaRef.current });
     const total = (g.unreadCount || 0) + (m.unreadCount || 0) + c.reduce((sum, x) => sum + (x.unreadCount || 0), 0);
     window.dispatchEvent(new CustomEvent('chat_unread_updated', { detail: total }));
   };
@@ -610,6 +805,8 @@ function ChatPageInner() {
     if (ct === 'proofs') return isAdminRef.current ? { type: 'proofs' } : null;
     // everyone's own group (the proofs of the person's own sellers)
     if (ct === 'myproofs') return { type: 'myproofs' };
+    // "Member Chats": requests, open chats and reports (partners only)
+    if (ct === 'requests') return isAdminRef.current ? { type: 'requests' } : null;
     if (ct === 'personal' && cid) {
       const match = contactsRef.current.find((c) => String(c._id) === String(cid));
       return { type: 'personal', contact: match || { _id: cid, name: 'Direct Message', username: 'user', role: 'member', placeholder: true } };
@@ -706,7 +903,7 @@ function ChatPageInner() {
     // Loading a chat also marks it as read on the server. While the phone shows the chat list the
     // conversation is not in front of anyone, so it is left alone (and stays unread).
     // "Payment Proofs" is not a message chat: its own screen loads its cards
-    if (!paneVisibleRef.current || activeChat.type === 'proofs' || activeChat.type === 'myproofs') {
+    if (!paneVisibleRef.current || activeChat.type === 'proofs' || activeChat.type === 'myproofs' || activeChat.type === 'requests') {
       if (!quiet) setLoadingMessages(false);
       return;
     }
@@ -789,6 +986,8 @@ function ChatPageInner() {
         if (prevMessagesLengthRef.current > 0 && arrived.length > 0) {
           announceArrived(arrived);
         }
+        // "Chat opened / closed / request" lines: the chat's state changed, refresh it
+        if (arrived.some(isSystemMsg) && String(data.conversationId || '').startsWith('personal_')) fetchContacts();
 
         // First answer after opening a chat that had unread messages: remember where they start,
         // so a "N unread messages" line can be shown above them and the chat opens at that line.
@@ -850,7 +1049,14 @@ function ChatPageInner() {
     }
     justOpenedRef.current = paneVisible;
 
-    if (activeChat.type === 'proofs' || activeChat.type === 'myproofs') {
+    // a new chat: no half-written reply or report selection carried over
+    setReplyingTo(null);
+    setReportMode(false);
+    setReportPicked([]);
+    setReportNote('');
+    setRequestReason('');
+
+    if (activeChat.type === 'proofs' || activeChat.type === 'myproofs' || activeChat.type === 'requests') {
       chatKeyRef.current = '';
       messagesSigRef.current = '';
       messagesCursorRef.current = 0;
@@ -953,6 +1159,8 @@ function ChatPageInner() {
 
     // chat list: last message, and a badge unless the user is looking at that chat
     noteLastMessage(conversationId, message, !mine && !(isOpen && !document.hidden));
+    // a request / opened / closed line of a 1-on-1 chat: where that chat stands has changed
+    if (isSystemMsg(message) && conversationId.startsWith('personal_')) fetchContacts();
 
     if (!isOpen) return;
     // still loading this chat: its first load brings the message
@@ -1026,19 +1234,21 @@ function ChatPageInner() {
   }, [mobileView]);
 
   // ─── "Load earlier messages" ───
+  const loadingOlderRef = useRef(false);
   const loadOlderMessages = async () => {
-    if (loadingOlder || !hasMoreRef.current) return;
+    if (loadingOlderRef.current || !hasMoreRef.current) return false;
     const chatKey = activeKeyRef.current;
     const oldest = messagesRef.current.find((m) => !m.pending && !m.failed);
-    if (!oldest) return;
+    if (!oldest) return false;
 
     try {
+      loadingOlderRef.current = true;
       setLoadingOlder(true);
       const token = localStorage.getItem('portal_token');
       let url = `/api/chat?chatType=${activeChat.type}&before=${new Date(oldest.createdAt).getTime()}`;
       if (activeChat.type === 'personal') url += `&targetMemberId=${activeChat.contact?._id}`;
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok || chatKey !== activeKeyRef.current) return;
+      if (!res.ok || chatKey !== activeKeyRef.current) return false;
       const data = await res.json();
 
       const have = new Set(messagesRef.current.map((m) => m._id));
@@ -1053,9 +1263,12 @@ function ChatPageInner() {
       prevMessagesLengthRef.current = next.length;
       messagesRef.current = next;
       setMessages(next);
+      return true;
     } catch (err) {
       console.error('Load earlier messages failed:', err);
+      return false;
     } finally {
+      loadingOlderRef.current = false;
       setLoadingOlder(false);
     }
   };
@@ -1124,6 +1337,7 @@ function ChatPageInner() {
         if (pendingImagePreview && !uploadingImage) setPendingImagePreview(null);
         if (editingMessage) setEditingMessage(null);
         if (deleteConfirmMsg) setDeleteConfirmMsg(null);
+        if (replyingTo) setReplyingTo(null);
       }
     };
 
@@ -1134,7 +1348,216 @@ function ChatPageInner() {
       window.removeEventListener('paste', handleGlobalPaste);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [fullscreenImage, pendingImagePreview, uploadingImage, editingMessage, deleteConfirmMsg]);
+  }, [fullscreenImage, pendingImagePreview, uploadingImage, editingMessage, deleteConfirmMsg, replyingTo]);
+
+  // ─── Member <-> member chats: is this chat open for writing? ───
+  // (admin <-> anyone is always open; the server checks every message again)
+  const liveContact =
+    activeChat.type === 'personal'
+      ? contacts.find((c) => String(c._id) === String(activeChat.contact?._id)) || activeChat.contact
+      : null;
+  const memberPair = !isAdmin && activeChat.type === 'personal' && !!liveContact && liveContact.role !== 'admin';
+  const gate = memberPair ? (liveContact.placeholder && !contactsLoaded ? { state: 'loading' } : liveContact.chat || { state: 'locked' }) : null;
+  const canWriteHere =
+    !['proofs', 'myproofs', 'requests'].includes(activeChat.type) &&
+    !(activeChat.type === 'materials' && !isAdmin) &&
+    (!gate || gate.state === 'open');
+
+  const callJson = async (url, method, body) => {
+    const token = localStorage.getItem('portal_token');
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body || {}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || 'Something went wrong. Please try again.');
+    return data;
+  };
+
+  const sendChatRequest = async () => {
+    if (!liveContact?._id || gateBusy) return;
+    const reason = requestReason.trim();
+    if (reason.length < 3) {
+      alert('Please write what you want to talk about.');
+      return;
+    }
+    setGateBusy(true);
+    try {
+      await callJson('/api/chat/requests', 'POST', { targetId: liveContact._id, reason });
+      setRequestReason('');
+      await fetchContacts();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setGateBusy(false);
+    }
+  };
+
+  const answerChatRequest = async (action) => {
+    if (!gate?.permissionId || gateBusy) return;
+    if (action === 'cancel' && !window.confirm('Cancel your chat request?')) return;
+    setGateBusy(true);
+    try {
+      await callJson(`/api/chat/requests/${gate.permissionId}`, 'PATCH', { action });
+      await fetchContacts();
+      fetchMessages(true);
+    } catch (e) {
+      alert(e.message);
+      fetchContacts();
+    } finally {
+      setGateBusy(false);
+    }
+  };
+
+  const setMemberBlocked = async (block) => {
+    if (!liveContact?._id || gateBusy) return;
+    if (
+      block &&
+      !window.confirm(
+        `Block ${liveContact.name}?\n\n${liveContact.name} will not be able to send you chat requests, and your chat (if open) will close. The admins will be told. You can unblock later.`
+      )
+    )
+      return;
+    setGateBusy(true);
+    try {
+      await callJson('/api/chat/block', 'POST', { targetId: liveContact._id, block });
+      await fetchContacts();
+      fetchMessages(true);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setGateBusy(false);
+    }
+  };
+
+  const toggleReportPick = (id) =>
+    setReportPicked((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : prev.length >= 30 ? prev : [...prev, id]));
+
+  const sendReport = async () => {
+    if (!liveContact?._id || reportPicked.length === 0 || reportSending) return;
+    setReportSending(true);
+    try {
+      await callJson('/api/chat/reports', 'POST', { targetId: liveContact._id, messageIds: reportPicked, note: reportNote.trim() });
+      setReportMode(false);
+      setReportPicked([]);
+      setReportNote('');
+      setJumpToast('Report sent to the admins.');
+      setTimeout(() => setJumpToast(''), 3500);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setReportSending(false);
+    }
+  };
+
+  // ─── Reply: what goes with the next message ───
+  const startReply = async (msg) => {
+    if (!msg || msg.isDeleted || msg.pending || msg.failed || isSystemMsg(msg) || String(msg._id).startsWith('tmp_')) return;
+    if (!canWriteHere) return;
+    setReplyingTo({ message: msg, thumb: '' });
+    setTimeout(() => {
+      try {
+        composerRef.current?.focus();
+      } catch (_) {}
+    }, 50);
+    if (msg.messageType === 'image' && msg.mediaUrl) {
+      const thumb = /^https?:/i.test(msg.mediaUrl) ? '' : await makeThumb(msg.mediaUrl);
+      setReplyingTo((prev) => (prev && prev.message._id === msg._id ? { ...prev, thumb } : prev));
+    }
+  };
+  // taken once per message: the reply box closes as soon as the message goes out
+  const takeReply = () => {
+    const r = replyingTo;
+    if (!r) return {};
+    setReplyingTo(null);
+    const m = r.message;
+    return {
+      replyToId: m._id,
+      ...(r.thumb ? { replyThumb: r.thumb } : {}),
+      replyPreview: {
+        messageId: m._id,
+        senderId: m.senderId,
+        senderName: m.senderName,
+        messageType: m.messageType,
+        text: String(m.text || '').slice(0, 200),
+        audioDuration: m.audioDuration || 0,
+        thumb: r.thumb || (/^https?:/i.test(m.mediaUrl || '') ? m.mediaUrl : ''),
+        deleted: false,
+      },
+    };
+  };
+
+  // Tap on a quoted message: go to the original (older messages are loaded until it is found)
+  const jumpToMessage = async (messageId) => {
+    if (!messageId) return;
+    const show = (el) => {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setHighlightedMsgId(messageId);
+      setTimeout(() => setHighlightedMsgId((cur) => (cur === messageId ? null : cur)), 2500);
+    };
+    const find = () => document.getElementById(`msg-${messageId}`);
+    let el = find();
+    if (el) return show(el);
+    const chatKey = activeKeyRef.current;
+    setJumpToast('Finding the message…');
+    for (let i = 0; i < 25 && hasMoreRef.current && chatKey === activeKeyRef.current; i++) {
+      const ok = await loadOlderMessages();
+      if (!ok) break;
+      await wait(60);
+      el = find();
+      if (el) {
+        setJumpToast('');
+        return show(el);
+      }
+    }
+    setJumpToast('The original message is no longer in this chat.');
+    setTimeout(() => setJumpToast(''), 3000);
+  };
+
+  // Phone: swipe a message to the right to reply (like WhatsApp)
+  const swipeStart = (e, msg) => {
+    const t = e.touches?.[0];
+    if (!t || reportMode) return;
+    // a swipe from the very left edge is the phone's own "back" gesture
+    if (t.clientX < 30) return;
+    swipeRef.current = { msg, x: t.clientX, y: t.clientY, dx: 0, el: e.currentTarget, on: false, dead: false };
+  };
+  const swipeMove = (e) => {
+    const sw = swipeRef.current;
+    const t = e.touches?.[0];
+    if (!sw || !t || sw.dead) return;
+    const dx = t.clientX - sw.x;
+    const dy = t.clientY - sw.y;
+    if (!sw.on) {
+      if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) {
+        sw.dead = true; // scrolling, not swiping
+        return;
+      }
+      if (dx > 12 && dx > Math.abs(dy)) sw.on = true;
+      else return;
+    }
+    sw.dx = Math.max(0, Math.min(dx, 90));
+    sw.el.style.transition = 'none';
+    sw.el.style.transform = `translateX(${sw.dx}px)`;
+    const icon = sw.el.querySelector('[data-swipe-icon]');
+    if (icon) icon.style.opacity = String(Math.min(1, sw.dx / 60));
+  };
+  const swipeEnd = () => {
+    const sw = swipeRef.current;
+    swipeRef.current = null;
+    if (!sw) return;
+    sw.el.style.transition = 'transform 180ms ease-out';
+    sw.el.style.transform = 'translateX(0px)';
+    const icon = sw.el.querySelector('[data-swipe-icon]');
+    if (icon) icon.style.opacity = '0';
+    if (sw.on && sw.dx >= 55) {
+      try {
+        navigator.vibrate?.(15);
+      } catch (_) {}
+      startReply(sw.msg);
+    }
+  };
 
   // ─── 3. Send Message ───
   // The message appears at once ("Sending…") and is confirmed in the background, so typing and
@@ -1152,6 +1575,7 @@ function ChatPageInner() {
       text: payload.text || '',
       mediaUrl: payload.mediaUrl || payload.localUrl || '',
       audioDuration: payload.audioDuration || 0,
+      replyTo: payload.replyPreview || null,
       readBy: [],
       createdAt: new Date().toISOString(),
       pending: true,
@@ -1190,7 +1614,7 @@ function ChatPageInner() {
 
     try {
       const token = localStorage.getItem('portal_token');
-      const { blob, localUrl, upload, ...plain } = payload;
+      const { blob, localUrl, upload, replyPreview, ...plain } = payload;
       const body = {
         chatType: activeChat.type,
         targetMemberId: activeChat.type === 'personal' ? activeChat.contact?._id : null,
@@ -1263,6 +1687,12 @@ function ChatPageInner() {
       } else {
         const errData = await res.json().catch(() => ({}));
         settle({ ...optimistic, pending: false, failed: true, failReason: errData.message || 'Failed to send' });
+        // the chat was closed meanwhile (time over, an admin closed it): show where it stands
+        if (errData.locked) {
+          fetchContacts();
+          setJumpToast(errData.message || 'This chat is closed.');
+          setTimeout(() => setJumpToast(''), 4000);
+        }
       }
     } catch (err) {
       console.error('Send message failed:', err);
@@ -1338,6 +1768,7 @@ function ChatPageInner() {
     handleSendMessage({
       messageType: 'text',
       text: inputText.trim(),
+      ...takeReply(),
     });
     setInputText('');
     reportTyping('');
@@ -1355,6 +1786,7 @@ function ChatPageInner() {
       blob,
       localUrl, // played from the device while it is being sent
       audioDuration: durationSec,
+      ...takeReply(),
     });
   };
 
@@ -1475,6 +1907,7 @@ function ChatPageInner() {
         messageType: 'image',
         mediaUrl: mediaBase64,
         text: pendingImagePreview.caption.trim(),
+        ...takeReply(),
       });
 
       setPendingImagePreview(null);
@@ -1788,7 +2221,13 @@ function ChatPageInner() {
       String(c.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       String(c.username || '').toLowerCase().includes(searchQuery.toLowerCase())
     )
-    .sort((a, b) => lastAt(b) - lastAt(a) || (b.unreadCount || 0) - (a.unreadCount || 0) || String(a.name || '').localeCompare(String(b.name || '')));
+    .sort(
+      (a, b) =>
+        (b.chat?.state === 'incoming' ? 1 : 0) - (a.chat?.state === 'incoming' ? 1 : 0) ||
+        lastAt(b) - lastAt(a) ||
+        (b.unreadCount || 0) - (a.unreadCount || 0) ||
+        String(a.name || '').localeCompare(String(b.name || ''))
+    );
 
   return (
     <div className="-mx-4 -my-4 sm:mx-0 sm:my-0 h-[calc(100dvh-64px-64px)] sm:h-[calc(100vh-115px)] flex bg-white rounded-none sm:rounded-3xl border-0 sm:border border-slate-200 shadow-none sm:shadow-md overflow-hidden relative">
@@ -1969,6 +2408,41 @@ function ChatPageInner() {
             </button>
           )}
 
+          {/* ── PINNED: Member Chats (partners only): chat requests between members, open chats, reports ── */}
+          {isAdmin && (
+            <button
+              onClick={() => openChat({ type: 'requests' })}
+              className={`w-full p-3.5 flex items-start space-x-3 text-left transition-all ${
+                activeChat.type === 'requests' && paneVisible ? 'bg-rose-50/90 border-l-4 border-rose-500' : 'hover:bg-slate-50'
+              }`}
+            >
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-rose-500 to-pink-600 flex items-center justify-center text-white shrink-0 shadow-sm">
+                <MessageSquareLock className="w-6 h-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className={`text-xs text-slate-900 truncate block ${chatRequestsMeta?.pending > 0 || chatRequestsMeta?.reports > 0 ? 'font-extrabold' : 'font-bold'}`}>
+                  Member Chats
+                </span>
+                <p className={`text-[11px] truncate mt-0.5 ${chatRequestsMeta?.pending > 0 ? 'text-slate-900 font-semibold' : 'text-slate-500'}`}>
+                  {chatRequestsMeta?.pending > 0
+                    ? `${chatRequestsMeta.pending} chat request${chatRequestsMeta.pending === 1 ? '' : 's'} waiting for approval`
+                    : 'Requests, open chats & reports between members'}
+                </p>
+                <div className="mt-1 flex items-center space-x-1.5">
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-rose-100 text-rose-800 font-bold tracking-wide uppercase">Partners only</span>
+                  {chatRequestsMeta?.reports > 0 && (
+                    <span className="shrink-0 px-2 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-bold">
+                      {chatRequestsMeta.reports} report{chatRequestsMeta.reports === 1 ? '' : 's'}
+                    </span>
+                  )}
+                  {chatRequestsMeta?.pending > 0 && (
+                    <span className="!ml-auto shrink-0 px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-bold">{chatRequestsMeta.pending} pending</span>
+                  )}
+                </div>
+              </div>
+            </button>
+          )}
+
           {/* ── 4. PINNED: the person's OWN proofs (complete proofs of his own sellers, view only) ── */}
           {(() => {
             const fresh = (myProofsMeta?.fresh || 0) + (myProofsMeta?.answered || 0);
@@ -2084,9 +2558,11 @@ function ChatPageInner() {
                       <p className="text-[11px] text-emerald-600 font-semibold truncate mt-0.5">typing…</p>
                     ) : (
                     <p className={`text-[11px] truncate mt-0.5 ${contact.unreadCount > 0 ? 'text-slate-900 font-semibold' : 'text-slate-500'}`}>
-                      {contact.lastMessage
+                      {contact.chat?.state === 'incoming'
+                        ? `📩 Wants to chat with you — tap to answer`
+                        : contact.lastMessage
                         ? `${
-                            contact.lastMessage.senderId === user?._id ? 'You: ' : ''
+                            contact.lastMessage.senderId === user?._id && !isSystemMsg(contact.lastMessage) ? 'You: ' : ''
                           }${
                             contact.lastMessage.isDeleted
                               ? '🚫 Message deleted'
@@ -2096,7 +2572,11 @@ function ChatPageInner() {
                               ? '📷 Photo'
                               : contact.lastMessage.text
                           }`
-                        : `Tap to message @${contact.username}`}
+                        : isAdmin && contact.username
+                        ? `Tap to message @${contact.username}`
+                        : contact.chat && contact.chat.state !== 'open'
+                        ? '🔒 Request to chat'
+                        : 'Tap to message'}
                     </p>
                     )}
                     {/* Admins only: Online / last seen */}
@@ -2132,7 +2612,9 @@ function ChatPageInner() {
                           {contact.commissionLabel === 'inr_50' ? '50% INR' : '1:1 PKR'}
                         </span>
                       )}
-                      <span className="text-[10px] text-slate-400">@{contact.username}</span>
+                      {isAdmin && contact.username && <span className="text-[10px] text-slate-400">@{contact.username}</span>}
+                      {/* member <-> member: where this chat stands */}
+                      {contact.chat && <ChatStateTag chat={contact.chat} />}
 
                       <UnreadLabel count={contact.unreadCount} />
                     </div>
@@ -2157,6 +2639,18 @@ function ChatPageInner() {
           />
         </div>
       )}
+      {activeChat.type === 'requests' && isAdmin && (
+        <div className={`flex-1 min-w-0 ${mobileView === 'list' ? 'hidden md:flex' : 'flex'}`}>
+          <MemberChatsPane
+            visible={paneVisible}
+            onBack={closeChat}
+            onCounts={(c) => {
+              chatRequestsMetaRef.current = { ...(chatRequestsMetaRef.current || {}), ...c };
+              setChatRequestsMeta(chatRequestsMetaRef.current);
+            }}
+          />
+        </div>
+      )}
       {activeChat.type === 'myproofs' && (
         <div className={`flex-1 min-w-0 ${mobileView === 'list' ? 'hidden md:flex' : 'flex'}`}>
           <MyProofsPane
@@ -2169,7 +2663,7 @@ function ChatPageInner() {
       )}
       <div
         className={`flex-1 flex-col bg-slate-50/60 min-w-0 relative ${
-          (activeChat.type === 'proofs' && isAdmin) || activeChat.type === 'myproofs' ? 'hidden' : mobileView === 'list' ? 'hidden md:flex' : 'flex'
+          (activeChat.type === 'proofs' && isAdmin) || (activeChat.type === 'requests' && isAdmin) || activeChat.type === 'myproofs' ? 'hidden' : mobileView === 'list' ? 'hidden md:flex' : 'flex'
         }`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -2280,9 +2774,17 @@ function ChatPageInner() {
                   ? 'Official pictures & marketing assets • All members can view & download'
                   : activeChat.type === 'group'
                   ? 'All admins and members can view & reply here'
-                  : activeChat.contact
+                  : gate
+                  ? gate.state === 'open'
+                    ? gate.expiresAt
+                      ? `Chat open until ${untilText(gate.expiresAt)}`
+                      : 'Chat open'
+                    : gate.state === 'blocked'
+                    ? 'You blocked this member'
+                    : '🔒 Chat needs approval'
+                  : activeChat.contact?.username && (isAdmin || activeChat.contact.role === 'admin')
                   ? `Private 1-on-1 line (@${activeChat.contact.username})`
-                  : 'Secure 1-on-1 line'}
+                  : 'Private 1-on-1 line'}
               </p>
               )}
             </div>
@@ -2290,6 +2792,37 @@ function ChatPageInner() {
 
           {/* Right Header Controls: Clear chat (admin) + Jump to Date */}
           <div className="relative flex items-center space-x-2">
+            {/* member <-> member: report messages to the admins, block */}
+            {memberPair && gate?.state !== 'loading' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReportMode((on) => !on);
+                    setReportPicked([]);
+                    setReplyingTo(null);
+                  }}
+                  disabled={messages.filter((m) => !isSystemMsg(m) && !m.pending && !m.failed).length === 0}
+                  className={`p-2 rounded-xl transition flex items-center space-x-1.5 text-xs font-medium disabled:opacity-40 ${
+                    reportMode ? 'bg-rose-600 text-white' : 'bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white'
+                  }`}
+                  title="Report messages to the admins"
+                >
+                  <Flag className="w-4 h-4" />
+                  <span className="hidden sm:inline">Report</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMemberBlocked(gate?.state !== 'blocked')}
+                  disabled={gateBusy}
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white transition flex items-center space-x-1.5 text-xs font-medium disabled:opacity-40"
+                  title={gate?.state === 'blocked' ? 'Unblock' : 'Block this member'}
+                >
+                  <UserX className="w-4 h-4" />
+                  <span className="hidden sm:inline">{gate?.state === 'blocked' ? 'Unblock' : 'Block'}</span>
+                </button>
+              </>
+            )}
             {isAdmin && (
               <button
                 type="button"
@@ -2382,6 +2915,8 @@ function ChatPageInner() {
                   ? isAdmin
                     ? 'Upload product photos and promotional materials for members to view and download.'
                     : 'Admins will post product photos and materials here for you to download.'
+                  : gate && gate.state !== 'open'
+                  ? 'This chat opens after an admin approves it and the other member accepts.'
                   : 'Type a text, record a voice note, or attach a picture to begin.'}
               </p>
             </div>
@@ -2405,6 +2940,11 @@ function ChatPageInner() {
 
               // Admin or sender can edit/delete
               const canModify = (isAdmin || isMe) && !msg.isDeleted && !msg.pending && !msg.failed;
+              // anyone who may write here can answer a message (WhatsApp "reply")
+              const canReply = canWriteHere && !reportMode && !msg.isDeleted && !msg.pending && !msg.failed && !String(msg._id).startsWith('tmp_');
+              const canEdit = canModify && msg.messageType === 'text' && (isAdmin || canWriteHere);
+              const pickable = reportMode && !msg.pending && !msg.failed && !String(msg._id).startsWith('tmp_');
+              const picked = pickable && reportPicked.includes(msg._id);
 
               const startsUnread = unreadDivider && unreadDivider.beforeId === msg._id && unreadDivider.chatKey === activeKeyRef.current;
 
@@ -2455,7 +2995,7 @@ function ChatPageInner() {
                     </div>
                   ) : isSystemAlert ? (
                     <div className="mx-auto max-w-md bg-blue-50 border border-blue-200 text-blue-900 p-3 rounded-2xl text-xs text-center my-2">
-                      <p className="font-medium">{msg.text}</p>
+                      <p className="font-medium whitespace-pre-wrap">{msg.text}</p>
                       <span className="text-[10px] text-blue-500 mt-1 block">
                         {formatMessageTime(msg.createdAt)}
                       </span>
@@ -2463,8 +3003,38 @@ function ChatPageInner() {
                   ) : (
                     /* User / Admin Message Bubble */
                     <div
-                      className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-full group/msg`}
+                      id={`msg-${msg._id}`}
+                      className={`relative flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-full group/msg ${
+                        pickable ? `cursor-pointer rounded-2xl ${picked ? 'bg-rose-100/70 ring-2 ring-rose-400' : 'hover:bg-slate-100'}` : ''
+                      }`}
+                      style={canReply ? { touchAction: 'pan-y' } : undefined}
+                      onClick={pickable ? () => toggleReportPick(msg._id) : undefined}
+                      onTouchStart={canReply ? (e) => swipeStart(e, msg) : undefined}
+                      onTouchMove={canReply ? swipeMove : undefined}
+                      onTouchEnd={canReply ? swipeEnd : undefined}
+                      onTouchCancel={canReply ? swipeEnd : undefined}
                     >
+                      {/* phone: the reply arrow that appears while swiping right */}
+                      {canReply && (
+                        <span
+                          data-swipe-icon
+                          aria-hidden="true"
+                          className="absolute -left-7 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center text-emerald-600 pointer-events-none"
+                          style={{ opacity: 0 }}
+                        >
+                          <Reply className="w-3.5 h-3.5" />
+                        </span>
+                      )}
+                      {/* report mode: a tick shows what is selected */}
+                      {pickable && (
+                        <span
+                          className={`absolute top-1 ${isMe ? 'left-1' : 'right-1'} w-5 h-5 rounded-full border-2 flex items-center justify-center z-10 ${
+                            picked ? 'bg-rose-500 border-rose-500 text-white' : 'bg-white border-slate-300'
+                          }`}
+                        >
+                          {picked && <CheckCircle2 className="w-3.5 h-3.5" />}
+                        </span>
+                      )}
                       {/* Sender Name & Role */}
                       {!isMe && (
                         <div className="flex items-center space-x-1.5 mb-1 px-1">
@@ -2485,15 +3055,26 @@ function ChatPageInner() {
 
                       {/* Bubble with Hover Actions */}
                       <div className="relative flex items-center group/bubble max-w-[85%] sm:max-w-[75%]">
-                        {/* Hover Action Menu (Edit / Delete) */}
-                        {canModify && (
+                        {/* Hover Action Menu (Reply / Edit / Delete) */}
+                        {(canModify || canReply) && !reportMode && (
                           <div
                             className={`hidden group-hover/bubble:flex items-center space-x-1 px-1.5 py-0.5 rounded-xl bg-white border border-slate-200 shadow-sm ${
                               isMe ? 'order-first mr-1.5' : 'order-last ml-1.5'
                             }`}
                           >
+                            {/* Reply Button */}
+                            {canReply && (
+                              <button
+                                onClick={() => startReply(msg)}
+                                className="p-1 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-slate-100 transition"
+                                title="Reply"
+                              >
+                                <Reply className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
                             {/* Edit Button */}
-                            {msg.messageType === 'text' && (
+                            {canEdit && (
                               <button
                                 onClick={() => {
                                   setEditingMessage(msg);
@@ -2507,13 +3088,15 @@ function ChatPageInner() {
                             )}
 
                             {/* Delete Button */}
-                            <button
-                              onClick={() => setDeleteConfirmMsg(msg)}
-                              className="p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-slate-100 transition"
-                              title="Delete message"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            {canModify && (
+                              <button
+                                onClick={() => setDeleteConfirmMsg(msg)}
+                                className="p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-slate-100 transition"
+                                title="Delete message"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         )}
 
@@ -2531,6 +3114,33 @@ function ChatPageInner() {
                               : 'bg-white border border-slate-200 text-slate-900 rounded-tl-sm'
                           }`}
                         >
+                          {/* The message this one answers (tap: go to it) */}
+                          {msg.replyTo && !msg.isDeleted && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!reportMode) jumpToMessage(msg.replyTo.messageId);
+                              }}
+                              className={`w-full text-left mb-1.5 -mx-1 px-2.5 py-1.5 rounded-xl border-l-4 flex items-center gap-2 min-w-[140px] ${
+                                isMe ? 'bg-emerald-700/40 border-emerald-200' : 'bg-slate-100 border-emerald-500'
+                              }`}
+                              title="Go to the original message"
+                            >
+                              <span className="min-w-0 flex-1">
+                                <span className={`block text-[11px] font-bold truncate ${isMe ? 'text-emerald-100' : 'text-emerald-700'}`}>
+                                  {String(msg.replyTo.senderId) === String(user?._id) ? 'You' : msg.replyTo.senderName}
+                                </span>
+                                <span className={`block text-[11px] truncate ${msg.replyTo.deleted ? 'italic opacity-70' : ''} ${isMe ? 'text-emerald-50' : 'text-slate-600'}`}>
+                                  {quoteLine(msg.replyTo)}
+                                </span>
+                              </span>
+                              {msg.replyTo.thumb && !msg.replyTo.deleted && (
+                                <img src={msg.replyTo.thumb} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
+                              )}
+                            </button>
+                          )}
+
                           {/* Deleted Notice */}
                           {msg.isDeleted ? (
                             <div className="flex items-center space-x-1.5 text-xs text-slate-500 py-0.5">
@@ -2689,7 +3299,7 @@ function ChatPageInner() {
 
                               {/* Tooltip on Hover */}
                               <div className="absolute bottom-full right-0 mb-1.5 hidden group-hover/reader:flex items-center px-2 py-1 bg-slate-900 text-white text-[10px] font-semibold rounded-lg shadow-xl whitespace-nowrap z-30 pointer-events-none transform -translate-y-1 transition-all duration-200 animate-scale-up">
-                                Seen by {reader.name} (@{reader.username})
+                                Seen by {reader.name}{reader.username ? ` (@${reader.username})` : ''}
                               </div>
                             </div>
                           ))}
@@ -2722,7 +3332,74 @@ function ChatPageInner() {
 
         {/* ─── Input / Controls Bar ─── */}
         <div className="p-3 sm:p-4 bg-white border-t border-slate-200 shrink-0 z-20">
-          {activeChat.type === 'materials' && !isAdmin ? (
+          {/* The message being answered (closes with ✕, or by itself once the reply is sent) */}
+          {replyingTo && canWriteHere && !reportMode && (
+            <div className="mb-2 flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-2xl bg-slate-100 border-l-4 border-emerald-500">
+              <Reply className="w-4 h-4 text-emerald-600 shrink-0" />
+              <button type="button" onClick={() => jumpToMessage(replyingTo.message._id)} className="min-w-0 flex-1 text-left">
+                <span className="block text-[11px] font-bold text-emerald-700 truncate">
+                  Replying to {String(replyingTo.message.senderId) === String(user?._id) ? 'yourself' : replyingTo.message.senderName}
+                </span>
+                <span className="block text-[11px] text-slate-600 truncate">{quoteLine(replyingTo.message)}</span>
+              </button>
+              {(replyingTo.thumb || /^https?:/i.test(replyingTo.message.mediaUrl || '')) && replyingTo.message.messageType === 'image' && (
+                <img src={replyingTo.thumb || replyingTo.message.mediaUrl} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
+              )}
+              <button type="button" onClick={() => setReplyingTo(null)} className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200 shrink-0" title="Cancel reply">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+          {reportMode ? (
+            /* Report: choose messages, add a note, send to the admins */
+            <div className="space-y-2">
+              <p className="text-[11px] text-slate-600">
+                <Flag className="w-3.5 h-3.5 inline text-rose-500 mr-1" />
+                Tap the messages you want to report. They go to the admins exactly as they are now.
+              </p>
+              <input
+                type="text"
+                value={reportNote}
+                onChange={(e) => setReportNote(e.target.value)}
+                maxLength={500}
+                placeholder="What happened? (optional)"
+                className="w-full px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-2xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReportMode(false);
+                    setReportPicked([]);
+                  }}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={sendReport}
+                  disabled={reportPicked.length === 0 || reportSending}
+                  className="flex-1 px-4 py-2.5 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-40 flex items-center justify-center gap-1.5"
+                >
+                  {reportSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Flag className="w-4 h-4" />}
+                  {reportPicked.length === 0 ? 'Select messages' : `Report ${reportPicked.length} message${reportPicked.length === 1 ? '' : 's'}`}
+                </button>
+              </div>
+            </div>
+          ) : gate && gate.state !== 'open' ? (
+            /* Member <-> member chat that is not open: request / waiting / answer / blocked */
+            <ChatGate
+              gate={gate}
+              name={liveContact?.name || 'this member'}
+              busy={gateBusy}
+              reason={requestReason}
+              setReason={setRequestReason}
+              onRequest={sendChatRequest}
+              onAnswer={answerChatRequest}
+              onUnblock={() => setMemberBlocked(false)}
+            />
+          ) : activeChat.type === 'materials' && !isAdmin ? (
             <div className="p-3 bg-purple-50/70 border border-purple-200/80 rounded-2xl flex items-center justify-center space-x-2 text-slate-700 text-xs text-center shadow-2xs">
               <Lock className="w-4 h-4 text-purple-600 shrink-0" />
               <span>
@@ -3049,6 +3726,13 @@ function ChatPageInner() {
           <div className="text-center text-xs text-slate-400 py-1">
             Tap <strong className="text-emerald-400">&quot;Save to Device&quot;</strong> or tap &amp; hold photo to save to gallery
           </div>
+        </div>
+      )}
+
+      {/* ─── FLOATING TOAST: finding a replied message / report sent / chat closed ─── */}
+      {jumpToast && (
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[1001] px-4 py-2.5 rounded-2xl bg-slate-900/95 text-white border border-slate-700 shadow-2xl text-xs font-semibold backdrop-blur-md pointer-events-none max-w-[90vw] text-center">
+          {jumpToast}
         </div>
       )}
 

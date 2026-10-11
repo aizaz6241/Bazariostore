@@ -64,6 +64,56 @@ router.post('/verify-otp', async (req, res) => {
   });
 });
 
+// What to tell someone who registers again with an email that already has an account. A seller
+// whose application is still waiting must learn that it WAS received (and not send it again).
+function existingAccountAnswer(existing) {
+  const application = {
+    storeName: existing.storeName || '',
+    ownerName: existing.ownerName || '',
+    email: existing.email || '',
+    submittedAt: existing.createdAt || null,
+  };
+  if (existing.registrationRejectedAt) {
+    return {
+      code: 'APPLICATION_REJECTED',
+      application,
+      message:
+        'An application with this email was already reviewed and was not approved. Please contact our support team through the chat (bottom right) — you do not need to register again.',
+    };
+  }
+  if (existing.status === 'pending_approval') {
+    return {
+      code: 'APPLICATION_PENDING',
+      application,
+      message:
+        'You have already submitted your application with this email. It is waiting for admin approval — no need to register again. You will be able to sign in as soon as it is approved.',
+    };
+  }
+  return {
+    code: 'ALREADY_REGISTERED',
+    application: null,
+    message: 'A merchant account with this email already exists. Please sign in instead.',
+  };
+}
+
+// Small check made BEFORE the documents are uploaded: is there already an account / application for
+// this email? (So someone who already applied is told so at once, without uploading photos again.)
+const checkEmailLimit = limit({ name: 'seller-register-check', max: 40, windowMs: 60 * 60 * 1000, message: 'Too many checks from this network. Please try again later.' });
+router.post('/register/check-email', checkEmailLimit, async (req, res) => {
+  try {
+    const email = asText(req.body?.email, 200).toLowerCase().trim();
+    if (!email || !/^\S+@\S+\.\S+$/.test(email)) return res.json({ exists: false });
+    const existing = await Seller.findOne({ email })
+      .select('storeName ownerName email status registrationRejectedAt createdAt')
+      .lean();
+    if (!existing) return res.json({ exists: false });
+    return res.json({ exists: true, ...existingAccountAnswer(existing) });
+  } catch (err) {
+    // never block a registration because this check failed
+    res.json({ exists: false });
+  }
+});
+
 // POST /api/sellers/register (Seller self-registers with KYC document)
 router.post('/register', registerLimit, async (req, res) => {
   try {
@@ -100,9 +150,11 @@ router.post('/register', registerLimit, async (req, res) => {
     }
 
     const cleanEmail = email.toLowerCase().trim();
-    const existing = await Seller.findOne({ email: cleanEmail });
+    const existing = await Seller.findOne({ email: cleanEmail })
+      .select('storeName ownerName email status registrationRejectedAt createdAt')
+      .lean();
     if (existing) {
-      return res.status(400).json({ message: 'A merchant account with this email already exists' });
+      return res.status(409).json(existingAccountAnswer(existing));
     }
 
     // OTP requirement removed - seller registers directly for admin KYC approval
