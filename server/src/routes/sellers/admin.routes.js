@@ -34,6 +34,19 @@ const KYC_FILE_FIELDS = [
 ];
 const SELLER_LIST_SELECT = ['-passwordHash', ...KYC_FILE_FIELDS.map((f) => `-kycDocuments.${f}`)].join(' ');
 
+// A seller as it is sent back after an action or pushed live: WITHOUT the KYC photos and the
+// password. The photos live inside the seller record (several MB for some sellers); sending them
+// with every answer made "Approve" take longer than the website's 30 s limit ("Request timed
+// out"), although the approval itself was already saved. The KYC screen asks for them separately.
+// (`kycDocuments` is left out completely, so a screen that merges this into what it already has
+// keeps the photos it is showing.)
+function lightSeller(doc) {
+  const o = doc && typeof doc.toObject === 'function' ? doc.toObject() : { ...(doc || {}) };
+  delete o.passwordHash;
+  delete o.kycDocuments;
+  return o;
+}
+
 // ─── Team portal link: who a seller belongs to ───
 // The team portal keeps its people in `portalmembers` and seller ownership in
 // `portalsellerassignments` (same database). The finance ledger divides every deposit and
@@ -455,7 +468,7 @@ router.post('/:id/freeze', authAdmin('sellers'), async (req, res) => {
       const io = req.app.get('io');
       if (io) {
         io.to(`seller:${seller._id}`).emit('message:new', msg);
-        io.to(`seller:${seller._id}`).emit('seller:status_update', { seller: seller.toObject() });
+        io.to(`seller:${seller._id}`).emit('seller:status_update', { seller: lightSeller(seller) });
       }
     } catch (chatErr) {
       console.error('Chat freeze error:', chatErr.message);
@@ -990,8 +1003,7 @@ router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
       });
     }
 
-    const safeSeller = seller.toObject();
-    delete safeSeller.passwordHash;
+    const safeSeller = lightSeller(seller);
 
     const io = req.app.get('io');
     if (io) {
@@ -1054,7 +1066,7 @@ router.post('/:id/withdrawal-limit', authAdmin('finance'), async (req, res) => {
     res.json({
       message: 'Withdrawal limit settings updated successfully',
       withdrawalLimit: seller.withdrawalLimit,
-      seller: seller.toObject(),
+      seller: lightSeller(seller),
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -1064,7 +1076,8 @@ router.post('/:id/withdrawal-limit', authAdmin('finance'), async (req, res) => {
 router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
   try {
     const { securityDepositPaid, securityDepositAmount, referralCode, assignedReferralCode, commissionRate, note, isTestAccount, accountType, isPreviousStoreSeller, assignedMemberId } = req.body || {};
-    const seller = await Seller.findById(req.params.id);
+    // the KYC photos are not needed to approve (and are MBs): left in the database
+    const seller = await Seller.findById(req.params.id).select(SELLER_LIST_SELECT);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
     // Was this seller already approved before? Then this is an edit, not a first approval: its
@@ -1236,8 +1249,9 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
       }
     }
 
-    // Auto-send welcome chat announcement
-    try {
+    // Auto-send welcome chat announcement — only the FIRST time (pressing Approve again on an
+    // approved seller, e.g. after a timeout, must not send the welcome message again)
+    if (!wasApproved) try {
       let conv = await Conversation.findOne({ seller: seller._id });
       if (!conv) {
         conv = await Conversation.create({
@@ -1280,15 +1294,14 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
       const io = req.app.get('io');
       if (io) {
         io.to(`seller:${seller._id}`).emit('message:new', msg);
-        io.to(`seller:${seller._id}`).emit('seller:status_update', { seller: seller.toObject() });
+        io.to(`seller:${seller._id}`).emit('seller:status_update', { seller: lightSeller(seller) });
         io.to(`seller:${seller._id}`).emit('wallet:update', { wallet: seller.wallet, sellerId: seller._id });
-        io.to('sellers').emit('seller:status_update', { seller: seller.toObject() });
       }
     } catch (chatErr) {
       console.error('Approval chat error:', chatErr.message);
     }
 
-    notify(req.app, {
+    if (!wasApproved) notify(req.app, {
       recipientType: 'seller',
       sellerId: seller._id,
       type: 'approval',
@@ -1309,8 +1322,7 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
       after: { isTestAccount: Boolean(seller.isTestAccount), isPreviousStoreSeller: Boolean(seller.isPreviousStoreSeller), securityDeposit: depAmt, securityDepositPaid: isPaid },
     });
 
-    const safe = seller.toObject();
-    delete safe.passwordHash;
+    const safe = lightSeller(seller);
     res.json({
       message: `Seller ${seller.storeName} approved and activated successfully! ✅${approvalNotices.length ? ` ${approvalNotices.join(' ')}` : ''}`,
       pendingApproval: approvalNotices.length > 0,
@@ -1325,7 +1337,7 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
 router.post('/:id/reject', authAdmin('sellers'), async (req, res) => {
   try {
     const { reason, isTestAccount, accountType } = req.body || {};
-    const seller = await Seller.findById(req.params.id);
+    const seller = await Seller.findById(req.params.id).select(SELLER_LIST_SELECT);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
     // The account type of a seller that was already approved is never changed from here
@@ -1349,7 +1361,7 @@ router.post('/:id/reject', authAdmin('sellers'), async (req, res) => {
 
     audit(req, 'reject', 'seller_registration', seller._id, `Rejected registration for ${seller.storeName}. Reason: ${reason}`);
 
-    res.json({ message: `Registration for ${seller.storeName} rejected.`, seller });
+    res.json({ message: `Registration for ${seller.storeName} rejected.`, seller: lightSeller(seller) });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -1363,9 +1375,7 @@ router.patch('/:id/toggle-test', authAdmin('sellers'), async (req, res) => {
 
     if (await isApprovedSeller(seller)) {
       const asked = await askSellerFlagChange(req, seller, 'isTestAccount', !seller.isTestAccount);
-      const unchanged = seller.toObject();
-      delete unchanged.passwordHash;
-      return res.json({ ok: true, pendingApproval: true, message: asked.message, seller: unchanged });
+      return res.json({ ok: true, pendingApproval: true, message: asked.message, seller: lightSeller(seller) });
     }
 
     seller.isTestAccount = !seller.isTestAccount;
@@ -1383,8 +1393,7 @@ router.patch('/:id/toggle-test', authAdmin('sellers'), async (req, res) => {
       after: { isTestAccount: Boolean(seller.isTestAccount) },
     });
 
-    const safe = seller.toObject();
-    delete safe.passwordHash;
+    const safe = lightSeller(seller);
 
     const io = req.app.get('io');
     if (io) {
@@ -1409,9 +1418,7 @@ router.patch('/:id/toggle-previous-store', authAdmin('sellers'), async (req, res
 
     if (await isApprovedSeller(seller)) {
       const asked = await askSellerFlagChange(req, seller, 'isPreviousStoreSeller', !seller.isPreviousStoreSeller);
-      const unchanged = seller.toObject();
-      delete unchanged.passwordHash;
-      return res.json({ ok: true, pendingApproval: true, message: asked.message, seller: unchanged });
+      return res.json({ ok: true, pendingApproval: true, message: asked.message, seller: lightSeller(seller) });
     }
 
     seller.isPreviousStoreSeller = !seller.isPreviousStoreSeller;
@@ -1428,8 +1435,7 @@ router.patch('/:id/toggle-previous-store', authAdmin('sellers'), async (req, res
       after: { isPreviousStoreSeller: Boolean(seller.isPreviousStoreSeller) },
     });
 
-    const safe = seller.toObject();
-    delete safe.passwordHash;
+    const safe = lightSeller(seller);
 
     const io = req.app.get('io');
     if (io) {
