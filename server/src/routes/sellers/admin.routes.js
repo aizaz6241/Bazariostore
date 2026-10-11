@@ -214,18 +214,48 @@ router.get('/:id/kyc', authAdmin('sellers'), async (req, res, next) => {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return next();
     }
-    const seller = await Seller.findById(req.params.id).select('kycDocuments storeName ownerName');
-    if (!seller) return res.status(404).json({ message: 'Seller not found' });
-    const obj = seller.toObject();
-    const kyc = obj.kycDocuments || {};
-    const normalizedKyc = {
-      ...kyc,
-      aadhaarFront: kyc.aadhaarFront || kyc.idCard || kyc.idDocumentUrl || '',
-      panFront: kyc.panFront || kyc.passport || kyc.passportDocumentUrl || '',
-      idCard: kyc.idCard || kyc.idDocumentUrl || kyc.aadhaarFront || '',
-      passport: kyc.passport || kyc.passportDocumentUrl || kyc.panFront || '',
+    // ?doc=aadhaarFront (or aadhaarBack / panFront / panBack / idCard / passport / bankStatement):
+    // only that ONE picture is read and sent. Sending every picture (and their old duplicate
+    // copies) at once was several MB per click, and on a slow connection the preview timed out.
+    const PICK = {
+      aadhaarFront: ['aadhaarFront', 'idCard', 'idDocumentUrl'],
+      aadhaarBack: ['aadhaarBack'],
+      panFront: ['panFront', 'passport', 'passportDocumentUrl'],
+      panBack: ['panBack'],
+      idCard: ['idCard', 'idDocumentUrl', 'aadhaarFront'],
+      passport: ['passport', 'passportDocumentUrl', 'panFront'],
+      bankStatement: ['bankStatement', 'bankStatementUrl'],
     };
-    res.json({ _id: obj._id, kycDocuments: normalizedKyc });
+    const one = typeof req.query.doc === 'string' && PICK[req.query.doc] ? req.query.doc : '';
+    if (one) {
+      const fields = PICK[one];
+      const doc = await Seller.findById(req.params.id)
+        .select(fields.map((f) => `kycDocuments.${f}`).join(' '))
+        .lean();
+      if (!doc) return res.status(404).json({ message: 'Seller not found' });
+      const k = doc.kycDocuments || {};
+      const value = fields.map((f) => k[f]).find((v) => typeof v === 'string' && v) || '';
+      return res.json({ _id: doc._id, doc: one, kycDocuments: { [one]: value } });
+    }
+
+    const seller = await Seller.findById(req.params.id).select('kycDocuments storeName ownerName').lean();
+    if (!seller) return res.status(404).json({ message: 'Seller not found' });
+    const kyc = seller.kycDocuments || {};
+    // every picture once (the legacy duplicate fields are left out when they hold the same picture)
+    const normalizedKyc = {
+      idDocumentType: kyc.idDocumentType || '',
+      uploadedAt: kyc.uploadedAt || null,
+      aadhaarFront: kyc.aadhaarFront || kyc.idCard || kyc.idDocumentUrl || '',
+      aadhaarBack: kyc.aadhaarBack || '',
+      panFront: kyc.panFront || kyc.passport || kyc.passportDocumentUrl || '',
+      panBack: kyc.panBack || '',
+      bankStatement: kyc.bankStatement || kyc.bankStatementUrl || '',
+    };
+    const legacyId = kyc.idCard || kyc.idDocumentUrl || '';
+    const legacyPassport = kyc.passport || kyc.passportDocumentUrl || '';
+    if (legacyId && legacyId !== normalizedKyc.aadhaarFront) normalizedKyc.idCard = legacyId;
+    if (legacyPassport && legacyPassport !== normalizedKyc.panFront) normalizedKyc.passport = legacyPassport;
+    res.json({ _id: seller._id, kycDocuments: normalizedKyc });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

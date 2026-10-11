@@ -82,17 +82,83 @@ export default function SellerLogin() {
     }
   };
 
-  const handleFileUpload = (field) => (e) => {
-    const file = e.target.files?.[0];
+  // Phone photos are 2–6 MB each. Four of them in one request were often more than the server
+  // accepts, and on a mobile connection the upload ran past the time limit ("Request timed out")
+  // even when the registration had already been saved. So every picture is made smaller here,
+  // on the phone, before it is sent: max 1600 px, JPEG — still perfectly readable for KYC.
+  const [preparing, setPreparing] = useState('');
+  const shrinkImage = (file) =>
+    new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const encode = (maxSide, quality) => {
+            const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+            const w = Math.max(1, Math.round(img.naturalWidth * scale));
+            const h = Math.max(1, Math.round(img.naturalHeight * scale));
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, w, h);
+            ctx.drawImage(img, 0, 0, w, h);
+            return canvas.toDataURL('image/jpeg', quality);
+          };
+          let out = encode(1600, 0.8);
+          if (out.length > 900 * 1024) out = encode(1280, 0.7);
+          if (out.length > 900 * 1024) out = encode(1024, 0.6);
+          URL.revokeObjectURL(url);
+          resolve(out);
+        } catch (err) {
+          URL.revokeObjectURL(url);
+          reject(err);
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('unreadable'));
+      };
+      img.src = url;
+    });
+
+  const handleFileUpload = (field) => async (e) => {
+    const input = e.target;
+    const file = input.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      return alert('File size exceeds 5MB limit.');
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+    if (isPdf) {
+      if (file.size > 1024 * 1024) {
+        input.value = '';
+        return alert('This PDF is larger than 1 MB. Please upload a photo of the card instead (it is made smaller automatically).');
+      }
+      const reader = new FileReader();
+      reader.onload = () => setRegForm((prev) => ({ ...prev, [field]: reader.result }));
+      reader.readAsDataURL(file);
+      return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setRegForm((prev) => ({ ...prev, [field]: reader.result }));
-    };
-    reader.readAsDataURL(file);
+    if (file.size > 25 * 1024 * 1024) {
+      input.value = '';
+      return alert('This picture is too large. Please choose another photo.');
+    }
+    setPreparing(field);
+    try {
+      const small = await shrinkImage(file);
+      setRegForm((prev) => ({ ...prev, [field]: small }));
+    } catch {
+      // the browser could not open this picture format: send it as it is if it is small enough
+      if (file.size <= 1024 * 1024) {
+        const reader = new FileReader();
+        reader.onload = () => setRegForm((prev) => ({ ...prev, [field]: reader.result }));
+        reader.readAsDataURL(file);
+      } else {
+        input.value = '';
+        alert('This picture could not be opened. Please take a JPG / PNG photo of the card and try again.');
+      }
+    } finally {
+      setPreparing('');
+    }
   };
 
   const handleRegister = async (e) => {
@@ -100,11 +166,22 @@ export default function SellerLogin() {
     setErr('');
     setIsPendingApprovalErr(false);
     setSuccessMsg('');
+    if (preparing) {
+      setErr('Please wait a moment: the photos are still being prepared.');
+      return;
+    }
+    // everything together must stay under what the server accepts (5 MB)
+    if (JSON.stringify(regForm).length > 4.6 * 1024 * 1024) {
+      setErr('The documents are too large together. Please upload smaller photos (or photos instead of PDFs).');
+      return;
+    }
     setLoading(true);
     try {
+      // documents on a slow mobile connection: up to 2 minutes
       const res = await api('/sellers/register', {
         method: 'POST',
         body: regForm,
+        timeout: 120000,
       });
 
       setSubmittedInfo({
@@ -130,7 +207,18 @@ export default function SellerLogin() {
         description: '',
       });
     } catch (e) {
-      setErr(e.message || 'Registration failed. Please check your information and try again.');
+      const msg = e.message || '';
+      if (/timed out|unable to connect/i.test(msg)) {
+        // The answer did not arrive, but the registration may well have been saved. Sending the
+        // form again would then only say "this email already exists".
+        setErr(
+          'The connection was too slow to get the answer. Your registration may already have been received: wait one minute, then try to Sign In with this email. If it says "pending admin approval", it worked — no need to register again.'
+        );
+      } else if (/already exists/i.test(msg)) {
+        setErr('This email is already registered. If you just submitted the form, it was received: your account is waiting for admin approval.');
+      } else {
+        setErr(msg || 'Registration failed. Please check your information and try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -587,7 +675,10 @@ export default function SellerLogin() {
                     style={{ fontSize: 11, width: '100%' }}
                     required
                   />
-                  {regForm.aadhaarFront && (
+                  {preparing === 'aadhaarFront' && (
+                    <small style={{ color: '#64748b', display: 'block', fontWeight: 700, marginTop: 4 }}>⏳ Preparing photo…</small>
+                  )}
+                  {regForm.aadhaarFront && preparing !== 'aadhaarFront' && (
                     <small style={{ color: '#16a34a', display: 'block', fontWeight: 800, marginTop: 4 }}>
                       ✓ Front Attached
                     </small>
@@ -606,7 +697,10 @@ export default function SellerLogin() {
                     style={{ fontSize: 11, width: '100%' }}
                     required
                   />
-                  {regForm.aadhaarBack && (
+                  {preparing === 'aadhaarBack' && (
+                    <small style={{ color: '#64748b', display: 'block', fontWeight: 700, marginTop: 4 }}>⏳ Preparing photo…</small>
+                  )}
+                  {regForm.aadhaarBack && preparing !== 'aadhaarBack' && (
                     <small style={{ color: '#16a34a', display: 'block', fontWeight: 800, marginTop: 4 }}>
                       ✓ Back Attached
                     </small>
@@ -625,7 +719,10 @@ export default function SellerLogin() {
                     style={{ fontSize: 11, width: '100%' }}
                     required
                   />
-                  {regForm.panFront && (
+                  {preparing === 'panFront' && (
+                    <small style={{ color: '#64748b', display: 'block', fontWeight: 700, marginTop: 4 }}>⏳ Preparing photo…</small>
+                  )}
+                  {regForm.panFront && preparing !== 'panFront' && (
                     <small style={{ color: '#16a34a', display: 'block', fontWeight: 800, marginTop: 4 }}>
                       ✓ Front Attached
                     </small>
@@ -644,7 +741,10 @@ export default function SellerLogin() {
                     style={{ fontSize: 11, width: '100%' }}
                     required
                   />
-                  {regForm.panBack && (
+                  {preparing === 'panBack' && (
+                    <small style={{ color: '#64748b', display: 'block', fontWeight: 700, marginTop: 4 }}>⏳ Preparing photo…</small>
+                  )}
+                  {regForm.panBack && preparing !== 'panBack' && (
                     <small style={{ color: '#16a34a', display: 'block', fontWeight: 800, marginTop: 4 }}>
                       ✓ Back Attached
                     </small>
@@ -653,8 +753,8 @@ export default function SellerLogin() {
               </div>
             </div>
 
-            <button type="submit" className="btn-primary btn-block btn-auth-submit" disabled={loading}>
-              {loading ? 'Submitting Application…' : 'SUBMIT SELLER REGISTRATION →'}
+            <button type="submit" className="btn-primary btn-block btn-auth-submit" disabled={loading || !!preparing}>
+              {loading ? 'Uploading documents… please keep this page open' : preparing ? 'Preparing photos…' : 'SUBMIT SELLER REGISTRATION →'}
             </button>
           </form>
         )}

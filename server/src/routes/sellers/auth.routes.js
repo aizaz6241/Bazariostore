@@ -118,13 +118,20 @@ router.post('/register', registerLimit, async (req, res) => {
       storeSlug = `${baseSlug}-${counter++}`;
     }
 
-    const finalAadhaarFront = aadhaarFront || '';
-    const finalAadhaarBack = aadhaarBack || '';
-    const finalPanFront = panFront || '';
-    const finalPanBack = panBack || '';
-    const finalIdDoc = idDocument || idDocumentUrl || finalAadhaarFront || '';
-    const finalPassportDoc = passportDocument || passportDocumentUrl || finalPanFront || '';
-    const finalBankDoc = bankStatementDocument || bankStatementUrl || '';
+    // A document is a picture / PDF (data: URL) or a link. Anything else is dropped.
+    const docOf = (v) => (typeof v === 'string' && (v.startsWith('data:image/') || v.startsWith('data:application/pdf') || /^https?:\/\//.test(v)) ? v : '');
+    const finalAadhaarFront = docOf(aadhaarFront);
+    const finalAadhaarBack = docOf(aadhaarBack);
+    const finalPanFront = docOf(panFront);
+    const finalPanBack = docOf(panBack);
+    // Older forms sent these separately. Each picture is stored ONCE: before, the Aadhaar front and
+    // the PAN front were also copied into the legacy fields (3 copies each), which made a seller
+    // record several MB bigger and the registration (and the admin's KYC preview) very slow.
+    const legacyId = docOf(idDocument) || docOf(idDocumentUrl);
+    const legacyPassport = docOf(passportDocument) || docOf(passportDocumentUrl);
+    const finalIdDoc = legacyId && legacyId !== finalAadhaarFront ? legacyId : '';
+    const finalPassportDoc = legacyPassport && legacyPassport !== finalPanFront ? legacyPassport : '';
+    const finalBankDoc = docOf(bankStatementDocument) || docOf(bankStatementUrl);
     const hasAnyKyc = Boolean(finalAadhaarFront || finalAadhaarBack || finalPanFront || finalPanBack || finalIdDoc || finalPassportDoc || finalBankDoc);
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -144,12 +151,9 @@ router.post('/register', registerLimit, async (req, res) => {
         aadhaarBack: finalAadhaarBack,
         panFront: finalPanFront,
         panBack: finalPanBack,
-        idDocumentUrl: finalAadhaarFront || finalIdDoc || finalPassportDoc || '',
-        idCard: finalAadhaarFront || finalIdDoc,
+        idCard: finalIdDoc,
         passport: finalPassportDoc,
-        passportDocumentUrl: finalPassportDoc,
         bankStatement: finalBankDoc,
-        bankStatementUrl: finalBankDoc,
         idDocumentType: idDocumentType || 'Aadhaar Card & PAN Card',
         uploadedAt: hasAnyKyc ? new Date() : null,
       },
@@ -187,6 +191,8 @@ router.post('/register', registerLimit, async (req, res) => {
 
     const safeSeller = seller.toObject();
     delete safeSeller.passwordHash;
+    // the pictures the seller just uploaded are not sent back (megabytes for nothing on a phone)
+    delete safeSeller.kycDocuments;
 
     res.status(201).json({
       message: 'Registration submitted successfully! Your account is currently pending admin approval.',

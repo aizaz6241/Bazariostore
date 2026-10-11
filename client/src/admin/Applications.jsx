@@ -13,6 +13,7 @@ export default function Applications() {
   const [pendingApproveModal, setPendingApproveModal] = useState(null);
   const [pendingRejectModal, setPendingRejectModal] = useState(null);
   const [kycDocModal, setKycDocModal] = useState(null);
+  const [kycLoading, setKycLoading] = useState(''); // "<sellerId>:<docType>" while that picture downloads
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
 
@@ -85,16 +86,20 @@ export default function Applications() {
   const openKycDoc = async (s, docType) => {
     let docUrl = kycValue(s, docType);
     if (!docUrl) {
+      // only the ONE picture that was clicked is downloaded (a slow connection gets 2 minutes)
+      setKycLoading(`${s._id}:${docType}`);
       try {
-        const res = await api(`/sellers/${s._id}/kyc`);
-        const full = res?.kycDocuments || {};
-        docUrl = kycValue({ kycDocuments: full }, docType);
+        const res = await api(`/sellers/${s._id}/kyc?doc=${encodeURIComponent(docType)}`, { timeout: 120000 });
+        const got = res?.kycDocuments || {};
+        docUrl = got[docType] || kycValue({ kycDocuments: got }, docType);
         // keep it in memory so the next click is instant
-        setSellers((prev) => prev.map((it) => (it._id === s._id ? { ...it, kycDocuments: { ...(it.kycDocuments || {}), ...full } } : it)));
+        if (docUrl) setSellers((prev) => prev.map((it) => (it._id === s._id ? { ...it, kycDocuments: { ...(it.kycDocuments || {}), [docType]: docUrl } } : it)));
       } catch (e) {
         console.error(e);
         alert('Could not load this document: ' + (e.message || 'Network error'));
         return;
+      } finally {
+        setKycLoading('');
       }
     }
     if (!docUrl) {
@@ -394,7 +399,9 @@ export default function Applications() {
                               key={d.key}
                               type="button"
                               onClick={() => openKycDoc(s, d.key)}
+                              disabled={kycLoading === `${s._id}:${d.key}`}
                               style={{
+                                opacity: kycLoading === `${s._id}:${d.key}` ? 0.6 : 1,
                                 padding: '3px 7px',
                                 background: d.bg,
                                 border: `1px solid ${d.border}`,
@@ -407,7 +414,7 @@ export default function Applications() {
                               }}
                               title={`Click to view ${d.label}`}
                             >
-                              {d.label}
+                              {kycLoading === `${s._id}:${d.key}` ? '⏳ Loading…' : d.label}
                             </button>
                           ))}
                         </div>
