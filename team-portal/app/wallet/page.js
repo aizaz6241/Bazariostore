@@ -408,6 +408,40 @@ export default function WalletPage() {
         </div>
       </div>
 
+      {/* ── Referral commission: only for someone who brought members (never shown to the member brought) ── */}
+      {data?.referral && (
+        <div className="bg-indigo-50/70 p-4 rounded-3xl border border-indigo-200 shadow-xs flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center space-x-2.5">
+            <span className="text-lg">🤝</span>
+            <div>
+              <span className="text-sm font-bold text-indigo-900 block">Referral Commission</span>
+              <span className="text-[11px] text-indigo-700/80">
+                From {data.referral.members} member{data.referral.members === 1 ? '' : 's'} you brought •{' '}
+                <a href="/my-members" className="underline font-semibold">see each member</a>
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs sm:text-sm min-w-0">
+            <div className="flex items-center space-x-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+              <span className="text-slate-500">Earned ({data.referral.deposits} deposits):</span>
+              <strong className="text-emerald-700">+₮{formatMoney(data.referral.earnedUSDT)}</strong>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-400"></span>
+              <span className="text-slate-500">Deducted ({data.referral.withdrawals} withdrawals):</span>
+              <strong className="text-red-600">-₮{formatMoney(data.referral.deductedUSDT)}</strong>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-slate-500">Net:</span>
+              <strong className={data.referral.netUSDT < 0 ? 'text-red-700' : 'text-indigo-900'}>
+                {data.referral.netUSDT < 0 ? '-' : ''}₮{formatMoney(Math.abs(data.referral.netUSDT))}
+              </strong>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── A payout someone else wrote in my name: I confirm it before it is deducted ── */}
       <PayoutConfirmations tick={confirmTick} onChanged={() => fetchWallet(period, customStart, customEnd, true)} />
 
@@ -715,6 +749,16 @@ export default function WalletPage() {
                         {tx.category === 'client_withdrawal' && (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-200">
                             🛒 Client Withdrawal ({tx.status || 'Processed'})
+                          </span>
+                        )}
+                        {tx.referral && tx.type === 'credit' && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                            🤝 Referral commission{tx.referralPct ? ` ${tx.referralPct}%` : ''}
+                          </span>
+                        )}
+                        {tx.referral && tx.type === 'debit' && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-800 border border-orange-200">
+                            🤝 Referral withdrawal commission{tx.referralPct ? ` ${tx.referralPct}%` : ''}
                           </span>
                         )}
                         {tx.category === 'bonus_reward' && (

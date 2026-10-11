@@ -60,6 +60,13 @@ export async function GET(req) {
       });
     }
 
+    // "Mark as read" button of a phone notification: only mark, send nothing back
+    if (searchParams.get('markOnly') === '1') {
+      const marked = await ChatMessage.updateMany({ conversationId, readBy: { $ne: session._id } }, { $addToSet: { readBy: session._id } });
+      await markChatNotificationRead(session._id, conversationId).catch(() => {});
+      return NextResponse.json({ conversationId, read: marked?.modifiedCount || 0 });
+    }
+
     // Cheap fingerprint of the conversation. The chat page sends the fingerprint it already has;
     // when nothing changed we answer without any messages.
     const fingerprint = async () => {
@@ -253,45 +260,67 @@ export async function POST(req) {
     if (voice) await voice.attach(newMsg._id);
 
 
-    // Asynchronously trigger push notifications to recipient(s) with custom message sound
+    // Push notification to the recipient(s). WhatsApp style: the chat's name as the title and
+    // "who: what" as the text, so the phone shows what the message is about. The phone groups the
+    // messages of one chat together (see public/sw.js).
+    // The push is waited for (at most a few seconds) before answering: on Vercel anything still
+    // running after the answer can be frozen, and the phone then got the notification only when
+    // the portal was opened again.
     try {
       const previewBody =
         messageType === 'image'
-          ? (text ? `📷 ${text.trim().slice(0, 80)}` : '📷 Sent a photo')
+          ? (text ? `📷 ${text.trim().slice(0, 80)}` : '📷 Photo')
           : messageType === 'voice'
-          ? '🎤 Sent a voice message'
-          : (text ? text.trim().slice(0, 120) : 'New message');
+          ? `🎤 Voice message${audioDuration ? ` (${Math.floor(audioDuration / 60)}:${String(Math.round(audioDuration % 60)).padStart(2, '0')})` : ''}`
+          : (text ? text.trim().slice(0, 160) : 'New message');
 
+      let pushing = null;
       if (chatType === 'personal' && target) {
-        sendPushToUser(target, {
+        pushing = sendPushToUser(target, {
           title: `💬 ${session.name}`,
           body: previewBody,
           url: `/chat?chatType=personal&contactId=${session._id.toString()}`,
           type: 'chat',
           sound: '/sounds/message.wav',
           vibrate: [200, 100, 200, 100, 200],
-          data: { chatType: 'personal', contactId: session._id.toString(), senderId: session._id.toString() },
-        }).catch((e) => console.error('Personal push error:', e));
+          data: {
+            chatType: 'personal',
+            contactId: session._id.toString(),
+            senderId: session._id.toString(),
+            conversationId,
+            chatTitle: `💬 ${session.name}${session.role === 'admin' ? ' (Admin)' : ''}`,
+            line: previewBody,
+          },
+        });
       } else if (chatType === 'materials' || conversationId === 'materials_group') {
-        sendPushToAllExcept(session._id, {
-          title: `📁 Materials Group: ${session.name}`,
-          body: previewBody,
+        pushing = sendPushToAllExcept(session._id, {
+          title: `📁 Materials Group`,
+          body: `${session.name}: ${previewBody}`,
           url: '/chat?chatType=materials',
           type: 'chat',
           sound: '/sounds/message.wav',
           vibrate: [200, 100, 200, 100, 200],
-          data: { chatType: 'materials', conversationId: 'materials_group' },
-        }).catch((e) => console.error('Materials group push error:', e));
+          data: { chatType: 'materials', conversationId: 'materials_group', chatTitle: '📁 Materials Group', line: `${session.name}: ${previewBody}` },
+        });
       } else {
-        sendPushToAllExcept(session._id, {
-          title: `💬 ${session.name} (Bazario Team)`,
-          body: previewBody,
+        pushing = sendPushToAllExcept(session._id, {
+          title: `👥 Team group`,
+          body: `${session.name}: ${previewBody}`,
           url: '/chat?chatType=group',
           type: 'chat',
           sound: '/sounds/message.wav',
           vibrate: [200, 100, 200, 100, 200],
-          data: { chatType: 'group', conversationId: 'main_group', senderId: session._id.toString() },
-        }).catch((e) => console.error('Group push error:', e));
+          data: {
+            chatType: 'group',
+            conversationId: 'main_group',
+            senderId: session._id.toString(),
+            chatTitle: '👥 Team group',
+            line: `${session.name}: ${previewBody}`,
+          },
+        });
+      }
+      if (pushing) {
+        await Promise.race([pushing.catch((e) => console.error('Chat push error:', e)), new Promise((resolve) => setTimeout(resolve, 4000))]);
       }
     } catch (pushErr) {
       console.error('Trigger push error:', pushErr);

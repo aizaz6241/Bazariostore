@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { selfView } from '@/lib/utils/selfView';
 import { connectDB } from '@/lib/db';
 import Member from '@/lib/models/Member';
 import { comparePassword, signToken } from '@/lib/auth';
@@ -137,7 +138,7 @@ export async function POST(req) {
           ecommerceAdminId: ecommerceAdmin._id,
         });
 
-        const safeMember = portalMember.toObject();
+        const safeMember = await selfView(portalMember);
         delete safeMember.passwordHash;
         delete safeMember.plainPassword;
 
@@ -201,7 +202,7 @@ export async function POST(req) {
       email: member.email || '',
     });
 
-    const safeMember = member.toObject();
+    const safeMember = await selfView(member);
     delete safeMember.passwordHash;
     delete safeMember.plainPassword;
 

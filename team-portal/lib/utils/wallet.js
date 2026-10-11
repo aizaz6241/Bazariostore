@@ -5,6 +5,8 @@ import WalletTransaction from '@/lib/models/WalletTransaction';
 import { buildLedger, invalidateLedger, FINANCE_START } from '@/lib/utils/finance';
 import { r2 } from '@/lib/utils/financeSplit';
 
+const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
 /**
  * Get date range boundary dates for period filtering
  */
@@ -75,7 +77,7 @@ export function getPeriodDateRange(period, customStart, customEnd) {
  * Milestone bonuses are part of the USDT wallet: the member is credited (PKR bonus converted
  * at that day's rate) and the two partners are charged 50 / 50.
  */
-export async function getWalletData({ userId, period = 'all', startDate = null, endDate = null }) {
+export async function getWalletData({ userId, period = 'all', startDate = null, endDate = null, viewerIsAdmin = false }) {
   await connectDB();
 
   if (!userId || userId === 'undefined' || userId === 'null' || !mongoose.Types.ObjectId.isValid(userId)) {
@@ -100,6 +102,13 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
   let bonusUSDT = 0;
   let bonusCostUSDT = 0;
   let totalEarnedPKR = 0; // bonus value in PKR, for reference only
+
+  // Referral commission of the members this person brought (only the referrer sees these)
+  let referralEarnedUSDT = 0;
+  let referralDeductedUSDT = 0;
+  let referralDeposits = 0;
+  let referralWithdrawals = 0;
+  const referralFrom = new Set();
 
   // ─── Shares of real seller deposits and seller withdrawals ───
   for (const e of ledger.entries) {
@@ -151,6 +160,45 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
       if (!isReferral) totalClientWithdrawalsUSDT += e.usdt;
     }
 
+    const sellerMoney = `₮${e.usdt.toFixed(2)} USDT${e.inr > 0 ? ` (₹${e.inr.toLocaleString('en-US')} INR @ ${e.rate})` : ''}`;
+    const coverText = myCover ? ` • ₮${myCover.amountUSDT.toFixed(2)} of your share was paid by the reserve because your wallet did not have enough` : '';
+
+    let description;
+    let details;
+    let referralPct = 0;
+    let referralName = '';
+    if (isReferral) {
+      // ── Referrer's view: everything in full ──
+      referralName = e.owner ? e.owner.name : 'your member';
+      const fromLabel = String(share.label || '').match(/Referral ([\d.]+)%/);
+      referralPct = num(e.owner && e.owner.referral ? e.owner.referral.pct : fromLabel ? fromLabel[1] : 0);
+      const memberShare = (e.shares || []).find((x) => String(x.userId) === String(share.referralOf) && !x.referralOf);
+      // the member's part before the commission came out of it
+      const memberPart = r2((memberShare ? memberShare.amountUSDT : 0) + share.amountUSDT);
+      const pctTxt = referralPct > 0 ? `${referralPct}% ` : '';
+      referralFrom.add(String(share.referralOf));
+      if (isDeposit) {
+        referralEarnedUSDT += share.amountUSDT;
+        referralDeposits += 1;
+        description = `Referral commission ${pctTxt}from ${referralName} — deposit (${e.storeName})`;
+        details = `${pctTxt}of ${referralName}'s share ₮${memberPart.toFixed(2)} • seller deposited ${sellerMoney} on Binance`;
+      } else {
+        referralDeductedUSDT += share.amountUSDT;
+        referralWithdrawals += 1;
+        description = `Referral commission ${pctTxt}deducted — ${referralName}'s seller withdrawal (${e.storeName})`;
+        details = `${pctTxt}of ${referralName}'s part ₮${memberPart.toFixed(2)} • seller took ${sellerMoney} from Binance${coverText}`;
+      }
+    } else {
+      // ── Own share. A member who was brought by someone never sees the referral (no %, no name):
+      // his line reads like any other 1:1 line. Partners still see the full label. ──
+      const referredOwner = !viewerIsAdmin && e.owner && e.owner.referral && String(e.owner.id) === uid;
+      const label = referredOwner ? '1:1 PKR share' : share.label;
+      description = isDeposit ? `Deposit share ${pctText} from ${e.storeName}` : `Seller withdrawal share ${pctText}: ${e.storeName}`;
+      details = isDeposit
+        ? `${label} of ${sellerMoney.replace(' USDT', ' USDT received on Binance')}`
+        : `${label} of ${sellerMoney.replace(' USDT', ' USDT paid to the seller from Binance')}${coverText}`;
+    }
+
     rawTransactions.push({
       id: `${isDeposit ? 'dep' : 'wth'}_${e.id}_${uid}`,
       type: isDeposit ? 'credit' : 'debit',
@@ -161,19 +209,10 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
       sellerId: e.sellerId,
       storeName: e.storeName,
       sourceRef: e.ref || e.id,
-      description: isReferral
-        ? isDeposit
-          ? `Referral commission from ${e.owner ? e.owner.name : 'your member'} (${e.storeName})`
-          : `Referral part of a seller withdrawal: ${e.owner ? e.owner.name : 'your member'} (${e.storeName})`
-        : isDeposit
-        ? `Deposit share ${pctText} from ${e.storeName}`
-        : `Seller withdrawal share ${pctText}: ${e.storeName}`,
+      description,
       referral: isReferral,
-      details: isDeposit
-        ? `${share.label} of ₮${e.usdt.toFixed(2)} USDT received on Binance${e.inr > 0 ? ` (₹${e.inr.toLocaleString('en-US')} INR @ ${e.rate})` : ''}`
-        : `${share.label} of ₮${e.usdt.toFixed(2)} USDT paid to the seller from Binance${e.inr > 0 ? ` (₹${e.inr.toLocaleString('en-US')} INR @ ${e.rate})` : ''}${
-            myCover ? ` • ₮${myCover.amountUSDT.toFixed(2)} of your share was paid by the reserve because your wallet did not have enough` : ''
-          }`,
+      ...(isReferral ? { referralPct, referralFrom: referralName } : {}),
+      details,
       // what the seller really paid / was paid: shown next to the USDT so nobody has to convert
       sellerINR: e.inr || 0,
       sellerUSDT: e.usdt || 0,
@@ -332,6 +371,18 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
       totalClientWithdrawalsINR: 0,
       totalClientWithdrawalsUSDT: r2(totalClientWithdrawalsUSDT),
     },
+    // Only for a person who brought members (empty for everyone else, so a referred member
+    // never sees anything about referrals)
+    referral: referralFrom.size
+      ? {
+          members: referralFrom.size,
+          earnedUSDT: r2(referralEarnedUSDT),
+          deductedUSDT: r2(referralDeductedUSDT),
+          netUSDT: r2(referralEarnedUSDT - referralDeductedUSDT),
+          deposits: referralDeposits,
+          withdrawals: referralWithdrawals,
+        }
+      : null,
     periodTotals: {
       earnedUSDT: r2(periodEarnedUSDT),
       withdrawnUSDT: r2(periodWithdrawnUSDT),

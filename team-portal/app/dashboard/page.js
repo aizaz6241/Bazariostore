@@ -39,36 +39,50 @@ export default function DashboardPage() {
 
   const isAdmin = user?.role === 'admin';
 
+  // My own wallet comes from the same quick call as the Wallet page, so the big number here changes
+  // as fast as it does there (the full dashboard numbers take longer to add up).
+  const [myWallet, setMyWallet] = useState(() => readCache(cacheKey)?.myWallet || null);
+
+  // Each answer is shown as soon as it arrives: the wallet never waits for the slower team numbers.
   const fetchDashboardData = async () => {
-    try {
-      const token = localStorage.getItem('portal_token');
-      const headers = { Authorization: `Bearer ${token}` };
+    const token = localStorage.getItem('portal_token');
+    const headers = { Authorization: `Bearer ${token}` };
+    const save = (patch) => {
+      const saved = { ...(readCache(cacheKey) || {}), ...patch };
+      if (saved.stats || saved.myWallet) writeCache(cacheKey, saved);
+    };
 
-      const [statsRes, rewardsRes] = await Promise.all([
-        fetch('/api/stats', { headers }),
-        fetch('/api/rewards', { headers }),
-      ]);
+    const walletJob = fetch('/api/wallet?period=today', { headers, cache: 'no-store' })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const json = await res.json();
+        if (json?.balances) {
+          setMyWallet(json.balances);
+          save({ myWallet: json.balances });
+        }
+      })
+      .catch(() => {});
 
-      const saved = { ...(readCache(cacheKey) || {}) };
-
-      if (statsRes.ok) {
-        const statsData = await statsRes.json();
+    const statsJob = fetch('/api/stats', { headers, cache: 'no-store' })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const statsData = await res.json();
         setStats(statsData);
-        saved.stats = statsData;
-      }
+        save({ stats: statsData });
+      })
+      .catch((err) => console.error('Failed to fetch dashboard data:', err))
+      .finally(() => setLoading(false));
 
-      if (rewardsRes.ok) {
-        const rewardsData = await rewardsRes.json();
+    const rewardsJob = fetch('/api/rewards', { headers, cache: 'no-store' })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const rewardsData = await res.json();
         setWeeklyProgress(rewardsData.weeklyProgress);
-        saved.weeklyProgress = rewardsData.weeklyProgress;
-      }
+        save({ weeklyProgress: rewardsData.weeklyProgress });
+      })
+      .catch(() => {});
 
-      if (saved.stats) writeCache(cacheKey, saved);
-    } catch (err) {
-      console.error('Failed to fetch dashboard data:', err);
-    } finally {
-      setLoading(false);
-    }
+    await Promise.all([walletJob, statsJob, rewardsJob]);
   };
 
   useEffect(() => {
@@ -151,7 +165,7 @@ export default function DashboardPage() {
 
               <div className="mt-3 flex items-baseline gap-2 flex-wrap">
                 <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-white">
-                  ₮{((stats?.adminWallet?.balanceUSDT ?? user?.wallet?.balanceUSDT ?? (stats?.adminWallet?.balanceINR ?? user?.wallet?.balanceINR ?? 0) / 90)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ₮{((myWallet?.balanceUSDT ?? stats?.adminWallet?.balanceUSDT ?? user?.wallet?.balanceUSDT ?? 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </h2>
                 <span className="text-lg font-bold text-emerald-300">USDT</span>
                 <span className="text-xs text-amber-100/90 ml-1">
@@ -163,13 +177,13 @@ export default function DashboardPage() {
                 <div>
                   <p className="text-amber-100/80 text-[10px] uppercase font-bold">Total Earned (Gross)</p>
                   <p className="text-base font-extrabold text-white">
-                    ₮{(stats?.adminWallet?.totalEarnedUSDT ?? user?.wallet?.totalEarnedUSDT ?? 0).toLocaleString()} USDT
+                    ₮{(myWallet?.totalEarnedUSDT ?? stats?.adminWallet?.totalEarnedUSDT ?? user?.wallet?.totalEarnedUSDT ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 })} USDT
                   </p>
                 </div>
                 <div>
                   <p className="text-amber-100/80 text-[10px] uppercase font-bold">Total Payouts / Withdrawn</p>
                   <p className="text-base font-extrabold text-white">
-                    ₮{(stats?.adminWallet?.totalWithdrawnUSDT ?? user?.wallet?.totalWithdrawnUSDT ?? 0).toLocaleString()} USDT
+                    ₮{(myWallet?.totalWithdrawnUSDT ?? stats?.adminWallet?.totalWithdrawnUSDT ?? user?.wallet?.totalWithdrawnUSDT ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 })} USDT
                   </p>
                 </div>
                 <div>
@@ -269,7 +283,7 @@ export default function DashboardPage() {
 
                 <div className="mt-3 flex flex-wrap items-baseline gap-2 sm:gap-3">
                   <h2 className="text-3xl sm:text-4xl font-black tracking-tight text-white">
-                    ₮{((stats?.walletBalanceUSDT ?? user?.wallet?.balanceUSDT ?? (((stats?.walletBalancePKR || user?.wallet?.balancePKR || 0) / 280) + ((stats?.walletBalanceINR || user?.wallet?.balanceINR || 0) / 90)))).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ₮{((myWallet?.balanceUSDT ?? stats?.walletBalanceUSDT ?? user?.wallet?.balanceUSDT ?? 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     <span className="text-base sm:text-lg font-normal opacity-90 ml-1.5">USDT</span>
                   </h2>
                   <div className="bg-white/20 border border-white/25 rounded-2xl px-3 py-1 flex items-baseline gap-1 text-white text-xs">

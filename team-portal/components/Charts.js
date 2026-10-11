@@ -389,3 +389,146 @@ export const OTHER_COLOR = '#94a3b8';
 export const colorForSlot = (slot) => (slot >= 0 && slot < CATEGORY_COLORS.length ? CATEGORY_COLORS[slot] : OTHER_COLOR);
 
 export const CHART_INK = { INK, INK_2, INK_3 };
+
+/* ───────────────────────── Bar list (ranking) ───────────────────────── */
+
+/**
+ * Horizontal bars for "who / what is biggest" (a ranking). The name and the value are written
+ * next to every bar, so nothing depends on colour.
+ * @param items  [{ id, name, value, sub?, color? }] (sorted biggest first by the caller)
+ */
+export function BarList({ items, format = (v) => String(v), color = CATEGORY_COLORS[0], emptyText = 'Nothing yet', max: maxIn }) {
+  const [active, setActive] = useState(null);
+  const max = maxIn || Math.max(0, ...items.map((i) => Math.abs(Number(i.value) || 0)));
+  if (!items.length || !(max > 0)) return <p className="text-xs text-slate-400 py-6 text-center">{emptyText}</p>;
+  return (
+    <ul className="space-y-2" role="list">
+      {items.map((it) => {
+        const v = Number(it.value) || 0;
+        const pct = Math.max(2, (Math.abs(v) / max) * 100);
+        return (
+          <li
+            key={it.id}
+            onPointerEnter={() => setActive(it.id)}
+            onPointerLeave={() => setActive(null)}
+            className={`rounded-lg px-1.5 py-1 transition-colors ${active === it.id ? 'bg-slate-50' : ''}`}
+          >
+            <div className="flex items-baseline justify-between gap-2 text-xs">
+              <span className="text-slate-700 font-semibold truncate min-w-0">{it.name}</span>
+              <span className="text-slate-900 font-bold shrink-0" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                {format(v)}
+              </span>
+            </div>
+            <div className="mt-1 h-2 rounded-full bg-slate-100 overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${pct}%`, background: v < 0 ? '#dc2626' : it.color || color, transition: 'width 300ms' }} />
+            </div>
+            {it.sub && <div className="text-[10px] text-slate-400 mt-0.5 truncate">{it.sub}</div>}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/* ───────────────────────── Column chart (per month / per week) ───────────────────────── */
+
+/**
+ * Vertical bars per period; with two or more series they are stacked (2px gap between segments).
+ * @param labels [{ short, full }]
+ * @param series [{ key, name, color, values: number[] }]
+ */
+export function ColumnChart({ labels, series, format = (v) => String(v), height = 220, ariaLabel }) {
+  const [wrapRef, width] = useWidth();
+  const [hover, setHover] = useState(null);
+  const n = labels.length;
+  const M = { top: 12, right: 8, bottom: 26, left: 44 };
+  const W = Math.max(width, 240);
+  const plotW = W - M.left - M.right;
+  const plotH = height - M.top - M.bottom;
+  const totals = labels.map((_, i) => series.reduce((s, x) => s + Math.max(0, Number(x.values[i]) || 0), 0));
+  const scale = niceScale(0, Math.max(0, ...totals), 4);
+  const y = (v) => M.top + plotH - ((v - scale.lo) / (scale.hi - scale.lo || 1)) * plotH;
+  const slot = n ? plotW / n : plotW;
+  const barW = Math.max(6, Math.min(36, slot * 0.6));
+  const everyLabel = Math.max(1, Math.ceil((n * 44) / Math.max(plotW, 1)));
+
+  return (
+    <div ref={wrapRef} className="relative w-full" style={{ height }}>
+      {width > 0 && (
+        <svg width={W} height={height} role="img" aria-label={ariaLabel || 'Column chart'}>
+          {scale.ticks.map((t) => (
+            <g key={t}>
+              <line x1={M.left} x2={W - M.right} y1={y(t)} y2={y(t)} stroke={t === 0 ? AXIS : GRID} />
+              <text x={M.left - 6} y={y(t)} dy="0.32em" textAnchor="end" fontSize="10" fill={INK_3}>
+                {compact(t)}
+              </text>
+            </g>
+          ))}
+          {labels.map((l, i) => {
+            const cx = M.left + slot * i + slot / 2;
+            let base = 0;
+            const segs = series
+              .map((s) => {
+                const v = Math.max(0, Number(s.values[i]) || 0);
+                const seg = { key: s.key, color: s.color, from: base, to: base + v };
+                base += v;
+                return seg;
+              })
+              .filter((s) => s.to > s.from);
+            return (
+              <g key={i} onPointerEnter={() => setHover(i)} onPointerLeave={() => setHover(null)}>
+                <rect x={M.left + slot * i} y={M.top} width={slot} height={plotH} fill="transparent" />
+                {segs.map((s, k) => {
+                  const top = y(s.to);
+                  const bottom = y(s.from) - (k > 0 ? 2 : 0);
+                  const h = Math.max(1, bottom - top);
+                  const last = k === segs.length - 1;
+                  return (
+                    <rect
+                      key={s.key}
+                      x={cx - barW / 2}
+                      y={top}
+                      width={barW}
+                      height={h}
+                      rx={last ? 4 : 0}
+                      fill={s.color}
+                      opacity={hover === null || hover === i ? 1 : 0.45}
+                    />
+                  );
+                })}
+                {i % everyLabel === 0 && (
+                  <text x={cx} y={height - 8} textAnchor="middle" fontSize="10" fill={INK_3}>
+                    {l.short}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      )}
+      {hover !== null && labels[hover] && (
+        <div
+          className="absolute z-10 pointer-events-none bg-white border border-slate-200 shadow-lg rounded-xl px-3 py-2 text-xs"
+          style={{ left: Math.min(Math.max(M.left + slot * hover + slot / 2 - 70, 0), Math.max(W - 150, 0)), top: 4, width: 150 }}
+        >
+          <div className="font-bold text-slate-900 mb-1">{labels[hover].full || labels[hover].short}</div>
+          {series.map((s) => (
+            <div key={s.key} className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-1.5 text-slate-600 min-w-0">
+                <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: s.color }} />
+                <span className="truncate">{s.name}</span>
+              </span>
+              <span className="font-bold text-slate-900">{format(Number(s.values[hover]) || 0)}</span>
+            </div>
+          ))}
+          {series.length > 1 && (
+            <div className="flex justify-between border-t border-slate-100 mt-1 pt-1 text-slate-500">
+              <span>Total</span>
+              <span className="font-bold text-slate-900">{format(totals[hover])}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

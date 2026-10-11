@@ -23,6 +23,7 @@ import {
 import { computeSplit } from '@/lib/utils/financeSplit';
 import { useLiveRefresh, LiveBadge } from '@/components/LiveProvider';
 import { useApprovals, ApprovalsPanel, WaitingTag, HiddenEntries, ExcludedTestSellers, ActivityLog } from '@/components/FinanceControls';
+import { DonutChart, LineChart, LineLegend, BarList, colorForSlot } from '@/components/Charts';
 
 const fmt = (n, d = 2) =>
   Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -746,6 +747,113 @@ function ReserveModal({ mode, data, onClose, onSent }) {
 }
 
 /* ───────────────────────── Page ───────────────────────── */
+
+/**
+ * Charts above "Whose share is in Binance":
+ *   - how the USDT in Binance is divided between the people (+ the reserve)
+ *   - money in vs money out, week by week (last 8 weeks)
+ *   - what each person earned from deposits
+ * Colours follow the person (fixed order of the wallets list), never their rank.
+ */
+const IST_MS = 330 * 60000;
+function weekStartIST(d) {
+  const x = new Date(new Date(d).getTime() + IST_MS);
+  const dow = (x.getUTCDay() + 6) % 7; // Monday = 0
+  return Date.UTC(x.getUTCFullYear(), x.getUTCMonth(), x.getUTCDate() - dow);
+}
+function BinanceShareCharts({ data, reserveInUse }) {
+  const [range, setRange] = React.useState(8);
+  const wallets = data.wallets || [];
+  const colorOf = new Map(wallets.map((w, i) => [w.userId, colorForSlot(i)]));
+  const fmtU = (v) => `₮${Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const slices = wallets
+    .filter((w) => (w.balanceUSDT || 0) > 0.005)
+    .map((w) => ({ id: w.userId, name: w.name, value: Number(w.balanceUSDT) || 0, color: colorOf.get(w.userId) }));
+  if (reserveInUse && (data.reserve?.balanceUSDT || 0) > 0.005) slices.push({ id: 'reserve', name: 'Reserve pool', value: data.reserve.balanceUSDT, color: '#64748b' });
+  slices.sort((a, b) => b.value - a.value);
+  const minus = wallets.filter((w) => (w.balanceUSDT || 0) < -0.005);
+
+  // week buckets
+  const now = weekStartIST(new Date());
+  const weeks = [];
+  for (let i = range - 1; i >= 0; i -= 1) weeks.push(now - i * 7 * 86400000);
+  const idx = (d) => weeks.indexOf(weekStartIST(d));
+  const inV = weeks.map(() => 0);
+  const outV = weeks.map(() => 0);
+  const payV = weeks.map(() => 0);
+  for (const e of data.entries || []) {
+    const i = idx(e.date);
+    if (i < 0) continue;
+    if (e.kind === 'deposit') inV[i] += Number(e.usdt) || 0;
+    else if (e.kind === 'seller_withdrawal') outV[i] += Number(e.usdt) || 0;
+  }
+  for (const p of data.payouts || []) {
+    const i = idx(p.date);
+    if (i >= 0) payV[i] += Number(p.amountUSDT) || 0;
+  }
+  const labels = weeks.map((w) => {
+    const a = new Date(w);
+    const b = new Date(w + 6 * 86400000);
+    const f = (d) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+    return { short: f(a), full: `Week ${f(a)} – ${f(b)}` };
+  });
+  const series = [
+    { key: 'in', name: 'Came in (deposits)', color: '#1baf7a', values: inV },
+    { key: 'out', name: 'Seller withdrawals', color: '#eb6834', values: outV },
+    { key: 'pay', name: 'Team payouts', color: '#2a78d6', values: payV },
+  ];
+  const sum = (arr) => arr.reduce((a, b) => a + b, 0);
+  const earned = wallets
+    .map((w) => ({ id: w.userId, name: w.name, value: Number(w.earnedUSDT) || 0, color: colorOf.get(w.userId), sub: dealText(w) }))
+    .filter((x) => x.value > 0.005)
+    .sort((a, b) => b.value - a.value);
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+      <div className="bg-white rounded-2xl border border-slate-200 p-4">
+        <h3 className="text-sm font-bold text-slate-900">Who owns the USDT in Binance</h3>
+        <p className="text-[11px] text-slate-400 mb-3">Each person’s share (balance){reserveInUse ? ' and the reserve' : ''}</p>
+        <DonutChart slices={slices} format={fmtU} totalLabel="Shares in plus" emptyText="No share in plus" />
+        {minus.length > 0 && (
+          <p className="text-[11px] text-red-600 mt-2">
+            In minus: {minus.map((w) => `${w.name} ${fmtU(w.balanceUSDT)}`).join(', ')}
+          </p>
+        )}
+      </div>
+      <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-4">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900">Money in and out, per week</h3>
+            <p className="text-[11px] text-slate-400">Real USDT (Monday–Sunday, India time)</p>
+          </div>
+          <div className="flex gap-1">
+            {[4, 8, 12].map((n) => (
+              <button
+                key={n}
+                onClick={() => setRange(n)}
+                className={`px-2 py-1 rounded-md text-[11px] font-bold ${range === n ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'}`}
+              >
+                {n}w
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="mt-2">
+          <LineChart labels={labels} series={series} format={fmtU} height={210} ariaLabel="USDT in and out per week" />
+        </div>
+        <div className="mt-2">
+          <LineLegend items={series.map((s) => ({ name: s.name, color: s.color, value: fmtU(sum(s.values)) }))} />
+        </div>
+      </div>
+      <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200 p-4">
+        <h3 className="text-sm font-bold text-slate-900 mb-3">Earned from deposits, per person (all time)</h3>
+        <BarList items={earned} format={fmtU} emptyText="Nothing earned yet" />
+      </div>
+    </div>
+  );
+}
+
 export default function FinancePage() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
@@ -1339,6 +1447,9 @@ export default function FinancePage() {
             </span>
             {short && <span className="font-bold">More than the USDT in Binance — keep enough back before paying team payouts.</span>}
           </div>
+
+          {/* ── Charts: who owns what, money in / out ── */}
+          <BinanceShareCharts data={data} reserveInUse={reserveInUse} />
 
           {/* ── Whose money is it ── */}
           <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden">

@@ -5,6 +5,7 @@ import SellerAssignment from '@/lib/models/SellerAssignment';
 import { Seller } from '@/lib/models/SharedModels';
 import RewardClaim from '@/lib/models/RewardClaim';
 import mongoose from 'mongoose';
+import { selfView } from '@/lib/utils/selfView';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +19,7 @@ export async function GET(req) {
     // "Who am I" only (the app asks this first when it opens): the session lookup above already
     // loaded the account, so answer straight away without the admin sync and wallet maths.
     if (new URL(req.url).searchParams.get('lite') === '1') {
-      return NextResponse.json({ member: session, lite: true });
+      return NextResponse.json({ member: await selfView(session), lite: true });
     }
 
     const member = await Member.findById(session._id).select('-passwordHash -plainPassword');
@@ -49,7 +50,7 @@ export async function GET(req) {
     // Recalculate live financial balances based on commission rules and pool shares (Admins & Members)
     // (a plain copy: the account's stored wallet shape would drop the numbers it does not know,
     // such as what is really available to a partner today)
-    const out = member.toObject();
+    const out = await selfView(member); // referral details stay hidden from the referred member
     try {
       const { getWalletBalancesMap, EMPTY_WALLET } = await import('@/lib/utils/wallet');
       const wallets = await getWalletBalancesMap();

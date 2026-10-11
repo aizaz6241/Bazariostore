@@ -36,6 +36,7 @@ export async function GET(req) {
       period,
       startDate,
       endDate,
+      viewerIsAdmin: session.role === 'admin',
     });
 
     return NextResponse.json(walletData);

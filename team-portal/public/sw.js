@@ -1,6 +1,6 @@
 /* Bazario Team Portal - Service Worker & Push Notification Handler */
 
-const CACHE_NAME = 'bazario-team-v1';
+const CACHE_NAME = 'bazario-team-v2';
 // A tapped notification leaves its target here for a moment, in case the app was asleep and
 // could not be told directly (iPhone). The app picks it up as soon as it is in front again.
 const NAV_CACHE = 'bazario-nav-v1';
@@ -40,6 +40,17 @@ self.addEventListener('activate', (event) => {
 });
 
 // Push notification event listener
+//
+// Every notification says what it is about: a chat shows WHO wrote and WHAT (like WhatsApp), and
+// several messages of the same chat are stacked in one notification ("3 new messages") instead of
+// a pile of separate ones. Money / approval notifications show their own title and text.
+const MAX_LINES = 5;
+
+function textOf(v, max) {
+  const s = typeof v === 'string' ? v : '';
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
 self.addEventListener('push', (event) => {
   let data = {};
   if (event.data) {
@@ -50,34 +61,72 @@ self.addEventListener('push', (event) => {
     }
   }
 
-  const title = data.title || 'Bazario Team Notification';
-  const body = data.body || 'You have a new update';
+  const info = data.data || {};
+  const isChat = (info.type || data.type) === 'chat' && !!info.conversationId;
+  let title = textOf(data.title, 120) || 'Bazario Team';
+  let body = textOf(data.body, 300) || 'You have a new update';
   const icon = data.icon || '/icons/icon-192.png';
   const badge = data.badge || '/icons/icon-192.png';
   const sound = data.sound || '/sounds/notification.wav';
   const vibrate = data.vibrate || [200, 100, 200, 100, 200];
-  const tag = data.tag || `bazario-${Date.now()}`;
-  const targetUrl = data.data?.url || data.url || '/dashboard';
+  const tag = isChat ? `chat-${info.conversationId}` : data.tag || `bazario-${Date.now()}`;
+  const targetUrl = info.url || data.url || '/dashboard';
 
-  const notificationOptions = {
-    body,
-    icon,
-    badge,
-    sound,
-    vibrate,
-    tag,
-    renotify: true,
-    requireInteraction: false,
-    data: {
-      url: targetUrl,
-      type: data.data?.type || 'general',
-      nid: data.data?.nid || '',
+  const build = async () => {
+    let lines = [];
+    let count = 1;
+    if (isChat) {
+      // the same chat already has a notification on the screen: add this message to it
+      try {
+        const open = await self.registration.getNotifications({ tag });
+        const prev = open.length ? open[open.length - 1].data || {} : {};
+        if (Array.isArray(prev.lines)) lines = prev.lines.slice(-(MAX_LINES - 1));
+        count = (Number(prev.count) || 0) + 1;
+      } catch (e) {}
+      const line = textOf(info.line || body, 160);
+      lines.push(line);
+      if (count > 1) {
+        title = `${info.chatTitle || title} (${count} new messages)`;
+        body = lines.join('\n');
+      } else {
+        title = info.chatTitle || title;
+        body = line;
+      }
+    }
+
+    const options = {
+      body,
+      icon,
+      badge,
+      sound,
+      vibrate,
+      tag,
+      renotify: true,
+      requireInteraction: false,
       timestamp: Date.now(),
-      soundType: data.sound || '/sounds/notification.wav',
-    },
-    actions: [
-      { action: 'open', title: 'Open View' },
-    ],
+      data: {
+        url: targetUrl,
+        type: info.type || 'general',
+        nid: info.nid || '',
+        timestamp: Date.now(),
+        soundType: sound,
+        conversationId: info.conversationId || '',
+        chatType: info.chatType || '',
+        contactId: info.contactId || '',
+        chatTitle: info.chatTitle || '',
+        lines,
+        count,
+      },
+      // Buttons (Android / computer). An iPhone does not show buttons for web apps: a tap there
+      // opens the chat straight away with the message box ready.
+      actions: isChat
+        ? [
+            { action: 'reply', title: '↩ Reply' },
+            { action: 'read', title: '✓ Mark as read' },
+          ]
+        : [{ action: 'open', title: 'Open' }],
+    };
+    return self.registration.showNotification(title, options);
   };
 
   // Broadcast to any open windows so in-app sound and live updates trigger immediately
@@ -90,16 +139,23 @@ self.addEventListener('push', (event) => {
           body,
           url: targetUrl,
           sound,
-          dataType: data.data?.type,
+          dataType: info.type,
         },
       });
     });
   });
 
-  const showPromise = self.registration.showNotification(title, notificationOptions);
-
-  event.waitUntil(Promise.all([showPromise, broadcastPromise]));
+  event.waitUntil(Promise.all([build(), broadcastPromise]));
 });
+
+// "Mark as read" button: tells the portal without opening it (the sign-in cookie goes along)
+async function markChatRead(info) {
+  try {
+    const q = new URLSearchParams({ chatType: info.chatType === 'personal' ? 'personal' : info.chatType || 'group', markOnly: '1' });
+    if (info.chatType === 'personal' && info.contactId) q.set('targetMemberId', info.contactId);
+    await fetch(`/api/chat?${q.toString()}`, { credentials: 'include', cache: 'no-store' });
+  } catch (e) {}
+}
 
 // Notification click: bring the app to the front on the screen the notification is about.
 //
@@ -112,7 +168,15 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
   const info = event.notification.data || {};
+  if (event.action === 'read' && info.conversationId) {
+    event.waitUntil(markChatRead(info));
+    return;
+  }
   let targetUrl = info.url || '/dashboard';
+  // a chat notification opens that chat with the message box ready (Reply button, or a tap)
+  if (info.conversationId && targetUrl.startsWith('/chat') && !/[?&]reply=1/.test(targetUrl)) {
+    targetUrl += (targetUrl.includes('?') ? '&' : '?') + 'reply=1';
+  }
   try {
     // only screens of this app
     const u = new URL(targetUrl, self.location.origin);

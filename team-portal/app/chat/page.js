@@ -637,6 +637,24 @@ function ChatPageInner() {
     }
   }, [urlChatType, urlContactId, isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Opened from a chat notification ("Reply" button or a tap): the message box is ready to type in
+  const urlReply = searchParams.get('reply') === '1';
+  useEffect(() => {
+    if (!urlReply || !urlChatType) return undefined;
+    const t = setTimeout(() => {
+      try {
+        composerRef.current?.focus();
+      } catch (_) {}
+      // keep the address clean (a reload must not focus again)
+      if (typeof window !== 'undefined') {
+        const q = new URLSearchParams(window.location.search);
+        q.delete('reply');
+        window.history.replaceState(window.history.state, '', `/chat?${q.toString()}`);
+      }
+    }, 450);
+    return () => clearTimeout(t);
+  }, [urlReply, urlChatType, urlContactId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // A notification for another chat was tapped while this screen is already open
   useEffect(() => {
     const onOpenUrl = (e) => {
@@ -645,6 +663,13 @@ function ChatPageInner() {
       const params = new URLSearchParams(q);
       const target = chatFromParams(params.get('chatType'), params.get('contactId'));
       if (target) openChat(target);
+      if (target && params.get('reply') === '1') {
+        setTimeout(() => {
+          try {
+            composerRef.current?.focus();
+          } catch (_) {}
+        }, 450);
+      }
     };
     window.addEventListener('portal_open_chat_url', onOpenUrl);
     return () => window.removeEventListener('portal_open_chat_url', onOpenUrl);
@@ -1755,11 +1780,15 @@ function ChatPageInner() {
     }
   };
 
-  // Search filter across contacts
-  const filteredContacts = contacts.filter((c) =>
-    c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.username.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Search filter across contacts, newest conversation first (like WhatsApp): a chat that gets a
+  // message moves to the top; people never written to stay below, by name.
+  const lastAt = (c) => (c.lastMessage?.createdAt ? new Date(c.lastMessage.createdAt).getTime() || 0 : 0);
+  const filteredContacts = contacts
+    .filter((c) =>
+      String(c.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(c.username || '').toLowerCase().includes(searchQuery.toLowerCase())
+    )
+    .sort((a, b) => lastAt(b) - lastAt(a) || (b.unreadCount || 0) - (a.unreadCount || 0) || String(a.name || '').localeCompare(String(b.name || '')));
 
   return (
     <div className="-mx-4 -my-4 sm:mx-0 sm:my-0 h-[calc(100dvh-64px-64px)] sm:h-[calc(100vh-115px)] flex bg-white rounded-none sm:rounded-3xl border-0 sm:border border-slate-200 shadow-none sm:shadow-md overflow-hidden relative">
@@ -2091,7 +2120,8 @@ function ChatPageInner() {
                       >
                         {isContactAdmin ? 'Admin' : 'Member'}
                       </span>
-                      {!isContactAdmin && (
+                      {/* the deal of a member is the partners' business only */}
+                      {!isContactAdmin && isAdmin && (
                         <span
                           className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold ${
                             contact.commissionLabel === 'inr_50'
@@ -2220,7 +2250,7 @@ function ChatPageInner() {
                     ? 'Admin'
                     : 'Member'}
                 </span>
-                {activeChat.type === 'personal' && activeChat.contact?.role !== 'admin' && (
+                {activeChat.type === 'personal' && activeChat.contact?.role !== 'admin' && isAdmin && (
                   <span
                     className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shrink-0 ${
                       activeChat.contact.commissionLabel === 'inr_50'

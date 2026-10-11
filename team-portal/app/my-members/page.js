@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { useLiveRefresh } from '@/components/LiveProvider';
 import { Users, TrendingUp, TrendingDown, Wallet } from 'lucide-react';
@@ -14,6 +15,12 @@ export default function MyMembersPage() {
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const router = useRouter();
+  // Partners never bring members themselves: their overview of every referral is on Members
+  useEffect(() => {
+    if (isAdmin) router.replace('/members?tab=referrals');
+  }, [isAdmin, router]);
 
   const load = async () => {
     try {
@@ -31,9 +38,13 @@ export default function MyMembersPage() {
   };
 
   useEffect(() => {
-    load();
-  }, []);
-  useLiveRefresh(() => load());
+    if (user && !isAdmin) load();
+  }, [user?._id, isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLiveRefresh(() => {
+    if (user && !isAdmin) load();
+  });
+
+  if (isAdmin) return <p className="text-sm text-slate-500 p-6">Opening Members → Referrals…</p>;
 
   return (
     <div className="max-w-6xl mx-auto px-3 sm:px-6 py-6 space-y-5">

@@ -25,8 +25,116 @@ import {
   Trash2,
   AlertTriangle,
   RefreshCw,
+  Search,
+  MoreVertical,
+  Link2,
 } from 'lucide-react';
 import WalletModal from '@/components/WalletModal';
+
+const fmtUsdt = (n) => `₮${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmtInr = (n) => `₹${Math.round(Number(n) || 0).toLocaleString('en-IN')}`;
+
+/**
+ * Partners' view of the referrals: for every member who brought other 1:1 members, what HE (the
+ * referrer) earned and paid. Written in his name ("Cole earned"), never as if the partner did it.
+ */
+function ReferralsOverview({ groups, loading, error, onOpenMember }) {
+  if (loading) return <p className="text-sm text-slate-500">Loading referrals…</p>;
+  if (error) return <p className="text-sm text-red-600 bg-red-50 rounded-xl p-3">{error}</p>;
+  if (!groups.length) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-sm text-slate-500">
+        No member has brought another member yet.
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-slate-500">
+        Only members bring members (partners are never referrers). The commission comes out of the brought member’s own share — never
+        from the partners. Each referrer sees this on his own “My Members” page.
+      </p>
+      {groups.map((g) => (
+        <div key={g.referrerId} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-sky-600 to-indigo-600 text-white font-bold flex items-center justify-center text-sm shrink-0">
+                {String(g.referrerName || '?').charAt(0).toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <button type="button" onClick={() => onOpenMember(g.referrerId)} className="font-bold text-slate-900 text-sm hover:underline text-left">
+                  {g.referrerName}
+                </button>
+                <div className="text-[11px] text-slate-500">
+                  brought {g.totals.members} member{g.totals.members === 1 ? '' : 's'}
+                  {!g.referrerActive && <span className="text-red-600"> · account off (earns nothing on new deposits)</span>}
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-right">
+              <div>
+                <div className="text-[10px] text-slate-400">{g.referrerName} earned</div>
+                <div className="text-sm font-bold text-emerald-700">{fmtUsdt(g.totals.earnedUSDT)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] text-slate-400">{g.referrerName} paid</div>
+                <div className="text-sm font-bold text-red-600">{fmtUsdt(g.totals.paidUSDT)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] text-slate-400">Net</div>
+                <div className={`text-sm font-black ${g.totals.netUSDT < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdt(g.totals.netUSDT)}</div>
+              </div>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 text-slate-400">
+                <tr>
+                  <th className="text-left font-semibold px-4 py-2">Brought member</th>
+                  <th className="text-right font-semibold px-3 py-2">Commission</th>
+                  <th className="text-right font-semibold px-3 py-2">Stores</th>
+                  <th className="text-right font-semibold px-3 py-2">Deposits</th>
+                  <th className="text-right font-semibold px-3 py-2">Withdrawals</th>
+                  <th className="text-right font-semibold px-3 py-2">{g.referrerName} earned</th>
+                  <th className="text-right font-semibold px-3 py-2">{g.referrerName} paid</th>
+                  <th className="text-right font-semibold px-4 py-2">Net</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {g.members.map((m) => (
+                  <tr key={m.memberId}>
+                    <td className="px-4 py-2">
+                      <button type="button" onClick={() => onOpenMember(m.memberId)} className="font-semibold text-slate-800 hover:underline text-left">
+                        {m.name}
+                      </button>
+                      <div className="text-[10px] text-slate-400">
+                        since {new Date(m.since).toLocaleDateString()}
+                        {!m.active ? ' · account off' : ''}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold text-indigo-700">{m.pct}%</td>
+                    <td className="px-3 py-2 text-right">{m.sellers}</td>
+                    <td className="px-3 py-2 text-right">
+                      {fmtUsdt(m.depositUSDT)}
+                      <div className="text-[10px] text-slate-400">{fmtInr(m.depositINR)} · {m.deposits}</div>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {fmtUsdt(m.withdrawUSDT)}
+                      <div className="text-[10px] text-slate-400">{fmtInr(m.withdrawINR)} · {m.withdrawals}</div>
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold text-emerald-700">{fmtUsdt(m.earnedUSDT)}</td>
+                    <td className="px-3 py-2 text-right text-red-600">{fmtUsdt(m.paidUSDT)}</td>
+                    <td className={`px-4 py-2 text-right font-bold ${m.netUSDT < 0 ? 'text-red-600' : 'text-slate-900'}`}>{fmtUsdt(m.netUSDT)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function MembersPage() {
   const { user } = useAuth();
@@ -99,6 +207,35 @@ export default function MembersPage() {
   const [deleteConfirmMember, setDeleteConfirmMember] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
+  // List controls
+  const [memberSearch, setMemberSearch] = useState('');
+  const [memberFilter, setMemberFilter] = useState('all');
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const [dealChange, setDealChange] = useState(null); // { member, to }
+  const [tab, setTab] = useState(() => {
+    if (typeof window === 'undefined') return 'members';
+    return new URLSearchParams(window.location.search).get('tab') === 'referrals' ? 'referrals' : 'members';
+  });
+
+  // Referrals overview (who brought whom, and what the referrer earned / paid)
+  const [referralGroups, setReferralGroups] = useState([]);
+  const [referralsLoading, setReferralsLoading] = useState(true);
+  const [referralsError, setReferralsError] = useState('');
+  const loadReferrals = async () => {
+    try {
+      const token = localStorage.getItem('portal_token');
+      const res = await fetch('/api/referrals', { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Could not load referrals');
+      setReferralGroups(data.groups || []);
+      setReferralsError('');
+    } catch (e) {
+      setReferralsError(e.message);
+    } finally {
+      setReferralsLoading(false);
+    }
+  };
+
   const router = useRouter();
   const isAdmin = user?.role === 'admin';
 
@@ -138,12 +275,16 @@ export default function MembersPage() {
   useEffect(() => {
     if (isAdmin) {
       fetchData();
+      loadReferrals();
     }
   }, [isAdmin]);
 
   // Wallet balances follow new deposits / payouts without a reload
   useLiveRefresh(() => {
-    if (isAdmin) fetchData(true);
+    if (isAdmin) {
+      fetchData(true);
+      loadReferrals();
+    }
   });
 
   const handleCreateMember = async (e) => {
@@ -328,345 +469,454 @@ export default function MembersPage() {
     );
   }
 
-  return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-2">
-            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-              Team Members Management & Supervision
-            </h1>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-700 font-semibold">
-              {members.length} Total Users
-            </span>
-          </div>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Manage member credentials, passwords, accounts, and review their assigned stores and performance.
-          </p>
-        </div>
+  // ─── Derived lists for the screen ───
+  const sid = (v) => (v ? String(v) : '');
+  const byId = new Map(members.map((m) => [sid(m._id), m]));
+  const broughtBy = (m) => (m.referredBy ? byId.get(sid(m.referredBy)) || null : null);
+  const broughtList = (m) => members.filter((x) => sid(x.referredBy) === sid(m._id));
+  const walletOf = (m) =>
+    m.wallet?.balanceUSDT != null
+      ? Number(m.wallet.balanceUSDT) || 0
+      : (Number(m.wallet?.balancePKR || m.netBalancePKR || 0) / 280) + (Number(m.wallet?.balanceINR || 0) / 90);
+  const usd = (n) => `₮${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-        {isAdmin && (
+  const q = memberSearch.trim().toLowerCase();
+  const visibleMembers = members.filter((m) => {
+    if (q && !`${m.name} ${m.username} ${m.phone || ''}`.toLowerCase().includes(q)) return false;
+    if (memberFilter === 'partners') return m.role === 'admin';
+    if (memberFilter === 'pkr') return m.role !== 'admin' && (m.commissionLabel || 'pkr_1to1') === 'pkr_1to1';
+    if (memberFilter === 'inr') return m.role !== 'admin' && m.commissionLabel === 'inr_50';
+    if (memberFilter === 'referral') return !!m.referredBy || broughtList(m).length > 0;
+    if (memberFilter === 'off') return m.active === false;
+    return true;
+  });
+  const partnersShown = visibleMembers.filter((m) => m.role === 'admin');
+  const membersShown = visibleMembers.filter((m) => m.role !== 'admin');
+
+  const teamTotals = {
+    members: members.filter((m) => m.role !== 'admin').length,
+    active: members.filter((m) => m.role !== 'admin' && m.active !== false).length,
+    stores: members.reduce((t, m) => t + (Number(m.totalClients) || 0), 0),
+    deposited: members.reduce((t, m) => t + (Number(m.totalDepositsINR) || 0), 0),
+    owedToMembers: members.filter((m) => m.role !== 'admin').reduce((t, m) => t + walletOf(m), 0),
+    referrals: members.filter((m) => !!m.referredBy).length,
+  };
+
+  const filterChips = [
+    { key: 'all', label: 'All' },
+    { key: 'partners', label: 'Partners' },
+    { key: 'pkr', label: '1:1 PKR' },
+    { key: 'inr', label: '50% INR' },
+    { key: 'referral', label: 'In a referral' },
+    { key: 'off', label: 'Switched off' },
+  ];
+
+  const DealBadge = ({ m }) =>
+    m.role === 'admin' ? (
+      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">Partner</span>
+    ) : m.commissionLabel === 'inr_50' ? (
+      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">50% INR</span>
+    ) : (
+      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">1:1 PKR</span>
+    );
+
+  const ReferralLine = ({ m }) => {
+    const by = broughtBy(m);
+    const brought = broughtList(m);
+    if (!by && !brought.length) return null;
+    return (
+      <div className="flex flex-wrap items-center gap-1.5 mt-1">
+        {by && (
+          <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+            <Link2 className="w-3 h-3" /> Brought by {by.name} · {m.referralPct}%
+          </span>
+        )}
+        {brought.length > 0 && (
           <button
-            onClick={() => setIsCreateModalOpen(true)}
-            className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs sm:text-sm flex items-center space-x-1.5 transition shadow-md shadow-emerald-600/20 active:scale-95 self-start sm:self-auto"
+            type="button"
+            onClick={() => setTab('referrals')}
+            className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-100 hover:bg-sky-100"
+            title={brought.map((x) => `${x.name} (${x.referralPct}%)`).join(', ')}
           >
-            <UserPlus className="w-4 h-4" />
-            <span>Add New Member</span>
+            <UserPlus className="w-3 h-3" /> Brought {brought.length}: {brought.slice(0, 3).map((x) => x.name).join(', ')}
+            {brought.length > 3 ? ` +${brought.length - 3}` : ''}
           </button>
         )}
       </div>
+    );
+  };
 
-      {/* Members Directory */}
-      {loading ? (
-        <div className="py-20 text-center text-slate-400 text-sm">
-          Loading team members and client metrics...
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {members.map((member) => {
-            const isExpanded = expandedMemberId === member._id;
-            const assignedSellers = sellers.filter(
-              (s) => s.assignment?.member?._id === member._id
-            );
-            const isSelf = user?._id === member._id;
-            const isPrimaryAdmin = member.role === 'admin' && member.ecommerceAdminId;
+  const MemberRow = ({ member }) => {
+    const isExpanded = expandedMemberId === member._id;
+    const assignedSellers = sellers.filter((s) => s.assignment?.member?._id === member._id);
+    const isSelf = user?._id === member._id;
+    const isPrimaryAdmin = member.role === 'admin' && member.ecommerceAdminId;
+    const wallet = walletOf(member);
+    const menuOpen = openMenuId === member._id;
 
-            return (
-              <div
-                key={member._id}
-                className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden transition-all"
-              >
-                {/* Member Summary Card Header */}
-                <div className="p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                  {/* Member identity */}
-                  <div className="flex items-start space-x-4">
-                    <div
-                      className={`w-12 h-12 rounded-2xl border text-white font-bold flex items-center justify-center text-lg shrink-0 shadow-sm ${
-                        member.role === 'admin'
-                          ? 'bg-gradient-to-tr from-purple-600 to-indigo-600 border-purple-300'
-                          : 'bg-gradient-to-tr from-slate-700 to-slate-800 border-slate-600'
-                      }`}
-                    >
-                      {member.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                        <h3 className="font-bold text-slate-900 text-base">{member.name}</h3>
-                        <span
-                          className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                            member.role === 'admin'
-                              ? 'bg-purple-100 text-purple-700 border border-purple-200'
-                              : 'bg-slate-100 text-slate-700 border border-slate-200'
-                          }`}
-                        >
-                          {member.role}
-                        </span>
-                        {isSelf && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">
-                            You
-                          </span>
-                        )}
+    return (
+      <div className={`border-b border-slate-100 last:border-b-0 ${member.active === false ? 'opacity-60' : ''}`}>
+        <div className="px-3 sm:px-4 py-3 grid grid-cols-[1fr_auto] lg:grid-cols-[minmax(0,2.2fr)_repeat(4,minmax(0,1fr))_auto] items-center gap-x-3 gap-y-2">
+          {/* who */}
+          <div className="flex items-start gap-3 min-w-0">
+            <div
+              className={`w-9 h-9 rounded-xl text-white font-bold flex items-center justify-center text-sm shrink-0 ${
+                member.role === 'admin' ? 'bg-gradient-to-tr from-purple-600 to-indigo-600' : 'bg-gradient-to-tr from-slate-700 to-slate-800'
+              }`}
+            >
+              {String(member.name || '?').charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-bold text-slate-900 text-sm truncate">{member.name}</span>
+                {DealBadge({ m: member })}
+                {isSelf && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold">You</span>}
+                {member.active === false && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-700 font-semibold">Off</span>}
+              </div>
+              <div className="text-[11px] text-slate-400 truncate">
+                @{member.username}
+                {member.phone ? ` · ${member.phone}` : ''}
+              </div>
+              {ReferralLine({ m: member })}
+            </div>
+          </div>
 
-                        {/* Commission Deal Label: Assigned directly to Member */}
-                        {member.role !== 'admin' ? (
-                          isAdmin ? (
-                            <select
-                              value={member.commissionLabel || 'pkr_1to1'}
-                              onChange={(e) => handleUpdateCommissionLabel(member._id, e.target.value)}
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border cursor-pointer focus:outline-none transition-all shadow-xs ${
-                                member.commissionLabel === 'inr_50'
-                                  ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
-                                  : 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
-                              }`}
-                              title="Click to toggle member commission deal between 1:1 PKR and 50% INR"
-                            >
-                              <option value="pkr_1to1">🇵🇰 1:1 PKR Fixed Deal</option>
-                              <option value="inr_50">🇮🇳 50% INR Split Deal</option>
-                            </select>
-                          ) : (
-                            <span
-                              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                member.commissionLabel === 'inr_50'
-                                  ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                  : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              }`}
-                            >
-                              {member.commissionLabel === 'inr_50' ? '🇮🇳 50% INR Deal' : '🇵🇰 1:1 PKR Deal'}
-                            </span>
-                          )
-                        ) : (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
-                            🛡️ Partner (75% own • 25% others)
-                          </span>
-                        )}
-                      </div>
-                      {(member.referredBy || members.some((x) => String(x.referredBy) === String(member._id))) && (
-                        <p className="text-[11px] text-indigo-700 mt-0.5">
-                          {member.referredBy &&
-                            `🤝 Referred by ${members.find((x) => String(x._id) === String(member.referredBy))?.name || '—'} (${member.referralPct}%)`}
-                          {member.referredBy && members.some((x) => String(x.referredBy) === String(member._id)) ? ' • ' : ''}
-                          {members.some((x) => String(x.referredBy) === String(member._id)) &&
-                            `Brought: ${members.filter((x) => String(x.referredBy) === String(member._id)).map((x) => `${x.name} (${x.referralPct}%)`).join(', ')}`}
-                        </p>
-                      )}
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        @{member.username} {member.phone && `• ${member.phone}`}
-                      </p>
-                    </div>
-                  </div>
+          {/* numbers (desktop: own columns; phone: one compact line below) */}
+          <div className="hidden lg:block text-right">
+            <div className="text-sm font-bold text-slate-800">{member.totalClients || assignedSellers.length}</div>
+            <div className="text-[10px] text-slate-400">stores</div>
+          </div>
+          <div className="hidden lg:block text-right">
+            <div className="text-sm font-bold text-emerald-700">{usd(member.totalDepositsINR)}</div>
+            <div className="text-[10px] text-slate-400">deposited</div>
+          </div>
+          <div className="hidden lg:block text-right">
+            <div className="text-sm font-bold text-slate-600">{usd(member.totalWithdrawalsINR)}</div>
+            <div className="text-[10px] text-slate-400">withdrawn</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setWalletModalMember(member)}
+            className="hidden lg:block text-right rounded-lg px-2 py-1 hover:bg-emerald-50 transition"
+            title="Open wallet statement"
+          >
+            <div className={`text-sm font-black ${wallet < 0 ? 'text-red-600' : 'text-slate-900'}`}>{usd(wallet)}</div>
+            <div className="text-[10px] text-slate-400">wallet{member.pendingOrdersCount > 0 ? ` · ${member.pendingOrdersCount} open orders` : ''}</div>
+          </button>
 
-                  {/* Financial & Client Metrics Bar */}
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 sm:gap-3 bg-slate-50 p-3 sm:p-4 rounded-2xl border border-slate-100 text-center">
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                        Clients
-                      </span>
-                      <span className="text-sm font-extrabold text-slate-800">
-                        {member.totalClients || assignedSellers.length} stores
-                      </span>
-                    </div>
-
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                        Deposited
-                      </span>
-                      <span className="text-sm font-extrabold text-emerald-600">
-                        ₮{(member.totalDepositsINR || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                        Withdrawn
-                      </span>
-                      <span className="text-sm font-extrabold text-slate-600">
-                        ₮{(member.totalWithdrawalsINR || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-
+          {/* actions */}
+          <div className="flex items-center gap-1 justify-end relative">
+            <button
+              type="button"
+              onClick={() => setWalletModalMember(member)}
+              className="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-semibold text-xs flex items-center gap-1 border border-emerald-200"
+              title="Wallet statement & payouts"
+            >
+              <Wallet className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Wallet</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setExpandedMemberId(isExpanded ? null : member._id)}
+              className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center gap-1"
+              title="Stores of this person"
+            >
+              <span className="hidden sm:inline">Stores</span>
+              {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setOpenMenuId(menuOpen ? null : member._id)}
+              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500"
+              title="More"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+            {menuOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setOpenMenuId(null)} />
+                <div role="menu" className="absolute right-0 top-9 z-40 w-52 bg-white rounded-xl border border-slate-200 shadow-xl py-1 text-xs">
+                  {!isSelf && (
                     <button
-                      type="button"
-                      onClick={() => setWalletModalMember(member)}
-                      className="bg-emerald-50/90 hover:bg-emerald-100 rounded-xl p-1.5 border border-emerald-200/80 transition text-center cursor-pointer group shadow-xs"
-                      title="Click to view full financial statement & record payouts"
+                      role="menuitem"
+                      onClick={() => {
+                        setOpenMenuId(null);
+                        setBonusMember(member);
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2 text-slate-700"
                     >
-                      <span className="text-[10px] uppercase font-bold text-emerald-800 flex items-center justify-center gap-1 group-hover:text-emerald-950">
-                        <Wallet className="w-3 h-3 text-emerald-600" />
-                        <span>Wallet (USDT)</span>
-                      </span>
-                      <span className="text-sm font-black text-slate-900 block">
-                        ₮{((member.wallet?.balanceUSDT != null ? member.wallet?.balanceUSDT : (((member.wallet?.balancePKR || member.netBalancePKR || 0) / 280) + ((member.wallet?.balanceINR || 0) / 90)))).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                      {member.totalBonusesPKR > 0 && (
-                        <span className="text-[9px] text-amber-700 block font-semibold">
-                          +{member.totalBonusesPKR.toLocaleString()} bonus
-                        </span>
-                      )}
+                      <Gift className="w-3.5 h-3.5 text-amber-600" /> Give a bonus
                     </button>
-
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                        Pending Orders
-                      </span>
-                      <span className="text-sm font-extrabold text-amber-600">
-                        {member.pendingOrdersCount || 0} orders
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Actions (Wallet & Payout, Bonus, Edit Password, Delete, Expand Details) */}
-                  {isAdmin ? (
-                    <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                      {/* Wallet Statement & Payouts */}
-                      <button
-                        type="button"
-                        onClick={() => setWalletModalMember(member)}
-                        className="px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-semibold text-xs flex items-center space-x-1.5 transition border border-emerald-200 shadow-xs"
-                        title="View Statement & Record Payouts"
-                      >
-                        <Wallet className="w-3.5 h-3.5 text-emerald-600" />
-                        <span className="hidden sm:inline">Statement</span>
-                      </button>
-
-                      {/* Award Bonus */}
-                      <button
-                        onClick={() => setBonusMember(member)}
-                        className="px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-xs flex items-center space-x-1.5 transition border border-amber-200"
-                        title="Award Bonus"
-                      >
-                        <Gift className="w-3.5 h-3.5 text-amber-600" />
-                        <span className="hidden sm:inline">Bonus</span>
-                      </button>
-
-                      {/* Edit Password Button */}
-                      <button
-                        onClick={() => {
-                          setEditPasswordMember(member);
-                          setNewPasswordInput('');
-                          setEditPasswordMsg({ text: '', type: '' });
-                        }}
-                        className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
-                        title="Edit Password"
-                      >
-                        <KeyRound className="w-4 h-4 text-slate-600" />
-                      </button>
-
-                      {/* Delete Member Button (Disabled for primary platform admins / self) */}
-                      {!isPrimaryAdmin && !isSelf && (
-                        <button
-                          onClick={() => setDeleteConfirmMember(member)}
-                          className="p-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 transition"
-                          title="Delete Member"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-
-                      {/* Drill Down */}
-                      <button
-                        onClick={() =>
-                          setExpandedMemberId(isExpanded ? null : member._id)
-                        }
-                        className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center space-x-1 transition"
-                      >
-                        <span className="hidden sm:inline">
-                          {isExpanded ? 'Hide' : 'Stores'}
-                        </span>
-                        {isExpanded ? (
-                          <ChevronUp className="w-3.5 h-3.5" />
-                        ) : (
-                          <ChevronDown className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center space-x-2 shrink-0">
-                      <span className="text-xs px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">
-                        Active Team Member
-                      </span>
-                    </div>
+                  )}
+                  {(member.role !== 'admin' || isSelf) && (
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setOpenMenuId(null);
+                        setEditPasswordMember(member);
+                        setNewPasswordInput('');
+                        setEditPasswordMsg({ text: '', type: '' });
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2 text-slate-700"
+                    >
+                      <KeyRound className="w-3.5 h-3.5 text-slate-500" /> Change password
+                    </button>
+                  )}
+                  {member.role !== 'admin' && (
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setOpenMenuId(null);
+                        setDealChange({ member, to: member.commissionLabel === 'inr_50' ? 'pkr_1to1' : 'inr_50' });
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2 text-slate-700"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-slate-500" /> Change deal…
+                    </button>
+                  )}
+                  {!isPrimaryAdmin && !isSelf && (
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setOpenMenuId(null);
+                        setDeleteConfirmMember(member);
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-red-50 flex items-center gap-2 text-red-600 border-t border-slate-100"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete
+                    </button>
                   )}
                 </div>
+              </>
+            )}
+          </div>
 
-                {/* ─── EXPANDED CLIENT STORES DRILL-DOWN ─── */}
-                {isExpanded && (
-                  <div className="p-5 sm:p-6 bg-slate-50/80 border-t border-slate-200/80 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                        Assigned Client Stores ({assignedSellers.length})
-                      </h4>
-                      <span className="text-xs text-slate-400">
-                        Detailed breakdown per client
-                      </span>
-                    </div>
+          {/* phone: numbers in one line */}
+          <div className="lg:hidden col-span-2 grid grid-cols-4 gap-1 bg-slate-50 rounded-xl px-2 py-1.5 text-center">
+            <div>
+              <div className="text-[10px] text-slate-400">Stores</div>
+              <div className="text-xs font-bold text-slate-800">{member.totalClients || assignedSellers.length}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-slate-400">Deposited</div>
+              <div className="text-xs font-bold text-emerald-700">{usd(member.totalDepositsINR)}</div>
+            </div>
+            <div>
+              <div className="text-[10px] text-slate-400">Withdrawn</div>
+              <div className="text-xs font-bold text-slate-600">{usd(member.totalWithdrawalsINR)}</div>
+            </div>
+            <button type="button" onClick={() => setWalletModalMember(member)}>
+              <div className="text-[10px] text-slate-400">Wallet</div>
+              <div className={`text-xs font-black ${wallet < 0 ? 'text-red-600' : 'text-slate-900'}`}>{usd(wallet)}</div>
+            </button>
+          </div>
+        </div>
 
-                    {assignedSellers.length === 0 ? (
-                      <p className="text-xs text-slate-400 py-3">
-                        No clients are currently assigned to this member.
-                      </p>
-                    ) : (
-                      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
-                        {assignedSellers.map((seller) => (
-                          <div
-                            key={seller._id}
-                            className="p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
-                          >
-                            <div>
-                              <p className="font-bold text-slate-900 text-sm">
-                                {seller.assignment?.privateNotes?.customName || seller.storeName}
-                              </p>
-                              <p className="text-slate-400 text-[11px]">
-                                Owner: {seller.ownerName} • {seller.email}
-                              </p>
-                            </div>
-
-                            <div className="flex items-center gap-4 text-center sm:text-right">
-                              <div>
-                                <span className="text-[10px] text-slate-400 block font-medium">
-                                  Deposit
-                                </span>
-                                <span className="font-bold text-emerald-600">
-                                  ₮{(seller.binance?.depositUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </span>
-                              </div>
-
-                              <div>
-                                <span className="text-[10px] text-slate-400 block font-medium">
-                                  Withdraw
-                                </span>
-                                <span className="font-bold text-slate-600">
-                                  ₮{(seller.binance?.withdrawUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </span>
-                              </div>
-
-                              <div>
-                                <span className="text-[10px] text-slate-400 block font-medium">
-                                  Net in Binance
-                                </span>
-                                <span className="font-bold text-brand-700">
-                                  ₮{(seller.binance?.netUSDT || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </span>
-                              </div>
-
-                              <div>
-                                <span className="text-[10px] text-slate-400 block font-medium">
-                                  Pending Orders
-                                </span>
-                                <span className="font-bold text-amber-600">
-                                  {seller.pendingOrdersCount} orders
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
+        {isExpanded && (
+          <div className="px-3 sm:px-4 pb-4">
+            {assignedSellers.length === 0 ? (
+              <p className="text-xs text-slate-400 bg-slate-50 rounded-xl px-3 py-3">No stores are assigned to {member.name}.</p>
+            ) : (
+              <div className="bg-slate-50 rounded-xl border border-slate-100 overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="text-slate-400">
+                    <tr>
+                      <th className="text-left font-semibold px-3 py-2">Store</th>
+                      <th className="text-right font-semibold px-3 py-2">Deposit</th>
+                      <th className="text-right font-semibold px-3 py-2">Withdraw</th>
+                      <th className="text-right font-semibold px-3 py-2">Net in Binance</th>
+                      <th className="text-right font-semibold px-3 py-2">Open orders</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {assignedSellers.map((seller) => (
+                      <tr key={seller._id}>
+                        <td className="px-3 py-2">
+                          <div className="font-semibold text-slate-800">{seller.assignment?.privateNotes?.customName || seller.storeName}</div>
+                          <div className="text-[10px] text-slate-400">{seller.ownerName}</div>
+                        </td>
+                        <td className="px-3 py-2 text-right font-semibold text-emerald-700">{usd(seller.binance?.depositUSDT)}</td>
+                        <td className="px-3 py-2 text-right text-slate-600">{usd(seller.binance?.withdrawUSDT)}</td>
+                        <td className="px-3 py-2 text-right font-bold text-slate-900">{usd(seller.binance?.netUSDT)}</td>
+                        <td className="px-3 py-2 text-right text-amber-700">{seller.pendingOrdersCount || 0}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            );
-          })}
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const Section = ({ title, people, hint }) =>
+    people.length === 0 ? null : (
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+        <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            {title} <span className="text-slate-400 font-semibold">({people.length})</span>
+          </h2>
+          {hint && <span className="text-[10px] text-slate-400 hidden sm:block">{hint}</span>}
+        </div>
+        <div className="hidden lg:grid grid-cols-[minmax(0,2.2fr)_repeat(4,minmax(0,1fr))_auto] gap-x-3 px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 bg-slate-50/60">
+          <span>Person</span>
+          <span className="text-right">Stores</span>
+          <span className="text-right">Deposited (USDT)</span>
+          <span className="text-right">Withdrawn (USDT)</span>
+          <span className="text-right">Wallet</span>
+          <span className="w-[150px]" />
+        </div>
+        {people.map((m) => (
+          <React.Fragment key={m._id}>{MemberRow({ member: m })}</React.Fragment>
+        ))}
+      </div>
+    );
+
+  return (
+    <div className="space-y-5 animate-fade-in">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+            <Users className="w-6 h-6 text-indigo-600" /> Members
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">Partners and members, their stores, wallets and who brought whom.</p>
+        </div>
+        <button
+          onClick={() => setIsCreateModalOpen(true)}
+          className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm flex items-center gap-1.5 shadow-sm active:scale-95 self-start sm:self-auto"
+        >
+          <UserPlus className="w-4 h-4" /> Add member
+        </button>
+      </div>
+
+      {/* Totals strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+        {[
+          { label: 'Members', value: `${teamTotals.active}`, sub: teamTotals.members !== teamTotals.active ? `${teamTotals.members - teamTotals.active} switched off` : 'all active' },
+          { label: 'Stores assigned', value: `${teamTotals.stores}`, sub: 'client sellers' },
+          { label: 'Deposited (USDT)', value: usd(teamTotals.deposited), sub: 'real Binance, all time' },
+          { label: 'Members’ wallets', value: usd(teamTotals.owedToMembers), sub: 'their shares together' },
+          { label: 'Referrals', value: `${teamTotals.referrals}`, sub: 'members brought by members' },
+        ].map((c) => (
+          <div key={c.label} className="bg-white rounded-xl border border-slate-200 px-3 py-2.5">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{c.label}</div>
+            <div className="text-lg font-black text-slate-900 leading-tight mt-0.5">{c.value}</div>
+            <div className="text-[10px] text-slate-400">{c.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1 w-fit">
+        {[
+          { key: 'members', label: 'Members' },
+          { key: 'referrals', label: `Referrals${teamTotals.referrals ? ` (${teamTotals.referrals})` : ''}` },
+        ].map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${tab === t.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'members' ? (
+        <>
+          {/* Search + filters */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <div className="relative sm:w-72">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                value={memberSearch}
+                onChange={(e) => setMemberSearch(e.target.value)}
+                placeholder="Search name, username, phone"
+                className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+              {filterChips.map((c) => (
+                <button
+                  key={c.key}
+                  onClick={() => setMemberFilter(c.key)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border transition ${
+                    memberFilter === c.key ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="px-4 py-4 flex items-center gap-3 animate-pulse">
+                  <div className="w-9 h-9 rounded-xl bg-slate-200" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3 w-40 bg-slate-200 rounded" />
+                    <div className="h-2.5 w-24 bg-slate-100 rounded" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : visibleMembers.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-sm text-slate-400">Nobody matches this search.</div>
+          ) : (
+            <div className="space-y-4">
+              {Section({ title: 'Partners', people: partnersShown, hint: 'Own sellers 75% · the other partner’s sellers 25%' })}
+              {Section({ title: 'Members', people: membersShown, hint: 'Tap Wallet for the statement and payouts' })}
+            </div>
+          )}
+        </>
+      ) : (
+        <ReferralsOverview groups={referralGroups} loading={referralsLoading} error={referralsError} onOpenMember={(id) => {
+          setTab('members');
+          setMemberSearch(byId.get(sid(id))?.username || '');
+          setMemberFilter('all');
+        }} />
+      )}
+
+      {/* ─── MODAL: Change a member's deal (confirm first: it changes every future split) ─── */}
+      {dealChange && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-slate-200">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900">Change {dealChange.member.name}’s deal?</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  From <b>{dealChange.member.commissionLabel === 'inr_50' ? '50% INR' : '1:1 PKR'}</b> to{' '}
+                  <b>{dealChange.to === 'inr_50' ? '50% INR' : '1:1 PKR'}</b>. Every NEW deposit and withdrawal of this member’s sellers will be
+                  divided the new way. Deposits already counted stay as they are.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-5">
+              <button onClick={() => setDealChange(null)} className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100">
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const d = dealChange;
+                  setDealChange(null);
+                  await handleUpdateCommissionLabel(d.member._id, d.to);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-amber-600 hover:bg-amber-700"
+              >
+                Yes, change the deal
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -35,8 +35,9 @@ export default function MobileBottomNav() {
     { href: '/analytics', label: 'Analytics', icon: BarChart3 },
     { href: '/rewards', label: 'Rewards', icon: Award },
     ...(isAdmin ? [{ href: '/members', label: 'Members', icon: UserCheck }] : []),
-    // referral overview: a 1:1 member sees the members he brought, a partner sees every referral
-    ...(isAdmin || (user?.commissionLabel || 'pkr_1to1') === 'pkr_1to1' ? [{ href: '/my-members', label: isAdmin ? 'Referrals' : 'My Members', icon: UserPlus }] : []),
+    // "My Members": ONLY a member who has brought at least one member sees it (it is his own
+    // referral commission). Partners never bring members: they see who brought whom on Members.
+    ...(!isAdmin && user?.hasReferrals ? [{ href: '/my-members', label: 'My Members', icon: UserPlus }] : []),
     ...(isAdmin ? [{ href: '/finance', label: 'Finance', icon: Landmark }] : []),
   ];
 

@@ -66,7 +66,8 @@ export async function GET(req) {
         role: contact.role,
         phone: contact.phone,
         avatar: contact.avatar,
-        commissionLabel: contact.commissionLabel || 'pkr_1to1',
+        // a member's deal is the partners' business only (members never see each other's deal)
+        ...(session.role === 'admin' ? { commissionLabel: contact.commissionLabel || 'pkr_1to1' } : {}),
         conversationId,
         lastMessage: lastByConv.get(conversationId) || null,
         unreadCount: unreadByConv.get(conversationId) || 0,
