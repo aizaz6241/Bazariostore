@@ -299,17 +299,22 @@ router.post('/wallet/withdraw', authSellerOrAdmin, blockWhenFrozen('withdrawing'
     }
 
     // ─── UNCONFIRMED ORDERS WITHDRAWAL BLOCKER ───
-    const unconfirmedOrders = await Order.find({
+    // Only orders in which THIS seller's own item is still waiting count. The old check matched an
+    // order when any item was this seller's and any (other seller's) item was waiting, or when the
+    // order's first seller was this seller — so another store's unconfirmed item blocked payouts.
+    // (A line without a seller belongs to the order's seller.)
+    const unconfirmedCount = await Order.countDocuments({
+      status: { $nin: ['cancelled', 'refunded', 'delivered'] },
       $or: [
-        { 'items.seller': seller._id, 'items.itemStatus': 'pending' },
-        { seller: seller._id, status: 'pending' },
+        { items: { $elemMatch: { seller: seller._id, $or: [{ itemStatus: 'pending' }, { itemStatus: { $exists: false } }, { itemStatus: null }] } } },
+        { seller: seller._id, items: { $elemMatch: { seller: null, $or: [{ itemStatus: 'pending' }, { itemStatus: { $exists: false } }, { itemStatus: null }] } } },
       ],
     });
 
-    if (unconfirmedOrders.length > 0) {
+    if (unconfirmedCount > 0) {
       return res.status(400).json({
-        message: `Withdrawal Blocked! You have ${unconfirmedOrders.length} unconfirmed pending order(s). Please confirm and process all incoming orders in "Orders & Dispatch" before requesting a payout transfer.`,
-        unconfirmedOrdersCount: unconfirmedOrders.length,
+        message: `Withdrawal Blocked! You have ${unconfirmedCount} unconfirmed pending order(s). Please confirm and process all incoming orders in "Orders & Dispatch" before requesting a payout transfer.`,
+        unconfirmedOrdersCount: unconfirmedCount,
       });
     }
 
@@ -862,6 +867,16 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
       } else if (reqDoc.binanceRate > 0 && reqDoc.inrAmount > 0) {
         reqDoc.usdtAmount = Number((reqDoc.inrAmount / reqDoc.binanceRate).toFixed(2));
       }
+    }
+
+    // A deposit credited for MORE than the seller asked needs the admin's explicit confirmation
+    // (a typo like $5000 for a $500 request was credited at once, with no check at all)
+    if (status === 'approved' && reqDoc.type === 'deposit' && finalAmount > Number(reqDoc.amount) && req.body?.confirmAboveRequested !== true) {
+      await Withdrawal.updateOne({ _id: req.params.id, status: 'processing' }, { $set: { status: 'pending' } }).catch(() => {});
+      return res.status(409).json({
+        aboveRequested: true,
+        message: `The seller asked to deposit $${reqDoc.amount}, but $${finalAmount} would be credited. Confirm the higher amount to continue.`,
+      });
     }
 
     // Validation: Admin cannot approve more than requested or seller's tier limit

@@ -368,10 +368,21 @@ export default function AdminWithdrawals() {
     // a cleared field is NOT $0: it is simply not a valid amount
     const appAmt = typed !== undefined ? (String(typed).trim() === '' ? NaN : Number(typed)) : (req ? req.amount : 0);
 
+    // a deposit approved for MORE than the seller asked (e.g. $5000 typed for a $500 request) is
+    // asked once more: it is credited at once (there was no check at all)
+    let confirmAboveRequested = false;
     if (status === 'approved') {
       if (!Number.isFinite(appAmt) || appAmt <= 0) {
         alert('Approved amount must be a number greater than $0. To pay nothing, reject the request instead.');
         return;
+      }
+      const isDepositApproval = (req?.type || reqType) === 'deposit';
+      if (req && isDepositApproval && appAmt > Number(req.amount)) {
+        const ok = window.confirm(
+          `${req.storeName || 'This seller'} asked to deposit $${Number(req.amount).toLocaleString('en-US')}, but you are about to credit $${appAmt.toLocaleString('en-US')} ($${(appAmt - Number(req.amount)).toLocaleString('en-US')} MORE).\n\nIs this amount correct?`
+        );
+        if (!ok) return;
+        confirmAboveRequested = true;
       }
       const isWithdrawal = (req?.type || reqType) === 'withdrawal';
       if (req && isWithdrawal) {
@@ -425,6 +436,7 @@ export default function AdminWithdrawals() {
           adminNote: noteMap[id] || '',
           transactionRef: refMap[id] || '',
           approvedAmount: status === 'approved' ? appAmt : undefined,
+          confirmAboveRequested,
           helpingAmount: helpingAmt,
           binanceRate: bRate,
           inrAmount: currentInrVal,
