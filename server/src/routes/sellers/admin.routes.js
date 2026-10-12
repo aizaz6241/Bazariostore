@@ -376,7 +376,7 @@ router.get('/', authAdmin('sellers'), async (req, res) => {
       hasDoc('passport', 'passportDocumentUrl'),
       hasDoc('bankStatement', 'bankStatementUrl'),
       Product.aggregate([{ $group: { _id: '$seller', n: { $sum: 1 } } }]),
-      Order.find({}).select('status seller items.seller items.price items.qty').lean(),
+      orderStatsBySeller(),
     ]);
 
     const idSet = (rows) => new Set(rows.map((r) => String(r._id)));
@@ -389,39 +389,7 @@ router.get('/', authAdmin('sellers'), async (req, res) => {
     const kycBankSet = idSet(withBank);
     const productCountMap = new Map(productCounts.map((p) => [String(p._id), p.n]));
 
-    // Same maths as before (per seller: order count, pending orders, lifetime sales), computed in one pass
-    const statsMap = new Map();
-    const statFor = (id) => {
-      let st = statsMap.get(id);
-      if (!st) {
-        st = { orderCount: 0, pendingOrders: 0, sales: 0 };
-        statsMap.set(id, st);
-      }
-      return st;
-    };
-    allOrders.forEach((ord) => {
-      const ordSeller = ord.seller ? ord.seller.toString() : '';
-      const items = ord.items || [];
-      const involved = new Set();
-      if (ordSeller) involved.add(ordSeller);
-      items.forEach((it) => {
-        if (it.seller) involved.add(it.seller.toString());
-      });
-      const st = (ord.status || '').toLowerCase();
-      const isPending = !['delivered', 'cancelled', 'refunded'].includes(st);
-      involved.forEach((sid) => {
-        const agg = statFor(sid);
-        agg.orderCount += 1;
-        if (isPending) agg.pendingOrders += 1;
-        if (ord.status !== 'cancelled') {
-          items
-            .filter((it) => (it.seller && it.seller.toString() === sid) || (!it.seller && ordSeller === sid))
-            .forEach((it) => {
-              agg.sales += (it.price || 0) * (it.qty || 1);
-            });
-        }
-      });
-    });
+    const statsMap = new Map(allOrders.map((r) => [String(r._id), r]));
 
     const enriched = sellers.map((s) => {
       const id = s._id.toString();
@@ -452,6 +420,53 @@ router.get('/', authAdmin('sellers'), async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
+/**
+ * Per seller: how many orders involve the store, how many are still open, and its lifetime sales
+ * (its own lines of every order that was not cancelled; a line without a seller belongs to the
+ * order's seller). Counted by the database: the list used to load EVERY order into the server on
+ * each visit to the Sellers / Complaints page, which grew slower with every order.
+ */
+function orderStatsBySeller() {
+  return Order.aggregate([
+    {
+      $project: {
+        status: { $toLower: { $ifNull: ['$status', ''] } },
+        involved: {
+          $setUnion: [
+            { $cond: [{ $ifNull: ['$seller', false] }, ['$seller'], []] },
+            { $filter: { input: { $ifNull: ['$items.seller', []] }, cond: { $ne: ['$$this', null] } } },
+          ],
+        },
+        lines: {
+          $map: {
+            input: { $ifNull: ['$items', []] },
+            as: 'it',
+            in: {
+              s: { $ifNull: ['$$it.seller', '$seller'] },
+              v: { $multiply: [{ $ifNull: ['$$it.price', 0] }, { $cond: [{ $gt: [{ $ifNull: ['$$it.qty', 0] }, 0] }, '$$it.qty', 1] }] },
+            },
+          },
+        },
+      },
+    },
+    { $unwind: '$involved' },
+    {
+      $project: {
+        pending: { $cond: [{ $in: ['$status', ['delivered', 'cancelled', 'refunded']] }, 0, 1] },
+        sales: {
+          $cond: [
+            { $eq: ['$status', 'cancelled'] },
+            0,
+            { $sum: { $map: { input: { $filter: { input: '$lines', cond: { $eq: ['$$this.s', '$involved'] } } }, in: '$$this.v' } } },
+          ],
+        },
+        involved: 1,
+      },
+    },
+    { $group: { _id: '$involved', orderCount: { $sum: 1 }, pendingOrders: { $sum: '$pending' }, sales: { $sum: '$sales' } } },
+  ]);
+}
 
 // GET /api/sellers/:id/kyc (Admin loads one seller's KYC documents on demand)
 router.get('/:id/kyc', authAdmin('sellers'), async (req, res, next) => {
@@ -1243,12 +1258,21 @@ router.get('/:id', authAdmin('sellers'), async (req, res, next) => {
     }
     // perf: callers that do not show KYC documents pass ?kyc=0 to skip the base64 images
     const sellerSelect = req.query.kyc === '0' ? SELLER_LIST_SELECT : '-passwordHash';
+    // Only what the profile shows. Whole orders and products (and the KYC pictures) made this
+    // answer several MB; building it kept the small server busy for seconds, and every other
+    // request (chat messages, the shop) waited behind it.
     const [seller, products, orders] = await Promise.all([
       Seller.findById(req.params.id).select(sellerSelect),
-      Product.find({ seller: req.params.id }).populate('category', 'name slug'),
+      Product.find({ seller: req.params.id })
+        .select('name slug price oldPrice stock image images active sold treasuryProduct category createdAt')
+        .populate('category', 'name slug')
+        .lean(),
       Order.find({
         $or: [{ 'items.seller': req.params.id }, { seller: req.params.id }],
-      }).sort({ createdAt: -1 }),
+      })
+        .select('orderNumber status total createdAt seller shippingAddress.fullName items.seller items.name items.price items.qty items.costPrice items.itemStatus')
+        .sort({ createdAt: -1 })
+        .lean(),
     ]);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 

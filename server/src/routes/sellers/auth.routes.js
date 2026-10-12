@@ -301,7 +301,7 @@ router.post('/login', async (req, res) => {
         { email: e },
         { email: { $regex: new RegExp(`^${e.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
       ]),
-    }).select('-kycDocuments'); // perf: KYC base64 images are never needed by the seller portal
+    }); // (the KYC pictures are never read here: they stay out unless a query asks for them)
     if (!seller) {
       loginGuard.fail(req, email);
       return res.status(401).json({ message: 'Invalid email or password' });
@@ -346,7 +346,7 @@ router.post('/login', async (req, res) => {
 // GET /api/sellers/me
 router.get('/me', authSeller, async (req, res) => {
   try {
-    const seller = await Seller.findById(req.seller.id).select('-passwordHash -kycDocuments');
+    const seller = await Seller.findById(req.seller.id).select('-passwordHash');
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
     if (seller.status === 'active' && !seller.verified) {
       seller.verified = true;

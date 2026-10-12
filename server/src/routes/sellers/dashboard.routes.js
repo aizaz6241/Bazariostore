@@ -14,7 +14,7 @@ router.get('/dashboard', authSeller, async (req, res) => {
     const sellerId = req.seller.id;
     // perf: run the independent reads in parallel and skip the heavy KYC images
     const [seller, products, orders, refunds] = await Promise.all([
-      Seller.findById(sellerId).select('-kycDocuments'),
+      Seller.findById(sellerId),
       Product.find({ seller: sellerId }),
       Order.find({ 'items.seller': sellerId }).sort({ createdAt: -1 }),
       Refund.find({ seller: sellerId }),
@@ -159,7 +159,7 @@ router.get('/dashboard', authSeller, async (req, res) => {
 // GET /api/sellers/analytics?days=30&from=&to=
 router.get('/analytics', authSeller, async (req, res) => {
   try {
-    const seller = await Seller.findById(req.seller.id).select('-kycDocuments');
+    const seller = await Seller.findById(req.seller.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
     let since = null;

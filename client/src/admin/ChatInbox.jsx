@@ -165,6 +165,9 @@ export default function ChatInbox() {
   // Periodic Refresh (keeps active conversation & unread counts fresh without scroll jumps)
   useEffect(() => {
     const interval = setInterval(() => {
+      // a tab left open in the background does not need to ask the server every 4 seconds
+      // (live messages still arrive over the socket; the next look at the tab refreshes)
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       loadSellerConvos();
       loadTeamMembers();
       if (activeTab === 'sellers' && selectedSellerId) {

@@ -427,7 +427,7 @@ io.on('connection', (socket) => {
         return cb?.({ error: 'You do not have permission for this action' });
       }
 
-      const seller = await Seller.findById(sellerId).select('-kycDocuments');
+      const seller = await Seller.findById(sellerId);
       if (!seller) return;
 
       let conv = await Conversation.findOne({ seller: sellerId });

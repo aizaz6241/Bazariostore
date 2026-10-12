@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, money, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
@@ -34,6 +34,11 @@ export default function Sellers() {
   const [profileSeller, setProfileSeller] = useState(null);
   const [profileData, setProfileData] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  // the profile's live data could not be loaded: shown with a retry instead of an empty "0 products"
+  const [profileError, setProfileError] = useState('');
+  const profileReq = useRef(0);
+  // KYC pictures are loaded only when the Documents tab is opened, one picture per request
+  const [kycDocs, setKycDocs] = useState({ sellerId: '', docs: {}, loading: false, done: 0, total: 0, error: '' });
   const [profileTab, setProfileTab] = useState('account'); // 'account' | 'documents' | 'dashboard' | 'upgrades'
   const [profileUpgradeSubTab, setProfileUpgradeSubTab] = useState('compliance'); // 'compliance' | 'warning' | 'health' | 'limits'
   const [dashboardSubTab, setDashboardSubTab] = useState('products'); // 'products' | 'orders'
@@ -165,11 +170,23 @@ export default function Sellers() {
     setLimitTierName(wl.currentTierName || 'Tier 1 - Standard ($500 Max)');
 
     setProfileModalOpen(true);
-    setProfileLoading(true);
+    // never show the previously opened seller's products / orders under this one
+    setProfileData(null);
+    setKycDocs({ sellerId: '', docs: {}, loading: false, done: 0, total: 0, error: '' });
+    loadProfileData(seller);
+  };
 
-    // Load full seller metrics, listed items & orders
-    api(`/sellers/${seller._id}`)
+  // Live seller metrics, listed items & orders. Without the KYC pictures (?kyc=0): with them this
+  // answer was several MB, often ran past the 30 s limit (the screen then showed "0 products"),
+  // and while the server built it every other request — chat included — waited.
+  const loadProfileData = (seller) => {
+    if (!seller?._id) return;
+    const reqId = ++profileReq.current;
+    setProfileLoading(true);
+    setProfileError('');
+    api(`/sellers/${seller._id}?kyc=0`, { timeout: 60000 })
       .then((data) => {
+        if (reqId !== profileReq.current) return; // another seller was opened meanwhile
         setProfileData(data);
         const liveSeller = data.seller || data;
         if (liveSeller) {
@@ -215,10 +232,55 @@ export default function Sellers() {
         }
       })
       .catch((err) => {
+        if (reqId !== profileReq.current) return;
         console.error('Error loading live seller profile:', err);
+        setProfileError(`Could not load this seller's live data (${err.message || 'request failed'}).`);
       })
-      .finally(() => setProfileLoading(false));
+      .finally(() => {
+        if (reqId === profileReq.current) setProfileLoading(false);
+      });
   };
+
+  // Documents tab: load this seller's KYC pictures one at a time (each request stays small, so
+  // other requests — chat, orders — are not held up behind one huge answer)
+  useEffect(() => {
+    const seller = profileSeller;
+    if (!profileModalOpen || profileTab !== 'documents' || !seller?._id) return;
+    if (kycDocs.sellerId === seller._id) return;
+    const has = seller.kycAvailable;
+    // idCard / passport are older names that usually hold the same picture as Aadhaar / PAN front
+    const types = has
+      ? ['aadhaarFront', 'aadhaarBack', 'panFront', 'panBack', 'bankStatement']
+          .filter((t) => has[t])
+          .concat(has.idCard && !has.aadhaarFront ? ['idCard'] : [], has.passport && !has.panFront ? ['passport'] : [])
+      : ['aadhaarFront', 'aadhaarBack', 'panFront', 'panBack', 'bankStatement'];
+    let cancelled = false;
+    setKycDocs({ sellerId: seller._id, docs: {}, loading: true, done: 0, total: types.length, error: '' });
+    (async () => {
+      const docs = {};
+      let failed = 0;
+      for (const t of types) {
+        try {
+          const res = await api(`/sellers/${seller._id}/kyc?doc=${t}`, { timeout: 120000 });
+          if (res?.kycDocuments?.[t]) docs[t] = res.kycDocuments[t];
+        } catch {
+          failed += 1;
+        }
+        if (cancelled) return;
+        setKycDocs((prev) => (prev.sellerId === seller._id ? { ...prev, docs: { ...docs }, done: prev.done + 1 } : prev));
+      }
+      if (!cancelled) {
+        setKycDocs((prev) =>
+          prev.sellerId === seller._id
+            ? { ...prev, loading: false, error: failed ? `${failed} document(s) could not be loaded. Close and open the tab again to retry.` : '' }
+            : prev
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [profileModalOpen, profileTab, profileSeller?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── SECTION 1: SAVE ACCOUNT DETAILS ───
   const handleSaveAccount = async (e) => {
@@ -1189,6 +1251,14 @@ export default function Sellers() {
                   Loading live seller profile details...
                 </div>
               )}
+              {!profileLoading && profileError && (
+                <div style={{ margin: '12px 0', padding: '12px 14px', borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span>⚠️ {profileError} The numbers below may be incomplete.</span>
+                  <button type="button" className="ins-btn ins-btn-sm" onClick={() => loadProfileData(profileSeller)}>
+                    Retry
+                  </button>
+                </div>
+              )}
 
               {/* ───────────────────────────────────────────────────────────── */}
               {/* SECTION 1: ACCOUNT (Name, Email, Number, Visible Password, etc.) */}
@@ -1539,7 +1609,19 @@ export default function Sellers() {
                   </div>
 
                   {(() => {
-                    const kyc = profileSeller.kycDocuments || {};
+                    if (kycDocs.sellerId === profileSeller._id && kycDocs.loading && !Object.keys(kycDocs.docs).length) {
+                      return (
+                        <div style={{ padding: 28, textAlign: 'center', color: '#64748b' }}>
+                          Loading documents… ({kycDocs.done} of {kycDocs.total})
+                        </div>
+                      );
+                    }
+                    const kyc = kycDocs.sellerId === profileSeller._id ? kycDocs.docs : {};
+                    const kycNote = kycDocs.sellerId === profileSeller._id && (kycDocs.loading || kycDocs.error) ? (
+                      <div style={{ marginBottom: 10, fontSize: 12.5, color: kycDocs.error ? '#b91c1c' : '#64748b' }}>
+                        {kycDocs.error || `Loading documents… (${kycDocs.done} of ${kycDocs.total})`}
+                      </div>
+                    ) : null;
                     const aadhaarFront = kyc.aadhaarFront || '';
                     const aadhaarBack = kyc.aadhaarBack || '';
                     const panFront = kyc.panFront || '';
@@ -1549,6 +1631,7 @@ export default function Sellers() {
                     const bankDoc = kyc.bankStatement || kyc.bankStatementUrl || '';
                     const hasAny = Boolean(aadhaarFront || aadhaarBack || panFront || panBack || idDoc || passportDoc || bankDoc);
 
+                    if (!hasAny && kycDocs.error) return kycNote;
                     if (!hasAny) {
                       return (
                         <div style={{ background: '#f8fafc', border: '1.5px dashed #cbd5e1', borderRadius: 12, padding: '36px 20px', textAlign: 'center' }}>
@@ -1573,6 +1656,8 @@ export default function Sellers() {
                     ].filter((d) => Boolean(d.url));
 
                     return (
+                      <>
+                      {kycNote}
                       <div className="seller-docs-grid">
                         {docList.map((doc, idx) => {
                           const isPdf = doc.url.toLowerCase().endsWith('.pdf');
@@ -1624,6 +1709,7 @@ export default function Sellers() {
                           );
                         })}
                       </div>
+                      </>
                     );
                   })()}
                 </div>
@@ -1731,14 +1817,14 @@ export default function Sellers() {
                           <div>
                             {(!profileData?.products || profileData.products.length === 0) ? (
                               <div style={{ padding: 24, textAlign: 'center', color: '#64748b', background: '#f8fafc', borderRadius: 8 }}>
-                                No products listed by this seller yet.
+                                {profileData ? 'No products listed by this seller yet.' : profileLoading ? 'Loading products…' : 'Products could not be loaded (see the message above).'}
                               </div>
                             ) : (
                               <div className="inspect-prods-grid" style={{ maxHeight: 340 }}>
                                 {profileData.products.map((p) => (
                                   <div key={p._id} className="inspect-prod-item">
                                     <img
-                                      src={p.image || p.images?.[0] || '/img/products/serum.svg'}
+                                      src={p.image || p.images?.[0]?.url || p.images?.[0] || '/img/products/serum.svg'}
                                       alt={p.name}
                                     />
                                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -1762,7 +1848,7 @@ export default function Sellers() {
                           <div>
                             {(!profileData?.orders || profileData.orders.length === 0) ? (
                               <div style={{ padding: 24, textAlign: 'center', color: '#64748b', background: '#f8fafc', borderRadius: 8 }}>
-                                No orders associated with this seller yet.
+                                {profileData ? 'No orders associated with this seller yet.' : profileLoading ? 'Loading orders…' : 'Orders could not be loaded (see the message above).'}
                               </div>
                             ) : (
                               <div className="inspect-orders-list" style={{ maxHeight: 380 }}>
