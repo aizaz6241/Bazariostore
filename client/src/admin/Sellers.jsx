@@ -3,6 +3,7 @@ import { api, money, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
 import SellersAnalytics from './SellersAnalytics.jsx';
+import useLiveReload from '../useLiveReload.js';
 
 export default function Sellers() {
   const [sellers, setSellers] = useState([]);
@@ -110,8 +111,8 @@ export default function Sellers() {
   const [deleteModalSeller, setDeleteModalSeller] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  const loadSellers = () => {
-    setLoading(true);
+  const loadSellers = (opts) => {
+    if (opts?.silent !== true) setLoading(true);
     api('/sellers')
       .then((data) => {
         const list = Array.isArray(data) ? data : data.sellers || [];
@@ -124,6 +125,9 @@ export default function Sellers() {
   useEffect(() => {
     loadSellers();
   }, []);
+
+  // changes by another admin or the 48h rule (freeze, approval, limits...) show here by themselves
+  useLiveReload(['sellers:changed', 'seller:new_registration', 'seller:deleted'], () => loadSellers({ silent: true }), 2000);
 
   // ─── OPEN PROFILE HANDLER ───
   const handleOpenProfile = (seller, initialTab = 'account', initialSubTab = 'compliance') => {

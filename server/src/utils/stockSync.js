@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import TreasuryProduct from '../models/TreasuryProduct.js';
 import Product from '../models/Product.js';
 import { StockHistory } from '../models/StockHistory.js';
+import { toSellers } from './realtime.js';
 
 /**
  * Central Treasury stock. One master product, many seller listings that show its stock.
@@ -38,7 +39,18 @@ export async function syncTreasuryListings(treasuryId) {
   const tp = await TreasuryProduct.findById(treasuryId).select('stock').lean();
   if (!tp) return null;
   await Product.updateMany({ treasuryProduct: tp._id }, { $set: { stock: tp.stock } });
+  await announceTreasuryChange(tp._id);
   return tp.stock;
+}
+
+/** The sellers who list this master product see their products / Treasury screens refresh. */
+export async function announceTreasuryChange(treasuryId) {
+  try {
+    const sellerIds = await Product.distinct('seller', { treasuryProduct: treasuryId });
+    toSellers(sellerIds, 'products:changed', { treasuryProduct: String(treasuryId) });
+  } catch (e) {
+    console.error('[realtime] treasury change:', e.message);
+  }
 }
 
 async function logTreasury(tp, change, meta, fallbackReason) {

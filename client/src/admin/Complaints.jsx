@@ -4,6 +4,7 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGri
 import { api, fmtDate } from '../api.js';
 import { ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
+import useLiveReload from '../useLiveReload.js';
 import {
   Hero, MetaChip, Kpi, KpiGrid, Card, ChartGrid, Seg, Badge, Avatar, RankList, SplitBar, ChartTip,
   Toolbar, SearchBox, Empty, Meter, STATUS, GRID, AXIS, legendText,
@@ -80,8 +81,8 @@ export default function Complaints() {
 
   const [limit, setLimit] = useState({ max: '500', min: '10', req: '10', done: '0', fee: '50', name: '' });
 
-  const loadSellers = () => {
-    setLoading(true);
+  const loadSellers = (opts) => {
+    if (opts?.silent !== true) setLoading(true);
     setError('');
     api('/sellers')
       .then((data) => {
@@ -95,6 +96,9 @@ export default function Complaints() {
   useEffect(() => {
     loadSellers();
   }, []);
+
+  // an automatic freeze (48h rule) or another admin's action shows here by itself
+  useLiveReload(['sellers:changed', 'seller:deleted'], () => loadSellers({ silent: true }));
 
   const fillLimit = (wl = {}) =>
     setLimit({

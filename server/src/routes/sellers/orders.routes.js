@@ -14,6 +14,7 @@ import { Conversation, Message } from '../../models/Chat.js';
 import { walletApply, walletNow } from '../../utils/wallet.js';
 import { restockOrder, settleDeliveredStock } from '../../utils/orderStock.js';
 import { adminRoom } from '../../utils/permissions.js';
+import { toAdmins } from '../../utils/realtime.js';
 
 const router = express.Router();
 
@@ -1233,6 +1234,7 @@ export async function processOrderPenalties(app) {
 
         seller.markModified('accountHealth');
         await seller.save();
+        toAdmins('sellers', 'sellers:changed', { sellerId: String(seller._id) });
 
         notify(app, {
           recipientType: 'seller',

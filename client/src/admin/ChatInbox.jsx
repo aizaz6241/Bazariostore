@@ -175,7 +175,7 @@ export default function ChatInbox() {
       } else if (activeTab === 'team' && selectedTeamId) {
         loadTeamMessages(selectedTeamId, true);
       }
-    }, 4000);
+    }, 20000); // safety net only: live messages arrive over the socket (it was every 4 s, 3 requests each)
     return () => clearInterval(interval);
   }, [activeTab, selectedSellerId, selectedTeamId]);
 
