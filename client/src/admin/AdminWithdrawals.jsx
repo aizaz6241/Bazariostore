@@ -116,6 +116,14 @@ export default function AdminWithdrawals() {
   const [adjusting, setAdjusting] = useState(false);
   const [adjustMsg, setAdjustMsg] = useState('');
   const [adjustErr, setAdjustErr] = useState('');
+  // One id per entry, sent with it: submitting the SAME entry again (after a timeout) never adds the
+  // money twice. A changed seller / type / amount is a new entry with a new id.
+  const adjustReqId = useRef('');
+  const [adjustAllowDup, setAdjustAllowDup] = useState(false);
+  useEffect(() => {
+    adjustReqId.current = '';
+    setAdjustAllowDup(false);
+  }, [adjustForm.sellerId, adjustForm.type, adjustForm.amount]);
 
   // ─── 3-STEP LIMIT UPGRADE MODALS STATE ───
   // Modal 1: Quote / Send Offer (Step 1)
@@ -360,10 +368,21 @@ export default function AdminWithdrawals() {
     // a cleared field is NOT $0: it is simply not a valid amount
     const appAmt = typed !== undefined ? (String(typed).trim() === '' ? NaN : Number(typed)) : (req ? req.amount : 0);
 
+    // a deposit approved for MORE than the seller asked (e.g. $5000 typed for a $500 request) is
+    // asked once more: it is credited at once (there was no check at all)
+    let confirmAboveRequested = false;
     if (status === 'approved') {
       if (!Number.isFinite(appAmt) || appAmt <= 0) {
         alert('Approved amount must be a number greater than $0. To pay nothing, reject the request instead.');
         return;
+      }
+      const isDepositApproval = (req?.type || reqType) === 'deposit';
+      if (req && isDepositApproval && appAmt > Number(req.amount)) {
+        const ok = window.confirm(
+          `${req.storeName || 'This seller'} asked to deposit $${Number(req.amount).toLocaleString('en-US')}, but you are about to credit $${appAmt.toLocaleString('en-US')} ($${(appAmt - Number(req.amount)).toLocaleString('en-US')} MORE).\n\nIs this amount correct?`
+        );
+        if (!ok) return;
+        confirmAboveRequested = true;
       }
       const isWithdrawal = (req?.type || reqType) === 'withdrawal';
       if (req && isWithdrawal) {
@@ -417,6 +436,7 @@ export default function AdminWithdrawals() {
           adminNote: noteMap[id] || '',
           transactionRef: refMap[id] || '',
           approvedAmount: status === 'approved' ? appAmt : undefined,
+          confirmAboveRequested,
           helpingAmount: helpingAmt,
           binanceRate: bRate,
           inrAmount: currentInrVal,
@@ -439,6 +459,9 @@ export default function AdminWithdrawals() {
     if (!adjustForm.sellerId) return setAdjustErr('Please select a seller');
     if (!amt || amt <= 0) return setAdjustErr('Please enter a valid amount greater than 0');
 
+    if (!adjustReqId.current) {
+      adjustReqId.current = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+    }
     setAdjusting(true);
     try {
       const isCredit = adjustForm.type === 'credit';
@@ -462,8 +485,13 @@ export default function AdminWithdrawals() {
           usdtAmount: usdtVal,
           reason: adjustForm.reason,
           reference: adjustForm.reference,
+          requestId: adjustReqId.current,
+          allowDuplicate: adjustAllowDup,
         },
+        timeout: 90000,
       });
+      adjustReqId.current = '';
+      setAdjustAllowDup(false);
       setAdjustMsg(`✅ ${res.message || 'Wallet adjusted successfully!'}`);
       setAdjustForm((f) => ({ ...f, amount: '', helpingAmount: '', binanceRate: '', inrAmount: '', reason: '', reference: '' }));
       load();
@@ -472,7 +500,14 @@ export default function AdminWithdrawals() {
         setAdjustMsg('');
       }, 1800);
     } catch (err) {
-      setAdjustErr(err.message);
+      if (err.timedOut) {
+        setAdjustErr('The server did not answer in time. The amount may already be saved — submit again to check: it will NOT be added twice.');
+      } else if (err.status === 409 && err.data?.duplicate) {
+        setAdjustAllowDup(true);
+        setAdjustErr(`⚠️ ${err.message}`);
+      } else {
+        setAdjustErr(err.message);
+      }
     } finally {
       setAdjusting(false);
     }

@@ -47,6 +47,13 @@ export default function AddFundsModal({
   const [successMsg, setSuccessMsg] = useState('');
   // Second step: the admin must confirm the exact seller before anything is sent
   const [confirming, setConfirming] = useState(false);
+  // One id per confirmed entry, sent with it: pressing confirm again for the SAME entry (after a
+  // timeout) can never add the money twice — the server answers "already done".
+  const requestIdRef = useRef('');
+  // the server found an identical entry from the last minutes: the next confirm says "yes, a new one"
+  const [allowDuplicate, setAllowDuplicate] = useState(false);
+  const newRequestId = () =>
+    (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`);
 
   // Keep sellersList updated
   useEffect(() => {
@@ -78,7 +85,7 @@ export default function AddFundsModal({
   }, [isOpen, preselectedSellerId]);
 
   // Any change after "Review" sends the admin back to the review step
-  useEffect(() => { setConfirming(false); }, [selectedSellerId, type, usdAmount, inrAmount, helpingAmount, usdtReceived, binanceInr]);
+  useEffect(() => { setConfirming(false); setAllowDuplicate(false); }, [selectedSellerId, type, usdAmount, inrAmount, helpingAmount, usdtReceived, binanceInr]);
 
   // ESC key listener
   useEffect(() => {
@@ -155,9 +162,11 @@ export default function AddFundsModal({
 
     // Step 1 of submit: show the seller + amount and ask for a second click
     if (!confirming) {
+      requestIdRef.current = newRequestId(); // a new entry
       setConfirming(true);
       return;
     }
+    if (!requestIdRef.current) requestIdRef.current = newRequestId();
 
     setSubmitting(true);
     try {
@@ -178,9 +187,15 @@ export default function AddFundsModal({
           usdtAmount: usdtVal,
           reason: reason.trim(),
           reference: reference.trim(),
+          requestId: requestIdRef.current,
+          allowDuplicate,
         },
+        // the server answers as soon as the money is saved; a slow server still gets 90 s
+        timeout: 90000,
       });
 
+      requestIdRef.current = '';
+      setAllowDuplicate(false);
       const successText = `✅ ${res.message || 'Seller wallet updated successfully!'}`;
       setSuccessMsg(successText);
 
@@ -206,7 +221,15 @@ export default function AddFundsModal({
         setSuccessMsg('');
       }, 1400);
     } catch (err) {
-      setError(err.message || 'Failed to adjust seller wallet');
+      if (err.timedOut) {
+        // the answer was late, the money may well be saved: pressing confirm again is safe (same id)
+        setError('The server did not answer in time. The amount may already be saved — press confirm again to check: it will NOT be added twice.');
+      } else if (err.status === 409 && err.data?.duplicate) {
+        setAllowDuplicate(true);
+        setError(`⚠️ ${err.message}`);
+      } else {
+        setError(err.message || 'Failed to adjust seller wallet');
+      }
     } finally {
       setSubmitting(false);
     }

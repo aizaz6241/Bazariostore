@@ -109,7 +109,8 @@ export default function ChatMessageBubble({ msg, isMe, myRole = 'seller', onRepl
                 <Ic name="edit" size={13} />
               </button>
             )}
-            {myRole === 'admin' && onDelete && (
+            {/* an admin deletes their own messages here; a seller too (e.g. wrong bank details sent) */}
+            {(myRole === 'admin' || myRole === 'seller') && onDelete && (
               <button
                 type="button"
                 className="chat-hover-reply-btn"

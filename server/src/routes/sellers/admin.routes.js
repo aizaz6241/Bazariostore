@@ -66,10 +66,37 @@ const toObjectId = (v) => (v && mongoose.Types.ObjectId.isValid(String(v)) ? new
 // once approved. (A seller still waiting for registration approval has no money history, so its
 // type can be set freely.)
 async function isApprovedSeller(seller) {
-  if (seller.status !== 'pending_approval') return true;
-  // put back to "pending" by hand but it already has money history: still two people
+  // A REJECTED registration was never an approved store: approving it again is a first approval
+  // (welcome message, type and owner set at once). It used to count as "already approved", so the
+  // seller was never told and the two-person rules for live stores applied.
+  const rejectedRegistration = seller.status === 'suspended' && Boolean(seller.registrationRejectedAt);
+  if (seller.status !== 'pending_approval' && !rejectedRegistration) return true;
+  // put back to "pending" (or rejected) but it already has money history: still two people
   const history = await sellerMoneyHistory(seller._id);
   return !history || history.deposits > 0 || history.withdrawals > 0;
+}
+
+// A commission rate is a percentage from 0 to 100 (empty = not changed)
+const badCommission = (v) => v !== undefined && v !== null && v !== '' && !(Number.isFinite(Number(v)) && Number(v) >= 0 && Number(v) <= 100);
+const COMMISSION_MSG = 'Commission rate must be a number from 0 to 100.';
+
+// One approve / reject per store at a time: two admins pressing at the same moment could both
+// record an owner (two "active" assignments) and both write the deposit.
+const decisionsInFlight = new Set();
+function oneDecisionAtATime(req, res, next) {
+  const key = String(req.params.id || '');
+  if (decisionsInFlight.has(key)) return res.status(429).json({ message: 'Another admin is saving a decision for this store right now. Please wait a moment and refresh.' });
+  decisionsInFlight.add(key);
+  let done = false;
+  const release = () => {
+    if (!done) {
+      done = true;
+      decisionsInFlight.delete(key);
+    }
+  };
+  res.on('finish', release);
+  res.on('close', release);
+  next();
 }
 
 async function askSellerFlagChange(req, seller, field, value) {
@@ -376,7 +403,7 @@ router.get('/', authAdmin('sellers'), async (req, res) => {
       hasDoc('passport', 'passportDocumentUrl'),
       hasDoc('bankStatement', 'bankStatementUrl'),
       Product.aggregate([{ $group: { _id: '$seller', n: { $sum: 1 } } }]),
-      Order.find({}).select('status seller items.seller items.price items.qty').lean(),
+      orderStatsBySeller(),
     ]);
 
     const idSet = (rows) => new Set(rows.map((r) => String(r._id)));
@@ -389,39 +416,7 @@ router.get('/', authAdmin('sellers'), async (req, res) => {
     const kycBankSet = idSet(withBank);
     const productCountMap = new Map(productCounts.map((p) => [String(p._id), p.n]));
 
-    // Same maths as before (per seller: order count, pending orders, lifetime sales), computed in one pass
-    const statsMap = new Map();
-    const statFor = (id) => {
-      let st = statsMap.get(id);
-      if (!st) {
-        st = { orderCount: 0, pendingOrders: 0, sales: 0 };
-        statsMap.set(id, st);
-      }
-      return st;
-    };
-    allOrders.forEach((ord) => {
-      const ordSeller = ord.seller ? ord.seller.toString() : '';
-      const items = ord.items || [];
-      const involved = new Set();
-      if (ordSeller) involved.add(ordSeller);
-      items.forEach((it) => {
-        if (it.seller) involved.add(it.seller.toString());
-      });
-      const st = (ord.status || '').toLowerCase();
-      const isPending = !['delivered', 'cancelled', 'refunded'].includes(st);
-      involved.forEach((sid) => {
-        const agg = statFor(sid);
-        agg.orderCount += 1;
-        if (isPending) agg.pendingOrders += 1;
-        if (ord.status !== 'cancelled') {
-          items
-            .filter((it) => (it.seller && it.seller.toString() === sid) || (!it.seller && ordSeller === sid))
-            .forEach((it) => {
-              agg.sales += (it.price || 0) * (it.qty || 1);
-            });
-        }
-      });
-    });
+    const statsMap = new Map(allOrders.map((r) => [String(r._id), r]));
 
     const enriched = sellers.map((s) => {
       const id = s._id.toString();
@@ -452,6 +447,53 @@ router.get('/', authAdmin('sellers'), async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
+/**
+ * Per seller: how many orders involve the store, how many are still open, and its lifetime sales
+ * (its own lines of every order that was not cancelled; a line without a seller belongs to the
+ * order's seller). Counted by the database: the list used to load EVERY order into the server on
+ * each visit to the Sellers / Complaints page, which grew slower with every order.
+ */
+function orderStatsBySeller() {
+  return Order.aggregate([
+    {
+      $project: {
+        status: { $toLower: { $ifNull: ['$status', ''] } },
+        involved: {
+          $setUnion: [
+            { $cond: [{ $ifNull: ['$seller', false] }, ['$seller'], []] },
+            { $filter: { input: { $ifNull: ['$items.seller', []] }, cond: { $ne: ['$$this', null] } } },
+          ],
+        },
+        lines: {
+          $map: {
+            input: { $ifNull: ['$items', []] },
+            as: 'it',
+            in: {
+              s: { $ifNull: ['$$it.seller', '$seller'] },
+              v: { $multiply: [{ $ifNull: ['$$it.price', 0] }, { $cond: [{ $gt: [{ $ifNull: ['$$it.qty', 0] }, 0] }, '$$it.qty', 1] }] },
+            },
+          },
+        },
+      },
+    },
+    { $unwind: '$involved' },
+    {
+      $project: {
+        pending: { $cond: [{ $in: ['$status', ['delivered', 'cancelled', 'refunded']] }, 0, 1] },
+        sales: {
+          $cond: [
+            { $eq: ['$status', 'cancelled'] },
+            0,
+            { $sum: { $map: { input: { $filter: { input: '$lines', cond: { $eq: ['$$this.s', '$involved'] } } }, in: '$$this.v' } } },
+          ],
+        },
+        involved: 1,
+      },
+    },
+    { $group: { _id: '$involved', orderCount: { $sum: 1 }, pendingOrders: { $sum: '$pending' }, sales: { $sum: '$sales' } } },
+  ]);
+}
 
 // GET /api/sellers/:id/kyc (Admin loads one seller's KYC documents on demand)
 router.get('/:id/kyc', authAdmin('sellers'), async (req, res, next) => {
@@ -513,6 +555,7 @@ router.post('/', authAdmin('sellers'), async (req, res) => {
     if (!storeName || !ownerName || !email || !password) {
       return res.status(400).json({ message: 'Store name, owner name, email, and password are required' });
     }
+    if (badCommission(commissionRate)) return res.status(400).json({ message: COMMISSION_MSG });
 
     const existing = await Seller.findOne({ email: email.toLowerCase().trim() });
     if (existing) return res.status(400).json({ message: 'A seller with this email already exists' });
@@ -534,7 +577,7 @@ router.post('/', authAdmin('sellers'), async (req, res) => {
       passwordHash,
       phone: phone || '',
       storeSlug,
-      commissionRate: commissionRate !== undefined ? Number(commissionRate) : 10,
+      commissionRate: commissionRate !== undefined && commissionRate !== null && commissionRate !== '' ? Number(commissionRate) : 10,
       address: { city: city || 'New York' },
       isTestAccount: isTest,
       accountType: isTest ? 'test' : 'client',
@@ -633,10 +676,16 @@ router.post('/:id/freeze', authAdmin('sellers'), async (req, res) => {
 
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
+    // a registration still waiting (or rejected) is decided under New Applications, not here:
+    // "active" from this screen used to approve it without the approval steps
+    if (seller.status === 'pending_approval' || seller.registrationRejectedAt) {
+      return res.status(400).json({ message: 'This store registration is not approved. Use New Applications to approve or reject it.' });
+    }
 
     seller.status = status;
     if (status === 'active') {
-      seller.verified = true;
+      // only the restriction is lifted: "verified" (documents checked) is not touched here.
+      // It used to be set on every unfreeze, giving unchecked stores the verified badge.
       seller.freezeReason = '';
       seller.frozenAt = null;
       seller.frozenBy = '';
@@ -647,6 +696,7 @@ router.post('/:id/freeze', authAdmin('sellers'), async (req, res) => {
     }
 
     await seller.save();
+    forgetAuthCache('seller', seller._id); // a suspension applies to the next request at once
 
     const isRestricted = status !== 'active';
     const statusLabel = status === 'frozen' ? 'FROZEN' : status === 'suspended' ? 'SUSPENDED' : 'UNFROZEN / ACTIVE';
@@ -811,6 +861,9 @@ router.post('/:id/warn', authAdmin('sellers'), async (req, res) => {
       });
     }
 
+    // cleared: the seller's banner goes away now (it used to stay until a page reload)
+    if (!active) req.app.get('io')?.to(`seller:${seller._id}`).emit('seller:warning_update', { warning: seller.warning });
+
     audit(req, 'update', 'seller_warning', seller._id, `${active ? 'Issued warning' : 'Cleared warning'} for ${seller.storeName}`);
 
     res.json({
@@ -946,12 +999,18 @@ router.post(['/master-affiliate', '/master-referral'], authAdmin('sellers'), asy
     const cleanCode = normalizeCode(req.body?.code);
     const formatErr = codeFormatError(cleanCode);
     if (formatErr) return res.status(400).json({ message: formatErr });
-    if (await ReferralCode.exists({ code: cleanCode })) {
+    const existing = await ReferralCode.findOne({ code: cleanCode }).lean();
+    // a FORMER master code (kept as an inactive record when it was replaced) may become the master
+    // again; any other custom code keeps its own settings and cannot be turned into the master
+    const isFormerMaster = existing && existing.description === 'Former master affiliate code';
+    if (existing && !isFormerMaster) {
       return res.status(400).json({ message: `"${cleanCode}" is already a custom affiliate code. Pick a different master code.` });
     }
     const previous = await getMasterCode();
     await setSetting('master_affiliate_code', cleanCode);
     await setSetting('master_referral_code', cleanCode);
+    // it is the master now, not a custom code (its sellers count under the master again)
+    if (isFormerMaster) await ReferralCode.deleteOne({ _id: existing._id });
     // The old master code stays known (switched off): sellers who joined with it keep counting
     // under it and can still be approved, but nobody new can register with it.
     if (previous && previous !== cleanCode) {
@@ -1193,6 +1252,18 @@ router.delete(['/affiliates/:id', '/referrals/:id'], authAdmin('sellers'), async
     const rc = await ReferralCode.findById(req.params.id);
     if (!rc) return res.status(404).json({ message: 'Affiliate code not found' });
 
+    // A code sellers joined with stays: deleting it made their code "unknown", and waiting
+    // applications with it could no longer be approved ("code does not exist") without losing
+    // which partner brought them. Switching it off stops new sign-ups and keeps the history.
+    const used = (await usageByCode(Seller)).get(normalizeCode(rc.code));
+    if (used && used.total > 0) {
+      return res.status(400).json({
+        code: 'CODE_IN_USE',
+        usedBy: used.total,
+        message: `"${rc.code}" was used by ${used.total} seller(s), so it cannot be deleted. Set it to Inactive instead: no new sign-ups, history kept.`,
+      });
+    }
+
     await ReferralCode.findByIdAndDelete(req.params.id);
     audit(req, 'delete', 'referral_code', req.params.id, `Deleted affiliate code: ${rc.code}`);
 
@@ -1233,12 +1304,21 @@ router.get('/:id', authAdmin('sellers'), async (req, res, next) => {
     }
     // perf: callers that do not show KYC documents pass ?kyc=0 to skip the base64 images
     const sellerSelect = req.query.kyc === '0' ? SELLER_LIST_SELECT : '-passwordHash';
+    // Only what the profile shows. Whole orders and products (and the KYC pictures) made this
+    // answer several MB; building it kept the small server busy for seconds, and every other
+    // request (chat messages, the shop) waited behind it.
     const [seller, products, orders] = await Promise.all([
       Seller.findById(req.params.id).select(sellerSelect),
-      Product.find({ seller: req.params.id }).populate('category', 'name slug'),
+      Product.find({ seller: req.params.id })
+        .select('name slug price oldPrice stock image images active sold treasuryProduct category createdAt')
+        .populate('category', 'name slug')
+        .lean(),
       Order.find({
         $or: [{ 'items.seller': req.params.id }, { seller: req.params.id }],
-      }).sort({ createdAt: -1 }),
+      })
+        .select('orderNumber status total createdAt seller shippingAddress.fullName items.seller items.name items.price items.qty items.costPrice items.itemStatus')
+        .sort({ createdAt: -1 })
+        .lean(),
     ]);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
@@ -1346,7 +1426,8 @@ router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
     if (ownerName) seller.ownerName = ownerName;
     if (email) seller.email = email.toLowerCase().trim();
     if (phone !== undefined) seller.phone = phone;
-    if (commissionRate !== undefined) seller.commissionRate = Number(commissionRate);
+    if (badCommission(commissionRate)) return res.status(400).json({ message: COMMISSION_MSG });
+    if (commissionRate !== undefined && commissionRate !== null && commissionRate !== '') seller.commissionRate = Number(commissionRate);
     if (status) seller.status = status;
     if (address) seller.address = { ...seller.address, ...address };
 
@@ -1449,8 +1530,22 @@ router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
 router.post('/:id/withdrawal-limit', authAdmin('finance'), async (req, res) => {
   try {
     const { maxAmount, minAmount, requiredWithdrawalsForIncrease, successfulWithdrawalCount, upgradeFee, currentTierName } = req.body || {};
+    // every number must really be a number (a typo used to end in a 500 "server error")
+    const given = { maxAmount, minAmount, requiredWithdrawalsForIncrease, successfulWithdrawalCount, upgradeFee };
+    for (const [field, v] of Object.entries(given)) {
+      if (v !== undefined && !(Number.isFinite(Number(v)) && Number(v) >= 0)) {
+        return res.status(400).json({ message: `Please enter a valid number (0 or more) for ${field}.` });
+      }
+    }
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Seller not found' });
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
+
+    // the minimum payout can never be above the maximum (the seller could not withdraw at all);
+    // checked against the values that will be saved, including the ones not sent now
+    const nextMax = maxAmount !== undefined ? Math.max(1, Number(maxAmount)) : Number(seller.withdrawalLimit?.maxAmount ?? 500);
+    const nextMin = minAmount !== undefined ? Math.max(1, Number(minAmount)) : Number(seller.withdrawalLimit?.minAmount ?? 10);
+    if (nextMin > nextMax) return res.status(400).json({ message: `The minimum payout ($${nextMin}) cannot be more than the maximum ($${nextMax}).` });
 
     seller.withdrawalLimit = seller.withdrawalLimit || {};
 
@@ -1459,7 +1554,7 @@ router.post('/:id/withdrawal-limit', authAdmin('finance'), async (req, res) => {
     if (requiredWithdrawalsForIncrease !== undefined) seller.withdrawalLimit.requiredWithdrawalsForIncrease = Math.max(1, Number(requiredWithdrawalsForIncrease));
     if (successfulWithdrawalCount !== undefined) seller.withdrawalLimit.successfulWithdrawalCount = Math.max(0, Number(successfulWithdrawalCount));
     if (upgradeFee !== undefined) seller.withdrawalLimit.upgradeFee = Math.max(0, Number(upgradeFee));
-    if (currentTierName) seller.withdrawalLimit.currentTierName = currentTierName.trim();
+    if (typeof currentTierName === 'string' && currentTierName.trim()) seller.withdrawalLimit.currentTierName = currentTierName.trim().slice(0, 120);
 
     seller.markModified('withdrawalLimit');
     await seller.save();
@@ -1496,12 +1591,19 @@ router.post('/:id/withdrawal-limit', authAdmin('finance'), async (req, res) => {
   }
 });
 // POST /api/sellers/:id/approve (Admin approves a pending seller registration)
-router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
+router.post('/:id/approve', authAdmin('sellers'), oneDecisionAtATime, async (req, res) => {
   try {
     const { securityDepositPaid, securityDepositAmount, referralCode, assignedReferralCode, commissionRate, note, isTestAccount, accountType, isPreviousStoreSeller, assignedMemberId } = req.body || {};
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Seller not found' });
+    if (badCommission(commissionRate)) return res.status(400).json({ message: COMMISSION_MSG });
     // the KYC photos are not needed to approve (and are MBs): left in the database
     const seller = await Seller.findById(req.params.id).select(SELLER_LIST_SELECT);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
+    // Saving this form makes the store "active": a store frozen or suspended for compliance is
+    // managed on the Complaints page, never switched on from here (the button was only hidden).
+    if (seller.status === 'frozen' || (seller.status === 'suspended' && !seller.registrationRejectedAt)) {
+      return res.status(400).json({ message: `This store is ${seller.status}. Lift that on the Complaints page; it is not changed from New Applications.` });
+    }
 
     // Was this seller already approved before? Then this is an edit, not a first approval: its
     // type and its owner cannot be changed here by one person (see the two-person rule above).
@@ -1543,8 +1645,14 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
 
     seller.status = 'active';
     seller.registrationRejectedAt = undefined;
-    seller.verified = true;
-    if (commissionRate !== undefined) seller.commissionRate = Number(commissionRate);
+    if (!wasApproved) {
+      seller.verified = true; // approving a registration is what verifies a store
+      // a re-approved (earlier rejected) registration no longer carries the rejection
+      seller.freezeReason = '';
+      seller.frozenAt = null;
+      seller.frozenBy = '';
+    }
+    if (commissionRate !== undefined && commissionRate !== null && commissionRate !== '') seller.commissionRate = Number(commissionRate);
 
     if (wasApproved) {
       if (askedTest !== typeBefore.isTestAccount) {
@@ -1569,10 +1677,12 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
       }
     }
 
+    const wasPaid = Boolean(seller.securityDeposit?.paid);
     seller.securityDeposit = {
       paid: isPaid,
       amount: depAmt,
-      paidAt: isPaid ? new Date() : null,
+      // the date it was paid, kept on later edits (it used to become "now" on every save)
+      paidAt: isPaid ? (wasPaid && seller.securityDeposit?.paidAt ? seller.securityDeposit.paidAt : new Date()) : null,
       referralCode: finalReferral,
       note: (note || '').trim(),
     };
@@ -1651,7 +1761,28 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
       }
     }
 
-    // Create Initial Security Deposit Ledger Record in Wallet History
+    // Security deposit line in the wallet history: created once, and kept in step when the deposit
+    // is edited later (it used to keep the first amount for good, so the history and the profile
+    // disagreed; a deposit set back to "not paid" stayed in the history as paid)
+    try {
+      const existingLedger = await Withdrawal.findOne({ seller: seller._id, depositRef: 'INITIAL_SECURITY_DEPOSIT' });
+      if (existingLedger) {
+        const nowPaid = isPaid && depAmt > 0;
+        const changed = nowPaid !== (existingLedger.status === 'approved') || (nowPaid && Number(existingLedger.amount) !== depAmt);
+        if (changed) {
+          existingLedger.amount = nowPaid ? depAmt : existingLedger.amount;
+          existingLedger.approvedAmount = nowPaid ? depAmt : 0;
+          existingLedger.status = nowPaid ? 'approved' : 'rejected';
+          existingLedger.adminNote = nowPaid
+            ? `Security deposit set to $${depAmt} by ${req.admin.name || 'admin'}`
+            : `Security deposit marked NOT paid by ${req.admin.name || 'admin'}`;
+          existingLedger.processedAt = new Date();
+          await existingLedger.save();
+        }
+      }
+    } catch (ledgerErr) {
+      console.error('Security deposit ledger update error:', ledgerErr.message);
+    }
     if (isPaid && depAmt > 0) {
       try {
         const existingLedger = await Withdrawal.findOne({
@@ -1764,14 +1895,19 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
 });
 
 // POST /api/sellers/:id/reject (Admin rejects a pending seller registration)
-router.post('/:id/reject', authAdmin('sellers'), async (req, res) => {
+router.post('/:id/reject', authAdmin('sellers'), oneDecisionAtATime, async (req, res) => {
   try {
     const { reason, isTestAccount, accountType } = req.body || {};
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Seller not found' });
     const seller = await Seller.findById(req.params.id).select(SELLER_LIST_SELECT);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
-    // The account type of a seller that was already approved is never changed from here
+    // Only a registration is rejected here. An approved store (or one with money history) is
+    // restricted on the Complaints page; rejecting it used to lock it out and hide it from there.
     const wasApproved = await isApprovedSeller(seller);
+    if (wasApproved) {
+      return res.status(400).json({ message: 'This store is already approved (or has wallet history). Use the Complaints page to freeze or suspend it.' });
+    }
 
     seller.status = 'suspended';
     seller.registrationRejectedAt = new Date();
@@ -1886,7 +2022,10 @@ router.patch('/:id/toggle-previous-store', authAdmin('sellers'), async (req, res
 router.post('/:id/targets', authAdmin('sellers'), async (req, res) => {
   try {
     const { title, targetOrders, targetOrderCount, bonusAmount, durationDays, adminNote, description } = req.body || {};
-    const finalOrderCount = Math.floor(Number(targetOrders || targetOrderCount || 0));
+    const rawOrders = Number(targetOrders || targetOrderCount || 0);
+    // whole orders only (8.5 used to become 8 without a word)
+    if (!Number.isInteger(rawOrders)) return res.status(400).json({ message: 'Target orders must be a whole number (e.g. 8 or 10)' });
+    const finalOrderCount = rawOrders;
     const finalBonus = Math.round(Number(bonusAmount || 0) * 100) / 100;
     const days = durationDays === null || durationDays === undefined || durationDays === '' ? 0 : Number(durationDays);
 
@@ -1898,6 +2037,12 @@ router.post('/:id/targets', authAdmin('sellers'), async (req, res) => {
     }
     if (!Number.isFinite(finalBonus) || finalBonus <= 0) {
       return res.status(400).json({ message: 'Bonus amount must be more than 0' });
+    }
+    // the title must not promise another number of orders than the goal (a seller was sent
+    // "Process 10 Orders Milestone" with the goal "Deliver 8 Orders")
+    const namedOrders = [...String(title || '').matchAll(/(\d+)\s*(?:delivered\s+)?orders?\b/gi)].map((m) => Number(m[1]));
+    if (namedOrders.length && !namedOrders.includes(finalOrderCount)) {
+      return res.status(400).json({ message: `The title mentions ${namedOrders.join(', ')} orders but the goal is ${finalOrderCount} delivered orders. Make them match.` });
     }
     if (!Number.isFinite(days) || days < 0) {
       return res.status(400).json({ message: 'Duration must be a positive number of days (or empty for no expiry)' });

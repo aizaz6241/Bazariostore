@@ -60,7 +60,9 @@ const CORE_DOCS = [
 // (before, the tab counts and the tab contents used different rules and did not match).
 function outcomeOf(s) {
   if (s.status === 'pending_approval') return 'pending';
-  if (s.status === 'suspended' && (s.registrationRejectedAt || /reject/i.test(s.freezeReason || ''))) return 'rejected';
+  // only the rejection date says so (guessing from the word "reject" in a reason moved live
+  // stores suspended for other reasons into this tab)
+  if (s.status === 'suspended' && s.registrationRejectedAt) return 'rejected';
   return 'approved';
 }
 const OUTCOME_META = {
@@ -105,6 +107,17 @@ export default function Applications() {
       .catch(() => setAffCodes([]));
   }, [approveSellerId, affCodes]);
   const findAffCode = (code) => (affCodes || []).find((c) => c.code === String(code || '').replace(/\s+/g, '').toUpperCase());
+
+  // A first approval takes the commission of the code the seller joined with (e.g. a 5% partner
+  // code). It used to open with the default 10%, and the code's rate only came in when the admin
+  // retyped the code. Not done once the admin has typed a commission, nor for an approved store.
+  useEffect(() => {
+    if (!affCodes || !approveModal || approveModal.mode === 'edit' || approveModal.commissionTouched) return;
+    const known = findAffCode(approveModal.referralCode);
+    if (!known || known.commissionRate === null || known.commissionRate === undefined) return;
+    if (Number(approveModal.commissionRate) === Number(known.commissionRate)) return;
+    setApproveModal((prev) => (prev && prev.seller?._id === approveModal.seller?._id && !prev.commissionTouched ? { ...prev, commissionRate: known.commissionRate } : prev));
+  }, [affCodes, approveModal?.seller?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!approveSellerId) return;
@@ -187,7 +200,9 @@ export default function Applications() {
       seller: s,
       mode: o === 'approved' ? 'edit' : o === 'rejected' ? 'reapprove' : 'approve',
       securityDepositAmount: o === 'approved' ? s.securityDeposit?.amount ?? 500 : 500,
-      securityDepositPaid: o === 'approved' ? Boolean(s.securityDeposit?.paid) : true,
+      // not ticked in advance: the admin confirms the deposit really came in (a forgotten tick
+      // used to record a $500 deposit that was never paid)
+      securityDepositPaid: o === 'approved' ? Boolean(s.securityDeposit?.paid) : false,
       referralCode: affiliateOf(s),
       commissionRate: s.commissionRate ?? 10,
       isTestAccount: Boolean(s.isTestAccount),
@@ -722,7 +737,7 @@ export default function Applications() {
                 </div>
                 <div className="ins-field">
                   <label>Commission rate (%)</label>
-                  <input className="ins-input" type="number" min="0" max="100" value={am.commissionRate} onChange={(e) => setApproveModal({ ...am, commissionRate: e.target.value })} required />
+                  <input className="ins-input" type="number" min="0" max="100" value={am.commissionRate} onChange={(e) => setApproveModal({ ...am, commissionRate: e.target.value, commissionTouched: true })} required />
                 </div>
               </div>
 

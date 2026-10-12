@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { sapi, fmtDate, compressImage, dropClearedMessages } from '../api.js';
+import { sapi, fmtDate, compressImage, dropClearedMessages, addChatMessage, syncLatestMessages } from '../api.js';
 import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
 import ChatAttachment from '../components/ChatAttachment.jsx';
@@ -27,6 +27,8 @@ export default function SellerSupport() {
   const fileInputRef = useRef(null);
   const textInputRef = useRef(null);
   const isNearBottomRef = useRef(true);
+  // Blocks a second send while one is still going (fast double Enter / double click)
+  const sendingRef = useRef(false);
 
   // Coming back to this screen (phone unlocked / tab shown): now the seller really sees the chat
   useEffect(() => {
@@ -38,6 +40,8 @@ export default function SellerSupport() {
         if (s) s.emit('seller:read', { sellerId: seller?._id });
       } catch {}
       setUnreadChat(0);
+      // A phone that slept missed live updates (e.g. support deleted or edited a message): re-sync
+      loadThread(true);
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
@@ -70,14 +74,11 @@ export default function SellerSupport() {
           setTimeout(() => scrollToBottom('auto'), 50);
         } else {
           setMessages((prev) => {
-            if (!Array.isArray(prev) || prev.length === 0) return msgList;
-            const existingIds = new Set(prev.map((m) => m._id));
-            const newOnes = msgList.filter((m) => !existingIds.has(m._id));
-            if (newOnes.length === 0) return prev;
-            if (isNearBottomRef.current) {
+            const next = syncLatestMessages(prev, msgList, more);
+            if (next !== prev && isNearBottomRef.current && next[next.length - 1]?._id !== prev?.[prev.length - 1]?._id) {
               setTimeout(() => scrollToBottom('smooth'), 50);
             }
-            return [...prev, ...newOnes];
+            return next;
           });
         }
 
@@ -149,11 +150,7 @@ export default function SellerSupport() {
       // only messages of this seller's own conversation belong in this thread
       const msgSellerId = msg.seller?._id || msg.seller;
       if (!msgSellerId || !seller?._id || String(msgSellerId) !== String(seller._id)) return;
-      setMessages((prev) => {
-        if (!Array.isArray(prev)) return [msg];
-        if (prev.some((m) => m?._id === msg?._id)) return prev;
-        return [...prev, msg];
-      });
+      setMessages((prev) => addChatMessage(prev, msg));
       if (isNearBottomRef.current) {
         setTimeout(() => scrollToBottom('smooth'), 50);
       }
@@ -193,7 +190,11 @@ export default function SellerSupport() {
       setMessages((prev) => dropClearedMessages(prev, payload));
     };
 
+    // After a dropped connection the live updates in between are lost: re-sync the thread
+    const onReconnect = () => loadThread(true);
+
     if (socket) {
+      socket.on('connect', onReconnect);
       socket.on('message:new', onNewMessage);
       socket.on('message:edit', onMessageEdit);
       socket.on('message:delete', onMessageDelete);
@@ -201,6 +202,7 @@ export default function SellerSupport() {
     }
     return () => {
       if (socket) {
+        socket.off('connect', onReconnect);
         socket.off('message:new', onNewMessage);
         socket.off('message:edit', onMessageEdit);
         socket.off('message:delete', onMessageDelete);
@@ -235,6 +237,18 @@ export default function SellerSupport() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  // A seller removes their own message (e.g. wrong bank details sent by mistake): gone for support too
+  const handleDeleteOwn = async (msg) => {
+    if (!msg?._id || msg.sender !== 'seller') return;
+    if (!window.confirm('Delete this message? It will be removed for support as well.')) return;
+    try {
+      await sapi(`/chat/messages/${msg._id}`, { method: 'DELETE' });
+      setMessages((prev) => prev.filter((m) => m._id !== msg._id));
+    } catch (err) {
+      alert(err.message || 'Could not delete the message');
+    }
+  };
+
   const handleStartReply = (msg) => {
     setReplyingTo(msg);
     textInputRef.current?.focus();
@@ -244,7 +258,9 @@ export default function SellerSupport() {
     e.preventDefault();
     const clean = text.trim();
     if (!clean && !file) return;
+    if (sendingRef.current) return;
 
+    sendingRef.current = true;
     setSending(true);
     let attachmentUrl = null;
     let attachmentType = null;
@@ -298,13 +314,14 @@ export default function SellerSupport() {
         },
       });
       if (newMsg?._id) {
-        setMessages((prev) => (prev.some((m) => m._id === newMsg._id) ? prev : [...prev, newMsg]));
+        setMessages((prev) => addChatMessage(prev, newMsg));
       }
       setTimeout(() => scrollToBottom('smooth'), 50);
     } catch (err) {
       setText(clean);
       alert('Failed to send message: ' + err.message);
     } finally {
+      sendingRef.current = false;
       setSending(false);
       setUploading(false);
     }
@@ -436,6 +453,7 @@ export default function SellerSupport() {
                 isMe={isMe}
                 myRole="seller"
                 onReply={handleStartReply}
+                onDelete={isMe ? handleDeleteOwn : undefined}
               />
             );
           })}

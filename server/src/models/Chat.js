@@ -21,6 +21,9 @@ const conversationSchema = new mongoose.Schema(
     priority: { type: String, enum: ['normal', 'urgent', 'high'], default: 'normal' },
     unreadForAdmin: { type: Number, default: 0 },
     unreadForSeller: { type: Number, default: 0 },
+    // when the auto-reply last answered here (one claim per 30 minutes, so two quick messages
+    // never get two auto-replies)
+    lastAutoReplyAt: { type: Date, default: null },
     unreadForCustomer: { type: Number, default: 0 },
     assignedStaff: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
     assignedStaffName: { type: String, default: '' },

@@ -32,6 +32,8 @@ const productSchema = new mongoose.Schema(
     seoTitle: String,
     seoDescription: String,
     active: { type: Boolean, default: true },
+    // switched off because its Central Treasury master product was switched off; switched on again with it
+    pausedByTreasury: { type: Boolean, default: false },
     image: String, // primary image url (synced from images[0])
     images: [{ url: String, key: { type: String, default: null } }],
     gallery: [String], // legacy

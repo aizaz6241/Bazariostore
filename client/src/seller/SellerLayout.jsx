@@ -116,6 +116,12 @@ export default function SellerLayout() {
       }
     };
 
+    // support deleted a message: the unread badge follows the server's count (it used to stay at
+    // "1" for a message that no longer exists)
+    const onMessageDeleted = (payload) => {
+      if (payload && typeof payload.unreadForSeller === 'number') setUnreadChat(payload.unreadForSeller);
+    };
+
     const onNotify = (n) => {
       const soundType = n.type === 'deposit' ? 'deposit' : n.type === 'withdrawal' ? 'withdrawal' : n.type === 'approval' ? 'approval' : n.type === 'order' ? 'order' : 'default';
       playNotificationSound(soundType);
@@ -168,6 +174,16 @@ export default function SellerLayout() {
       refreshSeller();
     };
 
+    // an admin issued or cleared a warning: the banner follows at once
+    const onWarningUpdate = ({ warning }) => {
+      setSeller((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev, warning: warning || { active: false } };
+        localStorage.setItem('ng_seller', JSON.stringify(updated));
+        return updated;
+      });
+    };
+
     const onTargetsUpdate = ({ targets }) => {
       setSeller((prev) => {
         if (!prev) return prev;
@@ -178,6 +194,7 @@ export default function SellerLayout() {
     };
 
     socket.on('message:new', onMessage);
+    socket.on('message:delete', onMessageDeleted);
     socket.on('seller:notification', onNotify);
     socket.on('wallet:update', onWalletUpdate);
     socket.on('seller:health_update', onHealthUpdate);
@@ -185,15 +202,18 @@ export default function SellerLayout() {
     socket.on('seller:limit_update', onLimitUpdate);
     socket.on('limit:update', onLimitUpdate);
     socket.on('seller:targets_update', onTargetsUpdate);
+    socket.on('seller:warning_update', onWarningUpdate);
 
     return () => {
       socket.off('message:new', onMessage);
+      socket.off('message:delete', onMessageDeleted);
       socket.off('seller:notification', onNotify);
       socket.off('wallet:update', onWalletUpdate);
       socket.off('seller:health_update', onHealthUpdate);
       socket.off('seller:status_update', onStatusUpdate);
       socket.off('seller:limit_update', onLimitUpdate);
       socket.off('limit:update', onLimitUpdate);
+      socket.off('seller:warning_update', onWarningUpdate);
       socket.off('seller:targets_update', onTargetsUpdate);
     };
   }, [token]);
@@ -237,10 +257,12 @@ export default function SellerLayout() {
   } else if (seller?.status === 'frozen') {
     healthTier = 'freeze';
     healthLabel = 'FROZEN';
-  } else if (healthScore < 60) {
+  } else if (healthScore <= 30) {
+    // same limits as the admin Complaints page and the server: 80+ healthy, 31-79 at risk,
+    // 30 and below critical (it used to be 75 / 60 here, so both sides saw different ratings)
     healthTier = 'suspended';
     healthLabel = 'CRITICAL';
-  } else if (healthScore < 75) {
+  } else if (healthScore < 80) {
     healthTier = 'warning';
     healthLabel = 'AT RISK';
   }
@@ -519,6 +541,12 @@ export default function SellerLayout() {
               <p className="banner-desc">
                 <b>Reason from Admin:</b> {seller.freezeReason || 'Your account is temporarily restricted due to policy violation review.'}
               </p>
+              {seller.status === 'frozen' && (
+                <p className="banner-desc">
+                  While frozen, withdrawals and changes to products, coupons, shipping and Treasury items are paused.
+                  Your current orders continue normally.
+                </p>
+              )}
             </div>
             <Link to="/seller/support" className="banner-chat-btn">
               <Ic name="chat" size={15} /> Resolve with Support

@@ -58,7 +58,17 @@ export async function usageByCode(Seller) {
       $group: {
         _id: '$code',
         total: { $sum: 1 },
-        active: { $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] } },
+        // approved = the registration was approved, whatever the store's state now (a store frozen
+        // or suspended later used to drop out of this count into "other")
+        active: {
+          $sum: {
+            $cond: [
+              { $and: [{ $in: ['$status', ['active', 'frozen', 'suspended']] }, { $not: [{ $ifNull: ['$registrationRejectedAt', false] }] }] },
+              1,
+              0,
+            ],
+          },
+        },
         rejected: { $sum: { $cond: [{ $and: [{ $ne: ['$status', 'active'] }, { $ifNull: ['$registrationRejectedAt', false] }] }, 1, 0] } },
         pending: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'pending_approval'] }, { $not: [{ $ifNull: ['$registrationRejectedAt', false] }] }] }, 1, 0] } },
         last: { $max: '$createdAt' },

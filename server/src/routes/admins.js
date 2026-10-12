@@ -347,9 +347,10 @@ router.put(
       if (grantIssue) return res.status(403).json({ message: grantIssue });
     }
 
-    // never let the last active super admin be demoted/disabled
-    if (admin.role === 'super_admin' && ((set.role && set.role !== 'super_admin') || set.active === false)) {
-      const supers = await Admin.countDocuments({ role: 'super_admin', active: true });
+    // never let the last active super admin be demoted/disabled (an already switched-off super
+    // admin is not that last one: it was counted as if it were)
+    if (admin.role === 'super_admin' && admin.active !== false && ((set.role && set.role !== 'super_admin') || set.active === false)) {
+      const supers = await Admin.countDocuments({ role: 'super_admin', active: { $ne: false } });
       if (supers <= 1) return res.status(400).json({ message: 'Aakhri Super Admin ko demote/disable nahi kiya ja sakta' });
     }
 
@@ -415,6 +416,8 @@ router.put(
     if (changedNow.length > 0) {
       await admin.save();
       forgetAuthCache('admin', admin._id);
+      // an open admin panel of this account follows the change at once (rooms / closed account)
+      await req.app.get('resyncAdminSockets')?.(admin._id);
       await audit(req, 'admin_updated', 'admin', admin._id, { name: admin.name, role: admin.role, active: admin.active });
       await finLog(req, {
         action: 'admin.updated',
@@ -449,8 +452,8 @@ router.delete(
       if (req.admin.role !== 'super_admin') {
         return res.status(403).json({ message: 'Super Admin ko delete karne ke liye Super Admin hona zaroori hai' });
       }
-      const supers = await Admin.countDocuments({ role: 'super_admin', active: true });
-      if (supers <= 1) return res.status(400).json({ message: 'Aakhri Super Admin delete nahi ho sakta' });
+      const supers = await Admin.countDocuments({ role: 'super_admin', active: { $ne: false } });
+      if (admin.active !== false && supers <= 1) return res.status(400).json({ message: 'Aakhri Super Admin delete nahi ho sakta' });
     }
     const issue = manageProblem(req, admin);
     if (issue) return res.status(403).json({ message: issue });
@@ -471,6 +474,8 @@ router.delete(
 
     await admin.deleteOne();
     forgetAuthCache('admin', req.params.id);
+    // its open admin panel stops receiving live data at once
+    await req.app.get('resyncAdminSockets')?.(req.params.id);
     await audit(req, 'admin_deleted', 'admin', req.params.id, { name: admin.name, email: admin.email });
     await finLog(req, {
       action: 'admin.deleted',

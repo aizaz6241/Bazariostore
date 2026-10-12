@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import Order, { STATUSES } from '../models/Order.js';
+import Order, { STATUSES, PAYMENT_STATUSES } from '../models/Order.js';
 import Seller from '../models/Seller.js';
 import Product from '../models/Product.js';
+import TreasuryProduct from '../models/TreasuryProduct.js';
 import Discount from '../models/Discount.js';
 import Refund from '../models/Refund.js';
 import { Conversation } from '../models/Chat.js';
@@ -12,10 +13,10 @@ import { initiatePayment, getPaymentConfig, paymentMethodUsable } from '../servi
 import { audit } from '../utils/audit.js';
 import { notify } from '../utils/notify.js';
 import { lockSellerOrderFund, releaseSellerOrderDelivered, releaseSellerOrderCancelled } from './sellers.js';
-import { handleStatusUpdate } from './sellers/orders.routes.js';
+import { handleStatusUpdate, undoTargetProgressForOrder } from './sellers/orders.routes.js';
 import { adjustTreasuryStock } from '../utils/stockSync.js';
 import { scheduleNextOrderStep } from '../services/orderProgressionService.js';
-import { restockOrder, settleDeliveredStock } from '../utils/orderStock.js';
+import { restockOrder, settleDeliveredStock, reinstateOrderStock, checkStockForReinstate } from '../utils/orderStock.js';
 import { limit } from '../utils/rateLimit.js';
 import { asText } from '../middleware/sanitize.js';
 import mongoose from 'mongoose';
@@ -149,6 +150,24 @@ router.post('/', placeOrderLimit, softUser, async (req, res) => {
         return res.status(400).json({ message: `"${l.product.name}" ka sirf ${Math.max(0, left?.stock || 0)} stock reh gaya hai` });
       }
       reserved.push({ product: taken, qty: l.qty });
+
+      // A Central Treasury product: every seller's listing shows the SAME master stock, so the
+      // master is the real limit. Taken in one step too: two customers buying the last piece
+      // through two different sellers can no longer both get it.
+      if (taken.treasuryProduct) {
+        const master = await adjustTreasuryStock(taken.treasuryProduct, -l.qty, {
+          kind: 'reserve',
+          reason: 'order_placement',
+          note: `Checkout via seller "${taken.sellerName || ''}"`,
+          by: taken.sellerName || 'Customer Checkout',
+        });
+        if (!master) {
+          await releaseReserved(reserved);
+          const left = await TreasuryProduct.findById(taken.treasuryProduct).select('stock').lean();
+          return res.status(400).json({ message: `"${l.product.name}" ka sirf ${Math.max(0, left?.stock || 0)} stock reh gaya hai` });
+        }
+        reserved[reserved.length - 1].treasury = taken.treasuryProduct;
+      }
     }
 
     const order = await createOrderWithNumber({
@@ -195,21 +214,10 @@ router.post('/', placeOrderLimit, softUser, async (req, res) => {
     if (pay.status === 'awaiting_payment') order.paymentStatus = 'awaiting_payment';
     await order.save();
 
-    // stock history + treasury sync (the stock itself was already taken above)
+    // stock history (the stock itself, Central Treasury included, was already taken above)
     for (const { product: p, qty } of held) {
-      const l = { qty };
       if (p) {
-        await StockHistory.create({ product: p._id, productName: p.name, change: -l.qty, stockAfter: p.stock, reason: 'order', note: order.orderNumber });
-
-        // If product is linked to Central Treasury, synchronize master and all sellers
-        if (p.treasuryProduct) {
-          await adjustTreasuryStock(p.treasuryProduct, -l.qty, {
-            reason: 'order_placement',
-            note: `Order #${order.orderNumber} via seller "${p.sellerName}"`,
-            by: p.sellerName || 'Customer Checkout',
-          });
-        }
-
+        await StockHistory.create({ product: p._id, productName: p.name, change: -qty, stockAfter: p.stock, reason: 'order', note: order.orderNumber });
         await stockAlerts(req.app, p);
       }
     }
@@ -254,9 +262,10 @@ router.post('/', placeOrderLimit, softUser, async (req, res) => {
 
 /** Put back stock that was taken for an order which then could not be created. */
 async function releaseReserved(reserved) {
-  for (const { product, qty } of reserved.splice(0)) {
+  for (const { product, qty, treasury } of reserved.splice(0)) {
     try {
       await Product.updateOne({ _id: product._id }, { $inc: { stock: qty, reservedStock: -qty } });
+      if (treasury) await adjustTreasuryStock(treasury, qty, { kind: 'release', reason: 'checkout_failed', note: 'Order could not be placed' });
     } catch (e) {
       console.error('[place-order] could not release reserved stock:', e.message);
     }
@@ -322,7 +331,7 @@ router.post('/:id/refund-request', authUser, async (req, res) => {
   });
   order.refundId = refund._id;
   await order.save();
-  notify(req.app, { type: 'refund', title: 'Refund requested', body: `${order.orderNumber} — Rs.${order.total}`, link: '/admin/refunds' });
+  notify(req.app, { type: 'refund', title: 'Refund requested', body: `${order.orderNumber} — $${order.total}`, link: '/admin/refunds' });
   res.status(201).json(refund);
 });
 
@@ -604,20 +613,44 @@ const orderStatusHandler = async (req, res) => {
   const order = await Order.findById(req.params.id);
   if (!order) return res.status(404).json({ message: 'Order not found' });
   const prev = order.status;
+  const by = req.admin?.name || 'Admin';
+
+  // A delivered order was already paid out to the seller and counted as sold. Cancelling it put
+  // the items back on the shelf while the seller kept the payout; a delivered order goes back
+  // only through a refund.
+  if (prev === 'delivered' && status === 'cancelled') {
+    return res.status(400).json({ message: 'A delivered order cannot be cancelled. Use a refund instead.' });
+  }
+
+  // A cancelled / refunded order brought back: its items were put back on the shelf
+  const CLOSED = ['cancelled', 'refunded'];
+  const reviving = CLOSED.includes(prev) && !CLOSED.includes(status);
+  const orderSellerIds = [...new Set(order.items.map((i) => i.seller?.toString()).filter(Boolean))];
 
   // Every step that moves money can refuse (for example the seller's wallet cannot cover the
   // order). It refuses BEFORE anything is saved, and the admin gets the reason instead of a
   // request that never answers.
   try {
 
+  // 0. Bringing an order back needs its stock again: refuse now, before any money moves
+  if (reviving) await checkStockForReinstate(order);
+
   // 1. Order Cancelled
   if (status === 'cancelled' && prev !== 'cancelled') {
-    await restockOrder(order, 'order_cancelled', req.admin?.name || 'Admin');
+    await restockOrder(order, 'order_cancelled', by);
     // Release locked processing funds back to each seller
-    const sellerIds = [...new Set(order.items.map((i) => i.seller?.toString()).filter(Boolean))];
-    for (const sId of sellerIds) {
+    for (const sId of orderSellerIds) {
       await releaseSellerOrderCancelled(req.app, sId, order);
     }
+  }
+
+  // 1a. Order Refunded: the money locked for it returns to the seller (it used to stay locked
+  //     for good) and the items go back on the shelf. A payout already made on delivery stays.
+  if (status === 'refunded' && prev !== 'refunded') {
+    for (const sId of orderSellerIds) {
+      await releaseSellerOrderCancelled(req.app, sId, order, { reason: 'refunded' });
+    }
+    await restockOrder(order, 'refund_restock', by);
   }
 
   // 1b. Order moved BACK to "pending" by Admin: it is waiting again, so the money that was
@@ -650,6 +683,7 @@ const orderStatusHandler = async (req, res) => {
     for (const sId of payoutSellerIds) {
       await releaseSellerOrderDelivered(req.app, sId, order);
     }
+    if (reviving) await reinstateOrderStock(order, by);
     await settleDeliveredStock(order);
     if (order.paymentMethod === 'cod' && order.paymentStatus !== 'paid') {
       order.paymentStatus = 'paid';
@@ -657,6 +691,9 @@ const orderStatusHandler = async (req, res) => {
       notify(req.app, { type: 'payment', title: 'Payment received (COD)', body: `${order.orderNumber} — $${order.total}`, link: `/admin/orders/${order._id}` });
     }
   }
+
+  // 4. Brought back to any other step: take its items off the shelf again
+  if (reviving && status !== 'delivered') await reinstateOrderStock(order, by);
   } catch (moneyErr) {
     return res.status(400).json({ message: `Order status was not changed. ${String(moneyErr.message || moneyErr).replace('you must deposit', 'the seller must deposit').replace('your merchant wallet', 'the merchant wallet')}` });
   }
@@ -666,6 +703,13 @@ const orderStatusHandler = async (req, res) => {
     it.itemStatus = status;
   });
 
+  // back to waiting: the seller gets a fresh 24h warning / 48h deadline from now
+  if (status === 'pending' && prev !== 'pending') {
+    order.pendingSince = new Date();
+    order.warning24hSent = false;
+    order.penalty48hApplied = false;
+  }
+
   order.status = status;
   if (['pending', 'cancelled', 'refunded', 'delivered'].includes(status)) {
     order.nextStatus = null;
@@ -673,8 +717,10 @@ const orderStatusHandler = async (req, res) => {
   } else if (['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery'].includes(status)) {
     scheduleNextOrderStep(order);
   }
-  order.statusHistory.push({ status, note: note || '', by: req.admin?.name || 'Admin' });
+  order.statusHistory.push({ status, note: note || '', by });
   await order.save();
+  // a refunded (delivered) order no longer counts toward the seller's running targets
+  if (status === 'refunded' && prev !== 'refunded') await undoTargetProgressForOrder(req.app, order);
   await audit(req, 'order_updated', 'order', order._id, { orderNumber: order.orderNumber, from: prev, to: status, note: note || '' });
 
   // Re-populate order before broadcasting
@@ -718,12 +764,14 @@ router.post('/:id/status', authSellerOrAdmin, orderStatusHandler);
 
 router.patch('/:id/payment', authAdmin('orders'), async (req, res) => {
   const { paymentStatus } = req.body || {};
+  if (!PAYMENT_STATUSES.includes(paymentStatus)) return res.status(400).json({ message: 'Invalid payment status' });
+  if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Order not found' });
   const order = await Order.findById(req.params.id);
   if (!order) return res.status(404).json({ message: 'Order not found' });
   order.paymentStatus = paymentStatus;
   if (paymentStatus === 'paid') {
     order.payment = { ...(order.payment?.toObject?.() || order.payment || {}), status: 'paid', paidAt: new Date() };
-    notify(req.app, { type: 'payment', title: 'Payment received', body: `${order.orderNumber} — Rs.${order.total} (${order.paymentMethod})`, link: `/admin/orders/${order._id}` });
+    notify(req.app, { type: 'payment', title: 'Payment received', body: `${order.orderNumber} — $${order.total} (${order.paymentMethod})`, link: `/admin/orders/${order._id}` });
   }
   await order.save();
   await audit(req, 'payment_updated', 'order', order._id, { orderNumber: order.orderNumber, paymentStatus });

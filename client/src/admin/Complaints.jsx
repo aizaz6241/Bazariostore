@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend, Cell } from 'recharts';
 import { api, fmtDate } from '../api.js';
 import { ErrorBox } from './ui.jsx';
@@ -50,9 +50,13 @@ const HEALTH_PRESETS = [
 ];
 
 // Rejected registrations are not compliance cases: they belong to New Applications
-const isRejectedRegistration = (s) => s.status === 'suspended' && (s.registrationRejectedAt || /reject/i.test(s.freezeReason || ''));
+const isRejectedRegistration = (s) => s.status === 'suspended' && Boolean(s.registrationRejectedAt);
 
 export default function Complaints() {
+  // payout limits need the "finance" permission: without it the tab is not shown (saving used to
+  // end in "You do not have permission")
+  const { can } = useOutletContext() || {};
+  const canFinance = !can || can('finance');
   const [sellers, setSellers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -575,7 +579,7 @@ export default function Complaints() {
                 ['freeze', '❄️ Access'],
                 ['warn', '⚠️ Warning'],
                 ['health', '🛡️ Health'],
-                ['limits', '💳 Limits'],
+                ...(canFinance ? [['limits', '💳 Limits']] : []),
               ].map(([k, label]) => (
                 <button key={k} type="button" role="tab" aria-selected={compTab === k} className={compTab === k ? 'on' : ''} onClick={() => { setCompTab(k); setModalError(''); }}>
                   {label}
@@ -737,7 +741,7 @@ export default function Complaints() {
               </form>
             )}
 
-            {compTab === 'limits' && (
+            {compTab === 'limits' && canFinance && (
               <form className="ins-form" onSubmit={submitLimit}>
                 <div className="ins-field">
                   <span className="ins-label">Tier presets</span>

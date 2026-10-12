@@ -1,56 +1,99 @@
+import mongoose from 'mongoose';
 import TreasuryProduct from '../models/TreasuryProduct.js';
 import Product from '../models/Product.js';
 import { StockHistory } from '../models/StockHistory.js';
 
 /**
- * Adjusts master Treasury stock by delta (positive or negative),
- * and automatically synchronizes the new stock count across all seller listings.
+ * Central Treasury stock. One master product, many seller listings that show its stock.
  *
- * @param {string|ObjectId} treasuryId - The _id of the TreasuryProduct
- * @param {number} delta - Stock change (e.g. -5 for order, +5 for cancel/restock)
- * @param {object} meta - { reason, note, by }
- * @returns {Promise<TreasuryProduct>}
+ * Every change is ONE database step ($inc), never "read, change, write back": two orders at the
+ * same moment used to both read 10 and both write 9. The counters follow the same rules as a
+ * seller's own product (utils/orderStock.js):
+ *   - order placed          stock -q, reservedStock +q   (kind 'reserve', refuses when short)
+ *   - order delivered       reservedStock -q, sold +q    (settleTreasurySale)
+ *   - order cancelled       stock +q, reservedStock -q   (kind 'release')
+ *   - delivered, refunded   stock +q, sold -q            (kind 'unsell')
+ *   - refunded order back   stock -q, sold +q            (kind 'resell')
+ *   - admin correction      stock ±q                     (kind 'adjust', the default)
  */
-export async function adjustTreasuryStock(treasuryId, delta, meta = {}) {
-  if (!treasuryId) return null;
-  const tp = await TreasuryProduct.findById(treasuryId);
-  if (!tp) return null;
+const KINDS = {
+  adjust: (q) => ({ stock: q }),
+  reserve: (q) => ({ stock: -q, reservedStock: q }),
+  release: (q) => ({ stock: q, reservedStock: -q }),
+  unsell: (q) => ({ stock: q, sold: -q }),
+  resell: (q) => ({ stock: -q, sold: q }),
+};
 
-  const previousStock = tp.stock || 0;
-  tp.stock = Math.max(0, previousStock + Number(delta));
+const validId = (id) => Boolean(id) && mongoose.Types.ObjectId.isValid(String(id));
 
-  // If order was placed (delta < 0), increment reservedStock or track
-  if (delta < 0) {
-    tp.reservedStock = (tp.reservedStock || 0) + Math.abs(delta);
-    tp.sold = (tp.sold || 0) + Math.abs(delta);
-  } else if (meta.releaseReserved) {
-    tp.reservedStock = Math.max(0, (tp.reservedStock || 0) - Math.abs(delta));
+/** Counters never go below zero (a correction can ask for more than is there). */
+async function clampCounters(id) {
+  for (const f of ['stock', 'reservedStock', 'sold']) {
+    await TreasuryProduct.updateOne({ _id: id, [f]: { $lt: 0 } }, { $set: { [f]: 0 } });
   }
+}
 
-  await tp.save();
+/** Every seller listing of this master product shows the master's current stock. */
+export async function syncTreasuryListings(treasuryId) {
+  const tp = await TreasuryProduct.findById(treasuryId).select('stock').lean();
+  if (!tp) return null;
+  await Product.updateMany({ treasuryProduct: tp._id }, { $set: { stock: tp.stock } });
+  return tp.stock;
+}
 
-  // Synchronize all seller store listings that imported this Treasury product
-  await Product.updateMany(
-    { treasuryProduct: tp._id },
-    { $set: { stock: tp.stock } }
-  );
-
-  // Record audit trail in StockHistory
+async function logTreasury(tp, change, meta, fallbackReason) {
   try {
     await StockHistory.create({
       product: tp._id,
       productName: tp.name,
-      change: delta,
+      change,
       stockAfter: tp.stock,
-      reason: meta.reason || (delta < 0 ? 'order' : 'restock'),
+      reason: meta.reason || fallbackReason,
       note: meta.note || '',
       by: meta.by || 'System',
     });
   } catch (err) {
     console.error('Failed to log Treasury StockHistory:', err.message);
   }
+}
 
-  return tp;
+/**
+ * Change master Treasury stock by `delta` units and show the new stock on every seller listing.
+ *
+ * @param {string|ObjectId} treasuryId - The _id of the TreasuryProduct
+ * @param {number} delta - Stock change: negative takes from the shelf, positive puts back
+ * @param {object} meta - { reason, note, by, kind } — kind: see KINDS above (default 'adjust').
+ *   Older callers' { releaseReserved: true } means kind 'release'.
+ *   With kind 'reserve' the step only happens while enough stock is left; otherwise null.
+ * @returns {Promise<TreasuryProduct|null>}
+ */
+export async function adjustTreasuryStock(treasuryId, delta, meta = {}) {
+  if (!validId(treasuryId)) return null;
+  const n = Number(delta);
+  if (!Number.isFinite(n) || n === 0) return TreasuryProduct.findById(treasuryId);
+
+  const kind = meta.kind || (meta.releaseReserved ? 'release' : 'adjust');
+  const q = kind === 'adjust' ? n : Math.abs(n);
+  const filter = { _id: treasuryId };
+  if (kind === 'reserve' || kind === 'resell') filter.stock = { $gte: q }; // never sell what is not there
+
+  const tp = await TreasuryProduct.findOneAndUpdate(filter, { $inc: KINDS[kind](q) }, { new: true });
+  if (!tp) return null;
+  await clampCounters(tp._id);
+
+  await syncTreasuryListings(tp._id);
+  const fresh = (await TreasuryProduct.findById(tp._id)) || tp;
+  await logTreasury(fresh, KINDS[kind](q).stock, meta, KINDS[kind](q).stock < 0 ? 'order' : 'restock');
+  return fresh;
+}
+
+/** An order of this master product was delivered: the reservation becomes a sale. */
+export async function settleTreasurySale(treasuryId, qty) {
+  const q = Math.abs(Number(qty) || 0);
+  if (!validId(treasuryId) || !q) return null;
+  await TreasuryProduct.updateOne({ _id: treasuryId }, { $inc: { reservedStock: -q, sold: q } });
+  await clampCounters(treasuryId);
+  return true;
 }
 
 /**
@@ -58,32 +101,14 @@ export async function adjustTreasuryStock(treasuryId, delta, meta = {}) {
  * and synchronizes all seller store listings immediately.
  */
 export async function setTreasuryStock(treasuryId, newStock, meta = {}) {
-  if (!treasuryId) return null;
-  const tp = await TreasuryProduct.findById(treasuryId);
-  if (!tp) return null;
+  if (!validId(treasuryId)) return null;
+  const target = Math.max(0, Math.floor(Number(newStock)));
+  if (!Number.isFinite(target)) return null;
 
-  const prev = tp.stock || 0;
-  tp.stock = Math.max(0, Number(newStock));
-  await tp.save();
-
-  await Product.updateMany(
-    { treasuryProduct: tp._id },
-    { $set: { stock: tp.stock } }
-  );
-
-  try {
-    await StockHistory.create({
-      product: tp._id,
-      productName: tp.name,
-      change: tp.stock - prev,
-      stockAfter: tp.stock,
-      reason: meta.reason || 'admin_adjustment',
-      note: meta.note || 'Admin stock level update',
-      by: meta.by || 'Admin',
-    });
-  } catch (err) {
-    console.error('Failed to log Treasury StockHistory:', err.message);
-  }
-
+  const before = await TreasuryProduct.findOneAndUpdate({ _id: treasuryId }, { $set: { stock: target } }, { new: false });
+  if (!before) return null;
+  await syncTreasuryListings(before._id);
+  const tp = (await TreasuryProduct.findById(before._id)) || before;
+  await logTreasury(tp, target - (before.stock || 0), meta, 'admin_adjustment');
   return tp;
 }

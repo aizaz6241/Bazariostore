@@ -27,7 +27,11 @@ async function request(path, opts = {}, token) {
     });
   } catch (netErr) {
     if (netErr.name === 'AbortError') {
-      throw new Error('Request timed out. Please check your network connection and try again.');
+      const err = new Error('Request timed out. Please check your network connection and try again.');
+      // the server may still have done the work (only the answer was late): screens that save
+      // money check this and say so instead of inviting a blind second try
+      err.timedOut = true;
+      throw err;
     }
     throw new Error('Unable to connect to backend server. Please check your internet connection.');
   } finally {
@@ -173,6 +177,64 @@ export function dropClearedMessages(list, cleared) {
     if (cleared.mode === 'before') return !(to !== null && t < to);
     return !(from !== null && to !== null && t >= from && t <= to);
   });
+}
+
+const msgTime = (m) => {
+  const t = new Date(m?.createdAt).getTime();
+  return Number.isNaN(t) ? Number.MAX_SAFE_INTEGER : t;
+};
+
+// Chat messages in time order (oldest first); same time -> by id, so the order never flickers
+const sortChatMessages = (list) =>
+  [...list].sort((a, b) => msgTime(a) - msgTime(b) || String(a._id).localeCompare(String(b._id)));
+
+// What a message looks like on screen; if this is unchanged the old object is kept (no re-render)
+const msgLook = (m) =>
+  [m._id, m.text, m.isEdited ? 1 : 0, m.isSeen ? 1 : 0, m.attachment || '', m.replyTo?.text || ''].join('|');
+
+// A message that arrived live (socket or our own send) is a few seconds newer than a refresh that
+// was already on its way; such a message is kept until the next refresh includes it.
+const LIVE_GRACE_MS = 15000;
+
+/**
+ * Put one new message (socket / just sent) into an open chat, at its place by time.
+ * Never a duplicate, and an old message can never end up below newer ones.
+ */
+export function addChatMessage(list, msg) {
+  if (!msg?._id) return list;
+  if (!Array.isArray(list)) return [{ ...msg, _liveAt: Date.now() }];
+  if (list.some((m) => m?._id === msg._id)) return list;
+  return sortChatMessages([...list, { ...msg, _liveAt: Date.now() }]);
+}
+
+/**
+ * Merge a fresh copy of the latest messages (the newest page from the server) into the open chat.
+ * Inside that page the server decides: a message deleted or edited elsewhere is removed / updated
+ * here too, and a message that slides into the page (because a newer one was deleted) shows at its
+ * own time, not at the bottom. Older messages opened with "Load earlier" stay.
+ * `hasMore` is the server's flag: false means the page is the whole chat.
+ */
+export function syncLatestMessages(prev, latest, hasMore) {
+  if (!Array.isArray(latest)) return prev;
+  if (!Array.isArray(prev) || prev.length === 0) return latest;
+
+  const latestIds = new Set(latest.map((m) => m._id));
+  const oldestInPage = latest.length ? msgTime(latest[0]) : Number.MAX_SAFE_INTEGER;
+  const now = Date.now();
+  const kept = prev.filter((m) => {
+    if (latestIds.has(m._id)) return false;
+    if (hasMore && msgTime(m) < oldestInPage) return true; // opened with "Load earlier"
+    return Boolean(m._liveAt) && now - m._liveAt < LIVE_GRACE_MS; // arrived after this refresh started
+  });
+
+  const prevById = new Map(prev.map((m) => [m._id, m]));
+  const merged = sortChatMessages([...kept, ...latest]).map((m) => {
+    const old = prevById.get(m._id);
+    return old && msgLook(old) === msgLook(m) ? old : m;
+  });
+
+  const unchanged = merged.length === prev.length && merged.every((m, i) => m === prev[i]);
+  return unchanged ? prev : merged;
 }
 
 export const utKeyFromUrl = (url) => (url && url.includes('/f/') ? url.split('/f/')[1].split('?')[0] : null);

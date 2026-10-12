@@ -173,15 +173,23 @@ export default function AdminLayout() {
       loadNotif();
     };
 
+    // the server closed this admin account (switched off / deleted): check with the server, which
+    // answers 401 and signs this browser out
+    const onSessionEnded = () => {
+      api('/auth/me').catch(() => {});
+    };
+
     socket.on('order:new', onOrder);
     socket.on('message:new', onMessage);
     socket.on('notify', onNotify);
+    socket.on('admin:session_ended', onSessionEnded);
 
     return () => {
       socket.off('connect', join);
       socket.off('order:new', onOrder);
       socket.off('message:new', onMessage);
       socket.off('notify', onNotify);
+      socket.off('admin:session_ended', onSessionEnded);
     };
   }, [token, navigate]);
 

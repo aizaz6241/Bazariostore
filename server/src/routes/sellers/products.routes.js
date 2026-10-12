@@ -2,7 +2,7 @@ import express from 'express';
 import Seller from '../../models/Seller.js';
 import Product from '../../models/Product.js';
 import { authSeller } from '../../middleware/auth.js';
-import { slugify } from './helpers.js';
+import { slugify, blockWhenFrozen } from './helpers.js';
 
 const router = express.Router();
 
@@ -45,7 +45,7 @@ function priceProblem(data) {
 }
 
 // POST /api/sellers/products
-router.post('/products', authSeller, async (req, res) => {
+router.post('/products', authSeller, blockWhenFrozen('adding products'), async (req, res) => {
   try {
     const seller = await Seller.findById(req.seller.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
@@ -101,7 +101,7 @@ router.post('/products', authSeller, async (req, res) => {
 });
 
 // PUT /api/sellers/products/:id
-router.put('/products/:id', authSeller, async (req, res) => {
+router.put('/products/:id', authSeller, blockWhenFrozen('editing products'), async (req, res) => {
   try {
     const product = await Product.findOne({ _id: req.params.id, seller: req.seller.id });
     if (!product) return res.status(404).json({ message: 'Product not found or access denied' });
@@ -115,13 +115,25 @@ router.put('/products/:id', authSeller, async (req, res) => {
     if (data.description !== undefined) product.description = String(data.description);
     if (data.price !== undefined) product.price = Number(data.price);
     if (data.compareAtPrice !== undefined) product.compareAtPrice = Number(data.compareAtPrice);
-    if (data.stock !== undefined) product.stock = Math.max(0, Number(data.stock));
+    // a Central Treasury listing shows the master's stock: a seller cannot change it (a higher
+    // number here let the listing sell more than the Treasury holds)
+    if (data.stock !== undefined && !product.treasuryProduct) {
+      const stock = Number(data.stock);
+      if (!Number.isFinite(stock)) return res.status(400).json({ message: 'Please enter a valid stock number.' });
+      product.stock = Math.max(0, Math.floor(stock));
+    }
     if (data.lowStockThreshold !== undefined) product.lowStockThreshold = Number(data.lowStockThreshold);
     if (data.sku !== undefined) product.sku = String(data.sku).trim();
     if (data.barcode !== undefined) product.barcode = String(data.barcode).trim();
     if (data.brand !== undefined) product.brand = String(data.brand).trim();
     if (data.category !== undefined) product.category = data.category;
-    if (data.active !== undefined) product.active = Boolean(data.active);
+    if (data.active !== undefined) {
+      // switched off with its Treasury master product: only the platform switches it on again
+      if (data.active && product.pausedByTreasury) {
+        return res.status(400).json({ message: 'This Treasury product is paused by the platform and cannot be switched on right now.' });
+      }
+      product.active = Boolean(data.active);
+    }
     if (Array.isArray(data.tags)) product.tags = data.tags;
     if (Array.isArray(data.labels)) product.labels = data.labels;
     if (Array.isArray(data.variants)) product.variants = data.variants;
@@ -155,7 +167,7 @@ router.put('/products/:id', authSeller, async (req, res) => {
 });
 
 // DELETE /api/sellers/products/:id
-router.delete('/products/:id', authSeller, async (req, res) => {
+router.delete('/products/:id', authSeller, blockWhenFrozen('deleting products'), async (req, res) => {
   try {
     const product = await Product.findOne({ _id: req.params.id, seller: req.seller.id });
     if (!product) return res.status(404).json({ message: 'Product not found or access denied' });

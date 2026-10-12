@@ -135,18 +135,21 @@ const sellerSchema = new mongoose.Schema(
     // Names of the latest once-only wallet steps (see utils/wallet.js). Internal; never sent out.
     walletOps: { type: [String], default: undefined, select: false },
     // KYC Verification / Identity & Financial Documents uploaded during self-registration
+    // The KYC pictures (base64, up to several MB per store) are NOT read unless a query asks for
+    // them ('+kycDocuments.<field>' or an explicit inclusion). Loading them with every seller made
+    // ordinary requests slow and held up the whole server.
     kycDocuments: {
-      aadhaarFront: { type: String, default: '' },
-      aadhaarBack: { type: String, default: '' },
-      panFront: { type: String, default: '' },
-      panBack: { type: String, default: '' },
-      idDocumentUrl: { type: String, default: '' },
+      aadhaarFront: { type: String, default: '', select: false },
+      aadhaarBack: { type: String, default: '', select: false },
+      panFront: { type: String, default: '', select: false },
+      panBack: { type: String, default: '', select: false },
+      idDocumentUrl: { type: String, default: '', select: false },
       idDocumentType: { type: String, default: 'Aadhaar Card & PAN Card' },
-      passportDocumentUrl: { type: String, default: '' },
-      bankStatementUrl: { type: String, default: '' },
-      idCard: { type: String, default: '' },
-      passport: { type: String, default: '' },
-      bankStatement: { type: String, default: '' },
+      passportDocumentUrl: { type: String, default: '', select: false },
+      bankStatementUrl: { type: String, default: '', select: false },
+      idCard: { type: String, default: '', select: false },
+      passport: { type: String, default: '', select: false },
+      bankStatement: { type: String, default: '', select: false },
       uploadedAt: { type: Date, default: null },
     },
     // Security Deposit & Referral information (set on Admin approval)

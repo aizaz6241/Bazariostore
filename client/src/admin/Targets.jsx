@@ -18,7 +18,9 @@ const PRESETS = [
 // one hue, lighter → darker as a target gets closer to done
 const PROGRESS_STEPS = ['#9ec5f4', '#6da7ec', '#3987e5', '#1c5cab'];
 
-const blankForm = () => ({ sellerId: '', title: 'Deliver 10 orders', targetOrderCount: 10, bonusAmount: 50, durationDays: 30, description: '', descTouched: false });
+const blankForm = () => ({ sellerId: '', title: 'Deliver 10 orders', targetOrderCount: 10, bonusAmount: 50, durationDays: 30, description: '', descTouched: false, titleTouched: false });
+// above this a bonus is asked once more before it is saved (it is paid automatically)
+const BIG_BONUS = 500;
 const autoDescription = (f) =>
   `Deliver ${f.targetOrderCount || 0} orders${f.durationDays ? ` within ${f.durationDays} days` : ''} to receive a ${money(Number(f.bonusAmount) || 0)} cash bonus, credited straight to your wallet.`;
 
@@ -88,6 +90,11 @@ export default function Targets() {
   const setF = (patch) =>
     setForm((prev) => {
       const next = { ...prev, ...patch };
+      // the title follows the number of orders until the admin writes their own title (it used to
+      // stay "Deliver 10 orders" when the goal was changed to 8, and the seller saw both numbers)
+      if (!next.titleTouched && patch.title === undefined && Number(next.targetOrderCount) >= 1) {
+        next.title = `Deliver ${Number(next.targetOrderCount)} orders`;
+      }
       if (!next.descTouched) next.description = autoDescription(next);
       return next;
     });
@@ -106,7 +113,15 @@ export default function Targets() {
     setFormError('');
     if (!form.sellerId) return setFormError('Please choose a store.');
     if (!(Number(form.targetOrderCount) >= 1)) return setFormError('Target orders must be at least 1.');
+    if (!Number.isInteger(Number(form.targetOrderCount))) return setFormError('Target orders must be a whole number.');
     if (!(Number(form.bonusAmount) > 0)) return setFormError('Bonus must be more than $0.');
+    // the title must not name another number of orders than the goal
+    // (only a number written as "N orders" counts: "Diwali 2026 sprint" is fine)
+    const named = [...form.title.matchAll(/(\d+)\s*(?:delivered\s+)?orders?\b/gi)].map((m) => Number(m[1]));
+    if (named.length && !named.includes(Number(form.targetOrderCount))) {
+      return setFormError(`The title mentions ${named.join(', ')} but the goal is ${Number(form.targetOrderCount)} delivered orders. Make them match.`);
+    }
+    if (Number(form.bonusAmount) > BIG_BONUS && !window.confirm(`The bonus is $${Number(form.bonusAmount).toLocaleString('en-US')}.\n\nIt is paid into the seller's wallet automatically when the goal is reached. Is this amount correct?`)) return;
     setSaving(true);
     try {
       await api(`/sellers/${form.sellerId}/targets`, {
@@ -506,7 +521,9 @@ export default function Targets() {
                   ))}
                 </select>
                 {chosenSeller && chosenActive > 0 && (
-                  <small>This store already has {chosenActive} target{chosenActive === 1 ? '' : 's'} in progress — every delivery counts towards all of them.</small>
+                  <small style={{ color: '#b45309', fontWeight: 700 }}>
+                    ⚠️ This store already has {chosenActive} target{chosenActive === 1 ? '' : 's'} in progress. Every delivery counts towards ALL of them, so the bonuses add up.
+                  </small>
                 )}
               </div>
 
@@ -526,7 +543,7 @@ export default function Targets() {
 
               <div className="ins-field">
                 <label>Title *</label>
-                <input className="ins-input" value={form.title} onChange={(e) => setF({ title: e.target.value })} maxLength={120} required />
+                <input className="ins-input" value={form.title} onChange={(e) => setF({ title: e.target.value, titleTouched: true })} maxLength={120} required />
               </div>
 
               <div className="ins-form-grid">

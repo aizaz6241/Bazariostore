@@ -23,7 +23,7 @@ async function getSellerFromReq(req) {
   if (req.admin) {
     const sId = req.params?.id || req.body?.sellerId || req.query?.sellerId || req.seller?.id || req.seller?._id;
     if (sId && mongoose.Types.ObjectId.isValid(sId)) {
-      const s = await Seller.findById(sId).select('-kycDocuments');
+      const s = await Seller.findById(sId);
       if (s) return s;
     }
   }
@@ -32,15 +32,15 @@ async function getSellerFromReq(req) {
   if (req.seller) {
     const sId = req.seller.id || req.seller._id;
     if (sId && mongoose.Types.ObjectId.isValid(sId)) {
-      const s = await Seller.findById(sId).select('-kycDocuments');
+      const s = await Seller.findById(sId);
       if (s) return s;
     }
     if (req.seller.email) {
-      const s = await Seller.findOne({ email: req.seller.email.toLowerCase() }).select('-kycDocuments');
+      const s = await Seller.findOne({ email: req.seller.email.toLowerCase() });
       if (s) return s;
     }
     if (req.seller.storeSlug) {
-      const s = await Seller.findOne({ storeSlug: req.seller.storeSlug }).select('-kycDocuments');
+      const s = await Seller.findOne({ storeSlug: req.seller.storeSlug });
       if (s) return s;
     }
   }
@@ -199,36 +199,29 @@ async function advanceSellerTargets(app, sellerId) {
 
   let touched = false;
   const nowTime = Date.now();
-  for (let i = 0; i < seller.targets.length; i += 1) {
-    const target = seller.targets[i];
+  // Every step finds the target by its id (positional "$"), never by its place in the list: an
+  // admin adding or removing a target at the same moment shifts the places, and the delivery was
+  // then silently not counted.
+  const thisTarget = (target) => ({ _id: seller._id, targets: { $elemMatch: { _id: target._id, status: 'active' } } });
+  for (const target of seller.targets) {
     if (target.status !== 'active') continue;
 
     // past its deadline: the target closes as "expired" and this delivery no longer counts for it
     if (target.expiresAt && new Date(target.expiresAt).getTime() < nowTime) {
-      const closed = await Seller.updateOne(
-        { _id: seller._id, [`targets.${i}._id`]: target._id, [`targets.${i}.status`]: 'active' },
-        { $set: { [`targets.${i}.status`]: 'expired' } }
-      );
+      const closed = await Seller.updateOne(thisTarget(target), { $set: { 'targets.$.status': 'expired' } });
       if (closed.modifiedCount) touched = true;
       continue;
     }
 
     // count this delivery (in the database, so two deliveries at once are both counted)
-    const after = await Seller.findOneAndUpdate(
-      { _id: seller._id, [`targets.${i}._id`]: target._id, [`targets.${i}.status`]: 'active' },
-      { $inc: { [`targets.${i}.currentOrders`]: 1 } },
-      { new: true, projection: { targets: 1 } }
-    ).lean();
+    const after = await Seller.findOneAndUpdate(thisTarget(target), { $inc: { 'targets.$.currentOrders': 1 } }, { new: true, projection: { targets: 1 } }).lean();
     if (!after) continue;
     touched = true;
-    const now = after.targets[i];
-    if ((now.currentOrders || 0) < (now.targetOrders || 0)) continue;
+    const now = (after.targets || []).find((t) => String(t._id) === String(target._id));
+    if (!now || (now.currentOrders || 0) < (now.targetOrders || 0)) continue;
 
     // reached: only the request that flips it to "completed" pays the bonus
-    const done = await Seller.updateOne(
-      { _id: seller._id, [`targets.${i}._id`]: target._id, [`targets.${i}.status`]: 'active' },
-      { $set: { [`targets.${i}.status`]: 'completed', [`targets.${i}.completedAt`]: new Date() } }
-    );
+    const done = await Seller.updateOne(thisTarget(target), { $set: { 'targets.$.status': 'completed', 'targets.$.completedAt': new Date() } });
     if (!done.modifiedCount) continue;
 
     const bonusAmt = Number(target.bonusAmount) || 0;
@@ -300,6 +293,40 @@ async function advanceSellerTargets(app, sellerId) {
   if (touched) {
     const latest = await Seller.findById(sellerId).select('targets').lean();
     app?.get('io')?.to(`seller:${sellerId}`).emit('seller:targets_update', { targets: latest?.targets || [] });
+  }
+}
+
+/**
+ * A delivered order was refunded: it no longer counts toward the seller's RUNNING targets (those
+ * that were already open when it was delivered). A bonus already paid for a completed target
+ * stays paid. Once per order (marked on the order), whatever path the refund takes.
+ */
+export async function undoTargetProgressForOrder(app, order) {
+  if (!order?._id) return;
+  const claimed = await Order.updateOne({ _id: order._id, targetProgressUndone: { $ne: true } }, { $set: { targetProgressUndone: true } });
+  if (!claimed.modifiedCount) return;
+  const fresh = await Order.findById(order._id).select('items.seller items.payoutSettled items.settledAt').lean();
+  const deliveredAt = new Map();
+  for (const it of fresh?.items || []) {
+    if (!it.payoutSettled || !it.seller) continue;
+    const sid = String(it.seller);
+    const t = it.settledAt ? new Date(it.settledAt) : new Date();
+    if (!deliveredAt.has(sid) || t > deliveredAt.get(sid)) deliveredAt.set(sid, t);
+  }
+  for (const [sid, at] of deliveredAt) {
+    try {
+      const r = await Seller.updateOne(
+        { _id: sid },
+        { $inc: { 'targets.$[t].currentOrders': -1 } },
+        { arrayFilters: [{ 't.status': 'active', 't.createdAt': { $lte: at }, 't.currentOrders': { $gt: 0 } }] }
+      );
+      if (r.modifiedCount) {
+        const latest = await Seller.findById(sid).select('targets').lean();
+        app?.get('io')?.to(`seller:${sid}`).emit('seller:targets_update', { targets: latest?.targets || [] });
+      }
+    } catch (e) {
+      console.error('[targets] could not take back the progress of a refunded order:', e.message);
+    }
   }
 }
 
@@ -412,6 +439,7 @@ export async function releaseSellerOrderDelivered(app, sellerId, order) {
 export async function releaseSellerOrderCancelled(app, sellerId, order, { reason = 'cancelled', onlyWaiting = false } = {}) {
   await refreshItemFlags(order);
   const backToPending = reason === 'pending';
+  const what = backToPending ? 'moved back to Pending' : reason === 'refunded' ? 'Refunded' : 'Cancelled';
   const waiting = (it) => !it.itemStatus || it.itemStatus === 'pending';
 
   const mine = [];
@@ -444,7 +472,7 @@ export async function releaseSellerOrderCancelled(app, sellerId, order, { reason
     status: 'completed',
     balanceAfter: moved.wallet.balance,
     processingFundAfter: moved.wallet.processingFund,
-    adminNote: `Order #${order.orderNumber} ${backToPending ? 'moved back to Pending' : 'Cancelled'} — $${totalToRefund.toFixed(2)} Processing Fund returned to Available Balance`,
+    adminNote: `Order #${order.orderNumber} ${what} — $${totalToRefund.toFixed(2)} Processing Fund returned to Available Balance`,
     processedAt: new Date(),
   });
 
@@ -453,7 +481,7 @@ export async function releaseSellerOrderCancelled(app, sellerId, order, { reason
       recipientType: 'seller',
       sellerId: String(sellerId),
       type: 'order',
-      title: `↩️ Order #${order.orderNumber} ${backToPending ? 'moved back to Pending' : 'Cancelled'}`,
+      title: `↩️ Order #${order.orderNumber} ${what}`,
       body: backToPending
         ? `$${totalToRefund.toFixed(2)} processing fund returned to your available balance. Confirm the order again to process it.`
         : `$${totalToRefund.toFixed(2)} processing fund returned to your available balance.`,
@@ -505,6 +533,33 @@ export async function releaseLocksOfWaitingOrders(app) {
     }
   } catch (e) {
     console.error('[orders] waiting-order lock check failed:', e.message);
+  }
+
+  // A cancelled or refunded order must not hold locked money either. Refunds used to leave it
+  // locked for good; this returns it once (same once-only wallet step as a cancellation).
+  try {
+    const cutoff = new Date(Date.now() - 10 * 60 * 1000);
+    const closed = await Order.find({
+      status: { $in: ['cancelled', 'refunded'] },
+      updatedAt: { $lt: cutoff },
+      items: { $elemMatch: { processingLocked: true, payoutSettled: { $ne: true } } },
+    }).limit(200);
+
+    for (const order of closed) {
+      const sellerIds = [
+        ...new Set(order.items.filter((it) => it.processingLocked && !it.payoutSettled).map((it) => it.seller?.toString()).filter(Boolean)),
+      ];
+      for (const sId of sellerIds) {
+        try {
+          await releaseSellerOrderCancelled(app, sId, order, { reason: order.status });
+          console.log(`[orders] released the locked funds of ${order.status} order #${order.orderNumber} (seller ${sId})`);
+        } catch (e) {
+          console.error(`[orders] could not release the locked funds of order #${order.orderNumber}:`, e.message);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[orders] closed-order lock check failed:', e.message);
   }
 }
 
@@ -753,6 +808,11 @@ export const handleStatusUpdate = async (req, res) => {
       return res.status(400).json({ message: `This order is already "${String(order.status).replace(/_/g, ' ')}" and cannot be confirmed again.` });
     }
 
+    // same rule as the admin order screen: a delivered (already paid out) order is not cancelled
+    if (order.status === 'delivered' && status === 'cancelled') {
+      return res.status(400).json({ message: 'A delivered order cannot be cancelled. Use a refund instead.' });
+    }
+
     let sellerProducts = [];
     if (seller) {
       sellerProducts = await Product.find({
@@ -893,6 +953,7 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
 
     let subtotal = 0;
     const lineItems = [];
+    const wanted = [];
 
     for (const item of items) {
       if (!item.productId) return res.status(400).json({ message: 'Product ID is required for each line item' });
@@ -926,11 +987,30 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
         trackingNumber: item.trackingNumber || '',
       });
 
-      // Deduct stock if product exists
-      if (prod && prod.stock >= qty) {
-        prod.stock -= qty;
-        prod.sold = (prod.sold || 0) + qty;
-        await prod.save();
+      wanted.push({ prod, qty });
+    }
+
+    // Take the stock the same way a checkout does (shelf -> reserved, Central Treasury included),
+    // all lines or none. Before, the stock was taken without a reservation, "sold" was counted at
+    // once and the Treasury master was not touched, but a later cancel still put the items back
+    // on the master — so every cancelled manual order created stock out of nothing.
+    // When the stock is not there, the order is still created (as before) but holds no stock.
+    const taken = [];
+    let stockHeld = true;
+    for (const { prod, qty } of wanted) {
+      const p = await Product.findOneAndUpdate({ _id: prod._id, stock: { $gte: qty } }, { $inc: { stock: -qty, reservedStock: qty } }, { new: true });
+      if (!p) { stockHeld = false; break; }
+      taken.push({ p, qty });
+      if (p.treasuryProduct) {
+        const master = await adjustTreasuryStock(p.treasuryProduct, -qty, { kind: 'reserve', reason: 'order_placement', note: `Manual order ${orderNumber}`, by: req.admin?.name || 'Admin' });
+        if (!master) { stockHeld = false; break; }
+        taken[taken.length - 1].treasury = p.treasuryProduct;
+      }
+    }
+    if (!stockHeld) {
+      for (const { p, qty, treasury } of taken) {
+        await Product.updateOne({ _id: p._id }, { $inc: { stock: qty, reservedStock: -qty } });
+        if (treasury) await adjustTreasuryStock(treasury, qty, { kind: 'release', reason: 'order_placement_undone', note: `Manual order ${orderNumber}` });
       }
     }
 
@@ -966,6 +1046,8 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
       paymentStatus: paymentMethod === 'cod' ? 'pending' : 'paid',
       status: 'pending', // Starts as pending so seller confirms to lock funds
       adminNotes: adminNotes || '',
+      // an order that could not take its stock holds none: a cancel must not put any back
+      stockRestored: !stockHeld,
       statusHistory: [
         {
           status: 'pending',
@@ -1034,6 +1116,22 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
  * 24h unconfirmed: Sends warning notification & chat message.
  * 48h unconfirmed: Applies 25-point penalty to Account Health & freezes merchant account.
  */
+/**
+ * The sellers who still owe a confirmation on this order: the owners of the items that are still
+ * waiting. Before, the warning and the 48h penalty always went to the order's FIRST seller, so in a
+ * two-seller order the seller who had confirmed was frozen and the one who had not went free.
+ */
+async function sellersStillToConfirm(ord) {
+  const waiting = (ord.items || []).filter((it) => !it.itemStatus || it.itemStatus === 'pending');
+  const ids = [...new Set(waiting.map((it) => it.seller?._id?.toString() || it.seller?.toString()).filter(Boolean))];
+  if (!ids.length && waiting.length && ord.seller) ids.push(ord.seller._id?.toString() || ord.seller.toString());
+  return ids.length ? Seller.find({ _id: { $in: ids } }) : [];
+}
+
+// "Waiting longer than X": counted from when the order (last) became pending, not from when it
+// was placed. An old order moved back to pending by an admin used to be penalised at once.
+const waitingSince = (cutoff) => ({ $or: [{ pendingSince: { $lt: cutoff } }, { pendingSince: null, createdAt: { $lt: cutoff } }] });
+
 export async function processOrderPenalties(app) {
   try {
     const now = new Date();
@@ -1043,16 +1141,15 @@ export async function processOrderPenalties(app) {
     // 1. Check for 24h Warning Candidates
     const warnOrders = await Order.find({
       status: 'pending',
-      createdAt: { $lt: twentyFourHoursAgo },
+      ...waitingSince(twentyFourHoursAgo),
       warning24hSent: { $ne: true },
-    }).populate('seller');
+    });
 
     for (const ord of warnOrders) {
       ord.warning24hSent = true;
       await ord.save();
 
-      const seller = ord.seller;
-      if (seller) {
+      for (const seller of await sellersStillToConfirm(ord)) {
         notify(app, {
           recipientType: 'seller',
           sellerId: seller._id.toString(),
@@ -1099,16 +1196,15 @@ export async function processOrderPenalties(app) {
     // 2. Check for 48h Penalty & Freeze Candidates
     const penaltyOrders = await Order.find({
       status: 'pending',
-      createdAt: { $lt: fortyEightHoursAgo },
+      ...waitingSince(fortyEightHoursAgo),
       penalty48hApplied: { $ne: true },
-    }).populate('seller');
+    });
 
     for (const ord of penaltyOrders) {
       ord.penalty48hApplied = true;
       await ord.save();
 
-      const seller = await Seller.findById(ord.seller?._id || ord.seller);
-      if (seller) {
+      for (const seller of await sellersStillToConfirm(ord)) {
         const prevScore = seller.accountHealth?.score ?? 100;
         const newScore = Math.max(0, prevScore - 25);
 
@@ -1120,6 +1216,9 @@ export async function processOrderPenalties(app) {
           seller.accountHealth.status = 'frozen';
           seller.status = 'frozen';
           seller.freezeReason = `Automatic Freeze: Order #${ord.orderNumber} remained unconfirmed for over 48 hours.`;
+          // when and by whom, like a freeze by an admin (the Complaints page sorts and shows by it)
+          seller.frozenAt = new Date();
+          seller.frozenBy = 'Automatic (48-hour rule)';
         }
 
         seller.accountHealth.history = seller.accountHealth.history || [];

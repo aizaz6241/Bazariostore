@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { api, fmtDay, compressImage, dropClearedMessages } from '../api.js';
+import { api, fmtDay, compressImage, dropClearedMessages, addChatMessage, syncLatestMessages } from '../api.js';
 import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
 import ChatMessageBubble from '../components/ChatMessageBubble.jsx';
@@ -70,6 +70,12 @@ export default function ChatInbox() {
   const fileInputRef = useRef(null);
   const textInputRef = useRef(null);
   const isNearBottomRef = useRef(true);
+  // Which chat is open right now: an answer that arrives after the admin switched chats is ignored,
+  // so one chat's messages never land in another
+  const openThreadRef = useRef('');
+  openThreadRef.current = activeTab === 'sellers' ? `sellers:${selectedSellerId || ''}` : `team:${selectedTeamId || ''}`;
+  // Blocks a second send while one is still going (fast double Enter / double click)
+  const sendingRef = useRef(false);
 
   // Load current admin info & auto-reply settings
   useEffect(() => {
@@ -159,6 +165,9 @@ export default function ChatInbox() {
   // Periodic Refresh (keeps active conversation & unread counts fresh without scroll jumps)
   useEffect(() => {
     const interval = setInterval(() => {
+      // a tab left open in the background does not need to ask the server every 4 seconds
+      // (live messages still arrive over the socket; the next look at the tab refreshes)
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       loadSellerConvos();
       loadTeamMembers();
       if (activeTab === 'sellers' && selectedSellerId) {
@@ -170,11 +179,24 @@ export default function ChatInbox() {
     return () => clearInterval(interval);
   }, [activeTab, selectedSellerId, selectedTeamId]);
 
+  // A refresh of the open chat: the server's latest page decides (deleted / edited messages update,
+  // every message stays at its own time), and we only scroll when a newer message came in
+  const applyPolledMessages = (msgList, more) => {
+    setMessages((prev) => {
+      const next = syncLatestMessages(prev, msgList, more);
+      if (next !== prev && isNearBottomRef.current && next[next.length - 1]?._id !== prev?.[prev.length - 1]?._id) {
+        setTimeout(() => scrollToBottom('smooth'), 50);
+      }
+      return next;
+    });
+  };
+
   // Load Messages for Selected Seller
   const loadSellerMessages = (cid, isPolling = false) => {
     if (!cid) return;
     api(`/chat/admin/conversations/${cid}/messages?limit=100`)
       .then((data) => {
+        if (openThreadRef.current !== `sellers:${cid}`) return; // admin moved to another chat meanwhile
         const msgList = Array.isArray(data) ? data : (data?.messages || []);
         const more = Boolean(data?.hasMore);
 
@@ -183,16 +205,7 @@ export default function ChatInbox() {
           setHasMore(more);
           setTimeout(() => scrollToBottom('auto'), 50);
         } else {
-          setMessages((prev) => {
-            if (!Array.isArray(prev) || prev.length === 0) return msgList;
-            const existingIds = new Set(prev.map((m) => m._id));
-            const newOnes = msgList.filter((m) => !existingIds.has(m._id));
-            if (newOnes.length === 0) return prev; // No new messages: retain exact reference!
-            if (isNearBottomRef.current) {
-              setTimeout(() => scrollToBottom('smooth'), 50);
-            }
-            return [...prev, ...newOnes];
-          });
+          applyPolledMessages(msgList, more);
         }
 
         setSellerConvos((prev) =>
@@ -207,6 +220,7 @@ export default function ChatInbox() {
     if (!targetAdminId) return;
     api(`/chat/admin/team/${targetAdminId}/messages?limit=100`)
       .then((data) => {
+        if (openThreadRef.current !== `team:${targetAdminId}`) return; // admin moved to another chat meanwhile
         const msgList = Array.isArray(data?.messages) ? data.messages : (Array.isArray(data) ? data : []);
         const more = Boolean(data?.hasMore);
         if (data?.targetAdmin) setSelectedTeamTarget(data.targetAdmin);
@@ -216,16 +230,7 @@ export default function ChatInbox() {
           setHasMore(more);
           setTimeout(() => scrollToBottom('auto'), 50);
         } else {
-          setMessages((prev) => {
-            if (!Array.isArray(prev) || prev.length === 0) return msgList;
-            const existingIds = new Set(prev.map((m) => m._id));
-            const newOnes = msgList.filter((m) => !existingIds.has(m._id));
-            if (newOnes.length === 0) return prev;
-            if (isNearBottomRef.current) {
-              setTimeout(() => scrollToBottom('smooth'), 50);
-            }
-            return [...prev, ...newOnes];
-          });
+          applyPolledMessages(msgList, more);
         }
 
         setTeamMembers((prev) =>
@@ -246,6 +251,7 @@ export default function ChatInbox() {
     const prevScrollHeight = container ? container.scrollHeight : 0;
     const prevScrollTop = container ? container.scrollTop : 0;
 
+    const threadAtStart = openThreadRef.current;
     try {
       let data;
       if (activeTab === 'sellers') {
@@ -254,6 +260,7 @@ export default function ChatInbox() {
         data = await api(`/chat/admin/team/${selectedTeamId}/messages?before=${encodeURIComponent(earliest)}&limit=100`);
       }
 
+      if (openThreadRef.current !== threadAtStart) return; // admin moved to another chat meanwhile
       const olderMsgs = Array.isArray(data) ? data : (data?.messages || []);
       const more = Boolean(data?.hasMore);
       setHasMore(more);
@@ -306,11 +313,7 @@ export default function ChatInbox() {
     const onNewSellerMsg = (msg) => {
       if (!msg) return;
       if (activeTab === 'sellers' && msg.conversation === selectedSellerId) {
-        setMessages((prev) => {
-          if (!Array.isArray(prev)) return [msg];
-          if (prev.some((m) => m?._id === msg?._id)) return prev;
-          return [...prev, msg];
-        });
+        setMessages((prev) => addChatMessage(prev, msg));
         if (isNearBottomRef.current) {
           setTimeout(() => scrollToBottom('smooth'), 50);
         }
@@ -324,11 +327,7 @@ export default function ChatInbox() {
       if (activeTab === 'team') {
         const isCurrentThread = String(msg.senderAdmin) === String(selectedTeamId) || (msg.senderAdmin === me?.id && selectedTeamId);
         if (isCurrentThread) {
-          setMessages((prev) => {
-            if (!Array.isArray(prev)) return [msg];
-            if (prev.some((m) => m?._id === msg?._id)) return prev;
-            return [...prev, msg];
-          });
+          setMessages((prev) => addChatMessage(prev, msg));
           if (isNearBottomRef.current) {
             setTimeout(() => scrollToBottom('smooth'), 50);
           }
@@ -462,7 +461,9 @@ export default function ChatInbox() {
 
     if (activeTab === 'sellers' && !selectedSellerId) return;
     if (activeTab === 'team' && !selectedTeamId) return;
+    if (sendingRef.current) return;
 
+    sendingRef.current = true;
     setSending(true);
     let attachmentUrl = null;
     let attachmentType = null;
@@ -518,7 +519,7 @@ export default function ChatInbox() {
           },
         });
         if (newMsg?._id) {
-          setMessages((prev) => (prev.some((m) => m._id === newMsg._id) ? prev : [...prev, newMsg]));
+          setMessages((prev) => addChatMessage(prev, newMsg));
         }
         setTimeout(() => scrollToBottom('smooth'), 50);
         loadSellerConvos();
@@ -536,7 +537,7 @@ export default function ChatInbox() {
           },
         });
         if (newMsg?._id) {
-          setMessages((prev) => (prev.some((m) => m._id === newMsg._id) ? prev : [...prev, newMsg]));
+          setMessages((prev) => addChatMessage(prev, newMsg));
         }
         setTimeout(() => scrollToBottom('smooth'), 50);
         loadTeamMembers();
@@ -545,6 +546,7 @@ export default function ChatInbox() {
       setText(clean);
       alert('Failed to send message: ' + err.message);
     } finally {
+      sendingRef.current = false;
       setSending(false);
       setUploading(false);
     }

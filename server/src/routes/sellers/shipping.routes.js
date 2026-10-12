@@ -1,6 +1,7 @@
 import express from 'express';
 import SellerShippingMethod from '../../models/SellerShipping.js';
 import { authSeller } from '../../middleware/auth.js';
+import { blockWhenFrozen } from './helpers.js';
 
 const router = express.Router();
 
@@ -15,7 +16,7 @@ router.get('/shipping', authSeller, async (req, res) => {
 });
 
 // POST /api/sellers/shipping
-router.post('/shipping', authSeller, async (req, res) => {
+router.post('/shipping', authSeller, blockWhenFrozen('changing shipping settings'), async (req, res) => {
   try {
     const { name, description, cost, freeAbove, eta, active } = req.body;
     if (!name || cost === undefined) return res.status(400).json({ message: 'Name and cost are required' });
@@ -36,7 +37,7 @@ router.post('/shipping', authSeller, async (req, res) => {
 });
 
 // PUT /api/sellers/shipping/:id
-router.put('/shipping/:id', authSeller, async (req, res) => {
+router.put('/shipping/:id', authSeller, blockWhenFrozen('changing shipping settings'), async (req, res) => {
   try {
     const method = await SellerShippingMethod.findOneAndUpdate(
       { _id: req.params.id, seller: req.seller.id },
@@ -51,7 +52,7 @@ router.put('/shipping/:id', authSeller, async (req, res) => {
 });
 
 // DELETE /api/sellers/shipping/:id
-router.delete('/shipping/:id', authSeller, async (req, res) => {
+router.delete('/shipping/:id', authSeller, blockWhenFrozen('changing shipping settings'), async (req, res) => {
   try {
     const method = await SellerShippingMethod.findOneAndDelete({ _id: req.params.id, seller: req.seller.id });
     if (!method) return res.status(404).json({ message: 'Shipping method not found' });

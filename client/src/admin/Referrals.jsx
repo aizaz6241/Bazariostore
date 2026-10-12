@@ -265,10 +265,19 @@ export default function Referrals() {
 
   const remove = async (c) => {
     const used = c.usageCount || 0;
-    const warn = used
-      ? `${used} seller(s) joined with "${c.code}". Deleting it makes their code "unknown" in reports.\n\nTip: set it Inactive instead to stop new sign-ups.\n\nDelete anyway?`
-      : `Delete affiliate code "${c.code}"?`;
-    if (!window.confirm(warn)) return;
+    // a code sellers joined with is kept (their history and waiting applications depend on it):
+    // it can only be switched off
+    if (used) {
+      if (c.status !== 'active') {
+        window.alert(`"${c.code}" was used by ${used} seller(s), so it cannot be deleted. It is already inactive (no new sign-ups).`);
+        return;
+      }
+      if (window.confirm(`"${c.code}" was used by ${used} seller(s), so it cannot be deleted.\n\nSet it to Inactive instead? New sellers can no longer use it; its sellers and history stay.`)) {
+        toggleStatus(c);
+      }
+      return;
+    }
+    if (!window.confirm(`Delete affiliate code "${c.code}"?`)) return;
     try {
       await api(`/sellers/affiliates/${c._id}`, { method: 'DELETE' });
       notify(`Code ${c.code} deleted`);

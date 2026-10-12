@@ -1,7 +1,7 @@
 import Order from '../models/Order.js';
 import Product from '../models/Product.js';
 import { StockHistory } from '../models/StockHistory.js';
-import { adjustTreasuryStock } from './stockSync.js';
+import { adjustTreasuryStock, settleTreasurySale } from './stockSync.js';
 
 /**
  * Stock movements of an order, each done exactly ONCE.
@@ -30,8 +30,10 @@ export async function settleDeliveredStock(order) {
     if (!it.product) continue;
     const q = qtyOf(it);
     try {
-      await Product.updateOne({ _id: idOf(it.product) }, { $inc: { reservedStock: -q, sold: q } });
+      const p = await Product.findOneAndUpdate({ _id: idOf(it.product) }, { $inc: { reservedStock: -q, sold: q } }, { new: true }).select('treasuryProduct').lean();
       await Product.updateOne({ _id: idOf(it.product), reservedStock: { $lt: 0 } }, { $set: { reservedStock: 0 } });
+      // a Central Treasury product: its master reservation becomes a sale too
+      if (p?.treasuryProduct) await settleTreasurySale(p.treasuryProduct, q);
     } catch (e) {
       console.error('settleDeliveredStock:', e.message);
     }
@@ -43,8 +45,8 @@ export async function settleDeliveredStock(order) {
 export async function restockOrder(order, reason, by) {
   if (!order?._id) return false;
   if (order.stockRestored) return false;
-  // an order whose sale was already counted (delivered) is not put back by a cancel;
-  // a refund with restock is the deliberate exception and passes reason 'refund_restock'
+  // a delivered order (sale already counted) gets here only through a refund: the admin status
+  // screen refuses to cancel a delivered order
   const filter = { _id: order._id, stockRestored: { $ne: true } };
   const claimed = await Order.updateOne(filter, { $set: { stockRestored: true } });
   if (!claimed.modifiedCount) {
@@ -69,7 +71,7 @@ export async function restockOrder(order, reason, by) {
       // If product is linked to Central Treasury, synchronize master and all sellers
       if (p.treasuryProduct) {
         await adjustTreasuryStock(p.treasuryProduct, q, {
-          releaseReserved: true,
+          kind: wasSettled ? 'unsell' : 'release',
           reason: reason || 'order_restocked',
           note: `Order #${order.orderNumber} restocked`,
           by: by || 'Admin',
@@ -77,6 +79,63 @@ export async function restockOrder(order, reason, by) {
       }
     } catch (e) {
       console.error('restockOrder:', e.message);
+    }
+  }
+  return true;
+}
+
+/**
+ * A cancelled / refunded order is brought back (confirmed, shipped, delivered...): its items were
+ * put back on the shelf, so they are taken off it again — exactly what placing the order did.
+ * Refuses (throws, status 400) before anything moves when a product no longer has enough stock.
+ * Does nothing for an order whose stock was never put back. Safe to call any number of times.
+ */
+const orderLines = (order) => (order.items || []).filter((it) => it.product).map((it) => ({ id: idOf(it.product), q: qtyOf(it) }));
+
+/** Throws (status 400) when the shelf no longer holds what bringing this order back would take. */
+export async function checkStockForReinstate(order) {
+  if (!order?._id || !order.stockRestored) return;
+  const need = new Map();
+  for (const l of orderLines(order)) need.set(String(l.id), (need.get(String(l.id)) || 0) + l.q);
+  const products = await Product.find({ _id: { $in: [...need.keys()] } }).select('name stock').lean();
+  for (const p of products) {
+    const want = need.get(String(p._id)) || 0;
+    if ((Number(p.stock) || 0) < want) {
+      throw Object.assign(new Error(`"${p.name}" has only ${Math.max(0, Number(p.stock) || 0)} in stock (this order needs ${want}).`), { status: 400 });
+    }
+  }
+}
+
+export async function reinstateOrderStock(order, by) {
+  if (!order?._id || !order.stockRestored) return false;
+  await checkStockForReinstate(order);
+  const lines = orderLines(order);
+
+  const claimed = await Order.updateOne({ _id: order._id, stockRestored: true }, { $set: { stockRestored: false } });
+  if (!claimed.modifiedCount) {
+    order.stockRestored = false;
+    return false;
+  }
+  order.stockRestored = false;
+  // an order that had been delivered before the cancel was counted as sold again by restockOrder
+  const wasSettled = order.stockSettled === true;
+
+  for (const l of lines) {
+    try {
+      const inc = wasSettled ? { stock: -l.q, sold: l.q } : { stock: -l.q, reservedStock: l.q };
+      const p = await Product.findOneAndUpdate({ _id: l.id }, { $inc: inc }, { new: true });
+      if (!p) continue;
+      await StockHistory.create({ product: p._id, productName: p.name, change: -l.q, stockAfter: p.stock, reason: 'order_reinstated', note: order.orderNumber, by });
+      if (p.treasuryProduct) {
+        await adjustTreasuryStock(p.treasuryProduct, -l.q, {
+          kind: wasSettled ? 'resell' : 'reserve',
+          reason: 'order_reinstated',
+          note: `Order #${order.orderNumber} brought back`,
+          by: by || 'Admin',
+        });
+      }
+    } catch (e) {
+      console.error('reinstateOrderStock:', e.message);
     }
   }
   return true;

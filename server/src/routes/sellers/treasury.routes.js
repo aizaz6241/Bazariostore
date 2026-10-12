@@ -4,7 +4,7 @@ import Product from '../../models/Product.js';
 import Seller from '../../models/Seller.js';
 import Category from '../../models/Category.js';
 import { authSeller } from '../../middleware/auth.js';
-import { slugify } from './helpers.js';
+import { slugify, blockWhenFrozen } from './helpers.js';
 import { escapeRegex } from '../../utils/sanitize.js';
 
 const router = express.Router();
@@ -170,7 +170,7 @@ router.get('/treasury', authSeller, async (req, res) => {
 });
 
 // POST /api/sellers/treasury/:id/add - 1-Click "Add to Store"
-router.post('/treasury/:id/add', authSeller, async (req, res) => {
+router.post('/treasury/:id/add', authSeller, blockWhenFrozen('adding Treasury products'), async (req, res) => {
   try {
     const treasury = await TreasuryProduct.findById(req.params.id);
     if (!treasury) return res.status(404).json({ message: 'Treasury product not found' });

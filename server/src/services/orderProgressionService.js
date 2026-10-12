@@ -139,6 +139,11 @@ export async function processAutoProgressOrders(app) {
         const newStatus = order.nextStatus;
         if (!newStatus) continue;
 
+        // The list above was read a moment ago: an admin may have cancelled / changed this order
+        // since. Moving money or stock for a stale copy would pay a seller for a cancelled order.
+        const stillDue = async () => Order.exists({ _id: order._id, status: prevStatus, nextStatus: newStatus });
+        if (!(await stillDue())) continue;
+
         const stepConfig = PROGRESSION_STEPS[prevStatus];
         const stepNote = stepConfig?.note || `Status automatically progressed to ${newStatus}.`;
 
@@ -163,6 +168,7 @@ export async function processAutoProgressOrders(app) {
           //    First, and before anything is saved: if a seller's funds were never locked and the
           //    wallet cannot cover the order, this throws and the order simply stays where it is.
           const payoutSellerIds = [...new Set(order.items.map((i) => i.seller?.toString()).filter(Boolean))];
+          if (!(await stillDue())) continue; // checked again right before any money moves
           for (const sId of payoutSellerIds) {
             await releaseSellerOrderDelivered(app, sId, order);
           }
