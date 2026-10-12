@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import express from 'express';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import Seller from '../../models/Seller.js';
 import Product from '../../models/Product.js';
@@ -15,6 +16,8 @@ import { finLog, requestApproval, sellerMoneyHistory } from '../../utils/finance
 import { rememberPassword, readPassword, encryptionOn } from '../../utils/sellerPassword.js';
 import { forgetAuthCache } from '../../middleware/auth.js';
 import { slugify, calculateHealthStatus } from './helpers.js';
+import { asText } from '../../middleware/sanitize.js';
+import { normalizeCode, codeFormatError, getMasterCode, resolveAffiliateCode, usageByCode } from '../../utils/affiliateCodes.js';
 
 const router = express.Router();
 
@@ -893,12 +896,37 @@ router.post('/:id/health', authAdmin('sellers'), async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────
 // AFFILIATE / REFERRAL CODES MANAGEMENT ROUTES
+// (rules live in utils/affiliateCodes.js: CAPITALS, 3-32 chars, a seller may only register with
+//  the master code or an ACTIVE custom code)
 // ─────────────────────────────────────────────────────────────
+
+const cleanRate = (v) => {
+  if (v === undefined || v === null || v === '') return { value: null };
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0 || n > 100) return { error: 'Commission must be a number between 0 and 100' };
+  return { value: Math.round(n * 100) / 100 };
+};
+const cleanBonus = (v) => {
+  if (v === undefined || v === null || v === '') return { value: 0 };
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0 || n > 1000000) return { error: 'Welcome bonus must be a positive number' };
+  return { value: Math.round(n * 100) / 100 };
+};
+const isDuplicateKey = (err) => err?.code === 11000;
+
+// For an admin (approve / edit seller) a code must exist; a switched-off code is still allowed
+// because the seller may have registered while it was active. Returns an error text or ''.
+async function adminAffiliateError(code) {
+  if (!code) return '';
+  const r = await resolveAffiliateCode(code);
+  if (r.ok || r.reason === 'inactive') return '';
+  return `Affiliate code "${code}" does not exist. Correct it (see Affiliate Codes) or clear the field.`;
+}
 
 // GET /api/sellers/master-affiliate or /api/sellers/master-referral (Get platform master affiliate code)
 router.get(['/master-affiliate', '/master-referral'], authAdmin('sellers'), async (req, res) => {
   try {
-    const code = (await getSetting('master_affiliate_code')) || (await getSetting('master_referral_code', 'REF-BAZARIO-2026'));
+    const code = await getMasterCode();
     res.json({ masterReferralCode: code, masterAffiliateCode: code });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -908,12 +936,25 @@ router.get(['/master-affiliate', '/master-referral'], authAdmin('sellers'), asyn
 // POST /api/sellers/master-affiliate or /api/sellers/master-referral (Update platform master affiliate code)
 router.post(['/master-affiliate', '/master-referral'], authAdmin('sellers'), async (req, res) => {
   try {
-    const { code } = req.body || {};
-    if (!code || !code.trim()) return res.status(400).json({ message: 'Affiliate code cannot be empty' });
-    const cleanCode = code.trim().toUpperCase();
+    const cleanCode = normalizeCode(req.body?.code);
+    const formatErr = codeFormatError(cleanCode);
+    if (formatErr) return res.status(400).json({ message: formatErr });
+    if (await ReferralCode.exists({ code: cleanCode })) {
+      return res.status(400).json({ message: `"${cleanCode}" is already a custom affiliate code. Pick a different master code.` });
+    }
+    const previous = await getMasterCode();
     await setSetting('master_affiliate_code', cleanCode);
     await setSetting('master_referral_code', cleanCode);
-    audit(req, 'update', 'system_setting', null, `Updated master affiliate code to ${cleanCode}`);
+    // The old master code stays known (switched off): sellers who joined with it keep counting
+    // under it and can still be approved, but nobody new can register with it.
+    if (previous && previous !== cleanCode) {
+      await ReferralCode.updateOne(
+        { code: previous },
+        { $setOnInsert: { code: previous, description: 'Former master affiliate code', status: 'inactive', createdBy: req.admin?.name || 'Admin' } },
+        { upsert: true }
+      ).catch(() => {});
+    }
+    audit(req, 'update', 'system_setting', null, `Updated master affiliate code from ${previous} to ${cleanCode}`);
     res.json({
       message: 'Master affiliate code updated successfully',
       masterReferralCode: cleanCode,
@@ -924,42 +965,84 @@ router.post(['/master-affiliate', '/master-referral'], authAdmin('sellers'), asy
   }
 });
 
-// GET /api/sellers/affiliates or /api/sellers/referrals (Admin lists all affiliate codes with live usage counts)
+// GET /api/sellers/affiliates or /api/sellers/referrals
+// Admin lists every affiliate code with live usage (approved / pending / rejected), a 12-week
+// sign-up trend, and the codes sellers used that match no code at all (typos from before the check).
 router.get(['/affiliates', '/referrals'], authAdmin('sellers'), async (req, res) => {
   try {
-    const masterCode = (await getSetting('master_affiliate_code')) || (await getSetting('master_referral_code', 'REF-BAZARIO-2026'));
-    const customCodes = await ReferralCode.find().sort({ createdAt: -1 });
+    const WEEKS = 12;
+    const weekStart = (d) => {
+      const x = new Date(d);
+      x.setUTCHours(0, 0, 0, 0);
+      x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 6) % 7));
+      return x;
+    };
+    const firstWeek = weekStart(new Date());
+    firstWeek.setUTCDate(firstWeek.getUTCDate() - 7 * (WEEKS - 1));
 
-    // Aggregate seller count for master code
-    const masterCount = await Seller.countDocuments({
-      $or: [
-        { 'securityDeposit.referralCode': masterCode },
-        { referralCode: masterCode },
-      ],
+    const [masterCode, customCodes, usage, totalSellers, recentSellers] = await Promise.all([
+      getMasterCode(),
+      ReferralCode.find().sort({ createdAt: -1 }).lean(),
+      usageByCode(Seller),
+      Seller.countDocuments(),
+      Seller.find({ createdAt: { $gte: firstWeek } }).select('createdAt securityDeposit.referralCode').lean(),
+    ]);
+
+    const empty = { total: 0, active: 0, pending: 0, rejected: 0, other: 0, last: null };
+    const statsOf = (code) => usage.get(code) || empty;
+    const masterStats = statsOf(masterCode);
+
+    const enrichedCodes = customCodes.map((rc) => {
+      const st = statsOf(normalizeCode(rc.code));
+      return {
+        ...rc,
+        usageCount: st.total,
+        approvedCount: st.active,
+        pendingCount: st.pending,
+        rejectedCount: st.rejected,
+        lastUsedAt: st.last,
+      };
     });
 
-    // Aggregate seller count for each custom code
-    const enrichedCodes = await Promise.all(
-      customCodes.map(async (rc) => {
-        const usageCount = await Seller.countDocuments({
-          $or: [
-            { 'securityDeposit.referralCode': rc.code },
-            { referralCode: rc.code },
-          ],
-        });
-        return {
-          ...rc.toObject(),
-          usageCount,
-        };
-      })
-    );
+    const known = new Set([masterCode, ...customCodes.map((rc) => normalizeCode(rc.code))]);
+    const unknownCodes = [...usage.entries()]
+      .filter(([code]) => !known.has(code))
+      .map(([code, st]) => ({ code, count: st.total, lastUsedAt: st.last }))
+      .sort((a, b) => b.count - a.count);
 
+    // weekly sign-ups: with a known code, with an unknown code, without a code
+    const trend = [];
+    for (let i = 0; i < WEEKS; i++) {
+      const d = new Date(firstWeek);
+      d.setUTCDate(d.getUTCDate() + 7 * i);
+      trend.push({ week: d.toISOString().slice(0, 10), withCode: 0, unknownCode: 0, direct: 0 });
+    }
+    for (const s of recentSellers) {
+      const idx = Math.floor((weekStart(s.createdAt) - firstWeek) / (7 * 24 * 3600 * 1000));
+      if (idx < 0 || idx >= WEEKS) continue;
+      const code = normalizeCode(s.securityDeposit?.referralCode);
+      if (!code) trend[idx].direct += 1;
+      else if (known.has(code)) trend[idx].withCode += 1;
+      else trend[idx].unknownCode += 1;
+    }
+
+    const viaCodes = masterStats.total + enrichedCodes.reduce((t, c) => t + c.usageCount, 0);
     res.json({
       masterReferralCode: masterCode,
       masterAffiliateCode: masterCode,
-      masterUsageCount: masterCount,
+      masterUsageCount: masterStats.total,
+      masterStats: { approved: masterStats.active, pending: masterStats.pending, rejected: masterStats.rejected, lastUsedAt: masterStats.last },
       referralCodes: enrichedCodes,
       affiliateCodes: enrichedCodes,
+      unknownCodes,
+      trend,
+      totals: {
+        sellers: totalSellers,
+        viaCodes,
+        unknown: unknownCodes.reduce((t, c) => t + c.count, 0),
+        activeCodes: enrichedCodes.filter((c) => c.status === 'active').length + 1,
+        inactiveCodes: enrichedCodes.filter((c) => c.status !== 'active').length,
+      },
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -970,26 +1053,36 @@ router.get(['/affiliates', '/referrals'], authAdmin('sellers'), async (req, res)
 router.post(['/affiliates', '/referrals'], authAdmin('sellers'), async (req, res) => {
   try {
     const { code, description, commissionRate, bonusAmount, status } = req.body || {};
-    if (!code || !code.trim()) {
-      return res.status(400).json({ message: 'Affiliate code is required' });
+    const cleanCode = normalizeCode(code);
+    const formatErr = codeFormatError(cleanCode);
+    if (formatErr) return res.status(400).json({ message: formatErr });
+    if (cleanCode === (await getMasterCode())) {
+      return res.status(400).json({ message: `"${cleanCode}" is the master affiliate code already` });
     }
+    const rate = cleanRate(commissionRate);
+    if (rate.error) return res.status(400).json({ message: rate.error });
+    const bonus = cleanBonus(bonusAmount);
+    if (bonus.error) return res.status(400).json({ message: bonus.error });
 
-    const cleanCode = code.trim().toUpperCase();
-    const existing = await ReferralCode.findOne({ code: cleanCode });
-    if (existing) {
+    if (await ReferralCode.exists({ code: cleanCode })) {
       return res.status(400).json({ message: `Affiliate code "${cleanCode}" already exists` });
     }
 
     const newCode = new ReferralCode({
       code: cleanCode,
-      description: (description || '').trim(),
-      commissionRate: commissionRate !== undefined && commissionRate !== '' ? Number(commissionRate) : null,
-      bonusAmount: bonusAmount !== undefined && bonusAmount !== '' ? Number(bonusAmount) : 0,
+      description: asText(description, 200).trim(),
+      commissionRate: rate.value,
+      bonusAmount: bonus.value,
       status: status === 'inactive' ? 'inactive' : 'active',
       createdBy: req.admin?.name || 'Admin',
     });
-
-    await newCode.save();
+    try {
+      await newCode.save();
+    } catch (err) {
+      // two admins creating the same code at the same moment
+      if (isDuplicateKey(err)) return res.status(400).json({ message: `Affiliate code "${cleanCode}" already exists` });
+      throw err;
+    }
 
     audit(req, 'create', 'referral_code', newCode._id, `Created affiliate code: ${cleanCode}`);
 
@@ -1003,9 +1096,93 @@ router.post(['/affiliates', '/referrals'], authAdmin('sellers'), async (req, res
   }
 });
 
+// POST /api/sellers/affiliates/bulk (Admin generates several codes at once: PREFIX-XXXXXX)
+router.post('/affiliates/bulk', authAdmin('sellers'), async (req, res) => {
+  try {
+    const { prefix, count, description, commissionRate, bonusAmount, status } = req.body || {};
+    const cleanPrefix = normalizeCode(prefix).replace(/[-_]+$/, '');
+    if (cleanPrefix && !/^[A-Z0-9][A-Z0-9_-]{0,15}$/.test(cleanPrefix)) {
+      return res.status(400).json({ message: 'Prefix can be up to 16 letters, numbers, "-" or "_"' });
+    }
+    const n = Math.floor(Number(count));
+    if (!Number.isFinite(n) || n < 1 || n > 50) return res.status(400).json({ message: 'You can generate between 1 and 50 codes at a time' });
+    const rate = cleanRate(commissionRate);
+    if (rate.error) return res.status(400).json({ message: rate.error });
+    const bonus = cleanBonus(bonusAmount);
+    if (bonus.error) return res.status(400).json({ message: bonus.error });
+
+    const masterCode = await getMasterCode();
+    const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O, 1/I: easy to read out loud
+    const randomPart = () => Array.from(crypto.randomBytes(6), (b) => ALPHABET[b % ALPHABET.length]).join('');
+    const wanted = new Set();
+    let guard = 0;
+    while (wanted.size < n && guard++ < n * 20) {
+      const c = cleanPrefix ? `${cleanPrefix}-${randomPart()}` : randomPart();
+      if (c !== masterCode) wanted.add(c);
+    }
+    const taken = new Set((await ReferralCode.find({ code: { $in: [...wanted] } }).select('code').lean()).map((r) => r.code));
+    const docs = [...wanted]
+      .filter((c) => !taken.has(c))
+      .map((c) => ({
+        code: c,
+        description: asText(description, 200).trim(),
+        commissionRate: rate.value,
+        bonusAmount: bonus.value,
+        status: status === 'inactive' ? 'inactive' : 'active',
+        createdBy: req.admin?.name || 'Admin',
+      }));
+
+    let created = [];
+    try {
+      created = await ReferralCode.insertMany(docs, { ordered: false });
+    } catch (err) {
+      // a code created by someone else in between is skipped, the rest are kept
+      if (!isDuplicateKey(err) && !err?.writeErrors) throw err;
+      created = err.insertedDocs || [];
+    }
+    audit(req, 'create', 'referral_code', null, `Generated ${created.length} affiliate codes${cleanPrefix ? ` (prefix ${cleanPrefix})` : ''}`);
+    res.status(201).json({
+      message: `${created.length} affiliate code${created.length === 1 ? '' : 's'} generated`,
+      codes: created.map((c) => c.code),
+      affiliateCodes: created,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PATCH /api/sellers/affiliates/:id (Admin edits description / commission / bonus / status).
+// The code itself is not renamed: sellers who already used it keep pointing to it.
+router.patch(['/affiliates/:id', '/referrals/:id'], authAdmin('sellers'), async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Affiliate code not found' });
+    const rc = await ReferralCode.findById(req.params.id);
+    if (!rc) return res.status(404).json({ message: 'Affiliate code not found' });
+    const { description, commissionRate, bonusAmount, status } = req.body || {};
+    if (description !== undefined) rc.description = asText(description, 200).trim();
+    if (commissionRate !== undefined) {
+      const rate = cleanRate(commissionRate);
+      if (rate.error) return res.status(400).json({ message: rate.error });
+      rc.commissionRate = rate.value;
+    }
+    if (bonusAmount !== undefined) {
+      const bonus = cleanBonus(bonusAmount);
+      if (bonus.error) return res.status(400).json({ message: bonus.error });
+      rc.bonusAmount = bonus.value;
+    }
+    if (status !== undefined) rc.status = status === 'inactive' ? 'inactive' : 'active';
+    await rc.save();
+    audit(req, 'update', 'referral_code', rc._id, `Edited affiliate code: ${rc.code}`);
+    res.json({ ok: true, message: `Affiliate code "${rc.code}" updated.`, referralCode: rc, affiliateCode: rc });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // DELETE /api/sellers/affiliates/:id or /api/sellers/referrals/:id (Admin deletes an affiliate code)
 router.delete(['/affiliates/:id', '/referrals/:id'], authAdmin('sellers'), async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Affiliate code not found' });
     const rc = await ReferralCode.findById(req.params.id);
     if (!rc) return res.status(404).json({ message: 'Affiliate code not found' });
 
@@ -1021,6 +1198,7 @@ router.delete(['/affiliates/:id', '/referrals/:id'], authAdmin('sellers'), async
 // PATCH /api/sellers/affiliates/:id/toggle or /api/sellers/referrals/:id/toggle (Admin toggles active / inactive)
 router.patch(['/affiliates/:id/toggle', '/referrals/:id/toggle'], authAdmin('sellers'), async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Affiliate code not found' });
     const rc = await ReferralCode.findById(req.params.id);
     if (!rc) return res.status(404).json({ message: 'Affiliate code not found' });
 
@@ -1144,6 +1322,16 @@ router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
       isPreviousStoreSeller,
     } = req.body;
 
+    let cleanReferral;
+    if (referralCode !== undefined) {
+      cleanReferral = normalizeCode(referralCode);
+      // the seller's current code may stay as it is (even an old one); a new one must exist
+      if (cleanReferral !== normalizeCode(seller.securityDeposit?.referralCode)) {
+        const referralErr = await adminAffiliateError(cleanReferral);
+        if (referralErr) return res.status(400).json({ code: 'INVALID_AFFILIATE_CODE', message: referralErr });
+      }
+    }
+
     // Checked before anything is changed below (the status can be edited in this same request)
     const twoPeopleForType = await isApprovedSeller(seller);
 
@@ -1187,7 +1375,7 @@ router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
         paid: isPaid,
         amount: cleanAmt,
         paidAt: isPaid ? (seller.securityDeposit?.paidAt || new Date()) : null,
-        referralCode: referralCode !== undefined ? (referralCode || '').trim() : (seller.securityDeposit?.referralCode || ''),
+        referralCode: cleanReferral !== undefined ? cleanReferral : (seller.securityDeposit?.referralCode || ''),
         note: note !== undefined ? (note || '').trim() : (seller.securityDeposit?.note || ''),
       };
 
@@ -1337,7 +1525,14 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
 
     const isPaid = Boolean(securityDepositPaid);
     const depAmt = isPaid ? Math.max(0, Number(securityDepositAmount) || 0) : 0;
-    const finalReferral = (assignedReferralCode || referralCode || seller.securityDeposit?.referralCode || '').trim();
+    // The code typed in the approve form wins, even when it was cleared (empty = no code)
+    const finalReferral = normalizeCode(
+      assignedReferralCode !== undefined ? assignedReferralCode : referralCode !== undefined ? referralCode : seller.securityDeposit?.referralCode
+    );
+    // a first approval must carry a real code; an already approved seller may keep the one it has
+    const keepsOldCode = wasApproved && finalReferral === normalizeCode(seller.securityDeposit?.referralCode);
+    const referralErr = keepsOldCode ? '' : await adminAffiliateError(finalReferral);
+    if (referralErr) return res.status(400).json({ code: 'INVALID_AFFILIATE_CODE', message: referralErr });
 
     seller.status = 'active';
     seller.registrationRejectedAt = undefined;
