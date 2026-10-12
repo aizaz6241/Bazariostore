@@ -164,7 +164,7 @@ const sellerSchema = new mongoose.Schema(
         targetOrders: { type: Number, required: true },
         currentOrders: { type: Number, default: 0 },
         bonusAmount: { type: Number, required: true },
-        status: { type: String, enum: ['active', 'completed', 'claimed'], default: 'active' },
+        status: { type: String, enum: ['active', 'completed', 'claimed', 'expired'], default: 'active' },
         createdAt: { type: Date, default: Date.now },
         completedAt: { type: Date, default: null },
         expiresAt: { type: Date, default: null },

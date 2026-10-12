@@ -1,76 +1,60 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
-import {
-  ResponsiveContainer, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, Tooltip, CartesianGrid,
-} from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { api, money, fmtDate } from '../api.js';
 import { STATUS_LABELS, PAYMENT_LABELS } from '../data.js';
 import { ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
 import { getSocket } from '../socket.js';
 import UsdtWalletHistoryModal from './UsdtWalletHistoryModal.jsx';
+import {
+  Hero,
+  MetaChip,
+  Kpi,
+  KpiGrid,
+  Card,
+  ChartGrid,
+  Seg,
+  Badge,
+  Avatar,
+  RankList,
+  SplitBar,
+  ChartTip,
+  Empty,
+  SERIES,
+  STATUS,
+  GRID,
+  AXIS,
+  shortMoney,
+  delta,
+} from './insights.jsx';
 
-// Categorical slots in fixed order (identity), reserved status colours for seller states
-const CAT = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'];
-const SELLER_STATES = [
-  { key: 'active', label: 'Active', color: '#0ca30c' },
-  { key: 'pending', label: 'Awaiting approval', color: '#fab219' },
-  { key: 'rejected', label: 'Rejected', color: '#d03b3b' },
-  { key: 'other', label: 'Suspended / frozen', color: '#94a3b8' },
-];
-
-const fmtUsdt = (val) => `${Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
-const compact = (n) => {
-  const v = Number(n || 0);
-  if (Math.abs(v) >= 1e6) return (v / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
-  if (Math.abs(v) >= 1e3) return (v / 1e3).toFixed(1).replace(/\.0$/, '') + 'k';
-  return String(Math.round(v));
+const FULFILLMENT = ['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery'];
+const STATUS_TONE = {
+  pending: 'warning',
+  delivered: 'good',
+  cancelled: 'critical',
+  refunded: 'neutral',
 };
-const greeting = () => {
+const fmtUsdt = (val) => `${Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+
+function greeting() {
   const h = new Date().getHours();
   return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-};
-
-function Tip({ active, payload, label, valueFormatter = (v) => v }) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="dsh-tip">
-      {label !== undefined && <b>{label}</b>}
-      {payload.map((p) => (
-        <div key={p.dataKey || p.name} className="dsh-tip-row">
-          <i style={{ background: p.color || p.payload?.fill }} />
-          <span>{p.name}</span>
-          <strong>{valueFormatter(p.value, p)}</strong>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ChartCard({ title, sub, icon, action, children, className = '' }) {
-  return (
-    <section className={`dsh-card ${className}`}>
-      <header className="dsh-card-head">
-        <div>
-          <h3>{icon && <Ic name={icon} size={16} />} {title}</h3>
-          {sub && <p>{sub}</p>}
-        </div>
-        {action}
-      </header>
-      <div className="dsh-card-body">{children}</div>
-    </section>
-  );
 }
 
 export default function Dashboard() {
   const outlet = useOutletContext() || {};
-  const adminName = outlet.admin?.name || 'Admin';
+  const firstName = String(outlet.admin?.name || '')
+    .trim()
+    .split(' ')[0];
   const [d, setD] = useState(null);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [metric, setMetric] = useState('revenue');
   const [usdtHistoryModalOpen, setUsdtHistoryModalOpen] = useState(false);
   const [usdtHistoryTab, setUsdtHistoryTab] = useState('all');
-  const [revMetric, setRevMetric] = useState('revenue'); // revenue | orders
+  const [updatedAt, setUpdatedAt] = useState(null);
 
   const openUsdtHistory = (tab = 'all') => {
     setUsdtHistoryTab(tab);
@@ -78,17 +62,27 @@ export default function Dashboard() {
   };
 
   const loadData = () => {
-    api('/analytics/dashboard').then(setD).catch((e) => setError(e.message));
+    setLoading(true);
+    return api('/analytics/dashboard')
+      .then((res) => {
+        setD(res);
+        setError('');
+        setUpdatedAt(new Date());
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     loadData();
   }, []);
 
-  // Real-time synchronization on WebSocket events
+  // Real-time: a burst of socket events (one order touches orders, wallets and sellers at once)
+  // reloads the dashboard once, instead of once per event.
+  const timer = useRef(null);
   useEffect(() => {
     const socket = getSocket();
-    if (!socket) return;
+    if (!socket) return undefined;
 
     const adminToken = localStorage.getItem('ng_admin_token');
     const rejoin = () => {
@@ -99,419 +93,654 @@ export default function Dashboard() {
     if (socket.connected) rejoin();
     socket.on('connect', rejoin);
 
-    const events = ['order:update', 'order:status_update', 'order:new', 'withdrawal:new', 'withdrawal:update', 'seller:status_update', 'wallet:update', 'seller:new_registration'];
-    events.forEach((ev) => socket.on(ev, loadData));
+    const handleSync = () => {
+      clearTimeout(timer.current);
+      timer.current = setTimeout(loadData, 1500);
+    };
+    const events = [
+      'order:update',
+      'order:status_update',
+      'order:new',
+      'withdrawal:new',
+      'withdrawal:update',
+      'seller:status_update',
+      'wallet:update',
+      'seller:health_update',
+    ];
+    events.forEach((ev) => socket.on(ev, handleSync));
 
     return () => {
+      clearTimeout(timer.current);
       socket.off('connect', rejoin);
-      events.forEach((ev) => socket.off(ev, loadData));
+      events.forEach((ev) => socket.off(ev, handleSync));
     };
   }, []);
 
-  const derived = useMemo(() => {
-    if (!d) return null;
-    const statusBars = Object.entries(d.ordersByStatus || {})
-      .map(([k, v]) => ({ key: k, name: STATUS_LABELS[k] || k, value: v }))
-      .sort((a, b) => b.value - a.value);
-    const payTotal = (d.paymentSplit || []).reduce((t, p) => t + p.n, 0);
-    const pay = (d.paymentSplit || [])
-      .map((p) => ({ name: PAYMENT_LABELS[p.label] || p.label || 'Other', value: p.n }))
-      .sort((a, b) => b.value - a.value);
-    // more than 5 methods: the rest fold into "Other"
-    const payFolded = pay.length > 5 ? [...pay.slice(0, 4), { name: 'Other', value: pay.slice(4).reduce((t, p) => t + p.value, 0) }] : pay;
-    const daily = d.daily30 || (d.revenue30 || []).map((r) => ({ ...r }));
-    const half = Math.floor(daily.length / 2);
-    const sum = (arr, k) => arr.reduce((t, x) => t + (x[k] || 0), 0);
-    const last15 = sum(daily.slice(half), 'revenue');
-    const prev15 = sum(daily.slice(0, half), 'revenue');
-    const change = prev15 > 0 ? Math.round(((last15 - prev15) / prev15) * 100) : null;
-    return { statusBars, pay: payFolded, payTotal, daily, months: d.months12 || d.monthly12 || [], change, total30: sum(daily, 'revenue'), orders30: sum(daily, 'orders') };
-  }, [d]);
-
-  if (error) return <ErrorBox error={error} />;
-  if (!d || !derived) {
+  if (!d) {
     return (
-      <div className="dsh">
-        <div className="dsh-skel dsh-skel-hero" />
-        <div className="dsh-kpis">{[0, 1, 2, 3].map((i) => <div key={i} className="dsh-skel dsh-skel-tile" />)}</div>
-        <div className="dsh-skel dsh-skel-chart" />
+      <div className="ins-page">
+        <Hero icon="grid" title={`${greeting()}${firstName ? `, ${firstName}` : ''} 👋`} subtitle="Loading your store overview…" />
+        {error ? (
+          <div>
+            <ErrorBox error={error} />
+            <button type="button" className="ins-btn" onClick={loadData} style={{ marginTop: 10 }}>
+              <Ic name="refresh" size={14} /> Try again
+            </button>
+          </div>
+        ) : (
+          <KpiGrid>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div className="ins-kpi" key={i}>
+                <span className="ins-skel" style={{ width: '50%' }} />
+                <span className="ins-skel" style={{ width: '70%', height: 22 }} />
+                <span className="ins-skel" style={{ width: '40%' }} />
+              </div>
+            ))}
+          </KpiGrid>
+        )}
       </div>
     );
   }
 
-  const w = d.usdtWallet || { total: 0, today: 0, week: 0, month: 0, grossDeposits: 0, helpingAmount: 0, depositCount: 0 };
-  const sales = d.sales || {};
-  const sellers = d.sellers || { total: 0, active: 0, pending: 0, rejected: 0, other: 0, newThisMonth: 0 };
-  const os = d.ordersByStatus || {};
-  // the server only sends the parts this admin's role covers
+  // which parts this admin's role may see (the server only sends those parts)
   const show = d.sections || { sales: true, recentOrders: true, stock: true, wallet: true, sellers: true };
   const nothing = !show.sales && !show.recentOrders && !show.stock && !show.wallet && !show.sellers;
+  const w = d.usdtWallet || {};
+  const cur = d.period?.current || { revenue: 0, orders: 0, aov: 0, delivered: 0, cancelled: 0 };
+  const prev = d.period?.previous || { revenue: 0, orders: 0, aov: 0, delivered: 0, cancelled: 0 };
+  const sb = d.ordersByStatus || {};
+  const totalOrders = Object.values(sb).reduce((a, b) => a + b, 0);
+  const sellers = d.sellers || {};
+  const health = d.health || {};
+  const targets = d.targets || {};
+  const req = d.requests || { deposits: { count: 0, amount: 0 }, withdrawals: { count: 0, amount: 0 } };
+  const revenue30 = d.revenue30 || [];
+  const hasDaily = revenue30.some((r) => r.orders > 0);
+  const hasMonthly = (d.monthly12 || []).some((m) => m.orders > 0);
+  const usdtTrend = w.trend || [];
+  const hasUsdt = usdtTrend.some((x) => x.amount > 0);
 
-  const salesTiles = [
-    { key: 'today', label: 'Today', icon: 'clock' },
-    { key: 'week', label: 'This week', icon: 'sparkle' },
-    { key: 'month', label: 'This month', icon: 'banknote' },
-    { key: 'year', label: 'This year', icon: 'chart' },
-  ];
-
-  const usdtTiles = [
-    { tab: 'all', label: 'Wallet balance', value: w.total, sub: `${w.depositCount || 0} deposits`, primary: true },
-    { tab: 'today', label: 'Received today', value: w.today, sub: "Today's inflow" },
-    { tab: 'week', label: 'This week', value: w.week, sub: 'Last 7 days' },
-    { tab: 'month', label: 'This month', value: w.month, sub: 'Month to date' },
-  ];
-
-  const orderTiles = [
-    { icon: 'clock', label: 'Pending', value: os.pending || 0, link: '/admin/orders?status=pending', tone: 'amber' },
-    { icon: 'package', label: 'Processing', value: (os.processing || 0) + (os.packed || 0) + (os.confirmed || 0), link: '/admin/orders?status=processing', tone: 'blue' },
-    { icon: 'truck', label: 'In transit', value: (os.shipped || 0) + (os.out_for_delivery || 0) + (os.out_from_warehouse || 0) + (os.delivery_warehouse || 0), link: '/admin/orders?status=shipped', tone: 'violet' },
-    { icon: 'checkCircle', label: 'Delivered', value: os.delivered || 0, link: '/admin/orders?status=delivered', tone: 'green' },
-    { icon: 'refresh', label: 'Cancelled / refunded', value: (os.cancelled || 0) + (os.refunded || 0), link: '/admin/orders?status=cancelled', tone: 'red' },
-  ];
-
-  const sellerBar = SELLER_STATES.map((s) => ({ ...s, value: sellers[s.key] || 0 }));
+  const attention = [
+    show.sellers && {
+      to: '/admin/applications',
+      icon: '📝',
+      color: '#6250d6',
+      title: 'Applications waiting',
+      sub: 'New stores to review',
+      count: sellers.pendingApplications || 0,
+    },
+    show.wallet && {
+      to: '/admin/withdrawals',
+      icon: '💸',
+      color: '#eb6834',
+      title: 'Withdrawal requests',
+      sub: money(req.withdrawals.amount),
+      count: req.withdrawals.count,
+    },
+    show.wallet && { to: '/admin/withdrawals', icon: '💰', color: '#2a78d6', title: 'Deposit requests', sub: money(req.deposits.amount), count: req.deposits.count },
+    show.sales && {
+      to: '/admin/orders?status=pending',
+      icon: '⏳',
+      color: '#c98500',
+      title: 'Orders open > 48 h',
+      sub: 'Not delivered or cancelled yet',
+      count: d.staleOpenOrders || 0,
+    },
+    show.sellers && { to: '/admin/complaints', icon: '🛡️', color: '#d03b3b', title: 'Stores at risk', sub: 'Health 30 or below', count: sellers.atRisk || 0 },
+    show.stock && {
+      to: '/admin/inventory',
+      icon: '📦',
+      color: '#475569',
+      title: 'Out of stock',
+      sub: `${d.lowStock?.length || 0} more running low`,
+      count: d.outOfStock?.length || 0,
+    },
+  ].filter(Boolean);
+  const openItems = attention.reduce((a, x) => a + (x.count > 0 ? 1 : 0), 0);
 
   return (
-    <div className="dsh">
-      {/* ─── Hero ─── */}
-      <section className="dsh-hero">
-        <div>
-          <span className="dsh-date">{new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
-          <h1>{greeting()}, {adminName.split(' ')[0]}</h1>
-          <p>
-            {show.sales ? (
-              <>{money(sales.today?.revenue || 0)} in sales today from {sales.today?.orders || 0} order{sales.today?.orders === 1 ? '' : 's'}</>
-            ) : nothing ? (
-              'Your role does not include dashboard figures. Use the menu to open the sections you work on.'
-            ) : (
-              'Here is what your role covers today.'
+    <div className="ins-page">
+      <Hero
+        icon="grid"
+        title={`${greeting()}${firstName ? `, ${firstName}` : ''} 👋`}
+        subtitle={
+          nothing
+            ? 'Your role does not include dashboard figures. Use the menu to open the sections you work on.'
+            : !(show.sales && show.wallet && show.sellers)
+            ? 'Here is what your role covers today. Updates live as things change.'
+            : 'Your marketplace at a glance: sales, orders, stores and the money moving through seller wallets. Updates live as orders and payments come in.'
+        }
+        actions={
+          <>
+            {show.wallet && (
+              <button type="button" className="ins-btn" onClick={() => openUsdtHistory('all')}>
+                <Ic name="wallet" size={14} /> USDT history
+              </button>
             )}
-            {show.sellers && sellers.pending ? <> · <b>{sellers.pending}</b> seller application{sellers.pending === 1 ? '' : 's'} waiting</> : null}
-          </p>
-        </div>
-        <div className="dsh-hero-actions">
-          {show.sellers && (
-            <>
-              <Link to="/admin/applications" className="dsh-hero-btn">
-                <Ic name="badgeCheck" size={16} /> Applications {sellers.pending > 0 && <span className="dsh-badge">{sellers.pending}</span>}
-              </Link>
-              <Link to="/admin/affiliates" className="dsh-hero-btn"><Ic name="tag" size={16} /> Affiliate codes</Link>
-            </>
-          )}
-          {show.sales && <Link to="/admin/reports" className="dsh-hero-btn solid"><Ic name="chart" size={16} /> Full reports</Link>}
-        </div>
-      </section>
-
-      {/* ─── Sales KPIs ─── */}
-      {show.sales && (
-      <div className="dsh-kpis">
-        {salesTiles.map((t) => (
-          <div className="dsh-kpi" key={t.key}>
-            <div className="dsh-kpi-top">
-              <span>{t.label}</span>
-              <i><Ic name={t.icon} size={16} /></i>
-            </div>
-            <b>{money(sales[t.key]?.revenue || 0)}</b>
-            <small>{sales[t.key]?.orders || 0} order{sales[t.key]?.orders === 1 ? '' : 's'}</small>
-          </div>
-        ))}
-      </div>
-      )}
-
-      {/* ─── Revenue + seller pipeline ─── */}
-      {(show.sales || show.sellers) && (
-      <div className={show.sales && show.sellers ? 'dsh-grid dsh-grid-main' : 'dsh-grid'}>
-        {show.sales && (
-        <ChartCard
-          icon="trend"
-          title={revMetric === 'revenue' ? 'Revenue — last 30 days' : 'Orders — last 30 days'}
-          sub={
-            <>
-              {revMetric === 'revenue' ? money(derived.total30) : `${derived.orders30} orders`}
-              {derived.change !== null && revMetric === 'revenue' && (
-                <span className={`dsh-delta ${derived.change >= 0 ? 'up' : 'down'}`}>
-                  {derived.change >= 0 ? '▲' : '▼'} {Math.abs(derived.change)}% vs previous 15 days
-                </span>
-              )}
-            </>
-          }
-          action={
-            <div className="dsh-seg" role="tablist">
-              {['revenue', 'orders'].map((m) => (
-                <button key={m} type="button" role="tab" aria-selected={revMetric === m} className={revMetric === m ? 'on' : ''} onClick={() => setRevMetric(m)}>
-                  {m === 'revenue' ? 'Revenue' : 'Orders'}
-                </button>
-              ))}
-            </div>
-          }
-        >
-          <ResponsiveContainer width="100%" height={260}>
-            <AreaChart data={derived.daily} margin={{ top: 10, right: 8, left: -8, bottom: 0 }}>
-              <defs>
-                <linearGradient id="dshRev" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#2a78d6" stopOpacity={0.28} />
-                  <stop offset="100%" stopColor="#2a78d6" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid vertical={false} stroke="#eef1f5" />
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} interval="preserveStartEnd" minTickGap={24} />
-              <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={revMetric === 'revenue' ? compact : undefined} allowDecimals={false} />
-              <Tooltip cursor={{ stroke: '#94a3b8', strokeDasharray: '3 3' }} content={<Tip valueFormatter={(v) => (revMetric === 'revenue' ? money(v) : v)} />} />
-              <Area type="monotone" dataKey={revMetric} name={revMetric === 'revenue' ? 'Revenue' : 'Orders'} stroke="#2a78d6" strokeWidth={2} fill="url(#dshRev)" activeDot={{ r: 5, stroke: '#fff', strokeWidth: 2 }} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </ChartCard>
-        )}
-
-        {show.sellers && (
-        <ChartCard icon="users" title="Seller pipeline" sub={`${sellers.total} sellers · ${sellers.newThisMonth} new this month`} action={<Link className="dsh-more" to="/admin/sellers">Sellers →</Link>}>
-          <div className="dsh-pipe-bar" aria-hidden="true">
-            {sellerBar.map((s) => (s.value > 0 ? <i key={s.key} style={{ flexGrow: s.value, background: s.color }} /> : null))}
-            {sellers.total === 0 && <i style={{ flexGrow: 1, background: '#eef1f5' }} />}
-          </div>
-          <ul className="dsh-pipe-list">
-            {sellerBar.map((s) => (
-              <li key={s.key}>
-                <i style={{ background: s.color }} />
-                <span>{s.label}</span>
-                <b>{s.value}</b>
-                <small>{sellers.total ? Math.round((s.value / sellers.total) * 100) : 0}%</small>
-              </li>
-            ))}
-          </ul>
-          {sellers.pending > 0 && (
-            <Link to="/admin/applications" className="dsh-cta">
-              <Ic name="badgeCheck" size={16} /> Review {sellers.pending} pending application{sellers.pending === 1 ? '' : 's'}
-            </Link>
-          )}
-        </ChartCard>
-        )}
-      </div>
-      )}
-
-      {/* ─── USDT wallet ─── */}
-      {show.wallet && d.usdtWallet && (
-      <section className="dsh-card dsh-usdt">
-        <header className="dsh-card-head">
-          <div>
-            <h3><Ic name="wallet" size={16} /> USDT wallet</h3>
-            <p>
-              Real client accounts only (tests &amp; previous stores excluded)
-              {w.helpingAmount > 0 && <> · Gross {fmtUsdt(w.grossDeposits)}, helping −{fmtUsdt(w.helpingAmount)}</>}
-            </p>
-          </div>
-          <div className="dsh-head-actions">
-            <button type="button" className="dsh-more" onClick={() => openUsdtHistory('all')}>History &amp; breakdown →</button>
-            <Link className="dsh-more" to="/admin/withdrawals">Deposits &amp; payouts →</Link>
-          </div>
-        </header>
-        <div className="dsh-usdt-grid">
-          {usdtTiles.map((c) => (
-            <button type="button" key={c.tab} className={`dsh-usdt-tile ${c.primary ? 'primary' : ''}`} onClick={() => openUsdtHistory(c.tab)} title={`View ${c.label.toLowerCase()} transactions`}>
-              <span>{c.label}</span>
-              <b>{fmtUsdt(c.value)}</b>
-              <small>{c.sub} <em>↗</em></small>
+            <button type="button" className="ins-btn ins-btn-primary" onClick={loadData} disabled={loading}>
+              <Ic name="refresh" size={14} /> {loading ? 'Updating…' : 'Refresh'}
             </button>
-          ))}
-        </div>
-      </section>
+          </>
+        }
+      >
+        <MetaChip live>Live</MetaChip>
+        {show.sales && (
+          <MetaChip>
+            Today {money(d.sales?.today?.revenue || 0)} · {d.sales?.today?.orders || 0} orders
+          </MetaChip>
+        )}
+        {show.sellers && sellers.pendingApplications > 0 && (
+          <MetaChip>
+            📝 {sellers.pendingApplications} application{sellers.pendingApplications === 1 ? '' : 's'} waiting
+          </MetaChip>
+        )}
+        {updatedAt && <MetaChip>Updated {updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</MetaChip>}
+      </Hero>
+
+      <ErrorBox error={error} />
+
+      {(show.sales || show.sellers || show.wallet) && (
+        <KpiGrid dim={loading}>
+          {show.sales && (
+            <>
+              <Kpi
+                icon="banknote"
+                tone="blue"
+                label="Revenue · 30 days"
+                value={money(cur.revenue)}
+                change={delta(cur.revenue, prev.revenue)}
+                sub={`vs ${money(prev.revenue)} the 30 days before`}
+              />
+              <Kpi
+                icon="box"
+                tone="aqua"
+                label="Orders · 30 days"
+                value={cur.orders.toLocaleString('en-US')}
+                change={delta(cur.orders, prev.orders)}
+                sub={`${cur.delivered} delivered · ${cur.cancelled} cancelled`}
+              />
+              <Kpi icon="tag" tone="violet" label="Average order" value={money(cur.aov)} change={delta(cur.aov, prev.aov)} sub="Last 30 days" />
+            </>
+          )}
+          {show.sellers && (
+            <Kpi
+              icon="package"
+              tone="orange"
+              label="Selling stores"
+              value={sellers.active || 0}
+              sub={`${sellers.newThisMonth || 0} new this month · ${sellers.total || 0} approved`}
+            />
+          )}
+          {show.sales && (
+            <Kpi
+              icon="user"
+              tone="magenta"
+              label="Customers"
+              value={(d.customers?.total || 0).toLocaleString('en-US')}
+              sub={`${d.customers?.newThisMonth || 0} new this month · ${d.customers?.returning || 0} returning`}
+            />
+          )}
+          {show.wallet && (
+            <Kpi
+              icon="wallet"
+              tone="green"
+              label="USDT received"
+              value={fmtUsdt(w.total)}
+              sub={`${w.depositCount || 0} client deposits`}
+              onClick={() => openUsdtHistory('all')}
+              title="Open the USDT history"
+            />
+          )}
+        </KpiGrid>
       )}
 
-      {/* ─── Order pipeline ─── */}
-      {show.sales && (
-      <>
-      <div className="dsh-orders">
-        {orderTiles.map((c) => (
-          <Link key={c.label} to={c.link} className={`dsh-order-tile tone-${c.tone}`}>
-            <i><Ic name={c.icon} size={18} /></i>
-            <div>
-              <b>{c.value}</b>
-              <small>{c.label}</small>
-            </div>
-          </Link>
-        ))}
-      </div>
-
-      {/* ─── Monthly / status / payments ─── */}
-      <div className="dsh-grid dsh-grid-3">
-        <ChartCard icon="chart" title="Monthly revenue" sub="Last 12 months" className="span-2">
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={derived.months} margin={{ top: 10, right: 8, left: -8, bottom: 0 }} barCategoryGap="28%">
-              <CartesianGrid vertical={false} stroke="#eef1f5" />
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={compact} />
-              <Tooltip cursor={{ fill: 'rgba(15,23,42,0.04)' }} content={<Tip valueFormatter={(v) => money(v)} />} />
-              <Bar dataKey="revenue" name="Revenue" fill="#2a78d6" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartCard>
-
-        <ChartCard icon="card" title="Payment methods" sub={`${derived.payTotal} paid orders`}>
-          {derived.pay.length === 0 ? (
-            <div className="dsh-empty">No orders yet.</div>
-          ) : (
-            <div className="dsh-donut">
-              <ResponsiveContainer width="100%" height={170}>
-                <PieChart>
-                  <Pie data={derived.pay} dataKey="value" nameKey="name" innerRadius={52} outerRadius={78} paddingAngle={2} stroke="#fff" strokeWidth={2}>
-                    {derived.pay.map((_, i) => <Cell key={i} fill={CAT[i]} />)}
-                  </Pie>
-                  <Tooltip content={<Tip />} />
-                </PieChart>
+      {(show.sales || attention.length > 0) && (
+        <ChartGrid dim={loading}>
+          {show.sales && (
+            <Card
+              title={metric === 'revenue' ? 'Revenue — last 30 days' : 'Orders — last 30 days'}
+              hint={metric === 'revenue' ? `${money(cur.revenue)} · cancelled & refunded left out` : `${cur.orders} orders`}
+              wide
+              actions={
+                <Seg
+                  small
+                  label="Metric"
+                  value={metric}
+                  onChange={setMetric}
+                  options={[
+                    { value: 'revenue', label: 'Revenue' },
+                    { value: 'orders', label: 'Orders' },
+                  ]}
+                />
+              }
+              empty={!hasDaily && 'No orders in the last 30 days'}
+            >
+              <ResponsiveContainer width="100%" height={330}>
+                <AreaChart data={revenue30} margin={{ top: 6, right: 8, left: -10, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="dashTrend" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={SERIES[0]} stopOpacity={0.24} />
+                      <stop offset="100%" stopColor={SERIES[0]} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke={GRID} vertical={false} />
+                  <XAxis dataKey="label" {...AXIS} minTickGap={18} />
+                  <YAxis {...AXIS} tickFormatter={metric === 'revenue' ? shortMoney : undefined} allowDecimals={false} />
+                  <Tooltip
+                    cursor={{ stroke: '#cbd5e1', strokeDasharray: '3 3' }}
+                    content={
+                      <ChartTip fmt={(v, n, p) => (metric === 'revenue' ? `${money(v)} · ${p.payload.orders} orders` : `${v} · ${p.payload.delivered} delivered`)} />
+                    }
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey={metric}
+                    name={metric === 'revenue' ? 'Revenue' : 'Orders'}
+                    stroke={SERIES[0]}
+                    strokeWidth={2}
+                    fill="url(#dashTrend)"
+                    activeDot={{ r: 4, strokeWidth: 2, stroke: '#fff' }}
+                  />
+                </AreaChart>
               </ResponsiveContainer>
-              <ul className="dsh-legend">
-                {derived.pay.map((p, i) => (
-                  <li key={p.name}>
-                    <i style={{ background: CAT[i] }} />
-                    <span>{p.name}</span>
-                    <b>{p.value}</b>
-                    <small>{derived.payTotal ? Math.round((p.value / derived.payTotal) * 100) : 0}%</small>
+            </Card>
+          )}
+
+          {attention.length > 0 && (
+            <Card title="Needs your attention" hint={openItems ? `${openItems} area${openItems === 1 ? '' : 's'} waiting on you` : 'Nothing waiting — all clear'}>
+              <ul className="ins-attn">
+                {attention.map((x) => (
+                  <li key={x.title}>
+                    <Link to={x.to}>
+                      <span className="ins-attn-icon" style={{ background: `${x.color}1a` }}>
+                        {x.icon}
+                      </span>
+                      <span className="ins-attn-text">
+                        <b>{x.title}</b>
+                        <span>{x.sub}</span>
+                      </span>
+                      <span className="ins-attn-count" style={{ color: x.count ? x.color : '#cbd5e1' }}>
+                        {x.count}
+                      </span>
+                    </Link>
                   </li>
                 ))}
               </ul>
-            </div>
+            </Card>
           )}
-        </ChartCard>
-      </div>
-      </>
-      )}
 
-      {(show.sales || show.stock || show.sellers) && (
-      <div className="dsh-grid dsh-grid-2">
-        {show.sales && (
-        <ChartCard icon="package" title="Orders by status" sub="All time" action={<Link className="dsh-more" to="/admin/orders">Orders →</Link>}>
-          {derived.statusBars.length === 0 ? (
-            <div className="dsh-empty">No orders yet.</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={Math.max(160, derived.statusBars.length * 30 + 20)}>
-              <BarChart data={derived.statusBars} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }} barCategoryGap="26%">
-                <XAxis type="number" hide allowDecimals={false} />
-                <YAxis type="category" dataKey="name" width={130} tick={{ fontSize: 12, fill: '#334155' }} axisLine={false} tickLine={false} />
-                <Tooltip cursor={{ fill: 'rgba(15,23,42,0.04)' }} content={<Tip />} />
-                <Bar dataKey="value" name="Orders" fill="#2a78d6" radius={[0, 4, 4, 0]} label={{ position: 'right', fontSize: 11, fill: '#475569', fontWeight: 700 }} />
-              </BarChart>
-            </ResponsiveContainer>
+          {show.sales && (
+            <Card
+              title="Monthly revenue — last 12 months"
+              hint={`This year ${money(d.sales?.year?.revenue || 0)} · this month ${money(d.sales?.month?.revenue || 0)}`}
+              wide
+              empty={!hasMonthly && 'No revenue in the last 12 months'}
+            >
+              <ResponsiveContainer width="100%" height={230}>
+                <BarChart data={d.monthly12} margin={{ top: 6, right: 8, left: -10, bottom: 0 }}>
+                  <CartesianGrid stroke={GRID} vertical={false} />
+                  <XAxis dataKey="label" {...AXIS} />
+                  <YAxis {...AXIS} tickFormatter={shortMoney} />
+                  <Tooltip cursor={{ fill: '#f1f5f9' }} content={<ChartTip fmt={(v, n, p) => `${money(v)} · ${p.payload.orders} orders`} />} />
+                  <Bar dataKey="revenue" name="Revenue" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={30} />
+                </BarChart>
+              </ResponsiveContainer>
+            </Card>
           )}
-        </ChartCard>
-        )}
 
-        <ChartCard icon="user" title="Customers & stock" sub="Shoppers and inventory health">
-          <div className="dsh-mini-grid">
-            {[
-              ...(show.sales
-                ? [
-                    { icon: 'user', label: 'Customers', value: d.customers?.total || 0 },
-                    { icon: 'sparkle', label: 'New this month', value: d.customers?.newThisMonth || 0 },
-                    { icon: 'refresh', label: 'Returning', value: d.customers?.returning || 0 },
-                  ]
-                : []),
-              ...(show.stock
-                ? [
-                    { icon: 'box', label: 'Low stock', value: d.lowStock?.length || 0, warn: (d.lowStock?.length || 0) > 0, link: '/admin/inventory' },
-                    { icon: 'x', label: 'Out of stock', value: d.outOfStock?.length || 0, warn: (d.outOfStock?.length || 0) > 0, link: '/admin/inventory' },
-                  ]
-                : []),
-              ...(show.sellers ? [{ icon: 'users', label: 'Active sellers', value: sellers.active, link: '/admin/sellers' }] : []),
-            ].map((c) => {
-              const body = (
-                <>
-                  <i><Ic name={c.icon} size={15} /></i>
-                  <b>{c.value}</b>
-                  <small>{c.label}</small>
-                </>
-              );
-              return c.link ? (
-                <Link key={c.label} to={c.link} className={`dsh-mini ${c.warn ? 'warn' : ''}`}>{body}</Link>
-              ) : (
-                <div key={c.label} className="dsh-mini">{body}</div>
-              );
-            })}
-          </div>
-        </ChartCard>
-      </div>
-      )}
-
-      {/* ─── Lists ─── */}
-      {show.stock && (
-      <div className="dsh-grid dsh-grid-2">
-        <ChartCard icon="star" title="Best selling products" action={<Link className="dsh-more" to="/admin/products">All products →</Link>}>
-          {(d.bestSelling || []).length === 0 && <div className="dsh-empty">No sales yet.</div>}
-          <ol className="dsh-rank">
-            {(d.bestSelling || []).map((p, i) => (
-              <li key={p._id}>
-                <span className="dsh-rank-n">{i + 1}</span>
-                <span className="dsh-thumb">{p.image ? <img src={p.image} alt="" loading="lazy" /> : null}</span>
-                <span className="dsh-rank-name">
-                  {p.name}
-                  <small>{p.sold} sold · {p.stock} in stock</small>
-                </span>
-                <b>{money(p.price)}</b>
-              </li>
-            ))}
-          </ol>
-        </ChartCard>
-
-        <ChartCard icon="alert" title="Stock alerts" action={<Link className="dsh-more" to="/admin/inventory">Inventory →</Link>}>
-          {[...(d.outOfStock || []), ...(d.lowStock || [])].length === 0 && (
-            <div className="dsh-allgood"><Ic name="checkCircle" size={16} /> All products are well stocked.</div>
+          {show.sales && (
+            <Card title="Order pipeline" hint={`${totalOrders.toLocaleString('en-US')} orders all time`} empty={!totalOrders && 'No orders yet'}>
+              <SplitBar
+                height={14}
+                parts={[
+                  { label: '⏳ Waiting', value: sb.pending || 0, color: STATUS.warning },
+                  { label: '🚚 In fulfilment', value: FULFILLMENT.reduce((a, k) => a + (sb[k] || 0), 0), color: SERIES[0] },
+                  { label: '✓ Delivered', value: sb.delivered || 0, color: STATUS.good },
+                  { label: '✕ Cancelled / refunded', value: (sb.cancelled || 0) + (sb.refunded || 0), color: STATUS.critical },
+                ]}
+              />
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 14 }}>
+                <Link to="/admin/orders?status=pending" className="ins-btn ins-btn-sm">
+                  Waiting orders →
+                </Link>
+                <Link to="/admin/orders" className="ins-btn ins-btn-sm">
+                  All orders →
+                </Link>
+              </div>
+            </Card>
           )}
-          <ul className="dsh-rank">
-            {(d.outOfStock || []).map((p) => (
-              <li key={p._id}>
-                <span className="dsh-thumb">{p.image ? <img src={p.image} alt="" loading="lazy" /> : null}</span>
-                <span className="dsh-rank-name">{p.name}</span>
-                <span className="dsh-flag red">Out of stock</span>
-              </li>
-            ))}
-            {(d.lowStock || []).map((p) => (
-              <li key={p._id}>
-                <span className="dsh-thumb">{p.image ? <img src={p.image} alt="" loading="lazy" /> : null}</span>
-                <span className="dsh-rank-name">{p.name}</span>
-                <span className="dsh-flag amber">{p.stock} left</span>
-              </li>
-            ))}
-          </ul>
-        </ChartCard>
-      </div>
-      )}
-
-      {show.recentOrders && (
-      <ChartCard icon="list" title="Recent orders" action={<Link to="/admin/orders" className="dsh-more">See all →</Link>}>
-        {(d.recent || []).length === 0 ? (
-          <div className="dsh-empty">No orders yet.</div>
-        ) : (
-          <div className="admin-table-wrap">
-            <table className="admin-table dsh-table">
-              <thead>
-                <tr><th>Order #</th><th>Date</th><th>Customer</th><th>City</th><th>Total</th><th>Payment</th><th>Status</th><th /></tr>
-              </thead>
-              <tbody>
-                {d.recent.map((o) => (
-                  <tr key={o._id}>
-                    <td><b>{o.orderNumber}</b></td>
-                    <td>{fmtDate(o.createdAt)}</td>
-                    <td>{o.shippingAddress?.fullName}</td>
-                    <td>{o.shippingAddress?.city}</td>
-                    <td><b>{money(o.total)}</b></td>
-                    <td><span className="pay-chip">{(PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod || '').toUpperCase()}</span></td>
-                    <td><span className={`status-pill st-${o.status}`}>{STATUS_LABELS[o.status] || o.status}</span></td>
-                    <td><Link className="row-link" to={`/admin/orders/${o._id}`}>View</Link></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </ChartCard>
+        </ChartGrid>
       )}
 
       {show.wallet && (
-      <UsdtWalletHistoryModal
-        isOpen={usdtHistoryModalOpen}
-        onClose={() => setUsdtHistoryModalOpen(false)}
-        initialTab={usdtHistoryTab}
-      />
+        <>
+          <div className="ins-section-title">
+            <h2>💵 USDT wallet</h2>
+            <span>
+              Real client accounts only — test and previous-store accounts left out
+              {w.helpingAmount > 0 ? ` · gross ${fmtUsdt(w.grossDeposits)}, helping −${fmtUsdt(w.helpingAmount)}` : ''}
+            </span>
+          </div>
+
+          <KpiGrid dim={loading}>
+            <Kpi
+              icon="wallet"
+              tone="green"
+              label="Total received"
+              value={fmtUsdt(w.total)}
+              sub={`${w.clientSellersCount || 0} client stores`}
+              onClick={() => openUsdtHistory('all')}
+            />
+            <Kpi icon="clock" tone="blue" label="Today" value={fmtUsdt(w.today)} sub="Since midnight" onClick={() => openUsdtHistory('today')} />
+            <Kpi icon="sparkle" tone="violet" label="This week" value={fmtUsdt(w.week)} sub="Since Monday" onClick={() => openUsdtHistory('week')} />
+            <Kpi icon="banknote" tone="orange" label="This month" value={fmtUsdt(w.month)} sub="Since the 1st" onClick={() => openUsdtHistory('month')} />
+          </KpiGrid>
+
+          <ChartGrid dim={loading}>
+            <Card title="USDT received per day" hint="Net client deposits, last 30 days" wide empty={!hasUsdt && 'No client deposits in the last 30 days'}>
+              <ResponsiveContainer width="100%" height={210}>
+                <BarChart data={usdtTrend} margin={{ top: 6, right: 8, left: -10, bottom: 0 }}>
+                  <CartesianGrid stroke={GRID} vertical={false} />
+                  <XAxis dataKey="label" {...AXIS} minTickGap={18} />
+                  <YAxis {...AXIS} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
+                  <Tooltip cursor={{ fill: '#f1f5f9' }} content={<ChartTip fmt={(v) => fmtUsdt(v)} />} />
+                  <Bar dataKey="amount" name="Received" fill={SERIES[2]} radius={[4, 4, 0, 0]} maxBarSize={16} />
+                </BarChart>
+              </ResponsiveContainer>
+            </Card>
+
+            <Card
+              title="Latest client deposits"
+              actions={
+                <button type="button" className="ins-btn ins-btn-sm" onClick={() => openUsdtHistory('all')}>
+                  All →
+                </button>
+              }
+            >
+              {(w.recentPayments || []).length === 0 ? (
+                <Empty text="No client deposits yet" />
+              ) : (
+                <ul className="ins-stats">
+                  {w.recentPayments.map((p) => (
+                    <li key={p._id}>
+                      <span style={{ minWidth: 0 }}>
+                        <span className="ins-strong ins-clip" style={{ display: 'block' }}>
+                          {p.storeName || 'Store'}
+                        </span>
+                        <span className="ins-sub">{fmtDate(p.createdAt)}</span>
+                      </span>
+                      <b style={{ color: '#006300' }}>+{fmtUsdt(p.netUsdt)}</b>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </ChartGrid>
+        </>
       )}
+
+      {(show.sales || show.sellers || show.stock) && (
+        <>
+          <div className="ins-section-title">
+            <h2>🏪 Stores, products &amp; stock</h2>
+            {show.sellers && (
+              <span>
+                <Link to="/admin/sellers" style={{ color: '#2a78d6', fontWeight: 600 }}>
+                  Open Sellers →
+                </Link>
+              </span>
+            )}
+          </div>
+
+          <ChartGrid dim={loading}>
+            {show.sales && (
+              <Card title="Top stores · 30 days" hint="By order value">
+                <RankList
+                  rows={(d.topSellers || []).map((s, i) => ({ key: String(s._id || i), label: s.storeName, value: s.gmv, sub: `${s.orders} orders` }))}
+                  color={SERIES[0]}
+                  empty="No store sales in the last 30 days"
+                />
+              </Card>
+            )}
+
+            {show.sellers && (
+              <Card title="Store health" hint={`${sellers.total || 0} approved stores`}>
+                <SplitBar
+                  height={14}
+                  parts={[
+                    { label: 'Healthy (80+)', value: health.healthy || 0, color: STATUS.good },
+                    { label: 'Watch (31–79)', value: health.watch || 0, color: STATUS.warning },
+                    { label: 'Freeze zone (21–30)', value: health.atRisk || 0, color: STATUS.serious },
+                    { label: 'Suspension zone (≤20)', value: health.critical || 0, color: STATUS.critical },
+                  ]}
+                />
+                <ul className="ins-stats" style={{ marginTop: 10 }}>
+                  <li>
+                    <span>Frozen</span>
+                    <b>{sellers.frozen || 0}</b>
+                  </li>
+                  <li>
+                    <span>Suspended</span>
+                    <b>{sellers.suspended || 0}</b>
+                  </li>
+                  <li>
+                    <span>Active warnings</span>
+                    <b>{sellers.warned || 0}</b>
+                  </li>
+                </ul>
+              </Card>
+            )}
+
+            {show.sellers && (
+              <Card
+                title="Targets & bonuses"
+                actions={
+                  <Link to="/admin/targets" className="ins-btn ins-btn-sm">
+                    Manage →
+                  </Link>
+                }
+              >
+                <ul className="ins-stats">
+                  <li>
+                    <span>⚡ In progress</span>
+                    <b>{targets.active || 0}</b>
+                  </li>
+                  <li>
+                    <span>🏆 Completed</span>
+                    <b>{targets.completed || 0}</b>
+                  </li>
+                  <li>
+                    <span>⌛ Expired</span>
+                    <b>{targets.expired || 0}</b>
+                  </li>
+                  <li>
+                    <span>Bonus paid out</span>
+                    <b style={{ color: '#006300' }}>{money(targets.bonusPaid || 0)}</b>
+                  </li>
+                  <li>
+                    <span>Bonus still on offer</span>
+                    <b>{money(targets.bonusOpen || 0)}</b>
+                  </li>
+                </ul>
+              </Card>
+            )}
+
+            {show.sales && (
+              <Card title="Payment methods" hint="Live orders, all time">
+                <RankList
+                  rows={(d.paymentSplit || [])
+                    .map((p) => ({ key: p.label || 'other', label: PAYMENT_LABELS[p.label] || p.label || 'Other', value: p.n, sub: money(p.revenue) }))
+                    .sort((a, b) => b.value - a.value)}
+                  color={SERIES[2]}
+                  format={(v) => `${v} orders`}
+                  empty="No orders yet"
+                />
+              </Card>
+            )}
+
+            {show.stock && (
+              <Card
+                title="Best-selling products"
+                actions={
+                  <Link to="/admin/treasury" className="ins-btn ins-btn-sm">
+                    Products →
+                  </Link>
+                }
+              >
+                {(d.bestSelling || []).length === 0 ? (
+                  <Empty text="No sales yet" />
+                ) : (
+                  <ul className="ins-stats">
+                    {d.bestSelling.map((p) => (
+                      <li key={p._id}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                          <span style={{ width: 34, height: 34, borderRadius: 8, background: '#f1f5f9', overflow: 'hidden', flexShrink: 0 }}>
+                            {p.image && (
+                              <img
+                                src={p.image}
+                                alt=""
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                }}
+                              />
+                            )}
+                          </span>
+                          <span style={{ minWidth: 0 }}>
+                            <span className="ins-strong ins-clip" style={{ display: 'block', maxWidth: 180 }}>
+                              {p.name}
+                            </span>
+                            <span className="ins-sub">
+                              {p.sold || 0} sold · {p.stock} in stock
+                            </span>
+                          </span>
+                        </span>
+                        <b>{money(p.price)}</b>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+            )}
+
+            {show.stock && (
+              <Card
+                title="Stock alerts"
+                actions={
+                  <Link to="/admin/inventory" className="ins-btn ins-btn-sm">
+                    Inventory →
+                  </Link>
+                }
+              >
+                {[...(d.outOfStock || []), ...(d.lowStock || [])].length === 0 ? (
+                  <Empty icon="✅" text="Every product has enough stock" />
+                ) : (
+                  <ul className="ins-stats">
+                    {(d.outOfStock || []).slice(0, 4).map((p) => (
+                      <li key={p._id}>
+                        <span className="ins-clip" style={{ maxWidth: 200 }}>
+                          {p.name}
+                        </span>
+                        <Badge tone="critical">Out of stock</Badge>
+                      </li>
+                    ))}
+                    {(d.lowStock || []).slice(0, Math.max(0, 6 - Math.min(4, (d.outOfStock || []).length))).map((p) => (
+                      <li key={p._id}>
+                        <span className="ins-clip" style={{ maxWidth: 200 }}>
+                          {p.name}
+                        </span>
+                        <Badge tone="warning">{p.stock} left</Badge>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+            )}
+          </ChartGrid>
+        </>
+      )}
+
+      {show.recentOrders && (
+        <div className="ins-table-card">
+          <div className="ins-table-head">
+            <div>
+              <h3>🧾 Recent orders</h3>
+              <span className="ins-card-hint">The latest {d.recent?.length || 0} orders</span>
+            </div>
+            <Link to="/admin/orders" className="ins-btn ins-btn-sm">
+              All orders →
+            </Link>
+          </div>
+          {(d.recent || []).length === 0 ? (
+            <Empty icon="📦" text="No orders yet" />
+          ) : (
+            <div className="ins-table-scroll">
+              <table className="ins-table">
+                <thead>
+                  <tr>
+                    <th>Order</th>
+                    <th>Store</th>
+                    <th>Customer</th>
+                    <th className="num">Total</th>
+                    <th>Payment</th>
+                    <th>Status</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {d.recent.map((o) => {
+                    const store = o.items?.[0]?.sellerName || '';
+                    return (
+                      <tr key={o._id}>
+                        <td>
+                          <b style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12.5 }}>#{o.orderNumber}</b>
+                          <span className="ins-sub">{fmtDate(o.createdAt)}</span>
+                        </td>
+                        <td>
+                          {store ? (
+                            <div className="ins-cell-who">
+                              <Avatar name={store} size={28} />
+                              <span className="ins-clip" style={{ maxWidth: 150 }}>
+                                {store}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="ins-sub">Bazario Direct</span>
+                          )}
+                        </td>
+                        <td>
+                          <span className="ins-strong">{o.shippingAddress?.fullName || 'Guest'}</span>
+                          <span className="ins-sub">{o.shippingAddress?.city || ''}</span>
+                        </td>
+                        <td className="num">
+                          <b>{money(o.total)}</b>
+                        </td>
+                        <td>
+                          <span className="ins-sub" style={{ color: '#334155' }}>
+                            {PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod || 'COD'}
+                          </span>
+                        </td>
+                        <td>
+                          <Badge tone={STATUS_TONE[o.status] || 'info'}>{STATUS_LABELS[o.status] || o.status}</Badge>
+                        </td>
+                        <td>
+                          <div className="ins-actions">
+                            <Link className="ins-btn ins-btn-sm" to={`/admin/orders/${o._id}`}>
+                              View
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {show.wallet && <UsdtWalletHistoryModal isOpen={usdtHistoryModalOpen} onClose={() => setUsdtHistoryModalOpen(false)} initialTab={usdtHistoryTab} />}
     </div>
   );
 }

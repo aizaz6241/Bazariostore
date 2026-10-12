@@ -8,6 +8,30 @@ import { getSocket } from '../socket.js';
 import { MOCK_CUSTOMERS, getRandomCustomer } from './mockCustomers.js';
 import AddFundsModal from './AddFundsModal.jsx';
 import SellerSelectDropdown from './SellerSelectDropdown.jsx';
+import OrdersAnalytics from './OrdersAnalytics.jsx';
+import { Hero, MetaChip, Seg, Badge, Avatar, Empty } from './insights.jsx';
+
+// status → badge tone (state colours, always shown with the status name)
+const STATUS_TONE = {
+  pending: 'warning',
+  confirmed: 'info',
+  processing: 'info',
+  packed: 'info',
+  out_from_warehouse: 'violet',
+  delivery_warehouse: 'violet',
+  shipped: 'violet',
+  out_for_delivery: 'violet',
+  delivered: 'good',
+  cancelled: 'critical',
+  refunded: 'neutral',
+};
+const ageLabel = (d) => {
+  const h = (Date.now() - new Date(d).getTime()) / 3600000;
+  if (h < 1) return 'just now';
+  if (h < 24) return `${Math.floor(h)}h ago`;
+  const days = Math.floor(h / 24);
+  return `${days}d ago`;
+};
 
 export default function Orders() {
   const [params, setParams] = useSearchParams();
@@ -21,6 +45,11 @@ export default function Orders() {
   const [copiedId, setCopiedId] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState('auto'); // 'auto' | 'table' | 'cards'
+  const [statusCounts, setStatusCounts] = useState({});
+  const [analyticsKey, setAnalyticsKey] = useState(0);
+  // live filters for the socket handlers (their effect is not re-created on every keystroke)
+  const filtersRef = useRef({ status, sellerFilter, q });
+  filtersRef.current = { status, sellerFilter, q };
 
   // Add Funds Modal state
   const [addFundsOpen, setAddFundsOpen] = useState(false);
@@ -91,22 +120,35 @@ export default function Orders() {
       .catch(() => {});
   };
 
+  const loadReq = useRef(0);
   const loadOrders = (silent = false) => {
     if (!silent) setLoading(true);
     setError('');
+    // always the CURRENT filters: a live update used to reload with the search text that was
+    // typed when the page opened, so a search was silently replaced by the full list
+    const f = filtersRef.current;
     const query = new URLSearchParams();
-    if (status) query.set('status', status);
-    if (sellerFilter) query.set('sellerId', sellerFilter);
-    if (q.trim()) query.set('q', q.trim());
+    if (f.status) query.set('status', f.status);
+    if (f.sellerFilter) query.set('sellerId', f.sellerFilter);
+    if (f.q.trim()) query.set('q', f.q.trim());
+    const reqId = ++loadReq.current;
 
     return api('/orders?' + query.toString())
       .then((res) => {
+        if (reqId !== loadReq.current) return; // an older request answering late
         setOrders(Array.isArray(res) ? res : res.orders || []);
       })
-      .catch((e) => setError(e.message))
+      .catch((e) => reqId === loadReq.current && setError(e.message))
       .finally(() => {
-        if (!silent) setLoading(false);
+        if (!silent && reqId === loadReq.current) setLoading(false);
       });
+  };
+
+  const loadStatusCounts = () => {
+    const f = filtersRef.current;
+    api(`/orders/analytics/overview?days=7${f.sellerFilter ? `&sellerId=${f.sellerFilter}` : ''}`)
+      .then((d) => setStatusCounts(d.statusCounts || {}))
+      .catch(() => {});
   };
 
   useEffect(() => {
@@ -116,6 +158,18 @@ export default function Orders() {
   useEffect(() => {
     loadOrders();
   }, [status, sellerFilter]);
+
+  useEffect(() => {
+    loadStatusCounts();
+  }, [sellerFilter, analyticsKey]);
+
+  // a burst of live events refreshes the counts and charts once, not once per event
+  const liveTimer = useRef(null);
+  const refreshInsightsSoon = () => {
+    clearTimeout(liveTimer.current);
+    liveTimer.current = setTimeout(() => setAnalyticsKey((k) => k + 1), 1500);
+  };
+  useEffect(() => () => clearTimeout(liveTimer.current), []);
 
   // Real-time synchronization on WebSocket events
   useEffect(() => {
@@ -134,6 +188,8 @@ export default function Orders() {
 
     const handleOrderUpdate = (payload) => {
       const updatedOrder = payload?.order || payload;
+      const { status, sellerFilter, q } = filtersRef.current;
+      refreshInsightsSoon();
       if (!updatedOrder?._id) {
         loadOrders(true);
         return;
@@ -152,9 +208,13 @@ export default function Orders() {
           return next;
         } else {
           // If order wasn't in the list, but matches current filters, add it
+          // (with a search active the server decides, through the re-sync below)
           if (
+            !q.trim() &&
             (!status || updatedOrder.status === status) &&
-            (!sellerFilter || String(updatedOrder.seller?._id || updatedOrder.seller) === String(sellerFilter))
+            (!sellerFilter ||
+              String(updatedOrder.seller?._id || updatedOrder.seller) === String(sellerFilter) ||
+              (updatedOrder.items || []).some((it) => String(it.seller?._id || it.seller) === String(sellerFilter)))
           ) {
             return [updatedOrder, ...prev];
           }
@@ -176,11 +236,13 @@ export default function Orders() {
 
     const handleOrderNew = () => {
       loadOrders(true);
+      refreshInsightsSoon();
     };
 
     const handleNotify = (n) => {
       if (n?.type === 'order') {
         loadOrders(true);
+        refreshInsightsSoon();
       }
     };
 
@@ -196,7 +258,7 @@ export default function Orders() {
       socket.off('order:new', handleOrderNew);
       socket.off('notify', handleNotify);
     };
-  }, [status, sellerFilter]);
+  }, []);
 
   // When admin selects a seller in Place Order modal, load their catalog
   const handleSellerChangeForOrder = async (sellerId) => {
@@ -295,6 +357,7 @@ export default function Orders() {
       alert(`✅ Order placed successfully on behalf of ${selSeller?.storeName || 'Seller'}!`);
       handleClosePlaceOrder();
       loadOrders();
+      setAnalyticsKey((k) => k + 1);
     } catch (err) {
       alert('Error placing order: ' + err.message);
     } finally {
@@ -309,8 +372,8 @@ export default function Orders() {
         method: 'POST',
         body: { status: newStatus, note: `Status updated to ${newStatus} by Platform Admin` },
       });
-      alert(`Order status updated to ${newStatus.toUpperCase()}! ✅`);
       loadOrders();
+      setAnalyticsKey((k) => k + 1);
       if (inspectOrder && inspectOrder._id === orderId) {
         setInspectOrder((prev) => ({ ...prev, status: newStatus }));
       }
@@ -337,21 +400,6 @@ export default function Orders() {
     return null;
   };
 
-  const STORE_COLORS = [
-    { bg: '#eff6ff', text: '#1d4ed8' },
-    { bg: '#faf5ff', text: '#7e22ce' },
-    { bg: '#f0fdf4', text: '#15803d' },
-    { bg: '#fff7ed', text: '#c2410c' },
-    { bg: '#f0fdfa', text: '#0f766e' },
-    { bg: '#fef2f2', text: '#b91c1c' },
-  ];
-
-  const getStoreColor = (name = '') => {
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    return STORE_COLORS[Math.abs(hash) % STORE_COLORS.length];
-  };
-
   const handleCopyOrder = (e, num) => {
     e.stopPropagation();
     if (navigator?.clipboard?.writeText) {
@@ -365,6 +413,7 @@ export default function Orders() {
     setRefreshing(true);
     try {
       await loadOrders(false);
+      setAnalyticsKey((k) => k + 1);
     } finally {
       setTimeout(() => setRefreshing(false), 500);
     }
@@ -372,566 +421,294 @@ export default function Orders() {
 
   const hasActiveFilters = Boolean(status || sellerFilter || q.trim());
   const handleClearAllFilters = () => {
+    const onlySearch = !status && !sellerFilter;
     setQ('');
     setSellerFilter('');
     setParams({});
+    // with only a search active no filter effect fires, so reload here
+    if (onlySearch) {
+      filtersRef.current = { status: '', sellerFilter: '', q: '' };
+      loadOrders();
+    }
   };
 
-  const totalRevenue = orders.filter((o) => o.status !== 'cancelled').reduce((acc, o) => acc + (o.total || 0), 0);
-  const pendingCount = orders.filter((o) => o.status === 'pending').length;
-  const deliveredCount = orders.filter((o) => o.status === 'delivered').length;
+  const pickSeller = (id) => {
+    setSellerFilter(id);
+    window.scrollTo?.({ top: document.querySelector('.ins-orders-list')?.offsetTop || 0, behavior: 'smooth' });
+  };
+  const setStatus = (st) => setParams(st ? { status: st } : {});
+  const allCount = Object.values(statusCounts).reduce((a, b) => a + b, 0);
+  const chosenSeller = sellers.find((s) => s._id === sellerFilter);
+  const showTable = viewMode === 'auto' || viewMode === 'table';
+  const showCards = viewMode === 'auto' || viewMode === 'cards';
+
+  const customerOf = (o) => o.shippingAddress?.fullName || o.contact?.fullName || 'Guest customer';
+  const phoneOf = (o) => o.contact?.phone || o.shippingAddress?.phone || '';
+
+  const orderBadge = (o) => (
+    <Badge tone={STATUS_TONE[o.status] || 'neutral'}>{STATUS_LABELS[o.status] || o.status}</Badge>
+  );
 
   return (
-    <div className="admin-orders-page">
-      <div className="admin-header-row">
-        <div>
-          <h2>📦 Platform Multi-Vendor Orders</h2>
-          <p className="muted">
-            Monitor real-time customer orders across all seller catalogs, inspect line items, update fulfillment statuses, and manually place orders.
-          </p>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            onClick={() => handleOpenAddFunds()}
-            className="btn-secondary"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '9px 14px',
-              borderRadius: 8,
-              fontWeight: 800,
-              fontSize: 13,
-              background: '#ffffff',
-              border: '1.5px solid #cbd5e1',
-              color: '#1e293b',
-              cursor: 'pointer',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-              transition: 'all 0.15s ease',
-            }}
-            title="Directly add or credit funds to any seller wallet in INR / USD"
-          >
-            <Ic name="creditCard" size={16} /> 💳 Add Funds to Seller
-          </button>
-          <button
-            type="button"
-            onClick={() => handleOpenPlaceOrder()}
-            className="btn-primary"
-          >
-            <Ic name="plus" size={16} /> + Place Order on Behalf of Seller
-          </button>
-        </div>
-      </div>
-
-      {/* KPI Stats Bar */}
-      <div className="admin-sellers-stats-bar" style={{ marginBottom: 18 }}>
-        <div className="stat-box" style={{ borderLeft: '4px solid #2563eb' }}>
-          <span className="lbl">Total Orders in View</span>
-          <b className="val" style={{ color: '#2563eb' }}>{orders.length}</b>
-        </div>
-        <div className="stat-box" style={{ borderLeft: '4px solid #d97706' }}>
-          <span className="lbl">Awaiting Confirmation</span>
-          <b className="val" style={{ color: '#d97706' }}>{pendingCount}</b>
-        </div>
-        <div className="stat-box" style={{ borderLeft: '4px solid #16a34a' }}>
-          <span className="lbl">Delivered &amp; Settled</span>
-          <b className="val" style={{ color: '#16a34a' }}>{deliveredCount}</b>
-        </div>
-        <div className="stat-box" style={{ borderLeft: '4px solid #0f172a' }}>
-          <span className="lbl">Gross Order GMV</span>
-          <b className="val">{money(totalRevenue)}</b>
-        </div>
-      </div>
-
-      {/* Search & Seller Filter Toolbar */}
-      <form
-        className="orders-toolbar-card"
-        style={{ marginBottom: 16 }}
-        onSubmit={(e) => {
-          e.preventDefault();
-          loadOrders();
-        }}
-      >
-        <div className="orders-search-input-wrap">
-          <span className="search-icon">
-            <Ic name="search" size={16} />
-          </span>
-          <input
-            type="text"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search by customer name, phone, order #, email…"
-          />
-          {q && (
-            <button
-              type="button"
-              className="orders-search-clear-btn"
-              onClick={() => {
-                setQ('');
-              }}
-              title="Clear search text"
-            >
-              ✕
+    <div className="ins-page admin-orders-page">
+      <Hero
+        icon="box"
+        tone="blue"
+        title="Orders"
+        subtitle="Every customer order across all stores — live. Track value and fulfilment per seller, find stuck orders, update statuses and place orders for a store."
+        actions={
+          <>
+            <button type="button" className="ins-btn" onClick={() => handleOpenAddFunds()} title="Add or credit funds to a seller wallet in INR / USD">
+              <Ic name="card" size={15} /> Add funds
             </button>
-          )}
-        </div>
+            <button type="button" className="ins-btn ins-btn-primary" onClick={() => handleOpenPlaceOrder()}>
+              <Ic name="plus" size={15} /> Place order
+            </button>
+          </>
+        }
+      >
+        <MetaChip live>Live sync</MetaChip>
+        <MetaChip>{allCount.toLocaleString('en-US')} orders in total</MetaChip>
+        {(statusCounts.pending || 0) > 0 && <MetaChip>⏳ {statusCounts.pending} waiting for confirmation</MetaChip>}
+      </Hero>
 
-        <div className="orders-seller-select-wrap">
-          <select
-            value={sellerFilter}
-            onChange={(e) => setSellerFilter(e.target.value)}
-          >
-            <option value="">🏢 All Merchant Stores ({sellers.length})</option>
-            {sellers.map((s) => (
-              <option key={s._id} value={s._id}>
-                🏬 {s.storeName} ({s.ownerName})
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <button type="submit" className="orders-filter-btn">
-          <Ic name="search" size={15} /> Filter Orders
-        </button>
-
-        {hasActiveFilters && (
-          <button
-            type="button"
-            className="orders-clear-filters-btn"
-            onClick={handleClearAllFilters}
-            title="Reset all filters and search queries"
-          >
-            ✕ Reset Filters
-          </button>
-        )}
-      </form>
-
-      {/* Status Filter Tabs */}
-      <div className="filter-tabs" style={{ marginBottom: 16 }}>
-        <button
-          type="button"
-          className={!status ? 'on' : ''}
-          onClick={() => setParams(sellerFilter ? { sellerId: sellerFilter } : {})}
-        >
-          All Statuses <span className="tab-count">{orders.length}</span>
-        </button>
-        {ALL_STATUSES.map((s) => (
-          <button
-            type="button"
-            key={s}
-            className={status === s ? 'on' : ''}
-            onClick={() => {
-              const p = {};
-              if (s) p.status = s;
-              if (sellerFilter) p.sellerId = sellerFilter;
-              setParams(p);
-            }}
-          >
-            {STATUS_LABELS[s]}
-          </button>
-        ))}
-      </div>
+      <OrdersAnalytics sellerId={sellerFilter} refreshKey={analyticsKey} onPickSeller={pickSeller} />
 
       <ErrorBox error={error} />
 
-      {/* Orders Table Card */}
-      <div className="orders-table-card">
-        {/* Table Topbar Header */}
-        <div className="orders-table-topbar">
-          <div className="orders-table-title-group">
-            <h3 className="orders-table-title">
-              <span>📋 Customer Orders</span>
-              <span className="orders-count-badge">{orders.length} in view</span>
-            </h3>
-            <span className="orders-live-sync-indicator" title="Connected to real-time order synchronization stream">
-              <span className="pulse-dot" /> Live Sync
-            </span>
-          </div>
-
-          <div className="orders-table-actions-group">
-            <div className="orders-view-toggle">
-              <button
-                type="button"
-                className={viewMode === 'table' || viewMode === 'auto' ? 'active' : ''}
-                onClick={() => setViewMode('table')}
-                title="Display standard table layout"
-              >
-                ▤ Table
-              </button>
-              <button
-                type="button"
-                className={viewMode === 'cards' ? 'active' : ''}
-                onClick={() => setViewMode('cards')}
-                title="Display card grid layout"
-              >
-                ☷ Cards
+      <div className="ins-table-card ins-orders-list">
+        <div className="ins-table-head" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div>
+              <h3>📋 Customer orders</h3>
+              <span className="ins-card-hint">
+                {loading ? 'Loading…' : `${orders.length}${orders.length >= 300 ? '+ (newest 300 shown — narrow the filters to see older ones)' : ''} shown`}
+                {chosenSeller ? ` · ${chosenSeller.storeName}` : ''}
+              </span>
+            </div>
+            <div className="ins-toolbar-group">
+              <Seg small label="Layout" value={viewMode === 'cards' ? 'cards' : 'table'} onChange={setViewMode} options={[{ value: 'table', label: '▤ Table' }, { value: 'cards', label: '☷ Cards' }]} />
+              <button type="button" className="ins-btn ins-btn-sm" onClick={handleManualRefresh} disabled={refreshing}>
+                <Ic name="refresh" size={13} /> {refreshing ? 'Refreshing…' : 'Refresh'}
               </button>
             </div>
+          </div>
 
-            <button
-              type="button"
-              className={`orders-refresh-btn ${refreshing ? 'spinning' : ''}`}
-              onClick={handleManualRefresh}
-              title="Refresh order stream from server"
-            >
-              <Ic name="refresh" size={13} />
-              <span>{refreshing ? 'Refreshing…' : 'Refresh'}</span>
+          <form
+            className="ins-toolbar"
+            style={{ justifyContent: 'flex-start' }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              loadOrders();
+            }}
+          >
+            <div className="ins-search" style={{ maxWidth: 380 }}>
+              <Ic name="search" size={15} />
+              <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Order #, customer, phone, email, store…" />
+              {q && (
+                <button
+                  type="button"
+                  className="ins-search-clear"
+                  onClick={() => {
+                    setQ('');
+                    filtersRef.current = { ...filtersRef.current, q: '' };
+                    loadOrders();
+                  }}
+                  aria-label="Clear search"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+            <select className="ins-select" value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)} aria-label="Store" style={{ minWidth: 200 }}>
+              <option value="">All stores ({sellers.length})</option>
+              {sellers.map((s) => (
+                <option key={s._id} value={s._id}>
+                  {s.storeName} · {s.ownerName}
+                </option>
+              ))}
+            </select>
+            <button type="submit" className="ins-btn ins-btn-primary">
+              <Ic name="search" size={14} /> Search
             </button>
+            {hasActiveFilters && (
+              <button type="button" className="ins-btn ins-btn-ghost" onClick={handleClearAllFilters}>
+                ✕ Reset filters
+              </button>
+            )}
+          </form>
+
+          <div style={{ overflowX: 'auto' }}>
+            <Seg
+              small
+              label="Status"
+              value={status}
+              onChange={setStatus}
+              options={[
+                { value: '', label: 'All', count: allCount },
+                ...ALL_STATUSES.map((st) => ({ value: st, label: STATUS_LABELS[st], count: statusCounts[st] || 0 })),
+              ]}
+            />
           </div>
         </div>
 
-        {/* 1. Desktop & Tablet Table (Auto on >= 769px or forced table) */}
-        {(viewMode === 'auto' || viewMode === 'table') && (
-          <div className={`orders-table-wrap ${viewMode === 'auto' ? 'auto-desktop' : ''}`}>
-            <table className="orders-modern-table">
+        {showTable && (
+          <div className={`ins-table-scroll${viewMode === 'auto' ? ' ins-hide-mobile' : ''}`}>
+            <table className="ins-table">
               <thead>
                 <tr>
-                  <th style={{ width: '16%' }}>Order # &amp; Date</th>
-                  <th style={{ width: '17%' }}>Merchant / Seller</th>
-                  <th style={{ width: '20%' }}>Customer &amp; Contact</th>
-                  <th style={{ width: '17%' }}>Items &amp; Details</th>
-                  <th style={{ width: '11%' }}>Total Value</th>
-                  <th style={{ width: '10%' }}>Payment</th>
-                  <th style={{ width: '11%' }}>Fulfillment</th>
-                  <th style={{ width: '8%', textAlign: 'right' }}>Actions</th>
+                  <th>Order</th>
+                  <th>Store</th>
+                  <th>Customer</th>
+                  <th>Items</th>
+                  <th className="num">Total</th>
+                  <th>Payment</th>
+                  <th>Status</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
-                {loading && (
-                  Array.from({ length: 5 }).map((_, idx) => (
-                    <tr key={`skel-${idx}`} className="orders-table-skeleton-row">
-                      <td><div className="skeleton-bar" style={{ width: '75%' }} /></td>
-                      <td><div className="skeleton-bar" style={{ width: '85%' }} /></td>
-                      <td><div className="skeleton-bar" style={{ width: '80%' }} /></td>
-                      <td><div className="skeleton-bar" style={{ width: '65%' }} /></td>
-                      <td><div className="skeleton-bar" style={{ width: '50%' }} /></td>
-                      <td><div className="skeleton-bar" style={{ width: '60%' }} /></td>
-                      <td><div className="skeleton-bar" style={{ width: '70%' }} /></td>
-                      <td><div className="skeleton-bar" style={{ width: '90%' }} /></td>
+                {loading &&
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <tr key={`sk-${i}`}>
+                      {Array.from({ length: 8 }).map((__, j) => (
+                        <td key={j}><span className="ins-skel" style={{ width: `${45 + ((i + j) % 4) * 13}%` }} /></td>
+                      ))}
                     </tr>
-                  ))
-                )}
+                  ))}
                 {!loading && orders.length === 0 && (
                   <tr>
-                    <td colSpan="8" style={{ padding: 0 }}>
-                      <div className="orders-empty-state">
-                        <div className="orders-empty-icon">📦</div>
-                        <h4 className="orders-empty-title">No orders found</h4>
-                        <p className="orders-empty-desc">
-                          {status || sellerFilter || q
-                            ? 'No orders matched your current filters or search query.'
-                            : 'There are currently no orders in the system.'}
-                        </p>
-                        {(status || sellerFilter || q) && (
-                          <button
-                            type="button"
-                            onClick={handleClearAllFilters}
-                            className="orders-clear-filters-btn"
-                          >
-                            ✕ Clear all filters
-                          </button>
+                    <td colSpan={8}>
+                      <Empty icon="📦" text={hasActiveFilters ? 'No order matches these filters.' : 'No orders yet.'}>
+                        {hasActiveFilters && (
+                          <button type="button" className="ins-btn ins-btn-sm" onClick={handleClearAllFilters}>Clear filters</button>
                         )}
-                      </div>
+                      </Empty>
                     </td>
                   </tr>
                 )}
-                {!loading && orders.map((o) => {
-                  const seller = getOrderSeller(o);
-                  const itemsCount = o.items?.reduce((sum, it) => sum + (it.qty || 1), 0) || 0;
-                  const storePalette = getStoreColor(seller?.storeName || 'Bazario');
-
-                  return (
-                    <tr key={o._id}>
-                      {/* 1. Order Number & Date */}
-                      <td>
-                        <div className="order-id-badge-wrap">
-                          <span
-                            className="order-id-badge"
-                            title="Click to copy order number"
-                            onClick={(e) => handleCopyOrder(e, o.orderNumber)}
-                            style={{ cursor: 'pointer' }}
-                          >
-                            #{o.orderNumber}
-                          </span>
-                          <button
-                            type="button"
-                            className="order-copy-btn"
-                            onClick={(e) => handleCopyOrder(e, o.orderNumber)}
-                            title="Copy order number"
-                          >
-                            {copiedId === o.orderNumber ? (
-                              <span style={{ fontSize: 10, color: '#16a34a', fontWeight: 800 }}>✓ Copied</span>
-                            ) : (
-                              <Ic name="paperclip" size={12} />
-                            )}
+                {!loading &&
+                  orders.map((o) => {
+                    const seller = getOrderSeller(o);
+                    const itemsCount = o.items?.reduce((sum, it) => sum + (it.qty || 1), 0) || 0;
+                    const storeCount = new Set((o.items || []).map((it) => String(it.seller?._id || it.seller || ''))).size;
+                    return (
+                      <tr key={o._id}>
+                        <td>
+                          <button type="button" className="ins-badge ins-badge-neutral" style={{ cursor: 'pointer', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }} onClick={(e) => handleCopyOrder(e, o.orderNumber)} title="Copy order number">
+                            {copiedId === o.orderNumber ? '✓ Copied' : `#${o.orderNumber}`}
                           </button>
-                        </div>
-                        <div className="order-date-row">
-                          <Ic name="clock" size={11} />
-                          <span>{fmtDate(o.createdAt)}</span>
-                        </div>
-                      </td>
-
-                      {/* 2. Merchant Store */}
-                      <td>
-                        {seller ? (
-                          <div className="order-merchant-cell">
-                            <div
-                              className="order-merchant-avatar"
-                              style={{
-                                background: storePalette.bg,
-                                color: storePalette.text,
-                              }}
-                            >
-                              {seller.storeName?.[0]?.toUpperCase() || 'M'}
-                            </div>
-                            <div className="order-merchant-info">
-                              <span className="order-merchant-name" title={seller.storeName}>
-                                {seller.storeName}
-                              </span>
-                              {seller.ownerName && (
-                                <span className="order-merchant-sub" title={seller.ownerName}>
-                                  👤 {seller.ownerName}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="order-platform-tag">
-                            <Ic name="badgeCheck" size={12} /> Bazario Direct
-                          </div>
-                        )}
-                      </td>
-
-                      {/* 3. Customer & Contact */}
-                      <td>
-                        <div className="order-customer-cell">
-                          <span className="order-customer-name">
-                            {o.shippingAddress?.fullName || o.contact?.fullName || 'Guest Customer'}
+                          <span className="ins-sub" style={{ marginTop: 4 }} title={fmtDate(o.createdAt)}>
+                            {fmtDate(o.createdAt)} · {ageLabel(o.createdAt)}
                           </span>
-                          {(o.contact?.phone || o.shippingAddress?.phone) && (
-                            <a
-                              href={`tel:${o.contact?.phone || o.shippingAddress?.phone}`}
-                              className="order-customer-phone"
-                              title="Call customer"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <Ic name="phone" size={11} />
-                              <span>{o.contact?.phone || o.shippingAddress?.phone}</span>
+                          {o.placedBy && o.placedBy !== 'customer' && <span className="ins-sub">Placed by admin</span>}
+                        </td>
+                        <td>
+                          {seller ? (
+                            <div className="ins-cell-who">
+                              <Avatar name={seller.storeName} size={30} />
+                              <div>
+                                <b className="ins-clip" style={{ maxWidth: 160 }} title={seller.storeName}>{seller.storeName}</b>
+                                <span className="ins-sub">{storeCount > 1 ? `+${storeCount - 1} more store${storeCount > 2 ? 's' : ''}` : seller.ownerName || ''}</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <Badge tone="info">Bazario Direct</Badge>
+                          )}
+                        </td>
+                        <td>
+                          <span className="ins-strong ins-clip" style={{ display: 'block', maxWidth: 170 }}>{customerOf(o)}</span>
+                          {phoneOf(o) && (
+                            <a href={`tel:${phoneOf(o)}`} className="ins-sub" style={{ color: '#2a78d6', textDecoration: 'none' }}>
+                              {phoneOf(o)}
                             </a>
                           )}
-                          {o.contact?.email && (
-                            <span className="order-customer-email" title={o.contact.email}>
-                              ✉️ {o.contact.email}
+                          {o.shippingAddress?.city && <span className="ins-sub">{o.shippingAddress.city}{o.shippingAddress.state ? `, ${o.shippingAddress.state}` : ''}</span>}
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                            <span style={{ width: 38, height: 38, borderRadius: 9, background: '#f1f5f9', overflow: 'hidden', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
+                              {o.items?.[0]?.image ? (
+                                <img src={o.items[0].image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                              ) : (
+                                <Ic name="box" size={16} />
+                              )}
                             </span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* 4. Items & Details */}
-                      <td>
-                        <div className="order-items-cell">
-                          <div className="order-thumb-wrap">
-                            {o.items?.[0]?.image ? (
-                              <img
-                                src={o.items[0].image}
-                                alt=""
-                                className="order-thumb-img"
-                                onError={(e) => { e.target.style.display = 'none'; }}
-                              />
-                            ) : (
-                              <div className="order-thumb-fallback">
-                                <Ic name="box" size={18} />
-                              </div>
-                            )}
-                          </div>
-                          <div className="order-items-meta">
-                            <span className="order-items-count-badge">
-                              📦 {itemsCount} {itemsCount === 1 ? 'item' : 'items'}
+                            <span style={{ minWidth: 0 }}>
+                              <span className="ins-clip" style={{ display: 'block', maxWidth: 170, fontWeight: 600, color: '#0f172a' }} title={o.items?.[0]?.name}>{o.items?.[0]?.name || 'Item'}</span>
+                              <span className="ins-sub">{itemsCount} item{itemsCount === 1 ? '' : 's'}{o.items?.length > 1 ? ` · ${o.items.length} products` : ''}</span>
                             </span>
-                            {o.items?.[0]?.name && (
-                              <span className="order-item-title" title={o.items[0].name}>
-                                {o.items[0].name}
-                              </span>
-                            )}
                           </div>
-                        </div>
-                      </td>
-
-                      {/* 5. Total Value */}
-                      <td>
-                        <div className="order-amount-cell">
-                          <span className="order-total-price">{money(o.total)}</span>
-                          {o.shipping?.cost > 0 ? (
-                            <span className="order-ship-fee">+{money(o.shipping.cost)} Delivery</span>
-                          ) : (
-                            <span className="order-ship-free">✓ Free Shipping</span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* 6. Payment */}
-                      <td>
-                        <div className="order-pay-stack">
-                          <span className="pay-chip">
-                            {(PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod || 'COD').toUpperCase()}
-                          </span>
-                          <span className={`pay-status-badge ${o.paymentStatus === 'paid' ? 'paid' : 'pending'}`}>
-                            {o.paymentStatus === 'paid' ? '● Paid' : '○ Unpaid'}
-                          </span>
-                        </div>
-                      </td>
-
-                      {/* 7. Fulfillment Status */}
-                      <td>
-                        <span className={`status-pill st-${o.status}`}>
-                          <span className="st-dot" />
-                          <span className="st-text">{STATUS_LABELS[o.status] || o.status}</span>
-                        </span>
-                      </td>
-
-                      {/* 8. Actions */}
-                      <td style={{ textAlign: 'right' }}>
-                        <div className="order-actions-cell" style={{ justifyContent: 'flex-end' }}>
-                          <button
-                            type="button"
-                            onClick={() => setInspectOrder(o)}
-                            className="order-action-btn"
-                            title="Quick View Order Details"
-                          >
-                            <Ic name="eye" size={13} /> View
-                          </button>
-                          <Link
-                            to={`/admin/orders/${o._id}`}
-                            className="order-link-btn"
-                            title="Open Full Management Page"
-                          >
-                            Manage ↗
-                          </Link>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        </td>
+                        <td className="num">
+                          <b style={{ fontSize: 14, color: '#0f172a' }}>{money(o.total)}</b>
+                          <span className="ins-sub">{o.shipping?.cost > 0 ? `incl. ${money(o.shipping.cost)} delivery` : 'Free delivery'}</span>
+                        </td>
+                        <td>
+                          <span className="ins-sub" style={{ fontWeight: 600, color: '#334155' }}>{PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod || 'COD'}</span>
+                          <Badge tone={o.paymentStatus === 'paid' ? 'good' : 'neutral'}>{o.paymentStatus === 'paid' ? 'Paid' : 'Unpaid'}</Badge>
+                        </td>
+                        <td>{orderBadge(o)}</td>
+                        <td>
+                          <div className="ins-actions" style={{ flexWrap: 'nowrap' }}>
+                            <button type="button" className="ins-btn ins-btn-sm" onClick={() => setInspectOrder(o)} title="Quick view">
+                              <Ic name="eye" size={13} /> View
+                            </button>
+                            <Link to={`/admin/orders/${o._id}`} className="ins-btn ins-btn-sm" title="Open the full order page">
+                              Manage ↗
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>
         )}
 
-        {/* 2. Mobile Responsive Card View (Auto on <= 768px or forced cards) */}
-        {(viewMode === 'auto' || viewMode === 'cards') && (
-          <div className={`orders-mobile-card-list ${viewMode === 'auto' ? 'auto-mobile' : ''}`}>
-            {loading && (
-              <div style={{ textAlign: 'center', padding: '30px 16px', color: '#64748b' }}>
-                <p>Loading orders stream...</p>
-              </div>
-            )}
-            {!loading && orders.length === 0 && (
-              <div className="orders-empty-state">
-                <div className="orders-empty-icon">📦</div>
-                <h4 className="orders-empty-title">No orders found</h4>
-                <p className="orders-empty-desc">
-                  {status || sellerFilter || q
-                    ? 'No orders matched your current filters or search query.'
-                    : 'There are currently no orders in the system.'}
-                </p>
-                {(status || sellerFilter || q) && (
-                  <button
-                    type="button"
-                    onClick={handleClearAllFilters}
-                    className="orders-clear-filters-btn"
-                  >
-                    ✕ Clear all filters
-                  </button>
-                )}
-              </div>
-            )}
-            {!loading && orders.map((o) => {
-              const seller = getOrderSeller(o);
-              const itemsCount = o.items?.reduce((sum, it) => sum + (it.qty || 1), 0) || 0;
-
-              return (
-                <div key={o._id} className="order-mobile-card">
-                  <div className="order-m-head">
-                    <div className="order-id-badge-wrap">
-                      <span className="order-id-badge" onClick={(e) => handleCopyOrder(e, o.orderNumber)}>
-                        #{o.orderNumber}
-                      </span>
-                      <button type="button" className="order-copy-btn" onClick={(e) => handleCopyOrder(e, o.orderNumber)}>
-                        {copiedId === o.orderNumber ? '✓' : <Ic name="paperclip" size={11} />}
+        {showCards && (
+          <div className="ins-cards" style={viewMode === 'cards' ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' } : undefined}>
+            {loading && <Empty icon="⏳" text="Loading orders…" />}
+            {!loading && orders.length === 0 && <Empty icon="📦" text={hasActiveFilters ? 'No order matches these filters.' : 'No orders yet.'} />}
+            {!loading &&
+              orders.map((o) => {
+                const seller = getOrderSeller(o);
+                const itemsCount = o.items?.reduce((sum, it) => sum + (it.qty || 1), 0) || 0;
+                return (
+                  <div key={o._id} className="ins-mcard">
+                    <div className="ins-mcard-row">
+                      <button type="button" className="ins-badge ins-badge-neutral" style={{ cursor: 'pointer' }} onClick={(e) => handleCopyOrder(e, o.orderNumber)}>
+                        {copiedId === o.orderNumber ? '✓ Copied' : `#${o.orderNumber}`}
                       </button>
+                      {orderBadge(o)}
                     </div>
-                    <span className={`status-pill st-${o.status}`}>
-                      <span className="st-dot" />
-                      <span className="st-text">{STATUS_LABELS[o.status] || o.status}</span>
-                    </span>
-                  </div>
-
-                  <div className="order-m-body">
-                    <div className="order-m-row">
-                      <span className="order-m-label">Merchant</span>
-                      <span className="order-m-val">
-                        {seller ? seller.storeName : 'Bazario Direct'}
+                    <div className="ins-mcard-row">
+                      <span>Store</span>
+                      <b className="ins-clip" style={{ maxWidth: 180 }}>{seller ? seller.storeName : 'Bazario Direct'}</b>
+                    </div>
+                    <div className="ins-mcard-row">
+                      <span>Customer</span>
+                      <span style={{ textAlign: 'right' }}>
+                        <b>{customerOf(o)}</b>
+                        {phoneOf(o) && <a href={`tel:${phoneOf(o)}`} className="ins-sub" style={{ color: '#2a78d6' }}>{phoneOf(o)}</a>}
                       </span>
                     </div>
-
-                    <div className="order-m-row">
-                      <span className="order-m-label">Customer</span>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontWeight: 800, fontSize: 13, color: '#0f172a' }}>
-                          {o.shippingAddress?.fullName || o.contact?.fullName || 'Customer'}
-                        </div>
-                        {(o.contact?.phone || o.shippingAddress?.phone) && (
-                          <a
-                            href={`tel:${o.contact?.phone || o.shippingAddress?.phone}`}
-                            style={{ fontSize: 11.5, color: '#2563eb', textDecoration: 'none', fontWeight: 600 }}
-                          >
-                            📞 {o.contact?.phone || o.shippingAddress?.phone}
-                          </a>
-                        )}
-                      </div>
+                    <div className="ins-mcard-row">
+                      <span>{itemsCount} item{itemsCount === 1 ? '' : 's'} · {ageLabel(o.createdAt)}</span>
+                      <b style={{ fontSize: 15 }}>{money(o.total)}</b>
                     </div>
-
-                    <div className="order-m-row">
-                      <span className="order-m-label">Items</span>
-                      <span className="order-m-val" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span>{itemsCount} item(s)</span>
-                        {o.items?.[0]?.name && (
-                          <span className="muted-sm" style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            ({o.items[0].name})
-                          </span>
-                        )}
-                      </span>
-                    </div>
-
-                    <div className="order-m-row">
-                      <span className="order-m-label">Total Amount</span>
-                      <div style={{ textAlign: 'right' }}>
-                        <div className="order-total-price">{money(o.total)}</div>
-                        <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', marginTop: 2 }}>
-                          <span className="pay-chip" style={{ fontSize: 10, padding: '1px 5px' }}>
-                            {(PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod || 'COD').toUpperCase()}
-                          </span>
-                          <span className={`pay-status-badge ${o.paymentStatus === 'paid' ? 'paid' : 'pending'}`} style={{ fontSize: 10 }}>
-                            {o.paymentStatus === 'paid' ? 'Paid' : 'Unpaid'}
-                          </span>
-                        </div>
-                      </div>
+                    <div className="ins-actions" style={{ justifyContent: 'stretch' }}>
+                      <button type="button" className="ins-btn ins-btn-sm" style={{ flex: 1 }} onClick={() => setInspectOrder(o)}>
+                        <Ic name="eye" size={13} /> Quick view
+                      </button>
+                      <Link to={`/admin/orders/${o._id}`} className="ins-btn ins-btn-sm" style={{ flex: 1 }}>
+                        Manage ↗
+                      </Link>
                     </div>
                   </div>
-
-                  <div className="order-m-foot">
-                    <button type="button" onClick={() => setInspectOrder(o)} className="order-action-btn">
-                      <Ic name="eye" size={13} /> Quick View
-                    </button>
-                    <Link to={`/admin/orders/${o._id}`} className="order-link-btn">
-                      Manage Order ↗
-                    </Link>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
           </div>
         )}
       </div>

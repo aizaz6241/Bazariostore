@@ -625,7 +625,8 @@ router.post('/:id/reset-password', authAdmin('sellers'), async (req, res) => {
 // POST /api/sellers/:id/freeze (Admin freezes/suspends or unfreezes seller account with reason)
 router.post('/:id/freeze', authAdmin('sellers'), async (req, res) => {
   try {
-    const { status = 'frozen', reason = '' } = req.body;
+    const { status = 'frozen' } = req.body || {};
+    const reason = String(req.body?.reason || '').trim().slice(0, 1000);
     if (!['active', 'frozen', 'suspended'].includes(status)) {
       return res.status(400).json({ message: 'Invalid status. Use: active, frozen, or suspended' });
     }
@@ -720,7 +721,7 @@ router.post('/:id/freeze', authAdmin('sellers'), async (req, res) => {
 
     res.json({
       message: `Seller account ${status === 'active' ? 'unfrozen & activated' : 'set to ' + status} successfully`,
-      seller,
+      seller: lightSeller(seller),
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -730,7 +731,11 @@ router.post('/:id/freeze', authAdmin('sellers'), async (req, res) => {
 // POST /api/sellers/:id/warn (Admin issues or clears an official warning announcement banner)
 router.post('/:id/warn', authAdmin('sellers'), async (req, res) => {
   try {
-    const { active = true, message = '', level = 'warning' } = req.body;
+    const { active: activeRaw = true, level: levelRaw = 'warning' } = req.body || {};
+    const active = activeRaw === true || activeRaw === 'true';
+    const message = String(req.body?.message || '').slice(0, 1000);
+    const level = ['info', 'warning', 'critical'].includes(levelRaw) ? levelRaw : 'warning';
+    if (active && !message.trim()) return res.status(400).json({ message: 'A warning message is required' });
 
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
@@ -738,7 +743,7 @@ router.post('/:id/warn', authAdmin('sellers'), async (req, res) => {
     seller.warning = {
       active: Boolean(active),
       message: active ? message.trim() : '',
-      level: ['info', 'warning', 'critical'].includes(level) ? level : 'warning',
+      level,
       issuedAt: active ? new Date() : null,
       issuedBy: active ? req.admin.name || 'Platform Compliance Desk' : '',
     };
@@ -810,7 +815,7 @@ router.post('/:id/warn', authAdmin('sellers'), async (req, res) => {
 
     res.json({
       message: active ? 'Official warning issued to seller successfully' : 'Warning cleared successfully',
-      seller,
+      seller: lightSeller(seller),
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -820,9 +825,10 @@ router.post('/:id/warn', authAdmin('sellers'), async (req, res) => {
 // POST /api/sellers/:id/health (Admin adjusts Seller Account Health score 0-100)
 router.post('/:id/health', authAdmin('sellers'), async (req, res) => {
   try {
-    const { score, reason = 'Manual score adjustment by Administrator', notifySeller = true } = req.body;
+    const { score, notifySeller = true } = req.body || {};
+    const reason = String(req.body?.reason || 'Manual score adjustment by Administrator').slice(0, 500);
     const numScore = Math.max(0, Math.min(100, Math.round(Number(score))));
-    if (isNaN(numScore)) {
+    if (score === '' || score === null || score === undefined || isNaN(numScore)) {
       return res.status(400).json({ message: 'Valid health score between 0 and 100 is required' });
     }
 
@@ -888,7 +894,7 @@ router.post('/:id/health', authAdmin('sellers'), async (req, res) => {
 
     res.json({
       message: `Account health updated to ${numScore}/100 successfully`,
-      seller,
+      seller: lightSeller(seller),
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -1880,33 +1886,43 @@ router.patch('/:id/toggle-previous-store', authAdmin('sellers'), async (req, res
 router.post('/:id/targets', authAdmin('sellers'), async (req, res) => {
   try {
     const { title, targetOrders, targetOrderCount, bonusAmount, durationDays, adminNote, description } = req.body || {};
-    const finalOrderCount = Number(targetOrders || targetOrderCount || 0);
-    const finalBonus = Number(bonusAmount || 0);
+    const finalOrderCount = Math.floor(Number(targetOrders || targetOrderCount || 0));
+    const finalBonus = Math.round(Number(bonusAmount || 0) * 100) / 100;
+    const days = durationDays === null || durationDays === undefined || durationDays === '' ? 0 : Number(durationDays);
 
-    if (!title || !finalOrderCount || !finalBonus) {
-      return res.status(400).json({ message: 'Target milestone title, target orders count, and bonus amount are required' });
+    if (typeof title !== 'string' || !title.trim()) {
+      return res.status(400).json({ message: 'Target milestone title is required' });
     }
+    if (!Number.isFinite(finalOrderCount) || finalOrderCount < 1) {
+      return res.status(400).json({ message: 'Target orders must be a whole number of at least 1' });
+    }
+    if (!Number.isFinite(finalBonus) || finalBonus <= 0) {
+      return res.status(400).json({ message: 'Bonus amount must be more than 0' });
+    }
+    if (!Number.isFinite(days) || days < 0) {
+      return res.status(400).json({ message: 'Duration must be a positive number of days (or empty for no expiry)' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Seller not found' });
 
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
+    if (seller.status === 'pending_approval') {
+      return res.status(400).json({ message: 'This seller is not approved yet. Approve the application before assigning a target.' });
+    }
 
     seller.targets = seller.targets || [];
-    const expiresAt = durationDays && Number(durationDays) > 0
-      ? new Date(Date.now() + Number(durationDays) * 24 * 60 * 60 * 1000)
-      : null;
+    const expiresAt = days > 0 ? new Date(Date.now() + days * 24 * 60 * 60 * 1000) : null;
 
+    const note = String(description || adminNote || '').trim().slice(0, 500);
     const newTarget = {
-      title: title.trim(),
+      title: title.trim().slice(0, 120),
       targetOrders: finalOrderCount,
-      targetOrderCount: finalOrderCount,
       currentOrders: 0,
-      currentOrderCount: 0,
       bonusAmount: finalBonus,
       status: 'active',
       createdAt: new Date(),
       expiresAt,
-      adminNote: (adminNote || description || '').trim(),
-      description: (description || adminNote || '').trim(),
+      adminNote: note,
     };
 
     seller.targets.unshift(newTarget);
@@ -1981,12 +1997,18 @@ router.post('/:id/targets', authAdmin('sellers'), async (req, res) => {
 router.get('/targets/all', authAdmin('sellers'), async (req, res) => {
   try {
     const sellers = await Seller.find({ 'targets.0': { $exists: true } })
-      .select('storeName ownerName email targets')
-      .sort({ updatedAt: -1 });
+      .select('storeName ownerName email status isTestAccount targets')
+      .lean();
 
+    const now = Date.now();
     const allTargets = [];
     sellers.forEach((s) => {
       (s.targets || []).forEach((t) => {
+        const target = t.targetOrders || 0;
+        const current = t.currentOrders || 0;
+        // an active target past its deadline is shown as expired (it is closed for good on the next delivery)
+        let status = t.status || 'active';
+        if (status === 'active' && t.expiresAt && new Date(t.expiresAt).getTime() < now) status = 'expired';
         allTargets.push({
           _id: t._id,
           targetId: t._id,
@@ -1994,21 +2016,22 @@ router.get('/targets/all', authAdmin('sellers'), async (req, res) => {
           storeName: s.storeName,
           ownerName: s.ownerName,
           email: s.email,
+          sellerStatus: s.status,
+          isTestAccount: Boolean(s.isTestAccount),
           title: t.title,
-          targetOrders: t.targetOrders || t.targetOrderCount || 0,
-          targetOrderCount: t.targetOrders || t.targetOrderCount || 0,
-          currentOrders: t.currentOrders || t.currentOrderCount || 0,
-          currentOrderCount: t.currentOrders || t.currentOrderCount || 0,
+          targetOrders: target,
+          currentOrders: current,
           bonusAmount: t.bonusAmount || 0,
-          status: t.status || 'active',
+          status,
           createdAt: t.createdAt,
           expiresAt: t.expiresAt,
           completedAt: t.completedAt,
-          adminNote: t.adminNote || t.description || '',
-          description: t.description || t.adminNote || '',
+          adminNote: t.adminNote || '',
+          description: t.adminNote || '',
         });
       });
     });
+    allTargets.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
     res.json({ targets: allTargets });
   } catch (err) {
@@ -2019,12 +2042,16 @@ router.get('/targets/all', authAdmin('sellers'), async (req, res) => {
 // DELETE /api/sellers/:id/targets/:targetId (Admin removes a target)
 router.delete('/:id/targets/:targetId', authAdmin('sellers'), async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Seller not found' });
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
+    const removed = (seller.targets || []).find((t) => t._id?.toString() === req.params.targetId);
+    if (!removed) return res.status(404).json({ message: 'Target not found (it may already be removed)' });
     seller.targets = (seller.targets || []).filter((t) => t._id?.toString() !== req.params.targetId);
     seller.markModified('targets');
     await seller.save();
+    audit(req, 'delete', 'seller_target', seller._id, `Removed target "${removed.title}" (${removed.currentOrders || 0}/${removed.targetOrders} orders, status ${removed.status}) from ${seller.storeName}`);
 
     req.app.get('io')?.to(`seller:${seller._id}`).emit('seller:targets_update', { targets: seller.targets });
     res.json({ message: 'Target removed successfully', targets: seller.targets });
