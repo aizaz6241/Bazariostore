@@ -10,6 +10,7 @@ import { audit } from '../utils/audit.js';
 import { deleteAttachmentFiles, attachmentLocation } from '../services/uploads.js';
 import { asText } from '../middleware/sanitize.js';
 import { limit } from '../utils/rateLimit.js';
+import { adminRoom } from '../utils/permissions.js';
 
 // A guest chat is opened with the random id the storefront keeps in the browser (36 characters).
 // Knowing that id is what gives access to that one chat, so it must be real text of a sensible
@@ -80,8 +81,8 @@ export async function handleAutoReply(app, conv) {
             io.to(`guest:${gId}`).emit('message:new', replyMsg);
             io.to(`customer:${gId}`).emit('message:new', replyMsg);
           }
-          io.to('admins').emit('message:new', replyMsg);
-          io.to('admins').emit('chat:notification', {
+          io.to(adminRoom('chat')).emit('message:new', replyMsg);
+          io.to(adminRoom('chat')).emit('chat:notification', {
             conversationId: conv._id,
             storeName: conv.storeName || conv.name || 'Merchant/Guest',
             text: `🤖 Auto-Reply: ${autoReplyText.slice(0, 50)}`,
@@ -242,8 +243,8 @@ router.post('/seller/send', authSeller, async (req, res) => {
     const io = req.app.get('io');
     if (io) {
       io.to(`seller:${sellerId}`).emit('message:new', message);
-      io.to('admins').emit('message:new', message);
-      io.to('admins').emit('chat:notification', {
+      io.to(adminRoom('chat')).emit('message:new', message);
+      io.to(adminRoom('chat')).emit('chat:notification', {
         conversationId: conv._id,
         storeName: seller.storeName,
         text: previewMsg,
@@ -288,7 +289,7 @@ router.post('/seller/read', authSeller, async (req, res) => {
 
       const io = req.app.get('io');
       if (io) {
-        io.to('admins').emit('messages:seen', {
+        io.to(adminRoom('chat')).emit('messages:seen', {
           conversationId: conv._id,
           sellerId,
           seenAt: now,
@@ -447,7 +448,7 @@ router.post('/admin/conversations/:id/reply', authAdmin('chat'), async (req, res
         io.to(`customer:${conv.guestId}`).emit('message:new', message);
       }
       io.to(`conversation:${conv._id}`).emit('message:new', message);
-      io.to('admins').emit('message:new', message);
+      io.to(adminRoom('chat')).emit('message:new', message);
     }
 
     res.status(201).json(message);
@@ -819,7 +820,7 @@ async function clearConversation(req, conv, body) {
       if (conv.adminA) io.to(`admin:${conv.adminA}`).emit('chat:cleared', payload);
       if (conv.adminB) io.to(`admin:${conv.adminB}`).emit('chat:cleared', payload);
     } else {
-      io.to('admins').emit('chat:cleared', payload);
+      io.to(adminRoom('chat')).emit('chat:cleared', payload);
       if (sellerId) io.to(`seller:${sellerId}`).emit('chat:cleared', payload);
       if (conv.guestId) {
         io.to(`guest:${conv.guestId}`).emit('chat:cleared', payload);
@@ -938,7 +939,7 @@ router.post('/settings/auto-reply', authAdmin('chat'), async (req, res) => {
       message: data.autoReplyMessage,
     };
 
-    req.app.get('io')?.to('admins').emit('chat:settings_update', payload);
+    req.app.get('io')?.to(adminRoom('chat')).emit('chat:settings_update', payload);
     res.json({ message: 'Auto-reply settings updated successfully', settings: payload });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -994,7 +995,7 @@ router.put('/messages/:id', authSellerOrAdmin, async (req, res) => {
       if (msg.seller) io.to(`seller:${msg.seller}`).emit('message:edit', editPayload);
       if (msg.guestId) io.to(`guest:${msg.guestId}`).emit('message:edit', editPayload);
       if (msg.guestId) io.to(`customer:${msg.guestId}`).emit('message:edit', editPayload);
-      io.to('admins').emit('message:edit', editPayload);
+      io.to(adminRoom('chat')).emit('message:edit', editPayload);
       // (no broadcast to everyone: only the people in this conversation and the admins are told)
     }
 
@@ -1072,7 +1073,7 @@ router.delete('/messages/:id', authSellerOrAdmin, async (req, res) => {
       if (msg.seller) io.to(`seller:${msg.seller}`).emit('message:delete', deletePayload);
       if (msg.guestId) io.to(`guest:${msg.guestId}`).emit('message:delete', deletePayload);
       if (msg.guestId) io.to(`customer:${msg.guestId}`).emit('message:delete', deletePayload);
-      io.to('admins').emit('message:delete', deletePayload);
+      io.to(adminRoom('chat')).emit('message:delete', deletePayload);
       // (no broadcast to everyone: only the people in this conversation and the admins are told)
     }
 
@@ -1179,8 +1180,8 @@ router.post('/guest/send', guestSendLimit, async (req, res) => {
     const io = req.app.get('io');
     if (io) {
       io.to(`guest:${guestId}`).emit('message:new', message);
-      io.to('admins').emit('message:new', message);
-      io.to('admins').emit('chat:notification', {
+      io.to(adminRoom('chat')).emit('message:new', message);
+      io.to(adminRoom('chat')).emit('chat:notification', {
         conversationId: conv._id,
         storeName: `Guest: ${name || 'Inquirer'}`,
         text: previewMsg,
@@ -1264,7 +1265,7 @@ router.post('/read/:guestId', guestReadLimit, async (req, res) => {
 
       const io = req.app.get('io');
       if (io) {
-        io.to('admins').emit('messages:seen', {
+        io.to(adminRoom('chat')).emit('messages:seen', {
           conversationId: conv?._id,
           guestId,
           seenAt: now,

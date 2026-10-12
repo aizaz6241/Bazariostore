@@ -5,6 +5,7 @@ import User from '../models/User.js';
 import Seller from '../models/Seller.js';
 import Withdrawal from '../models/Withdrawal.js';
 import { authAdmin } from '../middleware/auth.js';
+import { hasPermission } from '../utils/permissions.js';
 
 const router = Router();
 
@@ -19,33 +20,63 @@ const startOf = {
   year: () => new Date(new Date().getFullYear(), 0, 1),
 };
 
+// Every admin opens the dashboard, but each part of it is only sent to the roles that cover it:
+//   sales / orders / customers / top stores -> Orders or Reports,  recent orders (names, cities) -> Orders,
+//   products & stock -> Products or Inventory,  USDT wallet & open money requests -> Finance,
+//   seller pipeline, store health & targets -> Sellers.
 router.get('/dashboard', authAdmin(), async (req, res) => {
   try {
-    const valid = { status: { $nin: ['cancelled', 'refunded'] } };
-    const sumSince = async (since) => {
-      const agg = await Order.aggregate([
-        { $match: { ...valid, createdAt: { $gte: since } } },
-        { $group: { _id: null, revenue: { $sum: '$total' }, orders: { $sum: 1 } } },
-      ]);
-      return { revenue: agg[0]?.revenue || 0, orders: agg[0]?.orders || 0 };
+    const can = (p) => hasPermission(req.admin, p);
+    const sections = {
+      sales: can('orders') || can('reports'),
+      recentOrders: can('orders'),
+      stock: can('products') || can('inventory'),
+      wallet: can('finance'),
+      sellers: can('sellers'),
     };
+    const out = { sections };
+    const [sales, sellers, recent, stock, wallet] = await Promise.all([
+      sections.sales ? salesSection() : null,
+      sections.sellers ? sellersSection() : null,
+      sections.recentOrders
+        ? Order.find().sort({ createdAt: -1 }).limit(8).select('orderNumber createdAt shippingAddress total paymentMethod status items.sellerName seller').lean()
+        : null,
+      sections.stock ? stockSection() : null,
+      sections.wallet ? walletSection() : null,
+    ]);
+    if (sales) Object.assign(out, sales);
+    if (sellers) Object.assign(out, sellers);
+    if (recent) out.recent = recent;
+    if (stock) Object.assign(out, stock);
+    if (wallet) Object.assign(out, wallet);
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
-    const now = new Date();
-    const DAY = 86400000;
-    // UTC day buckets, every day present (a day without orders is a 0, not a missing point)
-    const since30 = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 29));
-    const prev30 = new Date(since30.getTime() - 30 * DAY);
-    const since12m = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1));
+const DAY = 86400000;
+const NOT_LIVE = ['cancelled', 'refunded'];
 
-    const clientSellerFilter = { isTestAccount: { $ne: true }, accountType: { $ne: 'test' }, isPreviousStoreSeller: { $ne: true } };
+async function salesSection() {
+  const valid = { status: { $nin: NOT_LIVE } };
+  const sumSince = async (since) => {
+    const agg = await Order.aggregate([
+      { $match: { ...valid, createdAt: { $gte: since } } },
+      { $group: { _id: null, revenue: { $sum: '$total' }, orders: { $sum: 1 } } },
+    ]);
+    return { revenue: agg[0]?.revenue || 0, orders: agg[0]?.orders || 0 };
+  };
 
-    const [
-      today, week, month, year,
-      byStatusAgg, totalCustomers, newCustomers, returningAgg,
-      bestSelling, lowStock, outOfStock,
-      daily, monthlyAgg, paymentSplit, recent, compare,
-      sellerDocs, clientSellers, openRequests, staleOpen, itemShares,
-    ] = await Promise.all([
+  const now = new Date();
+  // UTC day buckets, every day present (a day without orders is a 0, not a missing point)
+  const since30 = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 29));
+  const prev30 = new Date(since30.getTime() - 30 * DAY);
+  const since12m = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1));
+  const isDead = { $in: ['$status', NOT_LIVE] };
+
+  const [today, week, month, year, byStatusAgg, totalCustomers, newCustomers, returningAgg, daily, monthlyAgg, paymentSplit, compare, staleOpen, itemShares] =
+    await Promise.all([
       sumSince(startOf.day()),
       sumSince(startOf.week()),
       sumSince(startOf.month()),
@@ -59,18 +90,15 @@ router.get('/dashboard', authAdmin(), async (req, res) => {
         { $match: { n: { $gte: 2 } } },
         { $count: 'returning' },
       ]),
-      Product.find({ active: true }).sort({ sold: -1 }).limit(5).select('name sold stock image price').lean(),
-      Product.find({ stock: { $gt: 0 }, $expr: { $lte: ['$stock', '$lowStockThreshold'] } }).limit(10).select('name stock lowStockThreshold image').lean(),
-      Product.find({ stock: { $lte: 0 } }).limit(10).select('name stock image').lean(),
       Order.aggregate([
         { $match: { createdAt: { $gte: since30 } } },
         {
           $group: {
             _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-            revenue: { $sum: { $cond: [{ $in: ['$status', ['cancelled', 'refunded']] }, 0, '$total'] } },
+            revenue: { $sum: { $cond: [isDead, 0, '$total'] } },
             orders: { $sum: 1 },
             delivered: { $sum: { $cond: [{ $eq: ['$status', 'delivered'] }, 1, 0] } },
-            cancelled: { $sum: { $cond: [{ $in: ['$status', ['cancelled', 'refunded']] }, 1, 0] } },
+            cancelled: { $sum: { $cond: [isDead, 1, 0] } },
           },
         },
       ]),
@@ -83,23 +111,19 @@ router.get('/dashboard', authAdmin(), async (req, res) => {
         { $group: { _id: '$paymentMethod', n: { $sum: 1 }, revenue: { $sum: '$total' } } },
         { $project: { _id: 0, label: '$_id', n: 1, revenue: 1 } },
       ]),
-      Order.find().sort({ createdAt: -1 }).limit(8).select('orderNumber createdAt shippingAddress total paymentMethod status items.sellerName seller').lean(),
       Order.aggregate([
         { $match: { createdAt: { $gte: prev30 } } },
         {
           $group: {
             _id: { $cond: [{ $gte: ['$createdAt', since30] }, 'current', 'previous'] },
             orders: { $sum: 1 },
-            revenue: { $sum: { $cond: [{ $in: ['$status', ['cancelled', 'refunded']] }, 0, '$total'] } },
+            revenue: { $sum: { $cond: [isDead, 0, '$total'] } },
             delivered: { $sum: { $cond: [{ $eq: ['$status', 'delivered'] }, 1, 0] } },
-            cancelled: { $sum: { $cond: [{ $in: ['$status', ['cancelled', 'refunded']] }, 1, 0] } },
+            cancelled: { $sum: { $cond: [isDead, 1, 0] } },
           },
         },
       ]),
-      Seller.find().select('storeName status warning accountHealth.score registrationRejectedAt createdAt targets isTestAccount').lean(),
-      Seller.find(clientSellerFilter).select('_id storeName').lean(),
-      Withdrawal.find({ type: { $in: ['deposit', 'withdrawal'] }, status: { $in: ['pending', 'processing'] } }).select('type amount').lean(),
-      Order.countDocuments({ status: { $nin: ['delivered', 'cancelled', 'refunded'] }, createdAt: { $lt: new Date(Date.now() - 48 * 3600000) } }),
+      Order.countDocuments({ status: { $nin: ['delivered', ...NOT_LIVE] }, createdAt: { $lt: new Date(Date.now() - 48 * 3600000) } }),
       Order.aggregate([
         { $match: { ...valid, createdAt: { $gte: since30 } } },
         { $unwind: '$items' },
@@ -117,190 +141,190 @@ router.get('/dashboard', authAdmin(), async (req, res) => {
       ]),
     ]);
 
-    const ordersByStatus = Object.fromEntries(byStatusAgg.map((x) => [x._id, x.n]));
-
-    const dailyMap = new Map(daily.map((d) => [d._id, d]));
-    const revenue30 = [];
-    for (let i = 0; i < 30; i++) {
-      const d = new Date(since30.getTime() + i * DAY);
-      const key = d.toISOString().slice(0, 10);
-      const row = dailyMap.get(key);
-      revenue30.push({
-        key,
-        label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
-        revenue: Math.round((row?.revenue || 0) * 100) / 100,
-        orders: row?.orders || 0,
-        delivered: row?.delivered || 0,
-        cancelled: row?.cancelled || 0,
-      });
-    }
-
-    const monthMap = new Map(monthlyAgg.map((m) => [m._id, m]));
-    const monthly12 = [];
-    for (let i = 0; i < 12; i++) {
-      const d = new Date(Date.UTC(since12m.getUTCFullYear(), since12m.getUTCMonth() + i, 1));
-      const key = d.toISOString().slice(0, 7);
-      const row = monthMap.get(key);
-      monthly12.push({
-        key,
-        label: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }),
-        revenue: Math.round((row?.revenue || 0) * 100) / 100,
-        orders: row?.orders || 0,
-      });
-    }
-
-    const cmp = Object.fromEntries(compare.map((c) => [c._id, c]));
-    const blank = { orders: 0, revenue: 0, delivered: 0, cancelled: 0 };
-    const cur = { ...blank, ...(cmp.current || {}) };
-    const prv = { ...blank, ...(cmp.previous || {}) };
-    delete cur._id;
-    delete prv._id;
-    const aov = (x) => (x.orders - x.cancelled > 0 ? Math.round((x.revenue / (x.orders - x.cancelled)) * 100) / 100 : 0);
-    const period = { current: { ...cur, aov: aov(cur) }, previous: { ...prv, aov: aov(prv) } };
-
-    // ─── Sellers, applications, compliance and targets
-    const monthStartTime = startOf.month().getTime();
-    const sellers = { total: 0, active: 0, frozen: 0, suspended: 0, pendingApplications: 0, rejected: 0, warned: 0, atRisk: 0, newThisMonth: 0, test: 0 };
-    const health = { healthy: 0, watch: 0, atRisk: 0, critical: 0 };
-    const targets = { active: 0, completed: 0, expired: 0, bonusPaid: 0, bonusOpen: 0 };
-    sellerDocs.forEach((sd) => {
-      if (sd.status === 'pending_approval') {
-        sellers.pendingApplications += 1;
-        return;
-      }
-      if (sd.status === 'suspended' && sd.registrationRejectedAt) {
-        sellers.rejected += 1;
-        return;
-      }
-      sellers.total += 1;
-      if (sd.isTestAccount) sellers.test += 1;
-      if (sellers[sd.status] !== undefined) sellers[sd.status] += 1;
-      if (sd.warning?.active) sellers.warned += 1;
-      const score = sd.accountHealth?.score ?? 100;
-      if (score <= 30) sellers.atRisk += 1;
-      if (score >= 80) health.healthy += 1;
-      else if (score >= 31) health.watch += 1;
-      else if (score > 20) health.atRisk += 1;
-      else health.critical += 1;
-      if (new Date(sd.createdAt).getTime() >= monthStartTime) sellers.newThisMonth += 1;
-      (sd.targets || []).forEach((t) => {
-        const expired = t.status === 'expired' || (t.status === 'active' && t.expiresAt && new Date(t.expiresAt) < now);
-        if (expired) targets.expired += 1;
-        else if (t.status === 'active') {
-          targets.active += 1;
-          targets.bonusOpen += Number(t.bonusAmount) || 0;
-        } else {
-          targets.completed += 1;
-          targets.bonusPaid += Number(t.bonusAmount) || 0;
-        }
-      });
+  const round = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  const dailyMap = new Map(daily.map((d) => [d._id, d]));
+  const revenue30 = [];
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(since30.getTime() + i * DAY);
+    const key = d.toISOString().slice(0, 10);
+    const row = dailyMap.get(key);
+    revenue30.push({
+      key,
+      label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }),
+      revenue: round(row?.revenue),
+      orders: row?.orders || 0,
+      delivered: row?.delivered || 0,
+      cancelled: row?.cancelled || 0,
     });
+  }
 
-    const requests = { deposits: { count: 0, amount: 0 }, withdrawals: { count: 0, amount: 0 } };
-    openRequests.forEach((r) => {
-      const slot = r.type === 'deposit' ? requests.deposits : requests.withdrawals;
-      slot.count += 1;
-      slot.amount += Number(r.amount) || 0;
-    });
+  const monthMap = new Map(monthlyAgg.map((m) => [m._id, m]));
+  const monthly12 = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(Date.UTC(since12m.getUTCFullYear(), since12m.getUTCMonth() + i, 1));
+    const key = d.toISOString().slice(0, 7);
+    const row = monthMap.get(key);
+    monthly12.push({ key, label: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }), revenue: round(row?.revenue), orders: row?.orders || 0 });
+  }
 
-    const sellerNames = new Map(sellerDocs.map((sd) => [String(sd._id), sd.storeName]));
-    const topSellers = itemShares.map((r) => ({
+  const cmp = Object.fromEntries(compare.map((c) => [c._id, c]));
+  const pick = (c) => ({ orders: c?.orders || 0, revenue: round(c?.revenue), delivered: c?.delivered || 0, cancelled: c?.cancelled || 0 });
+  const aov = (x) => (x.orders - x.cancelled > 0 ? round(x.revenue / (x.orders - x.cancelled)) : 0);
+  const cur = pick(cmp.current);
+  const prv = pick(cmp.previous);
+
+  // store names for the top-stores list (only the few that made the list)
+  const ids = itemShares.map((r) => r._id).filter(Boolean);
+  const names = new Map((await Seller.find({ _id: { $in: ids } }).select('storeName').lean()).map((s) => [String(s._id), s.storeName]));
+
+  return {
+    sales: { today, week, month, year },
+    period: { current: { ...cur, aov: aov(cur) }, previous: { ...prv, aov: aov(prv) } },
+    ordersByStatus: Object.fromEntries(byStatusAgg.map((x) => [x._id, x.n])),
+    staleOpenOrders: staleOpen,
+    customers: { total: totalCustomers, newThisMonth: newCustomers, returning: returningAgg[0]?.returning || 0 },
+    revenue30,
+    monthly12,
+    paymentSplit,
+    topSellers: itemShares.map((r) => ({
       _id: r._id,
-      storeName: (r._id && sellerNames.get(String(r._id))) || r.name || 'Bazario Direct',
-      gmv: Math.round(r.gmv * 100) / 100,
+      storeName: (r._id && names.get(String(r._id))) || r.name || 'Bazario Direct',
+      gmv: round(r.gmv),
       orders: r.orders,
-    }));
+    })),
+  };
+}
 
-    // ─── USDT WALLET (REAL CLIENT SELLERS ONLY - EXCLUDES TEST ACCOUNTS & PREVIOUS STORE SELLERS) ───
-    const clientSellerIds = clientSellers.map((sd) => sd._id);
-    const clientDeposits = await Withdrawal.find({
-      seller: { $in: clientSellerIds },
-      type: 'deposit',
-      status: 'approved',
-    })
+// seller pipeline, store health and targets (KYC photos are never loaded here)
+async function sellersSection() {
+  const sellerDocs = await Seller.find().select('status warning accountHealth.score registrationRejectedAt createdAt targets isTestAccount').lean();
+  const now = new Date();
+  const monthStartTime = startOf.month().getTime();
+  const sellers = { total: 0, active: 0, frozen: 0, suspended: 0, pending: 0, pendingApplications: 0, rejected: 0, warned: 0, atRisk: 0, newThisMonth: 0, test: 0 };
+  const health = { healthy: 0, watch: 0, atRisk: 0, critical: 0 };
+  const targets = { active: 0, completed: 0, expired: 0, bonusPaid: 0, bonusOpen: 0 };
+  sellerDocs.forEach((sd) => {
+    if (sd.status === 'pending_approval') {
+      sellers.pendingApplications += 1;
+      return;
+    }
+    if (sd.status === 'suspended' && sd.registrationRejectedAt) {
+      sellers.rejected += 1;
+      return;
+    }
+    sellers.total += 1;
+    if (sd.isTestAccount) sellers.test += 1;
+    if (sellers[sd.status] !== undefined) sellers[sd.status] += 1;
+    if (sd.warning?.active) sellers.warned += 1;
+    const score = sd.accountHealth?.score ?? 100;
+    if (score <= 30) sellers.atRisk += 1;
+    if (score >= 80) health.healthy += 1;
+    else if (score >= 31) health.watch += 1;
+    else if (score > 20) health.atRisk += 1;
+    else health.critical += 1;
+    if (new Date(sd.createdAt).getTime() >= monthStartTime) sellers.newThisMonth += 1;
+    (sd.targets || []).forEach((t) => {
+      const expired = t.status === 'expired' || (t.status === 'active' && t.expiresAt && new Date(t.expiresAt) < now);
+      if (expired) targets.expired += 1;
+      else if (t.status === 'active') {
+        targets.active += 1;
+        targets.bonusOpen += Number(t.bonusAmount) || 0;
+      } else {
+        targets.completed += 1;
+        targets.bonusPaid += Number(t.bonusAmount) || 0;
+      }
+    });
+  });
+  sellers.pending = sellers.pendingApplications;
+  const round = (n) => Math.round(n * 100) / 100;
+  return { sellers, health, targets: { ...targets, bonusPaid: round(targets.bonusPaid), bonusOpen: round(targets.bonusOpen) } };
+}
+
+async function stockSection() {
+  const [bestSelling, lowStock, outOfStock] = await Promise.all([
+    Product.find({ active: true }).sort({ sold: -1 }).limit(5).select('name sold stock image price').lean(),
+    Product.find({ stock: { $gt: 0 }, $expr: { $lte: ['$stock', '$lowStockThreshold'] } }).limit(10).select('name stock lowStockThreshold image').lean(),
+    Product.find({ stock: { $lte: 0 } }).limit(10).select('name stock image').lean(),
+  ]);
+  return { bestSelling, lowStock, outOfStock };
+}
+
+// ─── USDT WALLET (REAL CLIENT SELLERS ONLY - EXCLUDES TEST ACCOUNTS & PREVIOUS STORE SELLERS) ───
+// plus the deposit / withdrawal requests still waiting for a decision
+async function walletSection() {
+  const clientSellers = await Seller.find({
+    isTestAccount: { $ne: true },
+    accountType: { $ne: 'test' },
+    isPreviousStoreSeller: { $ne: true },
+  })
+    .select('_id')
+    .lean();
+
+  const [clientDeposits, openRequests] = await Promise.all([
+    Withdrawal.find({ seller: { $in: clientSellers.map((s) => s._id) }, type: 'deposit', status: 'approved' })
       .select('storeName amount approvedAmount helpingAmount processedAt createdAt depositRef transactionRef')
       .sort({ createdAt: -1 })
-      .lean();
+      .lean(),
+    Withdrawal.find({ type: { $in: ['deposit', 'withdrawal'] }, status: { $in: ['pending', 'processing'] } }).select('type amount').lean(),
+  ]);
 
-    const grossOf = (r) => (r.approvedAmount !== null && r.approvedAmount !== undefined ? r.approvedAmount : r.amount) || 0;
-    const getNetSellerDeposit = (r) => Math.max(0, grossOf(r) - (r.helpingAmount || 0));
+  const grossOf = (r) => (r.approvedAmount !== null && r.approvedAmount !== undefined ? r.approvedAmount : r.amount) || 0;
+  const netOf = (r) => Math.max(0, grossOf(r) - (r.helpingAmount || 0));
 
-    const dayStart = startOf.day();
-    const weekStart = startOf.week();
-    const monthStart = startOf.month();
-    const yearStart = startOf.year();
+  const dayStart = startOf.day();
+  const weekStart = startOf.week();
+  const monthStart = startOf.month();
+  const yearStart = startOf.year();
+  const now = new Date();
+  const since30 = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 29));
+  const trendDays = [];
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(since30.getTime() + i * DAY);
+    trendDays.push({ key: d.toISOString().slice(0, 10), label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) });
+  }
+  const byDay = new Map(trendDays.map((t) => [t.key, 0]));
 
-    let usdtWalletTotal = 0;
-    let usdtWalletToday = 0;
-    let usdtWalletWeek = 0;
-    let usdtWalletMonth = 0;
-    let usdtWalletYear = 0;
-    let totalGrossDeposits = 0;
-    let totalHelpingAmount = 0;
-    const usdtByDay = new Map(revenue30.map((r) => [r.key, 0]));
+  const w = { total: 0, today: 0, week: 0, month: 0, year: 0, grossDeposits: 0, helpingAmount: 0 };
+  clientDeposits.forEach((dep) => {
+    const net = netOf(dep);
+    const when = new Date(dep.processedAt || dep.createdAt);
+    w.total += net;
+    w.grossDeposits += grossOf(dep);
+    w.helpingAmount += dep.helpingAmount || 0;
+    if (when >= dayStart) w.today += net;
+    if (when >= weekStart) w.week += net;
+    if (when >= monthStart) w.month += net;
+    if (when >= yearStart) w.year += net;
+    const k = when.toISOString().slice(0, 10);
+    if (byDay.has(k)) byDay.set(k, byDay.get(k) + net);
+  });
 
-    clientDeposits.forEach((dep) => {
-      const net = getNetSellerDeposit(dep);
-      const dTime = new Date(dep.processedAt || dep.createdAt);
+  const requests = { deposits: { count: 0, amount: 0 }, withdrawals: { count: 0, amount: 0 } };
+  openRequests.forEach((r) => {
+    const slot = r.type === 'deposit' ? requests.deposits : requests.withdrawals;
+    slot.count += 1;
+    slot.amount += Number(r.amount) || 0;
+  });
 
-      usdtWalletTotal += net;
-      totalGrossDeposits += grossOf(dep);
-      totalHelpingAmount += dep.helpingAmount || 0;
-
-      if (dTime >= dayStart) usdtWalletToday += net;
-      if (dTime >= weekStart) usdtWalletWeek += net;
-      if (dTime >= monthStart) usdtWalletMonth += net;
-      if (dTime >= yearStart) usdtWalletYear += net;
-      const k = dTime.toISOString().slice(0, 10);
-      if (usdtByDay.has(k)) usdtByDay.set(k, usdtByDay.get(k) + net);
-    });
-
-    const usdtWallet = {
-      total: usdtWalletTotal,
-      today: usdtWalletToday,
-      week: usdtWalletWeek,
-      month: usdtWalletMonth,
-      year: usdtWalletYear,
-      grossDeposits: totalGrossDeposits,
-      helpingAmount: totalHelpingAmount,
+  return {
+    requests,
+    usdtWallet: {
+      ...w,
       depositCount: clientDeposits.length,
       clientSellersCount: clientSellers.length,
-      trend: revenue30.map((r) => ({ label: r.label, amount: Math.round((usdtByDay.get(r.key) || 0) * 100) / 100 })),
+      trend: trendDays.map((t) => ({ label: t.label, amount: Math.round((byDay.get(t.key) || 0) * 100) / 100 })),
       recentPayments: clientDeposits.slice(0, 5).map((dep) => ({
         _id: dep._id,
         storeName: dep.storeName,
-        netUsdt: getNetSellerDeposit(dep),
+        netUsdt: netOf(dep),
         grossAmount: grossOf(dep),
         helpingAmount: dep.helpingAmount || 0,
         createdAt: dep.processedAt || dep.createdAt,
         transactionRef: dep.depositRef || dep.transactionRef,
       })),
-    };
-
-    res.json({
-      usdtWallet,
-      sales: { today, week, month, year },
-      period,
-      ordersByStatus,
-      staleOpenOrders: staleOpen,
-      customers: { total: totalCustomers, newThisMonth: newCustomers, returning: returningAgg[0]?.returning || 0 },
-      sellers,
-      health,
-      targets: { ...targets, bonusPaid: Math.round(targets.bonusPaid * 100) / 100, bonusOpen: Math.round(targets.bonusOpen * 100) / 100 },
-      requests,
-      topSellers,
-      bestSelling,
-      lowStock,
-      outOfStock,
-      revenue30,
-      monthly12,
-      paymentSplit,
-      recent,
-    });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
+    },
+  };
+}
 
 // GET /api/analytics/usdt-wallet-history — Detailed USDT Wallet transactions breakdown
 router.get('/usdt-wallet-history', authAdmin('finance'), async (req, res) => {

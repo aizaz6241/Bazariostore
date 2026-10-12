@@ -17,6 +17,9 @@ import './styles/responsive.css';
 import './styles/seller/treasury.css';
 import './styles/admin/treasury.css';
 import './styles.css';
+// admin visual refresh: loaded last so it wins over the older admin rules
+import './styles/admin/affiliates.css';
+import './styles/admin/refresh.css';
 
 // PWA Service Worker Management
 if ('serviceWorker' in navigator) {

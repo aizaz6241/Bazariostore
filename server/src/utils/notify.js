@@ -1,5 +1,6 @@
 import Notification from '../models/Notification.js';
 import { sendPush } from './push.js';
+import { adminRoom, notificationPerms } from './permissions.js';
 
 export async function notify(app, { recipientType = 'admin', sellerId = null, type = 'system', title, body = '', link = '' }) {
   try {
@@ -19,8 +20,9 @@ export async function notify(app, { recipientType = 'admin', sellerId = null, ty
         io.to(`seller:${sellerId}`).emit('notify', n);
         io.to(`seller:${sellerId}`).emit('wallet:update', { type, title, body, link, notification: n });
       } else {
-        // Send to all admin/staff listeners
-        io.to('admins').emit('notify', n);
+        // Only the admins whose role covers this kind of notification
+        const perms = notificationPerms(type, link);
+        io.to(perms ? perms.map(adminRoom) : 'admins').emit('notify', n);
       }
     }
     // Phone push as well (admin devices, or this seller's devices)
@@ -31,6 +33,7 @@ export async function notify(app, { recipientType = 'admin', sellerId = null, ty
       body,
       url: link || (recipientType === 'seller' ? '/seller' : '/admin'),
       tag: `n-${n._id}`,
+      perms: recipientType === 'seller' ? null : notificationPerms(type, link),
     });
     return n;
   } catch (e) {

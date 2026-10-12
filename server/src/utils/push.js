@@ -1,5 +1,7 @@
 import webpush from 'web-push';
+import mongoose from 'mongoose';
 import PushSub from '../models/PushSub.js';
+import { permsFor } from './permissions.js';
 
 // Phone / desktop push for the store app. Needs VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY in the env;
 // without them push is simply switched off (nothing else breaks).
@@ -37,16 +39,31 @@ async function sendTo(subs, payload) {
   );
 }
 
+/** Keep only the admin devices whose (active) account holds one of `perms`. */
+async function allowedAdminSubs(subs, perms) {
+  const ids = [...new Set(subs.map((s) => s.admin && String(s.admin)).filter((id) => id && mongoose.Types.ObjectId.isValid(id)))];
+  const admins = ids.length
+    ? await mongoose.connection
+        .collection('admins')
+        .find({ _id: { $in: ids.map((id) => new mongoose.Types.ObjectId(id)) } }, { projection: { role: 1, permissions: 1, active: 1 } })
+        .toArray()
+    : [];
+  const ok = new Set(admins.filter((a) => a.active !== false && permsFor(a).some((p) => perms.includes(p))).map((a) => String(a._id)));
+  return subs.filter((s) => s.admin && ok.has(String(s.admin)));
+}
+
 /**
  * Push to every admin device, or to one seller's devices.
- * @param {{ to: 'admin'|'seller', sellerId?: any, title: string, body?: string, url?: string, tag?: string }} p
+ * `perms` (admin only): send only to admins who hold one of these permissions.
+ * @param {{ to: 'admin'|'seller', sellerId?: any, title: string, body?: string, url?: string, tag?: string, perms?: string[]|null }} p
  */
-export async function sendPush({ to, sellerId = null, title, body = '', url = '/', tag = '' }) {
+export async function sendPush({ to, sellerId = null, title, body = '', url = '/', tag = '', perms = null }) {
   if (!init()) return;
   try {
     const q = to === 'seller' ? { kind: 'seller', seller: sellerId } : { kind: 'admin' };
     if (to === 'seller' && !sellerId) return;
-    const subs = await PushSub.find(q).lean();
+    let subs = await PushSub.find(q).lean();
+    if (to === 'admin' && perms?.length) subs = await allowedAdminSubs(subs, perms);
     if (!subs.length) return;
     await sendTo(subs, { title, body, url, tag: tag || undefined, icon: '/icon-192.svg' });
   } catch (e) {

@@ -11,6 +11,7 @@ import { finLog, requestApproval, isLedgerCounted } from '../../utils/financeLog
 import { walletApply, walletNow } from '../../utils/wallet.js';
 import { applyDecisionToWallet, requestFieldsFor, finishStuckWalletRequests } from '../../utils/walletRequests.js';
 import { asText } from '../../middleware/sanitize.js';
+import { adminRoom } from '../../utils/permissions.js';
 
 const router = express.Router();
 
@@ -102,8 +103,8 @@ async function sendWalletChatNotification(app, seller, reqDoc) {
     const io = app.get('io');
     if (io) {
       io.to(`seller:${seller._id}`).emit('message:new', msg);
-      io.to('admins').emit('message:new', msg);
-      io.to('admins').emit('chat:notification', {
+      io.to(adminRoom('chat')).emit('message:new', msg);
+      io.to(adminRoom('chat')).emit('chat:notification', {
         conversationId: conv._id,
         storeName: seller.storeName,
         text: `${emoji} ${label} — ${amountStr}`,
@@ -251,7 +252,7 @@ router.post('/wallet/deposit', authSellerOrAdmin, async (req, res) => {
       io.to(`seller:${seller._id}`).emit('wallet:update', {
         pendingDeposit: seller.wallet.pendingDeposit,
       });
-      io.to('admins').emit('withdrawal:new', reqDoc);
+      io.to(adminRoom('finance')).emit('withdrawal:new', reqDoc);
     }
 
     res.status(201).json({ message: 'Deposit request submitted! Admin will verify and approve.', request: reqDoc });
@@ -397,7 +398,7 @@ router.post('/wallet/withdraw', authSellerOrAdmin, async (req, res) => {
         balance: updatedSeller.wallet.balance,
         pendingWithdrawal: updatedSeller.wallet.pendingWithdrawal,
       });
-      io.to('admins').emit('withdrawal:new', reqDoc);
+      io.to(adminRoom('finance')).emit('withdrawal:new', reqDoc);
     }
 
     res.status(201).json({ message: 'Withdrawal request submitted! Admin will process within 2-3 business days.', request: reqDoc });
@@ -507,8 +508,8 @@ router.post('/wallet/limit-increase-request', authSellerOrAdmin, async (req, res
       const io = req.app.get('io');
       if (io) {
         io.to(`seller:${seller._id}`).emit('message:new', msg);
-        io.to('admins').emit('message:new', msg);
-        io.to('admins').emit('chat:notification', {
+        io.to(adminRoom('chat')).emit('message:new', msg);
+        io.to(adminRoom('chat')).emit('chat:notification', {
           conversationId: conv._id,
           storeName: seller.storeName,
           text: `🚀 Limit Increase Request — $${reqLimit}`,
@@ -604,8 +605,8 @@ router.post('/wallet/limit-offer-response', authSellerOrAdmin, async (req, res) 
           if (io) {
             io.to(`seller:${seller._id}`).emit('message:new', msg);
             io.to(`seller:${seller._id}`).emit('seller:limit_update', { withdrawalLimit: seller.withdrawalLimit });
-            io.to('admins').emit('message:new', msg);
-            io.to('admins').emit('chat:notification', {
+            io.to(adminRoom('chat')).emit('message:new', msg);
+            io.to(adminRoom('chat')).emit('chat:notification', {
               conversationId: conv._id,
               storeName: seller.storeName,
               text: `🤝 Offer Accepted — $${pending.offeredLimit} limit ready to activate`,
@@ -664,7 +665,7 @@ router.post('/wallet/limit-offer-response', authSellerOrAdmin, async (req, res) 
           if (io) {
             io.to(`seller:${seller._id}`).emit('message:new', msg);
             io.to(`seller:${seller._id}`).emit('seller:limit_update', { withdrawalLimit: seller.withdrawalLimit });
-            io.to('admins').emit('message:new', msg);
+            io.to(adminRoom('chat')).emit('message:new', msg);
           }
         }
       } catch (chatErr) {
@@ -687,42 +688,55 @@ router.get('/withdrawals/all', authAdmin('finance'), async (req, res) => {
     // a decision interrupted by a server restart is completed before the list is shown
     await finishStuckWalletRequests();
     const { status, type, excludeTest, accountType } = req.query;
+    // Only real wallet requests belong on this desk. Order locks / releases and limit-fee
+    // adjustments live in the same collection but are not deposit or withdrawal requests.
+    const REQUEST_TYPES = ['deposit', 'withdrawal'];
     const filter = {};
     if (status && status !== 'all') filter.status = status;
-    if (type && type !== 'all') filter.type = type;
+    filter.type = type && type !== 'all' && REQUEST_TYPES.includes(type) ? type : { $in: REQUEST_TYPES };
+
+    const SELLER_FIELDS = 'storeName ownerName email payoutDetails isTestAccount accountType isPreviousStoreSeller withdrawalLimit.maxAmount';
+    const onlyClients = excludeTest === 'true' || accountType === 'client';
+    // Exclude test/demo accounts and deleted/missing sellers when excludeTest=true or accountType=client
+    const isClient = (r) => {
+      // Discard orphan records where seller was deleted
+      if (!r.seller) return false;
+      // Discard marked test accounts
+      if (r.seller.isTestAccount || r.seller.accountType === 'test') return false;
+      if (r.seller.isPreviousStoreSeller) return false;
+      // Discard test or demo stores, owners, or emails
+      const sName = (r.storeName || '').toLowerCase().trim();
+      const oName = (r.seller.ownerName || '').toLowerCase().trim();
+      const email = (r.seller.email || '').toLowerCase().trim();
+      if (sName.includes('test') || sName.includes('demo')) return false;
+      if (oName.includes('test') || oName.includes('demo')) return false;
+      if (email.includes('test') || email.includes('demo')) return false;
+      return true;
+    };
 
     let requests = await Withdrawal.find(filter)
-      .populate('seller', 'storeName ownerName email payoutDetails isTestAccount accountType isPreviousStoreSeller')
+      .populate('seller', SELLER_FIELDS)
       .sort({ createdAt: -1 });
+    if (onlyClients) requests = requests.filter(isClient);
 
-    // Exclude test/demo accounts and deleted/missing sellers when excludeTest=true or accountType=client
-    if (excludeTest === 'true' || accountType === 'client') {
-      requests = requests.filter((r) => {
-        // Discard orphan records where seller was deleted
-        if (!r.seller) return false;
-        // Discard marked test accounts
-        if (r.seller.isTestAccount || r.seller.accountType === 'test') return false;
-        if (r.seller.isPreviousStoreSeller) return false;
-        // Discard test or demo stores, owners, or emails
-        const sName = (r.storeName || '').toLowerCase().trim();
-        const oName = (r.seller.ownerName || '').toLowerCase().trim();
-        const email = (r.seller.email || '').toLowerCase().trim();
-        if (sName.includes('test') || sName.includes('demo')) return false;
-        if (oName.includes('test') || oName.includes('demo')) return false;
-        if (email.includes('test') || email.includes('demo')) return false;
-        return true;
-      });
-    }
-
-    const pending = requests.filter((r) => r.status === 'pending');
-    const pendingDeposits = pending.filter((r) => r.type === 'deposit').reduce((s, r) => s + r.amount, 0);
-    const pendingWithdrawals = pending.filter((r) => r.type === 'withdrawal').reduce((s, r) => s + r.amount, 0);
+    // The pending totals describe the whole queue, whatever status / type filter the list uses
+    let pending = await Withdrawal.find({ status: 'pending', type: { $in: REQUEST_TYPES } })
+      .select('type amount storeName seller')
+      .populate('seller', 'ownerName email isTestAccount accountType isPreviousStoreSeller')
+      .lean();
+    if (onlyClients) pending = pending.filter(isClient);
+    const pendingDepositList = pending.filter((r) => r.type === 'deposit');
+    const pendingWithdrawalList = pending.filter((r) => r.type === 'withdrawal');
+    const pendingDeposits = pendingDepositList.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const pendingWithdrawals = pendingWithdrawalList.reduce((s, r) => s + (Number(r.amount) || 0), 0);
 
     res.json({
       requests,
       summary: {
         total: requests.length,
         pending: pending.length,
+        pendingDepositCount: pendingDepositList.length,
+        pendingWithdrawalCount: pendingWithdrawalList.length,
         pendingDeposits,
         pendingWithdrawals,
       },
@@ -771,13 +785,16 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
 
     const sellerMaxLimit = seller.withdrawalLimit?.maxAmount !== undefined ? seller.withdrawalLimit.maxAmount : 500;
 
-    // Determine final approved amount
+    // Determine final approved amount. Not sent = the requested amount. Sent = it must be a
+    // real number above 0: a blank, negative or $0 approval is refused, never silently replaced.
     let finalAmount = reqDoc.amount;
-    if (approvedAmount !== undefined && approvedAmount !== null && approvedAmount !== '') {
-      const parsed = Number(approvedAmount);
-      if (!isNaN(parsed) && parsed >= 0) {
-        finalAmount = parsed;
+    if (status === 'approved' && approvedAmount !== undefined && approvedAmount !== null) {
+      const parsed = approvedAmount === '' ? NaN : Number(approvedAmount);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        await Withdrawal.updateOne({ _id: req.params.id, status: 'processing' }, { $set: { status: 'pending' } }).catch(() => {});
+        return res.status(400).json({ message: 'Approved amount must be a number greater than $0. To pay nothing, reject the request instead.' });
       }
+      finalAmount = Number(parsed.toFixed(2));
     }
 
     // Determine admin helping amount (for deposits)
@@ -914,7 +931,7 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
         const io = req.app.get('io');
         if (io) {
           io.to(`seller:${seller._id}`).emit('message:new', msg);
-          io.to('admins').emit('message:new', msg);
+          io.to(adminRoom('chat')).emit('message:new', msg);
         }
       }
     } catch (chatErr) {
@@ -966,7 +983,7 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
       delete sellerDoc.inrAmount;
       delete sellerDoc.usdtAmount;
       io.to(`seller:${seller._id}`).emit('withdrawal:update', sellerDoc);
-      io.to('admins').emit('withdrawal:update', reqDoc);
+      io.to(adminRoom('finance')).emit('withdrawal:update', reqDoc);
     }
 
     audit(req, 'update', 'wallet_request', reqDoc._id, `${reqDoc.type} ${status} for ${reqDoc.storeName} — $${finalAmount}`);
@@ -1101,8 +1118,8 @@ const handleSplitHelping = async (req, res) => {
     // Broadcast socket event to all admins
     const io = req.app.get('io');
     if (io) {
-      io.to('admins').emit('withdrawal:update', reqDoc);
-      io.to('admins').emit('wallet:update', { transactionId: reqDoc._id });
+      io.to(adminRoom('finance')).emit('withdrawal:update', reqDoc);
+      io.to(adminRoom('finance')).emit('wallet:update', { transactionId: reqDoc._id });
     }
 
     audit(req, 'update', 'deposit_split', reqDoc._id, `Split deposit for ${reqDoc.storeName}: Gross $${gross}, Helping $${parsedHelping}, Real Deposit $${netDeposit}`);
@@ -1284,7 +1301,7 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
       const io = req.app.get('io');
       if (io) {
         io.to(`seller:${seller._id}`).emit('message:new', msg);
-        io.to('admins').emit('message:new', msg);
+        io.to(adminRoom('chat')).emit('message:new', msg);
       }
     } catch (chatErr) {
       console.error('Manual adjust chat notification error:', chatErr.message);
@@ -1307,7 +1324,7 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
         totalDeposited: seller.wallet.totalDeposited,
         totalWithdrawn: seller.wallet.totalWithdrawn,
       });
-      io.to('admins').emit('withdrawal:new', rec);
+      io.to(adminRoom('finance')).emit('withdrawal:new', rec);
     }
 
     audit(req, 'create', 'wallet_adjustment', rec._id, `Direct wallet ${type} $${amt} for ${seller.storeName}`);
@@ -1478,7 +1495,7 @@ router.post('/:id/limit-offer', authAdmin('finance'), async (req, res) => {
         if (io) {
           io.to(`seller:${seller._id}`).emit('message:new', msg);
           io.to(`seller:${seller._id}`).emit('seller:limit_update', { withdrawalLimit: seller.withdrawalLimit });
-          io.to('admins').emit('message:new', msg);
+          io.to(adminRoom('chat')).emit('message:new', msg);
         }
       }
     } catch (chatErr) {
@@ -1508,48 +1525,76 @@ router.post('/:id/limit-offer', authAdmin('finance'), async (req, res) => {
 
 // POST /api/sellers/:id/limit-finalize (Step 3: Admin clicks "Finalize & Activate Limit Increase" - Fee Deducted & Limit Activated)
 router.post('/:id/limit-finalize', authAdmin('finance'), async (req, res) => {
+  // set once the request is claimed; undone if something fails before the new limit is written
+  let releaseClaim = null;
+  let activated = false;
   try {
-    const seller = await Seller.findById(req.params.id);
-    if (!seller) return res.status(404).json({ message: 'Seller not found' });
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Seller not found' });
+    const FINALIZABLE = ['offered', 'accepted_by_seller', 'pending'];
 
-    const pending = seller.withdrawalLimit?.pendingIncreaseRequest;
-    if (!pending || !['offered', 'accepted_by_seller', 'pending'].includes(pending.status)) {
-      return res.status(400).json({ message: 'No valid limit upgrade request found to finalize' });
+    // Claim the request in ONE database step: a double click or a second admin finds it already
+    // taken and stops here, so the fee can never be charged twice.
+    const before = await Seller.findOneAndUpdate(
+      { _id: req.params.id, 'withdrawalLimit.pendingIncreaseRequest.status': { $in: FINALIZABLE } },
+      { $set: { 'withdrawalLimit.pendingIncreaseRequest.status': 'approved' } },
+      { new: false }
+    ).select('storeName wallet withdrawalLimit');
+    if (!before) {
+      const exists = await Seller.exists({ _id: req.params.id });
+      if (!exists) return res.status(404).json({ message: 'Seller not found' });
+      return res.status(400).json({ message: 'No valid limit upgrade request found to finalize (it may already have been activated).' });
     }
+    const seller = before;
+    const pending = before.withdrawalLimit?.pendingIncreaseRequest || {};
+    releaseClaim = () =>
+      Seller.updateOne(
+        { _id: seller._id, 'withdrawalLimit.pendingIncreaseRequest.status': 'approved' },
+        { $set: { 'withdrawalLimit.pendingIncreaseRequest.status': pending.status } }
+      ).catch(() => {});
 
     const prevLimit = seller.withdrawalLimit?.maxAmount || 500;
     const newLimit = pending.offeredLimit || pending.requestedLimit || 2000;
     const nextTarget = pending.offeredNextCount || 15;
-    const feeToCharge = pending.offeredFee !== undefined ? pending.offeredFee : (seller.withdrawalLimit?.upgradeFee || 50);
+    const feeToCharge = Number(pending.offeredFee != null ? pending.offeredFee : (seller.withdrawalLimit?.upgradeFee ?? 50)) || 0;
     const tierName = pending.offeredTierName || `Tier Upgraded ($${newLimit} Max)`;
 
-    // Deduct Upgrade Fee from Seller Wallet (if fee > 0), in one database step (utils/wallet.js)
+    // Deduct Upgrade Fee from Seller Wallet (if fee > 0): one database step, only if the balance
+    // covers it, and once only for this offer (utils/wallet.js)
     let balanceAfterFee = seller.wallet?.balance || 0;
     if (feeToCharge > 0) {
-      const charged = await walletApply(seller._id, { balance: -feeToCharge });
-      if (charged) balanceAfterFee = charged.wallet.balance || 0;
-
-      // Record in ledger as an adjustment
-      await Withdrawal.create({
-        type: 'adjustment',
-        seller: seller._id,
-        storeName: seller.storeName,
-        amount: -feeToCharge,
-        balanceAfter: balanceAfterFee,
-        isManualAdjustment: true,
-        status: 'completed',
-        adminNote: `Withdrawal Limit Upgrade Fee: Upgraded from $${prevLimit} to $${newLimit}`,
-        processedAt: new Date(),
-        processedBy: req.admin.name || 'Admin',
+      const offerStamp = new Date(pending.offeredAt || pending.createdAt || 0).getTime();
+      const charged = await walletApply(seller._id, { balance: -feeToCharge }, {
+        requireBalance: feeToCharge,
+        opId: `limitfee:${seller._id}:${offerStamp}`,
       });
+      if (!charged) {
+        await releaseClaim();
+        releaseClaim = null;
+        return res.status(400).json({
+          message: `Seller balance ($${Number(seller.wallet?.balance || 0).toLocaleString('en-US')}) is less than the upgrade fee ($${feeToCharge.toLocaleString('en-US')}). Nothing was charged and the limit was not changed.`,
+        });
+      }
+      balanceAfterFee = charged.wallet?.balance || 0;
+
+      // Record in ledger as an adjustment (not again if this fee had already been taken earlier)
+      if (!charged.already) {
+        await Withdrawal.create({
+          type: 'adjustment',
+          seller: seller._id,
+          storeName: seller.storeName,
+          amount: -feeToCharge,
+          balanceAfter: balanceAfterFee,
+          isManualAdjustment: true,
+          status: 'completed',
+          adminNote: `Withdrawal Limit Upgrade Fee: Upgraded from $${prevLimit} to $${newLimit}`,
+          processedAt: new Date(),
+          processedBy: req.admin.name || 'Admin',
+        });
+      }
     }
 
-    // Activate New Tier Limits
-    seller.withdrawalLimit.maxAmount = newLimit;
-    seller.withdrawalLimit.requiredWithdrawalsForIncrease = nextTarget;
-    seller.withdrawalLimit.successfulWithdrawalCount = 0; // Reset progress for the new tier
-    seller.withdrawalLimit.currentTierName = tierName;
-    seller.withdrawalLimit.pendingIncreaseRequest = {
+    // Activate New Tier Limits (only the limit settings are written; the wallet is not rewritten)
+    const approvedRequest = {
       status: 'approved',
       requestedLimit: newLimit,
       offeredLimit: newLimit,
@@ -1557,9 +1602,24 @@ router.post('/:id/limit-finalize', authAdmin('finance'), async (req, res) => {
       adminNote: pending.adminNote || 'Finalized and activated by Administrator',
       createdAt: new Date(),
     };
-
-    seller.markModified('withdrawalLimit');
-    await seller.save(); // only the limit settings; the wallet was changed above and is not rewritten
+    await Seller.updateOne(
+      { _id: seller._id },
+      {
+        $set: {
+          'withdrawalLimit.maxAmount': newLimit,
+          'withdrawalLimit.requiredWithdrawalsForIncrease': nextTarget,
+          'withdrawalLimit.successfulWithdrawalCount': 0, // Reset progress for the new tier
+          'withdrawalLimit.currentTierName': tierName,
+          'withdrawalLimit.pendingIncreaseRequest': approvedRequest,
+        },
+      }
+    );
+    activated = true;
+    seller.withdrawalLimit.maxAmount = newLimit;
+    seller.withdrawalLimit.requiredWithdrawalsForIncrease = nextTarget;
+    seller.withdrawalLimit.successfulWithdrawalCount = 0;
+    seller.withdrawalLimit.currentTierName = tierName;
+    seller.withdrawalLimit.pendingIncreaseRequest = approvedRequest;
 
     // Official Celebratory Chat Announcement
     try {
@@ -1596,7 +1656,7 @@ router.post('/:id/limit-finalize', authAdmin('finance'), async (req, res) => {
         if (io) {
           io.to(`seller:${seller._id}`).emit('message:new', msg);
           io.to(`seller:${seller._id}`).emit('seller:limit_update', { withdrawalLimit: seller.withdrawalLimit });
-          io.to('admins').emit('message:new', msg);
+          io.to(adminRoom('chat')).emit('message:new', msg);
         }
       }
     } catch (chatErr) {
@@ -1620,6 +1680,8 @@ router.post('/:id/limit-finalize', authAdmin('finance'), async (req, res) => {
       seller,
     });
   } catch (err) {
+    // the fee step is once-only, so a retry after this never charges it twice
+    if (releaseClaim && !activated) await releaseClaim();
     res.status(500).json({ message: err.message });
   }
 });
@@ -1669,7 +1731,7 @@ router.post('/:id/limit-increase-decision', authAdmin('finance'), async (req, re
         if (io) {
           io.to(`seller:${seller._id}`).emit('message:new', msg);
           io.to(`seller:${seller._id}`).emit('seller:limit_update', { withdrawalLimit: seller.withdrawalLimit });
-          io.to('admins').emit('message:new', msg);
+          io.to(adminRoom('chat')).emit('message:new', msg);
         }
       }
     } catch (chatErr) {
@@ -1723,9 +1785,9 @@ router.post('/:id/withdrawal-limit', authAdmin('finance'), async (req, res) => {
       io.to(`seller:${seller._id}`).emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
       // only this seller and the admins are told (it used to go to every connected visitor)
       io.to(`seller:${seller._id}`).emit('limit:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.to('admins').emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.to('admins').emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.to('admins').emit('limit:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.to(adminRoom('finance')).emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.to(adminRoom('finance')).emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.to(adminRoom('finance')).emit('limit:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
     }
 
     notify(req.app, {

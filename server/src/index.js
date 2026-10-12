@@ -65,6 +65,7 @@ import { processOrderPenalties, releaseLocksOfWaitingOrders } from './routes/sel
 import { processAutoProgressOrders } from './services/orderProgressionService.js';
 import { finishStuckWalletRequests } from './utils/walletRequests.js';
 import { encryptStoredPasswords, encryptionOn } from './utils/sellerPassword.js';
+import { PERMISSIONS, adminRoom, hasPermission } from './utils/permissions.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -336,20 +337,23 @@ io.on('connection', (socket) => {
       let id = null;
       if (payload.t === 'seller') {
         id = payload.id;
-      } else if (payload.t === 'admin' && sellerId && mongoose.Types.ObjectId.isValid(String(sellerId))) {
+      } else if (payload.t === 'admin' && sellerId && mongoose.Types.ObjectId.isValid(String(sellerId)) && hasPermission(payload, 'sellers')) {
+        // an admin may follow a seller's live updates only with the Sellers permission
         id = String(sellerId);
       }
       if (id) {
         if (payload.t === 'seller') {
           // A seller session must never stay inside admin rooms (e.g. an admin logged out and a
           // seller logged in on the same browser tab), nor inside another seller's room.
-          leaveRooms((r) => r === 'admins' || r.startsWith('admin:') || (r.startsWith('seller:') && r !== `seller:${id}`));
+          leaveRooms((r) => r === 'admins' || r.startsWith('admins:') || r.startsWith('admin:') || (r.startsWith('seller:') && r !== `seller:${id}`));
           delete socket.data.adminId;
+          delete socket.data.adminPerms;
         }
         socket.join(`seller:${id}`);
         socket.data.sellerId = id;
         socket.data.isSeller = payload.t === 'seller';
         socket.data.isAdmin = payload.t === 'admin';
+        if (payload.t === 'admin') socket.data.adminPerms = payload.permissions || [];
       }
     } catch (e) {
       console.error('seller:join auth error:', e.message);
@@ -382,8 +386,13 @@ io.on('connection', (socket) => {
         }
         socket.data.isAdmin = true;
         socket.data.adminId = payload.id;
+        socket.data.adminPerms = payload.role === 'super_admin' ? [...PERMISSIONS] : payload.permissions || [];
+        // Live events are sent per module: this socket only joins the rooms its role allows
+        // (re-joined on every connect, so a changed role takes effect on the next reconnect).
+        leaveRooms((r) => r.startsWith('admins:'));
         socket.join('admins');
         socket.join(`admin:${payload.id}`);
+        for (const p of socket.data.adminPerms) socket.join(adminRoom(p));
       }
     } catch {
       /* invalid token */
@@ -411,6 +420,9 @@ io.on('connection', (socket) => {
       // Socket authentication check: must be verified seller matching sellerId or admin
       if (!socket.data?.isAdmin && (!socket.data?.isSeller || String(socket.data?.sellerId) !== String(sellerId))) {
         return cb?.({ error: 'Unauthorized: invalid session' });
+      }
+      if (socket.data?.isAdmin && !socket.data?.isSeller && !(socket.data.adminPerms || []).includes('chat')) {
+        return cb?.({ error: 'You do not have permission for this action' });
       }
 
       const seller = await Seller.findById(sellerId).select('-kycDocuments');
@@ -457,7 +469,7 @@ io.on('connection', (socket) => {
       };
 
       io.to(`seller:${sellerId}`).emit('message:new', out);
-      io.to('admins').emit('message:new', out);
+      io.to(adminRoom('chat')).emit('message:new', out);
 
       notify(app, {
         type: 'chat',
@@ -537,8 +549,8 @@ io.on('connection', (socket) => {
 
       io.to(`guest:${guestId}`).emit('message:new', out);
       io.to(`customer:${guestId}`).emit('message:new', out);
-      io.to('admins').emit('message:new', out);
-      io.to('admins').emit('chat:notification', {
+      io.to(adminRoom('chat')).emit('message:new', out);
+      io.to(adminRoom('chat')).emit('chat:notification', {
         conversationId: conv._id,
         storeName: `Customer: ${conv.name || 'Guest'}`,
         text: clean,
@@ -565,6 +577,7 @@ io.on('connection', (socket) => {
     try {
       const now = new Date();
       // Only the seller's own connection (or an admin looking at that seller) may mark it read
+      if (socket.data?.isAdmin && !socket.data?.isSeller && !(socket.data.adminPerms || []).includes('chat')) return;
       const targetSellerId = socket.data?.isAdmin && sellerId ? sellerId : socket.data?.sellerId;
       if (!targetSellerId || !mongoose.Types.ObjectId.isValid(String(targetSellerId))) return;
 
@@ -582,7 +595,7 @@ io.on('connection', (socket) => {
           { $set: { isSeen: true, seenAt: now, seenBy: 'seller' } }
         );
 
-        io.to('admins').emit('messages:seen', {
+        io.to(adminRoom('chat')).emit('messages:seen', {
           conversationId: conv._id,
           sellerId: targetSellerId,
           seenAt: now,
@@ -615,7 +628,7 @@ io.on('connection', (socket) => {
           { $set: { isSeen: true, seenAt: now, seenBy: 'guest' } }
         );
 
-        io.to('admins').emit('messages:seen', {
+        io.to(adminRoom('chat')).emit('messages:seen', {
           conversationId: conv._id,
           guestId: conv.guestId || targetGuestId,
           seenAt: now,

@@ -21,6 +21,7 @@ import { asText } from '../middleware/sanitize.js';
 import mongoose from 'mongoose';
 import crypto from 'crypto';
 import { publicOrder } from '../utils/publicOrder.js';
+import { adminRoom } from '../utils/permissions.js';
 
 const router = Router();
 
@@ -226,7 +227,7 @@ router.post('/', placeOrderLimit, softUser, async (req, res) => {
     }
 
     notify(req.app, { type: 'order', title: 'New order received', body: `${order.orderNumber} — ${addr.fullName} (${addr.city}) — ₹${order.total}`, link: `/admin/orders/${order._id}` });
-    req.app.get('io')?.to('admins').emit('order:new', { _id: order._id, orderNumber: order.orderNumber, total: order.total, name: addr.fullName, city: addr.city });
+    req.app.get('io')?.to(adminRoom('orders')).emit('order:new', { _id: order._id, orderNumber: order.orderNumber, total: order.total, name: addr.fullName, city: addr.city });
 
     // Notify individual sellers who own items in this order
     const sellerIds = [...new Set(order.items.map((i) => i.seller?.toString()).filter(Boolean))];
@@ -681,8 +682,8 @@ const orderStatusHandler = async (req, res) => {
   const sellerIds = [...new Set(order.items.map((i) => i.seller?.toString()).filter(Boolean))];
   const io = req.app.get('io');
   if (io) {
-    io.to('admins').emit('order:update', order);
-    io.to('admins').emit('order:status_update', { orderId: order._id, orderNumber: order.orderNumber, status: order.status, order });
+    io.to(adminRoom('orders')).emit('order:update', order);
+    io.to(adminRoom('orders')).emit('order:status_update', { orderId: order._id, orderNumber: order.orderNumber, status: order.status, order });
     for (const sId of sellerIds) {
       io.to(`seller:${sId}`).emit('order:update', order);
       io.to(`seller:${sId}`).emit('seller:status_update', { order });

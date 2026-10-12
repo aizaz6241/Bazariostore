@@ -974,3 +974,34 @@
   }
 }
 
+
+/* On / off switch (admin/ui.jsx <Toggle>) */
+.toggle {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: #cbd5e1;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+.toggle span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
+  transition: transform 0.18s ease;
+}
+.toggle.on { background: #16a34a; }
+.toggle.on span { transform: translateX(18px); }
+.toggle:focus-visible { outline: 2px solid #2a78d6; outline-offset: 2px; }
+.toggle.toggle-sm { width: 34px; height: 19px; }
+.toggle.toggle-sm span { width: 13px; height: 13px; }
+.toggle.toggle-sm.on span { transform: translateX(15px); }

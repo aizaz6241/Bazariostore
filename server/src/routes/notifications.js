@@ -4,6 +4,7 @@ import Notification from '../models/Notification.js';
 import Seller from '../models/Seller.js';
 import Order from '../models/Order.js';
 import { authAdmin } from '../middleware/auth.js';
+import { notificationFilterFor } from '../utils/permissions.js';
 
 const router = Router();
 
@@ -19,10 +20,13 @@ function adminLinkFor(link = '', type = '') {
 
 const ORDER_NO = /(?:order\s*#?\s*|#)([A-Za-z0-9-]{2,})/i;
 
+// Each admin only sees the notifications of the modules their role allows
+// (a support agent does not see deposits / withdrawals, an inventory specialist does not see orders ...)
 router.get('/', authAdmin(), async (req, res) => {
+  const visible = notificationFilterFor(req.admin);
   const [docs, unread] = await Promise.all([
-    Notification.find().sort({ createdAt: -1 }).limit(50).lean(),
-    Notification.countDocuments({ read: false }),
+    Notification.find(visible).sort({ createdAt: -1 }).limit(50).lean(),
+    Notification.countDocuments({ ...visible, read: false }),
   ]);
 
   // Which store each notification is about, and which order it names
@@ -65,12 +69,12 @@ router.get('/', authAdmin(), async (req, res) => {
 
 router.post('/:id/read', authAdmin(), async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Not found' });
-  await Notification.updateOne({ _id: req.params.id }, { $set: { read: true } });
+  await Notification.updateOne({ _id: req.params.id, ...notificationFilterFor(req.admin) }, { $set: { read: true } });
   res.json({ ok: true });
 });
 
 router.post('/read-all', authAdmin(), async (req, res) => {
-  const r = await Notification.updateMany({ read: false }, { $set: { read: true } });
+  const r = await Notification.updateMany({ ...notificationFilterFor(req.admin), read: false }, { $set: { read: true } });
   res.json({ ok: true, updated: r.modifiedCount || 0, unread: 0 });
 });
 

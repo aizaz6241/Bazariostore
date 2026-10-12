@@ -1,0 +1,132 @@
+/* ==========================================================================
+   ADMIN — VISUAL REFRESH (refresh.css)
+   Loaded after every other admin stylesheet: a calmer, more modern shell
+   (grouped sidebar, cleaner top bar, softer cards and tables).
+   Selectors are scoped to .admin.
+   ========================================================================== */
+
+/* ─── Sidebar ─── */
+.admin .admin-side {
+  background: linear-gradient(180deg, #0b1222 0%, #0f172a 55%, #111b30 100%) !important;
+  border-right: 1px solid rgba(148, 163, 184, 0.12) !important;
+}
+.admin .admin-logo {
+  padding: 22px 20px 18px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+.admin .admin-logo .logo-script { font-size: 22px; letter-spacing: -0.6px; }
+.admin .admin-logo .logo-name {
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+  font-size: 9.5px;
+  vertical-align: 3px;
+}
+.admin .admin-side nav {
+  padding: 10px 12px 16px !important;
+  gap: 0 !important;
+}
+.admin .admin-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 14px;
+}
+.admin .admin-nav-title {
+  padding: 0 12px 6px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #55657d;
+}
+.admin .admin-side nav a {
+  position: relative;
+  padding: 9px 12px;
+  border-radius: 9px;
+  font-size: 13px;
+  color: #a3b1c6;
+  box-shadow: none;
+}
+.admin .admin-side nav a svg { opacity: 0.85; }
+.admin .admin-side nav a:hover {
+  background: rgba(148, 163, 184, 0.08);
+  color: #f1f5f9;
+  box-shadow: none;
+}
+.admin .admin-side nav a.active {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.16) 0%, rgba(245, 158, 11, 0.04) 100%);
+  color: #fcd34d;
+  box-shadow: none;
+}
+.admin .admin-side nav a.active::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: #f59e0b;
+}
+.admin .admin-side nav a.active svg { opacity: 1; }
+.admin .admin-side-bottom {
+  background: rgba(2, 6, 23, 0.35) !important;
+  border-top: 1px solid rgba(148, 163, 184, 0.12) !important;
+}
+
+/* ─── Top bar ─── */
+.admin .admin-top {
+  min-height: 62px;
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: saturate(160%) blur(10px);
+  -webkit-backdrop-filter: saturate(160%) blur(10px);
+  border-bottom: 1px solid #e6eaf0;
+  box-shadow: none;
+}
+.admin .admin-top-crumb { display: flex; flex-direction: column; line-height: 1.15; }
+.admin .admin-top-crumb small { font-size: 11px; font-weight: 700; color: #94a3b8; letter-spacing: 0.02em; }
+.admin .admin-top-crumb b { font-size: 16px; font-weight: 900; color: #0f172a; letter-spacing: -0.3px; }
+.admin .admin-main { background: #f4f6fa !important; }
+.admin .admin-av {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+}
+
+/* ─── Shared surfaces ─── */
+.admin .admin-content { padding: 24px 28px 40px; }
+.admin .admin-h1 { font-size: 24px; letter-spacing: -0.6px; }
+.admin .card,
+.admin .admin-card {
+  border-color: #e5e9f0;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.admin .admin-table th {
+  background: #fafbfc;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.admin .admin-table tr:hover td { background: #fafcff; }
+
+/* colour helpers (also used by the Payouts desk) */
+.tone-amber { --t-bg: #fff6e0; --t-c: #b77900; }
+.tone-blue { --t-bg: #eaf2fc; --t-c: #2a78d6; }
+.tone-violet { --t-bg: #efedfb; --t-c: #6250d6; }
+.tone-green { --t-bg: #e8f6e8; --t-c: #0a8f0a; }
+.tone-red { --t-bg: #fdecec; --t-c: #c62828; }
+
+@media (max-width: 640px) {
+  .admin .admin-content { padding: 14px 12px 32px; }
+}
+
+/* top bar: the short title is for phones only (the crumb is shown on larger screens) */
+.admin .admin-top-title .show-on-mobile { display: none; }
+@media (max-width: 768px) {
+  .admin .admin-top-title .show-on-mobile { display: inline; }
+  .admin .admin-top-crumb { display: none; }
+}

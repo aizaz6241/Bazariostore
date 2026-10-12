@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { api, fmtDate } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { getSocket } from '../socket.js';
@@ -9,34 +9,94 @@ import NotificationToast from '../components/NotificationToast.jsx';
 import { playNotificationSound } from '../utils/audio.js';
 import { enablePush, pushState } from '../utils/push.js';
 
-const NAV = [
-  { to: '/admin', icon: 'grid', label: 'Dashboard', end: true },
-  { to: '/admin/treasury', icon: 'box', label: 'Product Treasury', perm: 'products' },
-  { to: '/admin/sellers', icon: 'package', label: 'Sellers & Vendors', perm: 'sellers' },
-  { to: '/admin/reports', icon: 'sparkle', label: 'Analytics & Reports', perm: 'orders' },
-  { to: '/admin/complaints', icon: 'alert', label: 'Complaints', perm: 'sellers' },
-  { to: '/admin/orders', icon: 'box', label: 'Orders', perm: 'orders' },
-  { to: '/admin/applications', icon: 'badgeCheck', label: 'New Applications', perm: 'sellers' },
-  { to: '/admin/targets', icon: 'sparkle', label: 'Targets & Bonuses', perm: 'sellers' },
-  { to: '/admin/affiliates', icon: 'tag', label: 'Affiliate Codes', perm: 'sellers' },
-  { to: '/admin/withdrawals', icon: 'banknote', label: 'Payouts', perm: 'finance' },
-  { to: '/admin/chat', icon: 'chat', label: 'Seller Support Desk', perm: 'chat' },
-  { to: '/admin/backup', icon: 'database', label: 'Database Backup', perm: 'settings' },
-  { to: '/admin/staff', icon: 'user', label: 'Staff & Team', perm: 'staff' },
+// Sidebar, grouped by job. Same links and permissions as before.
+const NAV_GROUPS = [
+  {
+    title: 'Overview',
+    items: [
+      { to: '/admin', icon: 'grid', label: 'Dashboard', end: true },
+      { to: '/admin/reports', icon: 'chart', label: 'Analytics & Reports', perm: 'reports' },
+    ],
+  },
+  {
+    title: 'Commerce',
+    items: [
+      { to: '/admin/orders', icon: 'box', label: 'Orders', perm: 'orders' },
+      { to: '/admin/treasury', icon: 'package', label: 'Product Treasury', perm: 'products' },
+      { to: '/admin/complaints', icon: 'alert', label: 'Complaints', perm: 'sellers' },
+    ],
+  },
+  {
+    title: 'Sellers',
+    items: [
+      { to: '/admin/sellers', icon: 'users', label: 'Sellers & Vendors', perm: 'sellers' },
+      { to: '/admin/applications', icon: 'badgeCheck', label: 'New Applications', perm: 'sellers' },
+      { to: '/admin/affiliates', icon: 'tag', label: 'Affiliate Codes', perm: 'sellers' },
+      { to: '/admin/targets', icon: 'trend', label: 'Targets & Bonuses', perm: 'sellers' },
+      { to: '/admin/chat', icon: 'chat', label: 'Seller Support Desk', perm: 'chat' },
+    ],
+  },
+  {
+    title: 'Finance',
+    items: [{ to: '/admin/withdrawals', icon: 'banknote', label: 'Payouts', perm: 'finance' }],
+  },
+  {
+    title: 'System',
+    items: [
+      { to: '/admin/staff', icon: 'user', label: 'Staff & Team', perm: 'staff' },
+      { to: '/admin/backup', icon: 'database', label: 'Database Backup', perm: 'backup' },
+    ],
+  },
 ];
+const NAV = NAV_GROUPS.flatMap((g) => g.items);
+
+const ROLE_TITLES = {
+  super_admin: 'Super Admin Control Center',
+  admin: 'Administrator',
+  manager: 'Store Manager',
+  support: 'Support Agent',
+  order_manager: 'Order Fulfillment',
+  inventory: 'Inventory Specialist',
+};
+
+function storedAdmin() {
+  try {
+    return JSON.parse(localStorage.getItem('ng_admin') || 'null') || { name: localStorage.getItem('ng_admin_name') || 'Admin', permissions: [] };
+  } catch {
+    return { name: 'Admin', permissions: [] };
+  }
+}
 
 export default function AdminLayout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { logoutAdmin } = useAuth();
   const token = localStorage.getItem('ng_admin_token');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const admin = (() => {
-    try {
-      return JSON.parse(localStorage.getItem('ng_admin') || 'null') || { name: localStorage.getItem('ng_admin_name') || 'Admin', permissions: [] };
-    } catch {
-      return { name: 'Admin', permissions: [] };
-    }
-  })();
+  const [admin, setAdmin] = useState(storedAdmin);
+  // The role / permissions saved at login can be out of date (changed on the Staff screen since):
+  // ask the server for the current ones, and again whenever this tab comes back into focus.
+  useEffect(() => {
+    if (!token) return undefined;
+    const refresh = () =>
+      api('/auth/me')
+        .then((res) => {
+          if (!res?.admin) return;
+          const prev = storedAdmin();
+          const next = { ...prev, ...res.admin };
+          localStorage.setItem('ng_admin', JSON.stringify(next));
+          // access changed: re-join so live updates follow the new permissions
+          if (prev.role !== next.role || JSON.stringify(prev.permissions || []) !== JSON.stringify(next.permissions || [])) {
+            const t = localStorage.getItem('ng_admin_token');
+            if (t) getSocket()?.emit('admin:join', { token: t });
+          }
+          setAdmin((cur) => (JSON.stringify(cur) === JSON.stringify(next) ? cur : next));
+        })
+        .catch(() => {});
+    refresh();
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
+  }, [token]);
   const can = (n) => {
     if (typeof n === 'string') return !n || admin.role === 'super_admin' || (admin.permissions || []).includes(n);
     if (n?.superAdminOnly) return admin.role === 'super_admin';
@@ -135,6 +195,10 @@ export default function AdminLayout() {
 
   if (!token) return null;
 
+  // the menu entry that matches the open page (longest match wins: /admin/orders/123 -> Orders)
+  const path = location.pathname.replace(/\/+$/, '') || '/admin';
+  const currentPage = NAV.filter((n) => (n.end ? path === n.to : path === n.to || path.startsWith(n.to + '/'))).sort((a, b) => b.to.length - a.to.length)[0];
+
   const logout = () => {
     logoutAdmin();
     navigate('/admin/login');
@@ -161,19 +225,28 @@ export default function AdminLayout() {
             </div>
             <button className="mobile-close-drawer" onClick={() => setMobileSidebarOpen(false)}>✕</button>
           </div>
-          <small>Super Admin Control Center</small>
+          <small>{ROLE_TITLES[admin.role] || 'Admin Control Center'}</small>
         </div>
         <nav>
-          {NAV.filter(can).map((n) => (
-            <NavLink
-              key={n.to}
-              to={n.to}
-              end={n.end}
-              onClick={() => setMobileSidebarOpen(false)}
-            >
-              <Ic name={n.icon} size={17} /> {n.label}
-            </NavLink>
-          ))}
+          {NAV_GROUPS.map((g) => {
+            const items = g.items.filter(can);
+            if (!items.length) return null;
+            return (
+              <div className="admin-nav-group" key={g.title}>
+                <span className="admin-nav-title">{g.title}</span>
+                {items.map((n) => (
+                  <NavLink
+                    key={n.to}
+                    to={n.to}
+                    end={n.end}
+                    onClick={() => setMobileSidebarOpen(false)}
+                  >
+                    <Ic name={n.icon} size={17} /> {n.label}
+                  </NavLink>
+                ))}
+              </div>
+            );
+          })}
         </nav>
         <div className="admin-side-bottom">
           <Link to="/seller" target="_blank"><Ic name="tag" size={16} /> Seller Central</Link>
@@ -187,8 +260,11 @@ export default function AdminLayout() {
             <button className="mobile-hamburger-btn" onClick={() => setMobileSidebarOpen(true)} aria-label="Toggle Menu">
               <Ic name="menu" size={22} />
             </button>
-            <b className="hide-on-mobile">Platform Governance & Multi-Vendor Hub</b>
-            <b className="show-on-mobile" style={{ fontSize: 14 }}>Bazario Admin</b>
+            <span className="admin-top-crumb hide-on-mobile">
+              <small>Bazario Admin</small>
+              <b>{currentPage?.label || 'Control Center'}</b>
+            </span>
+            <b className="show-on-mobile" style={{ fontSize: 14 }}>{currentPage?.label || 'Bazario Admin'}</b>
           </div>
           <span className="admin-top-right">
             {pushPerm !== 'granted' && pushPerm !== 'unsupported' && (
@@ -238,7 +314,7 @@ export default function AdminLayout() {
                 </div>
               )}
             </span>
-            <span className="admin-user"><span className="admin-av">{admin.name[0]}</span> <span className="hide-on-mobile">{admin.name}</span></span>
+            <span className="admin-user"><span className="admin-av">{(admin.name || 'A')[0]}</span> <span className="hide-on-mobile">{admin.name}</span></span>
           </span>
         </header>
         <div className="admin-content">

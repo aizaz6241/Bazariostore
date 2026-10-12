@@ -3,6 +3,7 @@ import Product from '../models/Product.js';
 import { releaseSellerOrderDelivered } from '../routes/sellers/orders.routes.js';
 import { notify } from '../utils/notify.js';
 import { settleDeliveredStock } from '../utils/orderStock.js';
+import { adminRoom } from '../utils/permissions.js';
 
 // Configuration: Realistic 5 to 7 days progression schedule
 export const PROGRESSION_STEPS = {
@@ -206,8 +207,8 @@ export async function processAutoProgressOrders(app) {
         // Broadcast real-time socket events
         const io = app?.get('io');
         if (io) {
-          io.to('admins').emit('order:update', order);
-          io.to('admins').emit('order:status_update', {
+          io.to(adminRoom('orders')).emit('order:update', order);
+          io.to(adminRoom('orders')).emit('order:status_update', {
             orderId: order._id,
             orderNumber: order.orderNumber,
             status: order.status,

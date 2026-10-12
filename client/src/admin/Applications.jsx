@@ -92,6 +92,20 @@ export default function Applications() {
   const [teamLoading, setTeamLoading] = useState(false);
   const approveSellerId = approveModal?.seller?._id || '';
 
+  // Known affiliate codes (master + custom), so the approve form can say if a code is real
+  const [affCodes, setAffCodes] = useState(null); // null = not loaded; [{ code, status, commissionRate }]
+  useEffect(() => {
+    if (!approveSellerId || affCodes) return;
+    api('/sellers/affiliates')
+      .then((res) => {
+        const master = res?.masterAffiliateCode || res?.masterReferralCode;
+        const list = (res?.affiliateCodes || []).map((c) => ({ code: c.code, status: c.status, commissionRate: c.commissionRate, description: c.description }));
+        setAffCodes([...(master ? [{ code: master, status: 'active', commissionRate: null, description: 'Master code', master: true }] : []), ...list]);
+      })
+      .catch(() => setAffCodes([]));
+  }, [approveSellerId, affCodes]);
+  const findAffCode = (code) => (affCodes || []).find((c) => c.code === String(code || '').replace(/\s+/g, '').toUpperCase());
+
   useEffect(() => {
     if (!approveSellerId) return;
     let cancelled = false;
@@ -714,7 +728,37 @@ export default function Applications() {
 
               <div className="ins-field">
                 <label>Affiliate code</label>
-                <input className="ins-input" value={am.referralCode} onChange={(e) => setApproveModal({ ...am, referralCode: e.target.value.toUpperCase() })} placeholder="e.g. BAZARIO2026" />
+                <input
+                  className="ins-input"
+                  list="approve-affiliate-codes"
+                  value={am.referralCode}
+                  onChange={(e) => {
+                    const code = e.target.value.replace(/\s+/g, '').toUpperCase();
+                    const known = findAffCode(code);
+                    setApproveModal({
+                      ...am,
+                      referralCode: code,
+                      // a code with its own commission fills it in (still editable)
+                      ...(known && known.commissionRate !== null && known.commissionRate !== undefined ? { commissionRate: known.commissionRate } : {}),
+                    });
+                  }}
+                  placeholder="e.g. BAZARIO2026"
+                />
+                <datalist id="approve-affiliate-codes">
+                  {(affCodes || []).filter((c) => c.status === 'active').map((c) => (
+                    <option key={c.code} value={c.code}>{c.description || ''}</option>
+                  ))}
+                </datalist>
+                {am.referralCode && affCodes && (() => {
+                  const known = findAffCode(am.referralCode);
+                  const color = !known ? '#b91c1c' : known.status === 'active' ? '#15803d' : '#b45309';
+                  const text = !known
+                    ? '✕ Unknown code — correct it or clear the field'
+                    : known.status === 'active'
+                    ? `✓ ${known.master ? 'Master code' : 'Valid code'}${known.commissionRate !== null && known.commissionRate !== undefined ? ` · ${known.commissionRate}% commission` : ''}`
+                    : '! Code exists but is inactive';
+                  return <small style={{ fontWeight: 700, color }}>{text}</small>;
+                })()}
               </div>
 
               {modalError && <ErrorBox error={modalError} />}

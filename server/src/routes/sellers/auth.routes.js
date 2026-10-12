@@ -13,6 +13,8 @@ import { jwtSecret } from '../../utils/secrets.js';
 import { limit, failureLimiter } from '../../utils/rateLimit.js';
 import { asText } from '../../middleware/sanitize.js';
 import { forgetAuthCache } from '../../middleware/auth.js';
+import { adminRoom } from '../../utils/permissions.js';
+import { resolveAffiliateCode } from '../../utils/affiliateCodes.js';
 
 // Wrong passwords: 8 tries per account from one address in 15 minutes, then a 15 minute wait
 const loginGuard = failureLimiter({ name: 'seller-login', max: 8, windowMs: 15 * 60 * 1000 });
@@ -114,6 +116,21 @@ router.post('/register/check-email', checkEmailLimit, async (req, res) => {
   }
 });
 
+// GET /api/sellers/affiliate/validate?code=XYZ (public: the registration form checks a code
+// while the seller types it). Only says valid / not valid: never lists the codes.
+const affiliateCheckLimit = limit({ name: 'seller-affiliate-check', max: 60, windowMs: 15 * 60 * 1000, message: 'Too many code checks. Please try again later.' });
+router.get('/affiliate/validate', affiliateCheckLimit, async (req, res) => {
+  try {
+    const raw = asText(req.query?.code, 64);
+    if (!raw.trim()) return res.json({ valid: false, code: '', reason: 'empty', message: '' });
+    const r = await resolveAffiliateCode(raw);
+    if (!r.ok) return res.json({ valid: false, code: r.code, reason: r.reason, message: r.message });
+    res.json({ valid: true, code: r.code, message: `Affiliate code "${r.code}" is valid.` });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // POST /api/sellers/register (Seller self-registers with KYC document)
 router.post('/register', registerLimit, async (req, res) => {
   try {
@@ -147,6 +164,15 @@ router.post('/register', registerLimit, async (req, res) => {
     }
     if (password.length < 6) {
       return res.status(400).json({ message: 'Password must be at least 6 characters long' });
+    }
+
+    // An affiliate code is optional, but when one is given it must exist and be active:
+    // a mistyped or switched-off code is refused instead of being saved silently.
+    let affiliateCode = '';
+    if (typeof referralCode === 'string' && referralCode.trim()) {
+      const aff = await resolveAffiliateCode(referralCode);
+      if (!aff.ok) return res.status(400).json({ code: 'INVALID_AFFILIATE_CODE', field: 'referralCode', reason: aff.reason, message: aff.message });
+      affiliateCode = aff.code;
     }
 
     const cleanEmail = email.toLowerCase().trim();
@@ -212,7 +238,7 @@ router.post('/register', registerLimit, async (req, res) => {
       securityDeposit: {
         paid: false,
         amount: 0,
-        referralCode: (referralCode || '').trim(),
+        referralCode: affiliateCode,
       },
     });
 
@@ -231,13 +257,13 @@ router.post('/register', registerLimit, async (req, res) => {
       link: '/admin/sellers',
     });
 
-    req.app.get('io')?.to('admins').emit('seller:new_registration', {
+    req.app.get('io')?.to(adminRoom('sellers')).emit('seller:new_registration', {
       _id: seller._id,
       storeName: seller.storeName,
       ownerName: seller.ownerName,
       email: seller.email,
       phone: seller.phone,
-      referralCode: referralCode || '',
+      referralCode: affiliateCode,
       createdAt: seller.createdAt,
     });
 
