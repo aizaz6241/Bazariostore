@@ -703,6 +703,13 @@ const orderStatusHandler = async (req, res) => {
     it.itemStatus = status;
   });
 
+  // back to waiting: the seller gets a fresh 24h warning / 48h deadline from now
+  if (status === 'pending' && prev !== 'pending') {
+    order.pendingSince = new Date();
+    order.warning24hSent = false;
+    order.penalty48hApplied = false;
+  }
+
   order.status = status;
   if (['pending', 'cancelled', 'refunded', 'delivered'].includes(status)) {
     order.nextStatus = null;

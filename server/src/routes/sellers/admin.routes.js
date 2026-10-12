@@ -633,10 +633,16 @@ router.post('/:id/freeze', authAdmin('sellers'), async (req, res) => {
 
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
+    // a registration still waiting (or rejected) is decided under New Applications, not here:
+    // "active" from this screen used to approve it without the approval steps
+    if (seller.status === 'pending_approval' || seller.registrationRejectedAt) {
+      return res.status(400).json({ message: 'This store registration is not approved. Use New Applications to approve or reject it.' });
+    }
 
     seller.status = status;
     if (status === 'active') {
-      seller.verified = true;
+      // only the restriction is lifted: "verified" (documents checked) is not touched here.
+      // It used to be set on every unfreeze, giving unchecked stores the verified badge.
       seller.freezeReason = '';
       seller.frozenAt = null;
       seller.frozenBy = '';
@@ -647,6 +653,7 @@ router.post('/:id/freeze', authAdmin('sellers'), async (req, res) => {
     }
 
     await seller.save();
+    forgetAuthCache('seller', seller._id); // a suspension applies to the next request at once
 
     const isRestricted = status !== 'active';
     const statusLabel = status === 'frozen' ? 'FROZEN' : status === 'suspended' ? 'SUSPENDED' : 'UNFROZEN / ACTIVE';
@@ -810,6 +817,9 @@ router.post('/:id/warn', authAdmin('sellers'), async (req, res) => {
         link: '/seller',
       });
     }
+
+    // cleared: the seller's banner goes away now (it used to stay until a page reload)
+    if (!active) req.app.get('io')?.to(`seller:${seller._id}`).emit('seller:warning_update', { warning: seller.warning });
 
     audit(req, 'update', 'seller_warning', seller._id, `${active ? 'Issued warning' : 'Cleared warning'} for ${seller.storeName}`);
 
@@ -1449,8 +1459,22 @@ router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
 router.post('/:id/withdrawal-limit', authAdmin('finance'), async (req, res) => {
   try {
     const { maxAmount, minAmount, requiredWithdrawalsForIncrease, successfulWithdrawalCount, upgradeFee, currentTierName } = req.body || {};
+    // every number must really be a number (a typo used to end in a 500 "server error")
+    const given = { maxAmount, minAmount, requiredWithdrawalsForIncrease, successfulWithdrawalCount, upgradeFee };
+    for (const [field, v] of Object.entries(given)) {
+      if (v !== undefined && !(Number.isFinite(Number(v)) && Number(v) >= 0)) {
+        return res.status(400).json({ message: `Please enter a valid number (0 or more) for ${field}.` });
+      }
+    }
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Seller not found' });
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
+
+    // the minimum payout can never be above the maximum (the seller could not withdraw at all);
+    // checked against the values that will be saved, including the ones not sent now
+    const nextMax = maxAmount !== undefined ? Math.max(1, Number(maxAmount)) : Number(seller.withdrawalLimit?.maxAmount ?? 500);
+    const nextMin = minAmount !== undefined ? Math.max(1, Number(minAmount)) : Number(seller.withdrawalLimit?.minAmount ?? 10);
+    if (nextMin > nextMax) return res.status(400).json({ message: `The minimum payout ($${nextMin}) cannot be more than the maximum ($${nextMax}).` });
 
     seller.withdrawalLimit = seller.withdrawalLimit || {};
 
@@ -1459,7 +1483,7 @@ router.post('/:id/withdrawal-limit', authAdmin('finance'), async (req, res) => {
     if (requiredWithdrawalsForIncrease !== undefined) seller.withdrawalLimit.requiredWithdrawalsForIncrease = Math.max(1, Number(requiredWithdrawalsForIncrease));
     if (successfulWithdrawalCount !== undefined) seller.withdrawalLimit.successfulWithdrawalCount = Math.max(0, Number(successfulWithdrawalCount));
     if (upgradeFee !== undefined) seller.withdrawalLimit.upgradeFee = Math.max(0, Number(upgradeFee));
-    if (currentTierName) seller.withdrawalLimit.currentTierName = currentTierName.trim();
+    if (typeof currentTierName === 'string' && currentTierName.trim()) seller.withdrawalLimit.currentTierName = currentTierName.trim().slice(0, 120);
 
     seller.markModified('withdrawalLimit');
     await seller.save();

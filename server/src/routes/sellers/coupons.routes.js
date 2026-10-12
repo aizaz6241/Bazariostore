@@ -1,6 +1,7 @@
 import express from 'express';
 import SellerCoupon from '../../models/SellerCoupon.js';
 import { authSeller } from '../../middleware/auth.js';
+import { blockWhenFrozen } from './helpers.js';
 
 const router = express.Router();
 
@@ -15,7 +16,7 @@ router.get('/coupons', authSeller, async (req, res) => {
 });
 
 // POST /api/sellers/coupons
-router.post('/coupons', authSeller, async (req, res) => {
+router.post('/coupons', authSeller, blockWhenFrozen('creating coupons'), async (req, res) => {
   try {
     const { code, type, value, minOrder, maxUses, expiresAt, active } = req.body;
     if (!code || !type || !value) return res.status(400).json({ message: 'Code, type and value are required' });
@@ -40,7 +41,7 @@ router.post('/coupons', authSeller, async (req, res) => {
 });
 
 // PUT /api/sellers/coupons/:id
-router.put('/coupons/:id', authSeller, async (req, res) => {
+router.put('/coupons/:id', authSeller, blockWhenFrozen('editing coupons'), async (req, res) => {
   try {
     const coupon = await SellerCoupon.findOneAndUpdate(
       { _id: req.params.id, seller: req.seller.id },
@@ -55,7 +56,7 @@ router.put('/coupons/:id', authSeller, async (req, res) => {
 });
 
 // DELETE /api/sellers/coupons/:id
-router.delete('/coupons/:id', authSeller, async (req, res) => {
+router.delete('/coupons/:id', authSeller, blockWhenFrozen('deleting coupons'), async (req, res) => {
   try {
     const coupon = await SellerCoupon.findOneAndDelete({ _id: req.params.id, seller: req.seller.id });
     if (!coupon) return res.status(404).json({ message: 'Coupon not found' });

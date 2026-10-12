@@ -12,6 +12,7 @@ import { walletApply, walletNow } from '../../utils/wallet.js';
 import { applyDecisionToWallet, requestFieldsFor, finishStuckWalletRequests } from '../../utils/walletRequests.js';
 import { asText } from '../../middleware/sanitize.js';
 import { adminRoom } from '../../utils/permissions.js';
+import { blockWhenFrozen } from './helpers.js';
 
 const router = express.Router();
 
@@ -287,7 +288,7 @@ router.post('/wallet/deposit', authSellerOrAdmin, oneRequestAtATime('deposit'), 
 });
 
 // POST /api/sellers/wallet/withdraw — seller requests withdrawal from wallet
-router.post('/wallet/withdraw', authSellerOrAdmin, oneRequestAtATime('withdraw'), async (req, res) => {
+router.post('/wallet/withdraw', authSellerOrAdmin, blockWhenFrozen('withdrawing'), oneRequestAtATime('withdraw'), async (req, res) => {
   try {
     const seller = await getSellerFromReq(req);
     if (!seller) return res.status(404).json({ message: 'Seller not found. Please log in again.' });
@@ -442,7 +443,7 @@ router.post('/wallet/withdraw', authSellerOrAdmin, oneRequestAtATime('withdraw')
 });
 
 // POST /api/sellers/wallet/limit-increase-request (Seller applies for a higher withdrawal tier)
-router.post('/wallet/limit-increase-request', authSellerOrAdmin, async (req, res) => {
+router.post('/wallet/limit-increase-request', authSellerOrAdmin, blockWhenFrozen('requesting a higher withdrawal limit'), async (req, res) => {
   try {
     const seller = await getSellerFromReq(req);
     if (!seller) return res.status(404).json({ message: 'Seller not found. Please log in again.' });
@@ -572,7 +573,7 @@ router.post('/wallet/limit-increase-request', authSellerOrAdmin, async (req, res
 });
 
 // POST /api/sellers/wallet/limit-offer-response (Seller accepts or declines Admin's upgrade terms quote)
-router.post('/wallet/limit-offer-response', authSellerOrAdmin, async (req, res) => {
+router.post('/wallet/limit-offer-response', authSellerOrAdmin, blockWhenFrozen('changing your withdrawal limit'), async (req, res) => {
   try {
     const { action } = req.body || {}; // 'accept' | 'decline'
     if (!['accept', 'decline'].includes(action)) {
@@ -1785,59 +1786,6 @@ router.post('/:id/limit-increase-decision', authAdmin('finance'), async (req, re
 
     res.json({
       message: 'Limit increase request declined',
-      seller,
-    });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// POST /api/sellers/:id/withdrawal-limit (Admin directly updates withdrawal limit settings)
-router.post('/:id/withdrawal-limit', authAdmin('finance'), async (req, res) => {
-  try {
-    const { maxAmount, minAmount, requiredWithdrawalsForIncrease, successfulWithdrawalCount, upgradeFee, currentTierName } = req.body;
-    const seller = await Seller.findById(req.params.id);
-    if (!seller) return res.status(404).json({ message: 'Seller not found' });
-
-    if (!seller.withdrawalLimit) {
-      seller.withdrawalLimit = {};
-    }
-
-    if (maxAmount !== undefined) seller.withdrawalLimit.maxAmount = Math.max(1, Number(maxAmount));
-    if (minAmount !== undefined) seller.withdrawalLimit.minAmount = Math.max(1, Number(minAmount));
-    if (requiredWithdrawalsForIncrease !== undefined) seller.withdrawalLimit.requiredWithdrawalsForIncrease = Math.max(1, Number(requiredWithdrawalsForIncrease));
-    if (successfulWithdrawalCount !== undefined) seller.withdrawalLimit.successfulWithdrawalCount = Math.max(0, Number(successfulWithdrawalCount));
-    if (upgradeFee !== undefined) seller.withdrawalLimit.upgradeFee = Math.max(0, Number(upgradeFee));
-    if (currentTierName) seller.withdrawalLimit.currentTierName = currentTierName.trim();
-
-    seller.markModified('withdrawalLimit');
-    await seller.save();
-
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`seller:${seller._id}`).emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.to(`seller:${seller._id}`).emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      // only this seller and the admins are told (it used to go to every connected visitor)
-      io.to(`seller:${seller._id}`).emit('limit:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.to(adminRoom('finance')).emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.to(adminRoom('finance')).emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.to(adminRoom('finance')).emit('limit:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-    }
-
-    notify(req.app, {
-      recipientType: 'seller',
-      sellerId: seller._id,
-      type: 'approval',
-      title: '💼 Withdrawal Limit Updated',
-      body: `Your store withdrawal limit has been updated to $${(seller.withdrawalLimit.maxAmount || 500).toLocaleString('en-US')} by Platform Administration.`,
-      link: '/seller/wallet?tab=withdraw',
-    });
-
-    audit(req, 'update', 'seller_limit', seller._id, `Directly updated withdrawal limit settings for ${seller.storeName}`);
-
-    res.json({
-      message: 'Withdrawal limit settings updated successfully',
-      withdrawalLimit: seller.withdrawalLimit,
       seller,
     });
   } catch (err) {

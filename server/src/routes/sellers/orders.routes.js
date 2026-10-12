@@ -1089,6 +1089,22 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
  * 24h unconfirmed: Sends warning notification & chat message.
  * 48h unconfirmed: Applies 25-point penalty to Account Health & freezes merchant account.
  */
+/**
+ * The sellers who still owe a confirmation on this order: the owners of the items that are still
+ * waiting. Before, the warning and the 48h penalty always went to the order's FIRST seller, so in a
+ * two-seller order the seller who had confirmed was frozen and the one who had not went free.
+ */
+async function sellersStillToConfirm(ord) {
+  const waiting = (ord.items || []).filter((it) => !it.itemStatus || it.itemStatus === 'pending');
+  const ids = [...new Set(waiting.map((it) => it.seller?._id?.toString() || it.seller?.toString()).filter(Boolean))];
+  if (!ids.length && waiting.length && ord.seller) ids.push(ord.seller._id?.toString() || ord.seller.toString());
+  return ids.length ? Seller.find({ _id: { $in: ids } }) : [];
+}
+
+// "Waiting longer than X": counted from when the order (last) became pending, not from when it
+// was placed. An old order moved back to pending by an admin used to be penalised at once.
+const waitingSince = (cutoff) => ({ $or: [{ pendingSince: { $lt: cutoff } }, { pendingSince: null, createdAt: { $lt: cutoff } }] });
+
 export async function processOrderPenalties(app) {
   try {
     const now = new Date();
@@ -1098,16 +1114,15 @@ export async function processOrderPenalties(app) {
     // 1. Check for 24h Warning Candidates
     const warnOrders = await Order.find({
       status: 'pending',
-      createdAt: { $lt: twentyFourHoursAgo },
+      ...waitingSince(twentyFourHoursAgo),
       warning24hSent: { $ne: true },
-    }).populate('seller');
+    });
 
     for (const ord of warnOrders) {
       ord.warning24hSent = true;
       await ord.save();
 
-      const seller = ord.seller;
-      if (seller) {
+      for (const seller of await sellersStillToConfirm(ord)) {
         notify(app, {
           recipientType: 'seller',
           sellerId: seller._id.toString(),
@@ -1154,16 +1169,15 @@ export async function processOrderPenalties(app) {
     // 2. Check for 48h Penalty & Freeze Candidates
     const penaltyOrders = await Order.find({
       status: 'pending',
-      createdAt: { $lt: fortyEightHoursAgo },
+      ...waitingSince(fortyEightHoursAgo),
       penalty48hApplied: { $ne: true },
-    }).populate('seller');
+    });
 
     for (const ord of penaltyOrders) {
       ord.penalty48hApplied = true;
       await ord.save();
 
-      const seller = await Seller.findById(ord.seller?._id || ord.seller);
-      if (seller) {
+      for (const seller of await sellersStillToConfirm(ord)) {
         const prevScore = seller.accountHealth?.score ?? 100;
         const newScore = Math.max(0, prevScore - 25);
 
@@ -1175,6 +1189,9 @@ export async function processOrderPenalties(app) {
           seller.accountHealth.status = 'frozen';
           seller.status = 'frozen';
           seller.freezeReason = `Automatic Freeze: Order #${ord.orderNumber} remained unconfirmed for over 48 hours.`;
+          // when and by whom, like a freeze by an admin (the Complaints page sorts and shows by it)
+          seller.frozenAt = new Date();
+          seller.frozenBy = 'Automatic (48-hour rule)';
         }
 
         seller.accountHealth.history = seller.accountHealth.history || [];

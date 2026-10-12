@@ -90,6 +90,9 @@ const orderSchema = new mongoose.Schema(
     adminNotes: { type: String, default: '' },
     warning24hSent: { type: Boolean, default: false },
     penalty48hApplied: { type: Boolean, default: false },
+    // when the order last became "pending" (empty: since it was placed); the 24h / 48h confirmation
+    // deadlines count from here, so an order moved back to pending gets a fresh 48 hours
+    pendingSince: { type: Date, default: null },
   },
   { timestamps: true }
 );

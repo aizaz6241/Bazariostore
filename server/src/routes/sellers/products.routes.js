@@ -2,7 +2,7 @@ import express from 'express';
 import Seller from '../../models/Seller.js';
 import Product from '../../models/Product.js';
 import { authSeller } from '../../middleware/auth.js';
-import { slugify } from './helpers.js';
+import { slugify, blockWhenFrozen } from './helpers.js';
 
 const router = express.Router();
 
@@ -45,7 +45,7 @@ function priceProblem(data) {
 }
 
 // POST /api/sellers/products
-router.post('/products', authSeller, async (req, res) => {
+router.post('/products', authSeller, blockWhenFrozen('adding products'), async (req, res) => {
   try {
     const seller = await Seller.findById(req.seller.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
@@ -101,7 +101,7 @@ router.post('/products', authSeller, async (req, res) => {
 });
 
 // PUT /api/sellers/products/:id
-router.put('/products/:id', authSeller, async (req, res) => {
+router.put('/products/:id', authSeller, blockWhenFrozen('editing products'), async (req, res) => {
   try {
     const product = await Product.findOne({ _id: req.params.id, seller: req.seller.id });
     if (!product) return res.status(404).json({ message: 'Product not found or access denied' });
@@ -167,7 +167,7 @@ router.put('/products/:id', authSeller, async (req, res) => {
 });
 
 // DELETE /api/sellers/products/:id
-router.delete('/products/:id', authSeller, async (req, res) => {
+router.delete('/products/:id', authSeller, blockWhenFrozen('deleting products'), async (req, res) => {
   try {
     const product = await Product.findOne({ _id: req.params.id, seller: req.seller.id });
     if (!product) return res.status(404).json({ message: 'Product not found or access denied' });
