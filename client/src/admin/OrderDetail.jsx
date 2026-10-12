@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, money, fmtDate } from '../api.js';
-import { STATUS_LABELS, ALL_STATUSES, PAYMENT_LABELS } from '../data.js';
+import { STATUS_LABELS, ALL_STATUSES, PAYMENT_LABELS, STATUS_WARNINGS } from '../data.js';
 import { Modal, ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
 import { getSocket } from '../socket.js';
@@ -60,6 +60,8 @@ export default function OrderDetail() {
   }, [id]);
 
   const update = async () => {
+    // these move money at once and cannot simply be clicked back
+    if (status !== order?.status && STATUS_WARNINGS[status] && !window.confirm(STATUS_WARNINGS[status])) return;
     setSaving(true);
     setSaved(false);
     setError('');
@@ -149,7 +151,10 @@ export default function OrderDetail() {
             <div className="field">
               <label>Status</label>
               <select value={status} onChange={(e) => setStatus(e.target.value)}>
-                {ALL_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
+                {ALL_STATUSES
+                  // a delivered order was already paid out: it goes back only through a refund
+                  .filter((s) => !(s === 'cancelled' && order.status === 'delivered'))
+                  .map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
               </select>
             </div>
             <div className="field">

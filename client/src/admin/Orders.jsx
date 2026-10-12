@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, money, fmtDate, getCurrencyRate } from '../api.js';
-import { STATUS_LABELS, ALL_STATUSES, PAYMENT_LABELS } from '../data.js';
+import { STATUS_LABELS, ALL_STATUSES, PAYMENT_LABELS, STATUS_WARNINGS } from '../data.js';
 import { ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
 import { getSocket } from '../socket.js';
@@ -171,6 +171,14 @@ export default function Orders() {
   };
   useEffect(() => () => clearTimeout(liveTimer.current), []);
 
+  // every status change arrives as two or three events: reload the list once for all of them
+  const reloadTimer = useRef(null);
+  const reloadOrdersSoon = () => {
+    clearTimeout(reloadTimer.current);
+    reloadTimer.current = setTimeout(() => loadOrders(true), 800);
+  };
+  useEffect(() => () => clearTimeout(reloadTimer.current), []);
+
   // Real-time synchronization on WebSocket events
   useEffect(() => {
     const socket = getSocket();
@@ -191,7 +199,7 @@ export default function Orders() {
       const { status, sellerFilter, q } = filtersRef.current;
       refreshInsightsSoon();
       if (!updatedOrder?._id) {
-        loadOrders(true);
+        reloadOrdersSoon();
         return;
       }
 
@@ -231,17 +239,17 @@ export default function Orders() {
       });
 
       // 3. Silently re-sync with server for verified consistency
-      loadOrders(true);
+      reloadOrdersSoon();
     };
 
     const handleOrderNew = () => {
-      loadOrders(true);
+      reloadOrdersSoon();
       refreshInsightsSoon();
     };
 
     const handleNotify = (n) => {
       if (n?.type === 'order') {
-        loadOrders(true);
+        reloadOrdersSoon();
         refreshInsightsSoon();
       }
     };
@@ -366,6 +374,9 @@ export default function Orders() {
   };
 
   const handleUpdateOrderStatus = async (orderId, newStatus) => {
+    // these move money at once and cannot simply be clicked back
+    const warn = STATUS_WARNINGS[newStatus];
+    if (warn && !window.confirm(warn)) return;
     setUpdatingStatus(true);
     try {
       await api(`/orders/${orderId}/status`, {
@@ -1079,7 +1090,10 @@ export default function Orders() {
                 </div>
 
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'out_for_delivery', 'delivered', 'cancelled'].map((st) => (
+                  {['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'out_for_delivery', 'delivered', 'cancelled']
+                    // a delivered order was already paid out: it goes back only through a refund
+                    .filter((st) => !(st === 'cancelled' && inspectOrder.status === 'delivered'))
+                    .map((st) => (
                     <button
                       key={st}
                       type="button"

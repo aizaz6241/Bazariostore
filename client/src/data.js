@@ -32,6 +32,13 @@ export const STATUS_LABELS = {
 
 export const ALL_STATUSES = [...STATUS_STEPS, 'shipped', 'cancelled', 'refunded'];
 
+// Status changes that move money at once: asked before they are sent
+export const STATUS_WARNINGS = {
+  delivered: 'Mark this order as DELIVERED?\n\nThe seller is paid out at once (locked amount + 20% profit). This cannot be undone.',
+  cancelled: 'CANCEL this order?\n\nThe items go back in stock and the locked amount returns to the seller.',
+  refunded: 'Mark this order as REFUNDED?\n\nThe items go back in stock and any locked amount returns to the seller.',
+};
+
 export const PAYMENT_LABELS = {
   cod: 'Cash on Delivery',
   credit_card: 'Credit Card',

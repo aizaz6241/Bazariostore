@@ -3,6 +3,7 @@ import Refund, { REFUND_STATUSES } from '../models/Refund.js';
 import Order from '../models/Order.js';
 import Expense from '../models/Expense.js';
 import { restockOrder } from './orders.js';
+import { releaseSellerOrderCancelled } from './sellers/orders.routes.js';
 import { authAdmin } from '../middleware/auth.js';
 import { audit } from '../utils/audit.js';
 import { notify } from '../utils/notify.js';
@@ -66,6 +67,8 @@ router.patch('/:id/status', authAdmin('refunds'), async (req, res) => {
   if (!['approved', 'rejected', 'refunded'].includes(status)) return res.status(400).json({ message: 'Invalid status' });
   const refund = await Refund.findById(req.params.id);
   if (!refund) return res.status(404).json({ message: 'Refund not found' });
+  // paying the same refund twice used to book the expense twice
+  if (status === 'refunded' && refund.status === 'refunded') return res.status(400).json({ message: 'This refund was already paid' });
 
   refund.status = status;
   refund.timeline.push({ status, note: note || '', by: req.admin.name });
@@ -77,11 +80,19 @@ router.patch('/:id/status', authAdmin('refunds'), async (req, res) => {
       order.status = 'refunded';
       order.paymentStatus = 'refunded';
       order.statusHistory.push({ status: 'refunded', note: 'Refund payment returned', by: req.admin.name });
+      order.nextStatus = null;
+      order.nextStatusAt = null;
+      // money still locked for this order returns to the seller (it used to stay locked for good);
+      // a payout already made on delivery stays
+      const sellerIds = [...new Set(order.items.map((i) => i.seller?.toString()).filter(Boolean))];
+      for (const sId of sellerIds) {
+        await releaseSellerOrderCancelled(req.app, sId, order, { reason: 'refunded' });
+      }
       await restockOrder(order, 'refund_restock', req.admin.name);
       await order.save();
     }
     await Expense.create({ type: 'refund', amount: refund.amount, note: `Refund ${refund.orderNumber}`, createdBy: req.admin.name });
-    notify(req.app, { type: 'refund', title: 'Refund payment returned', body: `${refund.orderNumber} — Rs.${refund.amount}`, link: '/admin/refunds' });
+    notify(req.app, { type: 'refund', title: 'Refund payment returned', body: `${refund.orderNumber} — $${refund.amount}`, link: '/admin/refunds' });
   }
   await refund.save();
   await audit(req, status === 'approved' ? 'refund_approved' : status === 'rejected' ? 'refund_rejected' : 'refund_paid', 'refund', refund._id, {

@@ -412,6 +412,7 @@ export async function releaseSellerOrderDelivered(app, sellerId, order) {
 export async function releaseSellerOrderCancelled(app, sellerId, order, { reason = 'cancelled', onlyWaiting = false } = {}) {
   await refreshItemFlags(order);
   const backToPending = reason === 'pending';
+  const what = backToPending ? 'moved back to Pending' : reason === 'refunded' ? 'Refunded' : 'Cancelled';
   const waiting = (it) => !it.itemStatus || it.itemStatus === 'pending';
 
   const mine = [];
@@ -444,7 +445,7 @@ export async function releaseSellerOrderCancelled(app, sellerId, order, { reason
     status: 'completed',
     balanceAfter: moved.wallet.balance,
     processingFundAfter: moved.wallet.processingFund,
-    adminNote: `Order #${order.orderNumber} ${backToPending ? 'moved back to Pending' : 'Cancelled'} — $${totalToRefund.toFixed(2)} Processing Fund returned to Available Balance`,
+    adminNote: `Order #${order.orderNumber} ${what} — $${totalToRefund.toFixed(2)} Processing Fund returned to Available Balance`,
     processedAt: new Date(),
   });
 
@@ -453,7 +454,7 @@ export async function releaseSellerOrderCancelled(app, sellerId, order, { reason
       recipientType: 'seller',
       sellerId: String(sellerId),
       type: 'order',
-      title: `↩️ Order #${order.orderNumber} ${backToPending ? 'moved back to Pending' : 'Cancelled'}`,
+      title: `↩️ Order #${order.orderNumber} ${what}`,
       body: backToPending
         ? `$${totalToRefund.toFixed(2)} processing fund returned to your available balance. Confirm the order again to process it.`
         : `$${totalToRefund.toFixed(2)} processing fund returned to your available balance.`,
@@ -505,6 +506,33 @@ export async function releaseLocksOfWaitingOrders(app) {
     }
   } catch (e) {
     console.error('[orders] waiting-order lock check failed:', e.message);
+  }
+
+  // A cancelled or refunded order must not hold locked money either. Refunds used to leave it
+  // locked for good; this returns it once (same once-only wallet step as a cancellation).
+  try {
+    const cutoff = new Date(Date.now() - 10 * 60 * 1000);
+    const closed = await Order.find({
+      status: { $in: ['cancelled', 'refunded'] },
+      updatedAt: { $lt: cutoff },
+      items: { $elemMatch: { processingLocked: true, payoutSettled: { $ne: true } } },
+    }).limit(200);
+
+    for (const order of closed) {
+      const sellerIds = [
+        ...new Set(order.items.filter((it) => it.processingLocked && !it.payoutSettled).map((it) => it.seller?.toString()).filter(Boolean)),
+      ];
+      for (const sId of sellerIds) {
+        try {
+          await releaseSellerOrderCancelled(app, sId, order, { reason: order.status });
+          console.log(`[orders] released the locked funds of ${order.status} order #${order.orderNumber} (seller ${sId})`);
+        } catch (e) {
+          console.error(`[orders] could not release the locked funds of order #${order.orderNumber}:`, e.message);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[orders] closed-order lock check failed:', e.message);
   }
 }
 
@@ -751,6 +779,11 @@ export const handleStatusUpdate = async (req, res) => {
     // status backwards.
     if (isSeller && order.status !== 'pending' && !order.items.some((it) => !it.itemStatus || it.itemStatus === 'pending')) {
       return res.status(400).json({ message: `This order is already "${String(order.status).replace(/_/g, ' ')}" and cannot be confirmed again.` });
+    }
+
+    // same rule as the admin order screen: a delivered (already paid out) order is not cancelled
+    if (order.status === 'delivered' && status === 'cancelled') {
+      return res.status(400).json({ message: 'A delivered order cannot be cancelled. Use a refund instead.' });
     }
 
     let sellerProducts = [];
