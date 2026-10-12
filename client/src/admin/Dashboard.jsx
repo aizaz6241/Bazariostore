@@ -132,14 +132,27 @@ export default function Dashboard() {
     },
   ];
 
-  const statusPie = Object.entries(d.ordersByStatus).map(([k, v]) => ({ name: STATUS_LABELS[k] || k, value: v }));
-  const payPie = d.paymentSplit.map((p) => ({ name: PAYMENT_LABELS[p.label] || p.label, value: p.n }));
+  const statusPie = Object.entries(d.ordersByStatus || {}).map(([k, v]) => ({ name: STATUS_LABELS[k] || k, value: v }));
+  const payPie = (d.paymentSplit || []).map((p) => ({ name: PAYMENT_LABELS[p.label] || p.label, value: p.n }));
+  // the server only sends the parts this admin's role covers
+  const show = d.sections || { sales: true, recentOrders: true, stock: true, wallet: true };
+  const nothing = !show.sales && !show.recentOrders && !show.stock && !show.wallet;
 
   return (
     <>
       <h1 className="admin-h1">Dashboard</h1>
 
+      {nothing && (
+        <div className="card" style={{ padding: 24 }}>
+          <h3 style={{ marginTop: 0 }}>Welcome 👋</h3>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            Your role does not include dashboard figures (sales, stock or wallet). Use the menu on the left to open the sections you work on.
+          </p>
+        </div>
+      )}
+
       {/* ─── USDT WALLET SECTION (REAL CLIENT FUNDS ONLY) ─── */}
+      {show.wallet && d.usdtWallet && (
       <div style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -293,7 +306,10 @@ export default function Dashboard() {
           ))}
         </div>
       </div>
+      )}
 
+      {show.sales && d.ordersByStatus && (
+      <>
       <div className="stat-grid stat-grid-4">
         {[
           { icon: 'clock', label: 'Pending Orders', value: d.ordersByStatus.pending || 0, link: '/admin/orders?status=pending' },
@@ -359,13 +375,25 @@ export default function Dashboard() {
         </div>
       </div>
 
+      </>
+      )}
+
+      {(show.sales || show.stock) && (
       <div className="stat-grid">
         {[
-          { icon: 'user', label: 'Total Customers', value: d.customers.total },
-          { icon: 'sparkle', label: 'New This Month', value: d.customers.newThisMonth },
-          { icon: 'refresh', label: 'Returning Customers', value: d.customers.returning },
-          { icon: 'box', label: 'Low Stock Products', value: d.lowStock.length },
-          { icon: 'x', label: 'Out of Stock', value: d.outOfStock.length },
+          ...(show.sales && d.customers
+            ? [
+                { icon: 'user', label: 'Total Customers', value: d.customers.total },
+                { icon: 'sparkle', label: 'New This Month', value: d.customers.newThisMonth },
+                { icon: 'refresh', label: 'Returning Customers', value: d.customers.returning },
+              ]
+            : []),
+          ...(show.stock && d.lowStock
+            ? [
+                { icon: 'box', label: 'Low Stock Products', value: d.lowStock.length },
+                { icon: 'x', label: 'Out of Stock', value: d.outOfStock.length },
+              ]
+            : []),
         ].map((c) => (
           <div className="card stat-card" key={c.label}>
             <i><Ic name={c.icon} size={22} /></i>
@@ -373,7 +401,9 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+      )}
 
+      {show.stock && d.bestSelling && (
       <div className="dash-lists">
         <div className="card">
           <div className="card-head"><h3>Best Selling Products</h3><Link className="see-all" to="/admin/products">All products →</Link></div>
@@ -404,7 +434,9 @@ export default function Dashboard() {
           ))}
         </div>
       </div>
+      )}
 
+      {show.recentOrders && d.recent && (
       <div className="card">
         <div className="card-head"><h3>Recent Orders</h3><Link to="/admin/orders" className="see-all">See all →</Link></div>
         {d.recent.length === 0 ? (
@@ -433,13 +465,16 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+      )}
 
       {/* ─── USDT WALLET TRANSACTIONS & HISTORY MODAL ─── */}
+      {show.wallet && (
       <UsdtWalletHistoryModal
         isOpen={usdtHistoryModalOpen}
         onClose={() => setUsdtHistoryModalOpen(false)}
         initialTab={usdtHistoryTab}
       />
+      )}
     </>
   );
 }

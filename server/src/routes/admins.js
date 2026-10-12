@@ -3,7 +3,8 @@ import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 import Admin, { ROLES } from '../models/Admin.js';
 import { authAdmin, isFinancePartner, forgetAuthCache } from '../middleware/auth.js';
-import { PERMISSIONS, ROLE_DEFAULTS, ROLE_LABELS, permsFor } from '../utils/permissions.js';
+import { PERMISSIONS, PERMISSION_INFO, ROLE_DEFAULTS, ROLE_LABELS, permsFor } from '../utils/permissions.js';
+import AuditLog from '../models/AuditLog.js';
 import { audit } from '../utils/audit.js';
 import { finLog, requestApproval } from '../utils/financeLog.js';
 import { asText } from '../middleware/sanitize.js';
@@ -48,12 +49,177 @@ async function partnerCountAfter({ excludeId = null, add = false } = {}) {
   return all.filter((a) => String(a._id) !== String(excludeId) && isFinancePartner(a)).length + (add ? 1 : 0);
 }
 
+/**
+ * NO PRIVILEGE ESCALATION
+ * A staff account that holds the "staff" permission (but is not the Super Admin) can only manage
+ * accounts that are not more powerful than itself, and can only hand out access it holds itself.
+ * Otherwise e.g. a manager given "staff" could create an account with finance access, or raise
+ * its own permissions.
+ */
+const isSuper = (a) => a?.role === 'super_admin';
+const callerPerms = (req) => (isSuper(req.admin) ? [...PERMISSIONS] : req.admin.permissions || []);
+const missingFrom = (perms, allowed) => perms.filter((p) => !allowed.includes(p));
+
+/** Why the caller may not give an account this access (or '' when it is allowed). */
+function grantProblem(req, { role, permissions, financePartner }) {
+  if (isSuper(req.admin)) return '';
+  const effective = permsFor({ role, permissions });
+  const extra = missingFrom(effective, callerPerms(req));
+  if (extra.length) return `You can only give access you have yourself. Missing on your account: ${extra.join(', ')}`;
+  if (financePartner && !req.admin.financePartner) return 'Only a finance partner can make someone a finance partner';
+  return '';
+}
+
+/** Why the caller may not manage this existing account (or '' when it is allowed). */
+function manageProblem(req, target) {
+  if (isSuper(req.admin)) return '';
+  if (isSuper(target)) return 'Only the Super Admin can change a Super Admin account';
+  if (missingFrom(permsFor(target), callerPerms(req)).length) return 'This account has access that your account does not have, so only the Super Admin can change it';
+  if (isFinancePartner(target) && !req.admin.financePartner) return 'Only a finance partner can change a finance partner account';
+  return '';
+}
+
 const partnerWarning = (count) =>
   count === 2 ? '' : `After this there will be ${count} finance partner${count === 1 ? '' : 's'}. The finance ledger divides money only when there are exactly 2, so every split will be PAUSED until that is true again (or new rules are added for ${count}).`;
 
 router.get('/meta', authAdmin('staff'), (req, res) => {
-  res.json({ roles: ROLES, roleLabels: ROLE_LABELS, permissions: PERMISSIONS, roleDefaults: ROLE_DEFAULTS });
+  res.json({
+    roles: ROLES,
+    roleLabels: ROLE_LABELS,
+    permissions: PERMISSIONS,
+    permissionInfo: PERMISSION_INFO,
+    roleDefaults: ROLE_DEFAULTS,
+    // what the signed-in admin may hand out (the screen greys out the rest)
+    me: { id: req.admin.id, role: req.admin.role, permissions: callerPerms(req), financePartner: Boolean(req.admin.financePartner) },
+  });
 });
+
+// ───────────────────────── Insights (charts on the Staff screen) ─────────────────────────
+const DAY = 24 * 3600 * 1000;
+const dayKey = (d) => new Date(d).toISOString().slice(0, 10);
+
+router.get(
+  '/insights',
+  authAdmin('staff'),
+  wrap(async (req, res) => {
+    const days = Math.min(90, Math.max(7, parseInt(req.query.days, 10) || 30));
+    const now = Date.now();
+    const since = new Date(now - (days - 1) * DAY);
+    since.setUTCHours(0, 0, 0, 0);
+
+    const admins = await Admin.find().select('name email role permissions active financePartner lastLoginAt createdAt').lean();
+    const ids = admins.map((a) => String(a._id));
+
+    const [daily, perAdmin, recent, pending] = await Promise.all([
+      AuditLog.aggregate([
+        { $match: { createdAt: { $gte: since }, 'admin.id': { $in: ids } } },
+        {
+          $group: {
+            _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+            actions: { $sum: { $cond: [{ $eq: ['$action', 'login'] }, 0, 1] } },
+            logins: { $sum: { $cond: [{ $eq: ['$action', 'login'] }, 1, 0] } },
+          },
+        },
+      ]),
+      AuditLog.aggregate([
+        { $match: { createdAt: { $gte: since }, 'admin.id': { $in: ids } } },
+        {
+          $group: {
+            _id: '$admin.id',
+            actions: { $sum: { $cond: [{ $eq: ['$action', 'login'] }, 0, 1] } },
+            logins: { $sum: { $cond: [{ $eq: ['$action', 'login'] }, 1, 0] } },
+            lastAt: { $max: '$createdAt' },
+          },
+        },
+      ]),
+      AuditLog.find({ 'admin.id': { $in: ids }, action: { $ne: 'login' } })
+        .sort({ createdAt: -1 })
+        .limit(12)
+        .select('admin action entity createdAt')
+        .lean(),
+      mongoose.connection.db
+        .collection('portalfinanceapprovals')
+        .find({ action: { $in: ['admin_create', 'admin_update', 'admin_delete'] }, status: { $in: ['pending', 'processing'] } })
+        .project({ summary: 1, action: 1, requestedBy: 1, createdAt: 1 })
+        .sort({ createdAt: -1 })
+        .limit(10)
+        .toArray()
+        .catch(() => []),
+    ]);
+
+    // one point per day, including quiet days
+    const byDay = new Map(daily.map((d) => [d._id, d]));
+    const timeline = [];
+    for (let t = since.getTime(); t <= now; t += DAY) {
+      const k = dayKey(t);
+      timeline.push({ date: k, actions: byDay.get(k)?.actions || 0, logins: byDay.get(k)?.logins || 0 });
+    }
+
+    const active = admins.filter((a) => a.active !== false);
+    const roles = ROLES.map((r) => ({
+      role: r,
+      label: ROLE_LABELS[r] || r,
+      total: admins.filter((a) => a.role === r).length,
+      active: active.filter((a) => a.role === r).length,
+    }));
+    const coverage = PERMISSIONS.map((p) => ({
+      permission: p,
+      label: PERMISSION_INFO[p]?.label || p,
+      group: PERMISSION_INFO[p]?.group || '',
+      count: active.filter((a) => permsFor(a).includes(p)).length,
+    }));
+
+    const ago = (d) => (d ? now - new Date(d).getTime() : Infinity);
+    const loginBuckets = [
+      { key: 'today', label: 'Last 24h', count: active.filter((a) => ago(a.lastLoginAt) <= DAY).length },
+      { key: 'week', label: '1–7 days', count: active.filter((a) => ago(a.lastLoginAt) > DAY && ago(a.lastLoginAt) <= 7 * DAY).length },
+      { key: 'month', label: '8–30 days', count: active.filter((a) => ago(a.lastLoginAt) > 7 * DAY && ago(a.lastLoginAt) <= 30 * DAY).length },
+      { key: 'older', label: '30+ days', count: active.filter((a) => a.lastLoginAt && ago(a.lastLoginAt) > 30 * DAY).length },
+      { key: 'never', label: 'Never', count: active.filter((a) => !a.lastLoginAt).length },
+    ];
+
+    const nameOf = new Map(admins.map((a) => [String(a._id), a]));
+    const activity = perAdmin
+      .map((r) => ({ id: r._id, name: nameOf.get(r._id)?.name || 'Admin', role: nameOf.get(r._id)?.role || '', actions: r.actions, logins: r.logins, lastAt: r.lastAt }))
+      .sort((a, b) => b.actions - a.actions || b.logins - a.logins);
+
+    // Access that deserves a second look
+    const risks = [];
+    const supers = active.filter((a) => a.role === 'super_admin').length;
+    if (supers <= 1) risks.push({ level: 'warn', text: 'Only one active Super Admin. If that login is lost, nobody can manage Super Admin accounts.' });
+    const partners = active.filter((a) => isFinancePartner(a)).length;
+    if (partners !== 2) risks.push({ level: 'warn', text: `${partners} active finance partner${partners === 1 ? '' : 's'}: the ledger divides money only with exactly 2.` });
+    const staffHolders = active.filter((a) => a.role !== 'super_admin' && permsFor(a).includes('staff'));
+    if (staffHolders.length) risks.push({ level: 'info', text: `${staffHolders.map((a) => a.name).join(', ')} can manage staff without being Super Admin.` });
+    const idle = active.filter((a) => a.role !== 'super_admin' && ago(a.lastLoginAt) > 30 * DAY);
+    if (idle.length) risks.push({ level: 'info', text: `${idle.length} active account${idle.length === 1 ? ' has' : 's have'} not logged in for 30+ days — consider switching ${idle.length === 1 ? 'it' : 'them'} off.` });
+    const custom = active.filter((a) => a.role !== 'super_admin' && (a.permissions || []).length);
+    if (custom.length) risks.push({ level: 'info', text: `${custom.length} account${custom.length === 1 ? ' uses' : 's use'} custom permissions instead of the role defaults.` });
+
+    res.json({
+      days,
+      totals: {
+        total: admins.length,
+        active: active.length,
+        inactive: admins.length - active.length,
+        partners,
+        superAdmins: supers,
+        customPermissions: custom.length,
+        activeLast7: active.filter((a) => ago(a.lastLoginAt) <= 7 * DAY).length,
+        actions: timeline.reduce((n, d) => n + d.actions, 0),
+        logins: timeline.reduce((n, d) => n + d.logins, 0),
+      },
+      timeline,
+      roles,
+      coverage,
+      loginBuckets,
+      activity,
+      recent: recent.map((r) => ({ id: String(r._id), name: r.admin?.name || 'Admin', adminId: r.admin?.id || '', action: r.action, entity: r.entity || '', at: r.createdAt })),
+      pending: pending.map((p) => ({ id: String(p._id), action: p.action, summary: p.summary, by: p.requestedBy?.name || '', at: p.createdAt })),
+      risks,
+    });
+  })
+);
 
 router.get(
   '/',
@@ -86,6 +252,8 @@ router.post(
     // A finance partner needs the full admin role; a staff role never shares the money
     const financePartner = wantsPartner && ['super_admin', 'admin'].includes(targetRole);
     const cleanPerms = Array.isArray(permissions) ? permissions.filter((p) => PERMISSIONS.includes(p)) : [];
+    const grantIssue = grantProblem(req, { role: targetRole, permissions: cleanPerms, financePartner });
+    if (grantIssue) return res.status(403).json({ message: grantIssue });
     const passwordHash = await bcrypt.hash(password, 10);
     const record = { name, email, role: targetRole, permissions: cleanPerms, financePartner };
 
@@ -142,6 +310,10 @@ router.put(
       return res.status(403).json({ message: 'Sirf Super Admin hi Super Admin roles ya accounts ko tabdeel kar sakta hai' });
     }
     if (password && password.length < MIN_PASSWORD) return res.status(400).json({ message: `Password kam az kam ${MIN_PASSWORD} characters ka hona chahiye` });
+    if (!isSelf) {
+      const issue = manageProblem(req, admin);
+      if (issue) return res.status(403).json({ message: issue });
+    }
 
     const before = { name: admin.name, role: admin.role, active: admin.active !== false, permissions: [...(admin.permissions || [])], financePartner: isFinancePartner(admin) };
 
@@ -159,6 +331,20 @@ router.put(
       if (want !== before.financePartner) set.financePartner = want;
     } else if (set.role && !['super_admin', 'admin'].includes(roleAfter) && before.financePartner) {
       set.financePartner = false; // moved to a staff role: no longer shares the money
+    }
+
+    // Your own role / permissions / finance-partner setting are changed by someone else (no self-promotion)
+    if (isSelf && !isCallerSuperAdmin && (set.role || set.permissions || set.financePartner !== undefined)) {
+      return res.status(403).json({ message: 'You cannot change your own role or permissions. Ask the Super Admin.' });
+    }
+    if (set.role || set.permissions || set.financePartner) {
+      const grantIssue = grantProblem(req, {
+        role: roleAfter,
+        // a new role without a custom list falls back to that role's defaults
+        permissions: set.permissions || (set.role ? [] : admin.permissions || []),
+        financePartner: set.financePartner,
+      });
+      if (grantIssue) return res.status(403).json({ message: grantIssue });
     }
 
     // never let the last active super admin be demoted/disabled
@@ -266,6 +452,8 @@ router.delete(
       const supers = await Admin.countDocuments({ role: 'super_admin', active: true });
       if (supers <= 1) return res.status(400).json({ message: 'Aakhri Super Admin delete nahi ho sakta' });
     }
+    const issue = manageProblem(req, admin);
+    if (issue) return res.status(403).json({ message: issue });
 
     const wasPartner = isFinancePartner(admin) && admin.active !== false;
     const warning = wasPartner ? partnerWarning(await partnerCountAfter({ excludeId: admin._id })) : '';

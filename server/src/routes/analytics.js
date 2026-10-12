@@ -5,6 +5,7 @@ import User from '../models/User.js';
 import Seller from '../models/Seller.js';
 import Withdrawal from '../models/Withdrawal.js';
 import { authAdmin } from '../middleware/auth.js';
+import { hasPermission } from '../utils/permissions.js';
 
 const router = Router();
 
@@ -19,7 +20,26 @@ const startOf = {
   year: () => new Date(new Date().getFullYear(), 0, 1),
 };
 
+// Every admin opens the dashboard, but each part of it is only sent to the roles that cover it:
+//   sales / orders / customers -> Orders or Reports,  recent orders (names, cities) -> Orders,
+//   products & stock -> Products or Inventory,          USDT wallet -> Finance.
 router.get('/dashboard', authAdmin(), async (req, res) => {
+  const can = (p) => hasPermission(req.admin, p);
+  const sections = {
+    sales: can('orders') || can('reports'),
+    recentOrders: can('orders'),
+    stock: can('products') || can('inventory'),
+    wallet: can('finance'),
+  };
+  const out = { sections };
+  if (sections.sales) Object.assign(out, await salesSection());
+  if (sections.recentOrders) out.recent = await Order.find().sort({ createdAt: -1 }).limit(8);
+  if (sections.stock) Object.assign(out, await stockSection());
+  if (sections.wallet) out.usdtWallet = await walletSection();
+  res.json(out);
+});
+
+async function salesSection() {
   const valid = { status: { $nin: ['cancelled', 'refunded'] } };
   const sumSince = async (since) => {
     const agg = await Order.aggregate([
@@ -50,12 +70,6 @@ router.get('/dashboard', authAdmin(), async (req, res) => {
     { $count: 'returning' },
   ]);
 
-  const [bestSelling, lowStock, outOfStock] = await Promise.all([
-    Product.find({ active: true }).sort({ sold: -1 }).limit(5).select('name sold stock image price'),
-    Product.find({ stock: { $gt: 0 }, $expr: { $lte: ['$stock', '$lowStockThreshold'] } }).limit(10).select('name stock lowStockThreshold image'),
-    Product.find({ stock: { $lte: 0 } }).limit(10).select('name stock image'),
-  ]);
-
   // last 30 days daily revenue (line chart)
   const revenue30 = await Order.aggregate([
     { $match: { ...valid, createdAt: { $gte: new Date(Date.now() - 30 * 24 * 3600 * 1000) } } },
@@ -79,8 +93,26 @@ router.get('/dashboard', authAdmin(), async (req, res) => {
     { $project: { _id: 0, label: '$_id', n: 1, revenue: 1 } },
   ]);
 
-  const recent = await Order.find().sort({ createdAt: -1 }).limit(8);
+  return {
+    sales: { today, week, month, year },
+    ordersByStatus,
+    customers: { total: totalCustomers, newThisMonth: newCustomers, returning: returningAgg[0]?.returning || 0 },
+    revenue30,
+    monthly12,
+    paymentSplit,
+  };
+}
 
+async function stockSection() {
+  const [bestSelling, lowStock, outOfStock] = await Promise.all([
+    Product.find({ active: true }).sort({ sold: -1 }).limit(5).select('name sold stock image price'),
+    Product.find({ stock: { $gt: 0 }, $expr: { $lte: ['$stock', '$lowStockThreshold'] } }).limit(10).select('name stock lowStockThreshold image'),
+    Product.find({ stock: { $lte: 0 } }).limit(10).select('name stock image'),
+  ]);
+  return { bestSelling, lowStock, outOfStock };
+}
+
+async function walletSection() {
   // ─── USDT WALLET (REAL CLIENT SELLERS ONLY - EXCLUDES TEST ACCOUNTS & PREVIOUS STORE SELLERS) ───
   const clientSellers = await Seller.find({
     isTestAccount: { $ne: true },
@@ -151,20 +183,8 @@ router.get('/dashboard', authAdmin(), async (req, res) => {
     })),
   };
 
-  res.json({
-    usdtWallet,
-    sales: { today, week, month, year },
-    ordersByStatus,
-    customers: { total: totalCustomers, newThisMonth: newCustomers, returning: returningAgg[0]?.returning || 0 },
-    bestSelling,
-    lowStock,
-    outOfStock,
-    revenue30,
-    monthly12,
-    paymentSplit,
-    recent,
-  });
-});
+  return usdtWallet;
+}
 
 // GET /api/analytics/usdt-wallet-history — Detailed USDT Wallet transactions breakdown
 router.get('/usdt-wallet-history', authAdmin('finance'), async (req, res) => {

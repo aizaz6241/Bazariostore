@@ -11,6 +11,7 @@ import { finLog, requestApproval, isLedgerCounted } from '../../utils/financeLog
 import { walletApply, walletNow } from '../../utils/wallet.js';
 import { applyDecisionToWallet, requestFieldsFor, finishStuckWalletRequests } from '../../utils/walletRequests.js';
 import { asText } from '../../middleware/sanitize.js';
+import { adminRoom } from '../../utils/permissions.js';
 
 const router = express.Router();
 
@@ -102,8 +103,8 @@ async function sendWalletChatNotification(app, seller, reqDoc) {
     const io = app.get('io');
     if (io) {
       io.to(`seller:${seller._id}`).emit('message:new', msg);
-      io.to('admins').emit('message:new', msg);
-      io.to('admins').emit('chat:notification', {
+      io.to(adminRoom('chat')).emit('message:new', msg);
+      io.to(adminRoom('chat')).emit('chat:notification', {
         conversationId: conv._id,
         storeName: seller.storeName,
         text: `${emoji} ${label} — ${amountStr}`,
@@ -251,7 +252,7 @@ router.post('/wallet/deposit', authSellerOrAdmin, async (req, res) => {
       io.to(`seller:${seller._id}`).emit('wallet:update', {
         pendingDeposit: seller.wallet.pendingDeposit,
       });
-      io.to('admins').emit('withdrawal:new', reqDoc);
+      io.to(adminRoom('finance')).emit('withdrawal:new', reqDoc);
     }
 
     res.status(201).json({ message: 'Deposit request submitted! Admin will verify and approve.', request: reqDoc });
@@ -397,7 +398,7 @@ router.post('/wallet/withdraw', authSellerOrAdmin, async (req, res) => {
         balance: updatedSeller.wallet.balance,
         pendingWithdrawal: updatedSeller.wallet.pendingWithdrawal,
       });
-      io.to('admins').emit('withdrawal:new', reqDoc);
+      io.to(adminRoom('finance')).emit('withdrawal:new', reqDoc);
     }
 
     res.status(201).json({ message: 'Withdrawal request submitted! Admin will process within 2-3 business days.', request: reqDoc });
@@ -507,8 +508,8 @@ router.post('/wallet/limit-increase-request', authSellerOrAdmin, async (req, res
       const io = req.app.get('io');
       if (io) {
         io.to(`seller:${seller._id}`).emit('message:new', msg);
-        io.to('admins').emit('message:new', msg);
-        io.to('admins').emit('chat:notification', {
+        io.to(adminRoom('chat')).emit('message:new', msg);
+        io.to(adminRoom('chat')).emit('chat:notification', {
           conversationId: conv._id,
           storeName: seller.storeName,
           text: `🚀 Limit Increase Request — $${reqLimit}`,
@@ -604,8 +605,8 @@ router.post('/wallet/limit-offer-response', authSellerOrAdmin, async (req, res) 
           if (io) {
             io.to(`seller:${seller._id}`).emit('message:new', msg);
             io.to(`seller:${seller._id}`).emit('seller:limit_update', { withdrawalLimit: seller.withdrawalLimit });
-            io.to('admins').emit('message:new', msg);
-            io.to('admins').emit('chat:notification', {
+            io.to(adminRoom('chat')).emit('message:new', msg);
+            io.to(adminRoom('chat')).emit('chat:notification', {
               conversationId: conv._id,
               storeName: seller.storeName,
               text: `🤝 Offer Accepted — $${pending.offeredLimit} limit ready to activate`,
@@ -664,7 +665,7 @@ router.post('/wallet/limit-offer-response', authSellerOrAdmin, async (req, res) 
           if (io) {
             io.to(`seller:${seller._id}`).emit('message:new', msg);
             io.to(`seller:${seller._id}`).emit('seller:limit_update', { withdrawalLimit: seller.withdrawalLimit });
-            io.to('admins').emit('message:new', msg);
+            io.to(adminRoom('chat')).emit('message:new', msg);
           }
         }
       } catch (chatErr) {
@@ -914,7 +915,7 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
         const io = req.app.get('io');
         if (io) {
           io.to(`seller:${seller._id}`).emit('message:new', msg);
-          io.to('admins').emit('message:new', msg);
+          io.to(adminRoom('chat')).emit('message:new', msg);
         }
       }
     } catch (chatErr) {
@@ -966,7 +967,7 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
       delete sellerDoc.inrAmount;
       delete sellerDoc.usdtAmount;
       io.to(`seller:${seller._id}`).emit('withdrawal:update', sellerDoc);
-      io.to('admins').emit('withdrawal:update', reqDoc);
+      io.to(adminRoom('finance')).emit('withdrawal:update', reqDoc);
     }
 
     audit(req, 'update', 'wallet_request', reqDoc._id, `${reqDoc.type} ${status} for ${reqDoc.storeName} — $${finalAmount}`);
@@ -1101,8 +1102,8 @@ const handleSplitHelping = async (req, res) => {
     // Broadcast socket event to all admins
     const io = req.app.get('io');
     if (io) {
-      io.to('admins').emit('withdrawal:update', reqDoc);
-      io.to('admins').emit('wallet:update', { transactionId: reqDoc._id });
+      io.to(adminRoom('finance')).emit('withdrawal:update', reqDoc);
+      io.to(adminRoom('finance')).emit('wallet:update', { transactionId: reqDoc._id });
     }
 
     audit(req, 'update', 'deposit_split', reqDoc._id, `Split deposit for ${reqDoc.storeName}: Gross $${gross}, Helping $${parsedHelping}, Real Deposit $${netDeposit}`);
@@ -1284,7 +1285,7 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
       const io = req.app.get('io');
       if (io) {
         io.to(`seller:${seller._id}`).emit('message:new', msg);
-        io.to('admins').emit('message:new', msg);
+        io.to(adminRoom('chat')).emit('message:new', msg);
       }
     } catch (chatErr) {
       console.error('Manual adjust chat notification error:', chatErr.message);
@@ -1307,7 +1308,7 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
         totalDeposited: seller.wallet.totalDeposited,
         totalWithdrawn: seller.wallet.totalWithdrawn,
       });
-      io.to('admins').emit('withdrawal:new', rec);
+      io.to(adminRoom('finance')).emit('withdrawal:new', rec);
     }
 
     audit(req, 'create', 'wallet_adjustment', rec._id, `Direct wallet ${type} $${amt} for ${seller.storeName}`);
@@ -1478,7 +1479,7 @@ router.post('/:id/limit-offer', authAdmin('finance'), async (req, res) => {
         if (io) {
           io.to(`seller:${seller._id}`).emit('message:new', msg);
           io.to(`seller:${seller._id}`).emit('seller:limit_update', { withdrawalLimit: seller.withdrawalLimit });
-          io.to('admins').emit('message:new', msg);
+          io.to(adminRoom('chat')).emit('message:new', msg);
         }
       }
     } catch (chatErr) {
@@ -1596,7 +1597,7 @@ router.post('/:id/limit-finalize', authAdmin('finance'), async (req, res) => {
         if (io) {
           io.to(`seller:${seller._id}`).emit('message:new', msg);
           io.to(`seller:${seller._id}`).emit('seller:limit_update', { withdrawalLimit: seller.withdrawalLimit });
-          io.to('admins').emit('message:new', msg);
+          io.to(adminRoom('chat')).emit('message:new', msg);
         }
       }
     } catch (chatErr) {
@@ -1669,7 +1670,7 @@ router.post('/:id/limit-increase-decision', authAdmin('finance'), async (req, re
         if (io) {
           io.to(`seller:${seller._id}`).emit('message:new', msg);
           io.to(`seller:${seller._id}`).emit('seller:limit_update', { withdrawalLimit: seller.withdrawalLimit });
-          io.to('admins').emit('message:new', msg);
+          io.to(adminRoom('chat')).emit('message:new', msg);
         }
       }
     } catch (chatErr) {
@@ -1723,9 +1724,9 @@ router.post('/:id/withdrawal-limit', authAdmin('finance'), async (req, res) => {
       io.to(`seller:${seller._id}`).emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
       // only this seller and the admins are told (it used to go to every connected visitor)
       io.to(`seller:${seller._id}`).emit('limit:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.to('admins').emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.to('admins').emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.to('admins').emit('limit:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.to(adminRoom('finance')).emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.to(adminRoom('finance')).emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.to(adminRoom('finance')).emit('limit:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
     }
 
     notify(req.app, {

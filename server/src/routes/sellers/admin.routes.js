@@ -15,6 +15,7 @@ import { finLog, requestApproval, sellerMoneyHistory } from '../../utils/finance
 import { rememberPassword, readPassword, encryptionOn } from '../../utils/sellerPassword.js';
 import { forgetAuthCache } from '../../middleware/auth.js';
 import { slugify, calculateHealthStatus } from './helpers.js';
+import { adminRoom } from '../../utils/permissions.js';
 
 const router = express.Router();
 
@@ -637,7 +638,7 @@ router.post('/:id/health', authAdmin('sellers'), async (req, res) => {
     const io = req.app.get('io');
     if (io) {
       io.to(`seller:${seller._id}`).emit('seller:health_update', { accountHealth: seller.accountHealth });
-      io.to('admins').emit('seller:health_update', { sellerId: seller._id, accountHealth: seller.accountHealth });
+      io.to(adminRoom('sellers')).emit('seller:health_update', { sellerId: seller._id, accountHealth: seller.accountHealth });
     }
 
     if (notifySeller) {
@@ -1047,9 +1048,9 @@ router.post('/:id/withdrawal-limit', authAdmin('finance'), async (req, res) => {
       io.to(`seller:${seller._id}`).emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
       // only this seller and the admins are told (it used to go to every connected visitor)
       io.to(`seller:${seller._id}`).emit('limit:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.to('admins').emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.to('admins').emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.to('admins').emit('limit:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.to(adminRoom('finance')).emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.to(adminRoom('finance')).emit('wallet:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
+      io.to(adminRoom('finance')).emit('limit:update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
     }
 
     notify(req.app, {
@@ -1397,7 +1398,7 @@ router.patch('/:id/toggle-test', authAdmin('sellers'), async (req, res) => {
 
     const io = req.app.get('io');
     if (io) {
-      io.to('admins').emit('seller:status_update', { seller: safe });
+      io.to(adminRoom('sellers')).emit('seller:status_update', { seller: safe });
     }
 
     res.json({
@@ -1439,7 +1440,7 @@ router.patch('/:id/toggle-previous-store', authAdmin('sellers'), async (req, res
 
     const io = req.app.get('io');
     if (io) {
-      io.to('admins').emit('seller:status_update', { seller: safe });
+      io.to(adminRoom('sellers')).emit('seller:status_update', { seller: safe });
     }
 
     res.json({
@@ -1668,7 +1669,7 @@ router.delete('/:id', authAdmin('sellers'), async (req, res, next) => {
 
     const io = req.app.get('io');
     if (io) {
-      io.to('admins').emit('seller:deleted', { sellerId: req.params.id, storeName });
+      io.to(adminRoom('sellers')).emit('seller:deleted', { sellerId: req.params.id, storeName });
     }
 
     res.json({ ok: true, message: `Seller "${storeName}" and all associated records deleted successfully.` });

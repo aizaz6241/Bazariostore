@@ -13,6 +13,7 @@ import { jwtSecret } from '../../utils/secrets.js';
 import { limit, failureLimiter } from '../../utils/rateLimit.js';
 import { asText } from '../../middleware/sanitize.js';
 import { forgetAuthCache } from '../../middleware/auth.js';
+import { adminRoom } from '../../utils/permissions.js';
 
 // Wrong passwords: 8 tries per account from one address in 15 minutes, then a 15 minute wait
 const loginGuard = failureLimiter({ name: 'seller-login', max: 8, windowMs: 15 * 60 * 1000 });
@@ -231,7 +232,7 @@ router.post('/register', registerLimit, async (req, res) => {
       link: '/admin/sellers',
     });
 
-    req.app.get('io')?.to('admins').emit('seller:new_registration', {
+    req.app.get('io')?.to(adminRoom('sellers')).emit('seller:new_registration', {
       _id: seller._id,
       storeName: seller.storeName,
       ownerName: seller.ownerName,
