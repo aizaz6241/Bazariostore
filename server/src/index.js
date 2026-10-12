@@ -172,8 +172,23 @@ if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
 // the server.
 let dbConnectedOnce = false;
 mongoose.connection.on('connected', () => {
+  if (!dbConnectedOnce) markOldRejectedRegistrations();
   dbConnectedOnce = true;
 });
+
+// Once per start (does nothing after the first time): registrations rejected before the
+// "rejected" date existed are marked with it. Screens now tell a rejected registration only by
+// that date — they used to guess from the word "reject" in the reason, so a live store suspended
+// with e.g. "customer rejected deliveries" vanished from the Complaints page. A never-approved
+// store (verified is set by approval) whose reason says it was rejected is such an old record.
+function markOldRejectedRegistrations() {
+  Seller.updateMany(
+    { status: 'suspended', registrationRejectedAt: null, verified: { $ne: true }, freezeReason: /reject/i },
+    [{ $set: { registrationRejectedAt: { $ifNull: ['$updatedAt', '$$NOW'] } } }]
+  )
+    .then((r) => r.modifiedCount && console.log(`[sellers] marked ${r.modifiedCount} old rejected registration(s)`))
+    .catch((e) => console.error('[sellers] could not mark old rejected registrations:', e.message));
+}
 const SERVER_STARTED_AT = new Date().toISOString();
 app.get(['/api/health', '/health'], (req, res) => {
   const connected = mongoose.connection.readyState === 1;

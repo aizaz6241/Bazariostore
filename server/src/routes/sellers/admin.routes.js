@@ -66,10 +66,37 @@ const toObjectId = (v) => (v && mongoose.Types.ObjectId.isValid(String(v)) ? new
 // once approved. (A seller still waiting for registration approval has no money history, so its
 // type can be set freely.)
 async function isApprovedSeller(seller) {
-  if (seller.status !== 'pending_approval') return true;
-  // put back to "pending" by hand but it already has money history: still two people
+  // A REJECTED registration was never an approved store: approving it again is a first approval
+  // (welcome message, type and owner set at once). It used to count as "already approved", so the
+  // seller was never told and the two-person rules for live stores applied.
+  const rejectedRegistration = seller.status === 'suspended' && Boolean(seller.registrationRejectedAt);
+  if (seller.status !== 'pending_approval' && !rejectedRegistration) return true;
+  // put back to "pending" (or rejected) but it already has money history: still two people
   const history = await sellerMoneyHistory(seller._id);
   return !history || history.deposits > 0 || history.withdrawals > 0;
+}
+
+// A commission rate is a percentage from 0 to 100 (empty = not changed)
+const badCommission = (v) => v !== undefined && v !== null && v !== '' && !(Number.isFinite(Number(v)) && Number(v) >= 0 && Number(v) <= 100);
+const COMMISSION_MSG = 'Commission rate must be a number from 0 to 100.';
+
+// One approve / reject per store at a time: two admins pressing at the same moment could both
+// record an owner (two "active" assignments) and both write the deposit.
+const decisionsInFlight = new Set();
+function oneDecisionAtATime(req, res, next) {
+  const key = String(req.params.id || '');
+  if (decisionsInFlight.has(key)) return res.status(429).json({ message: 'Another admin is saving a decision for this store right now. Please wait a moment and refresh.' });
+  decisionsInFlight.add(key);
+  let done = false;
+  const release = () => {
+    if (!done) {
+      done = true;
+      decisionsInFlight.delete(key);
+    }
+  };
+  res.on('finish', release);
+  res.on('close', release);
+  next();
 }
 
 async function askSellerFlagChange(req, seller, field, value) {
@@ -528,6 +555,7 @@ router.post('/', authAdmin('sellers'), async (req, res) => {
     if (!storeName || !ownerName || !email || !password) {
       return res.status(400).json({ message: 'Store name, owner name, email, and password are required' });
     }
+    if (badCommission(commissionRate)) return res.status(400).json({ message: COMMISSION_MSG });
 
     const existing = await Seller.findOne({ email: email.toLowerCase().trim() });
     if (existing) return res.status(400).json({ message: 'A seller with this email already exists' });
@@ -549,7 +577,7 @@ router.post('/', authAdmin('sellers'), async (req, res) => {
       passwordHash,
       phone: phone || '',
       storeSlug,
-      commissionRate: commissionRate !== undefined ? Number(commissionRate) : 10,
+      commissionRate: commissionRate !== undefined && commissionRate !== null && commissionRate !== '' ? Number(commissionRate) : 10,
       address: { city: city || 'New York' },
       isTestAccount: isTest,
       accountType: isTest ? 'test' : 'client',
@@ -1380,7 +1408,8 @@ router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
     if (ownerName) seller.ownerName = ownerName;
     if (email) seller.email = email.toLowerCase().trim();
     if (phone !== undefined) seller.phone = phone;
-    if (commissionRate !== undefined) seller.commissionRate = Number(commissionRate);
+    if (badCommission(commissionRate)) return res.status(400).json({ message: COMMISSION_MSG });
+    if (commissionRate !== undefined && commissionRate !== null && commissionRate !== '') seller.commissionRate = Number(commissionRate);
     if (status) seller.status = status;
     if (address) seller.address = { ...seller.address, ...address };
 
@@ -1544,12 +1573,19 @@ router.post('/:id/withdrawal-limit', authAdmin('finance'), async (req, res) => {
   }
 });
 // POST /api/sellers/:id/approve (Admin approves a pending seller registration)
-router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
+router.post('/:id/approve', authAdmin('sellers'), oneDecisionAtATime, async (req, res) => {
   try {
     const { securityDepositPaid, securityDepositAmount, referralCode, assignedReferralCode, commissionRate, note, isTestAccount, accountType, isPreviousStoreSeller, assignedMemberId } = req.body || {};
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Seller not found' });
+    if (badCommission(commissionRate)) return res.status(400).json({ message: COMMISSION_MSG });
     // the KYC photos are not needed to approve (and are MBs): left in the database
     const seller = await Seller.findById(req.params.id).select(SELLER_LIST_SELECT);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
+    // Saving this form makes the store "active": a store frozen or suspended for compliance is
+    // managed on the Complaints page, never switched on from here (the button was only hidden).
+    if (seller.status === 'frozen' || (seller.status === 'suspended' && !seller.registrationRejectedAt)) {
+      return res.status(400).json({ message: `This store is ${seller.status}. Lift that on the Complaints page; it is not changed from New Applications.` });
+    }
 
     // Was this seller already approved before? Then this is an edit, not a first approval: its
     // type and its owner cannot be changed here by one person (see the two-person rule above).
@@ -1591,8 +1627,14 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
 
     seller.status = 'active';
     seller.registrationRejectedAt = undefined;
-    seller.verified = true;
-    if (commissionRate !== undefined) seller.commissionRate = Number(commissionRate);
+    if (!wasApproved) {
+      seller.verified = true; // approving a registration is what verifies a store
+      // a re-approved (earlier rejected) registration no longer carries the rejection
+      seller.freezeReason = '';
+      seller.frozenAt = null;
+      seller.frozenBy = '';
+    }
+    if (commissionRate !== undefined && commissionRate !== null && commissionRate !== '') seller.commissionRate = Number(commissionRate);
 
     if (wasApproved) {
       if (askedTest !== typeBefore.isTestAccount) {
@@ -1617,10 +1659,12 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
       }
     }
 
+    const wasPaid = Boolean(seller.securityDeposit?.paid);
     seller.securityDeposit = {
       paid: isPaid,
       amount: depAmt,
-      paidAt: isPaid ? new Date() : null,
+      // the date it was paid, kept on later edits (it used to become "now" on every save)
+      paidAt: isPaid ? (wasPaid && seller.securityDeposit?.paidAt ? seller.securityDeposit.paidAt : new Date()) : null,
       referralCode: finalReferral,
       note: (note || '').trim(),
     };
@@ -1699,7 +1743,28 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
       }
     }
 
-    // Create Initial Security Deposit Ledger Record in Wallet History
+    // Security deposit line in the wallet history: created once, and kept in step when the deposit
+    // is edited later (it used to keep the first amount for good, so the history and the profile
+    // disagreed; a deposit set back to "not paid" stayed in the history as paid)
+    try {
+      const existingLedger = await Withdrawal.findOne({ seller: seller._id, depositRef: 'INITIAL_SECURITY_DEPOSIT' });
+      if (existingLedger) {
+        const nowPaid = isPaid && depAmt > 0;
+        const changed = nowPaid !== (existingLedger.status === 'approved') || (nowPaid && Number(existingLedger.amount) !== depAmt);
+        if (changed) {
+          existingLedger.amount = nowPaid ? depAmt : existingLedger.amount;
+          existingLedger.approvedAmount = nowPaid ? depAmt : 0;
+          existingLedger.status = nowPaid ? 'approved' : 'rejected';
+          existingLedger.adminNote = nowPaid
+            ? `Security deposit set to $${depAmt} by ${req.admin.name || 'admin'}`
+            : `Security deposit marked NOT paid by ${req.admin.name || 'admin'}`;
+          existingLedger.processedAt = new Date();
+          await existingLedger.save();
+        }
+      }
+    } catch (ledgerErr) {
+      console.error('Security deposit ledger update error:', ledgerErr.message);
+    }
     if (isPaid && depAmt > 0) {
       try {
         const existingLedger = await Withdrawal.findOne({
@@ -1812,14 +1877,19 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
 });
 
 // POST /api/sellers/:id/reject (Admin rejects a pending seller registration)
-router.post('/:id/reject', authAdmin('sellers'), async (req, res) => {
+router.post('/:id/reject', authAdmin('sellers'), oneDecisionAtATime, async (req, res) => {
   try {
     const { reason, isTestAccount, accountType } = req.body || {};
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Seller not found' });
     const seller = await Seller.findById(req.params.id).select(SELLER_LIST_SELECT);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
-    // The account type of a seller that was already approved is never changed from here
+    // Only a registration is rejected here. An approved store (or one with money history) is
+    // restricted on the Complaints page; rejecting it used to lock it out and hide it from there.
     const wasApproved = await isApprovedSeller(seller);
+    if (wasApproved) {
+      return res.status(400).json({ message: 'This store is already approved (or has wallet history). Use the Complaints page to freeze or suspend it.' });
+    }
 
     seller.status = 'suspended';
     seller.registrationRejectedAt = new Date();

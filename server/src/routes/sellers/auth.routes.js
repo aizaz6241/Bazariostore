@@ -316,6 +316,13 @@ router.post('/login', async (req, res) => {
     }
     loginGuard.ok(req, email);
 
+    if (seller.status === 'suspended' && seller.registrationRejectedAt) {
+      // a rejected registration is told so, with the reason (it used to read "suspended")
+      return res.status(403).json({
+        isRejected: true,
+        message: `Your store registration was not approved. Reason: ${seller.freezeReason || 'not given'}. Please contact platform support if you think this is a mistake.`,
+      });
+    }
     if (seller.status === 'suspended') {
       return res.status(403).json({ message: 'Your seller account has been suspended. Please contact platform admin.' });
     }

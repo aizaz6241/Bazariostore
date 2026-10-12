@@ -50,7 +50,7 @@ const HEALTH_PRESETS = [
 ];
 
 // Rejected registrations are not compliance cases: they belong to New Applications
-const isRejectedRegistration = (s) => s.status === 'suspended' && (s.registrationRejectedAt || /reject/i.test(s.freezeReason || ''));
+const isRejectedRegistration = (s) => s.status === 'suspended' && Boolean(s.registrationRejectedAt);
 
 export default function Complaints() {
   // payout limits need the "finance" permission: without it the tab is not shown (saving used to

@@ -60,7 +60,9 @@ const CORE_DOCS = [
 // (before, the tab counts and the tab contents used different rules and did not match).
 function outcomeOf(s) {
   if (s.status === 'pending_approval') return 'pending';
-  if (s.status === 'suspended' && (s.registrationRejectedAt || /reject/i.test(s.freezeReason || ''))) return 'rejected';
+  // only the rejection date says so (guessing from the word "reject" in a reason moved live
+  // stores suspended for other reasons into this tab)
+  if (s.status === 'suspended' && s.registrationRejectedAt) return 'rejected';
   return 'approved';
 }
 const OUTCOME_META = {
@@ -187,7 +189,9 @@ export default function Applications() {
       seller: s,
       mode: o === 'approved' ? 'edit' : o === 'rejected' ? 'reapprove' : 'approve',
       securityDepositAmount: o === 'approved' ? s.securityDeposit?.amount ?? 500 : 500,
-      securityDepositPaid: o === 'approved' ? Boolean(s.securityDeposit?.paid) : true,
+      // not ticked in advance: the admin confirms the deposit really came in (a forgotten tick
+      // used to record a $500 deposit that was never paid)
+      securityDepositPaid: o === 'approved' ? Boolean(s.securityDeposit?.paid) : false,
       referralCode: affiliateOf(s),
       commissionRate: s.commissionRate ?? 10,
       isTestAccount: Boolean(s.isTestAccount),
