@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { api, fmtDay, fmtDate, money } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import CurrencyConverterWidget from '../components/CurrencyConverterWidget.jsx';
@@ -6,6 +6,12 @@ import { getSocket } from '../socket.js';
 import SplitDepositModal from './SplitDepositModal.jsx';
 import AddFundsModal from './AddFundsModal.jsx';
 import PayoutsAnalytics from './PayoutsAnalytics.jsx';
+
+// The upgrade fee exactly as the server charges it (offeredFee is null until an offer is sent; $0 is a real fee)
+const limitFeeOf = (l) => {
+  const f = l?.pendingRequest?.offeredFee;
+  return Number(f !== null && f !== undefined ? f : (l?.upgradeFee ?? 50)) || 0;
+};
 
 // "3h", "2d" — how long a request has been waiting
 function timeAgo(d) {
@@ -133,10 +139,16 @@ export default function AdminWithdrawals() {
   const [rejectNote, setRejectNote] = useState('');
   const [submittingReject, setSubmittingReject] = useState(false);
 
+  // Only the newest response of each list is used (filters clicked quickly, live updates)
+  const loadSeq = useRef(0);
+  const ledgerSeq = useRef(0);
+
   const load = () => {
     setLoading(true);
+    const seq = ++loadSeq.current;
     api(`/sellers/withdrawals/all?status=${statusFilter}&type=${typeFilter}`)
       .then((res) => {
+        if (seq !== loadSeq.current) return;
         setRequests(res.requests || []);
         setSummary(res.summary || {});
 
@@ -156,7 +168,9 @@ export default function AdminWithdrawals() {
         setInrAmountMap((prev) => ({ ...iMap, ...prev }));
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (seq === loadSeq.current) setLoading(false);
+      });
 
     // Also load limit requests
     api('/sellers/limit-requests/all')
@@ -168,12 +182,15 @@ export default function AdminWithdrawals() {
 
   const loadDepositsLedger = () => {
     setLedgerLoading(true);
+    const seq = ++ledgerSeq.current;
     api(`/sellers/withdrawals/all?type=deposit&status=${ledgerStatus}&excludeTest=true`)
       .then((res) => {
-        setDepositsLedger(res.requests || []);
+        if (seq === ledgerSeq.current) setDepositsLedger(res.requests || []);
       })
       .catch(() => {})
-      .finally(() => setLedgerLoading(false));
+      .finally(() => {
+        if (seq === ledgerSeq.current) setLedgerLoading(false);
+      });
   };
 
   useEffect(() => {
@@ -231,14 +248,14 @@ export default function AdminWithdrawals() {
       socket.off('limit:new', handleSync);
       socket.off('limit:update', handleSync);
     };
-  }, [statusFilter, typeFilter]);
+  }, [statusFilter, typeFilter, ledgerStatus]);
 
   // Handler: Open Offer Modal (Step 1)
   const handleOpenOffer = (item) => {
     setOfferItem(item);
     const suggestedLimit = item.pendingRequest?.offeredLimit || item.pendingRequest?.requestedLimit || (item.currentMaxAmount * 2);
     setOfferLimit(suggestedLimit);
-    setOfferFee(item.pendingRequest?.offeredFee !== undefined ? item.pendingRequest.offeredFee : (item.upgradeFee !== undefined ? item.upgradeFee : '50'));
+    setOfferFee(String(limitFeeOf(item)));
     setOfferNextCount(item.pendingRequest?.offeredNextCount || '15');
     setOfferTierName(item.pendingRequest?.offeredTierName || `Tier Upgraded ($${suggestedLimit} Max)`);
     setOfferNote(item.pendingRequest?.adminNote || 'Based on your store volume, you are eligible for this limit upgrade offer.');
@@ -339,21 +356,26 @@ export default function AdminWithdrawals() {
 
   const handleAction = async (id, status, reqType) => {
     const req = requests.find((r) => r._id === id);
-    const appAmt = approvedAmountMap[id] !== undefined ? Number(approvedAmountMap[id]) : (req ? req.amount : 0);
+    const typed = approvedAmountMap[id];
+    // a cleared field is NOT $0: it is simply not a valid amount
+    const appAmt = typed !== undefined ? (String(typed).trim() === '' ? NaN : Number(typed)) : (req ? req.amount : 0);
 
-    if (status === 'approved' && req && (req.type === 'withdraw' || reqType === 'withdraw')) {
-      const sellerLimit = req.seller?.withdrawalLimit?.maxAmount !== undefined ? req.seller.withdrawalLimit.maxAmount : 500;
-      if (appAmt > req.amount) {
-        alert(`Cannot approve $${appAmt}: Exceeds requested amount ($${req.amount}).`);
+    if (status === 'approved') {
+      if (!Number.isFinite(appAmt) || appAmt <= 0) {
+        alert('Approved amount must be a number greater than $0. To pay nothing, reject the request instead.');
         return;
       }
-      if (appAmt > sellerLimit) {
-        alert(`Cannot approve $${appAmt}: Exceeds seller withdrawal limit of $${sellerLimit}. Upgrade seller limit first.`);
-        return;
-      }
-      if (appAmt <= 0) {
-        alert('Approved amount must be greater than $0.');
-        return;
+      const isWithdrawal = (req?.type || reqType) === 'withdrawal';
+      if (req && isWithdrawal) {
+        const sellerLimit = req.seller?.withdrawalLimit?.maxAmount ?? 500;
+        if (appAmt > req.amount) {
+          alert(`Cannot approve $${appAmt}: Exceeds requested amount ($${req.amount}).`);
+          return;
+        }
+        if (appAmt > sellerLimit) {
+          alert(`Cannot approve $${appAmt}: Exceeds seller withdrawal limit of $${sellerLimit}. Upgrade seller limit first.`);
+          return;
+        }
       }
     }
 
@@ -537,7 +559,7 @@ export default function AdminWithdrawals() {
           <div>
             <small>Pending Payouts</small>
             <b>{summary.pending || 0}</b>
-            <em>Requests waiting for a decision</em>
+            <em>{summary.pendingDepositCount ?? 0} deposits • {summary.pendingWithdrawalCount ?? 0} withdrawals</em>
           </div>
         </div>
         <div className="pd-kpi">
@@ -658,6 +680,8 @@ export default function AdminWithdrawals() {
               const isDeposit = r.type === 'deposit';
               const isPending = r.status === 'pending';
               const currentApprovedAmt = approvedAmountMap[r._id] !== undefined ? approvedAmountMap[r._id] : r.amount;
+              const approveNum = String(currentApprovedAmt).trim() === '' ? NaN : Number(currentApprovedAmt);
+              const approveValid = Number.isFinite(approveNum) && approveNum > 0;
               const isTest = r.seller?.isTestAccount || r.seller?.accountType === 'test' || r.storeName?.toLowerCase().includes('test');
               const waitMs = Date.now() - new Date(r.createdAt).getTime();
               const hasInternal = Number(r.helpingAmount) > 0 || Number(r.binanceRate) > 0 || Number(r.inrAmount) > 0 || Number(r.usdtAmount) > 0;
@@ -751,7 +775,9 @@ export default function AdminWithdrawals() {
                           <span>Approved Amount ($)</span>
                           <input
                             type="number"
-                            className="strong"
+                            className={`strong ${approveValid ? '' : 'invalid'}`}
+                            min="0.01"
+                            step="any"
                             value={currentApprovedAmt}
                             onChange={(e) => setApprovedAmountMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
                           />
@@ -852,15 +878,18 @@ export default function AdminWithdrawals() {
                       <div className="pd-action-btns">
                         <button
                           className="btn-primary"
-                          disabled={processing[r._id]}
+                          disabled={processing[r._id] || !approveValid}
+                          title={approveValid ? undefined : 'Enter an approved amount greater than $0'}
                           onClick={() => handleAction(r._id, 'approved', r.type)}
                         >
                           <Ic name="check" size={15} />
-                          {isDeposit
-                            ? ` Approve & Credit $${currentApprovedAmt || r.amount} to Wallet`
-                            : Number(currentApprovedAmt || r.amount) < r.amount
-                              ? ` Approve Partial $${currentApprovedAmt} (Refund $${r.amount - currentApprovedAmt})`
-                              : ` Approve Payout of $${currentApprovedAmt || r.amount}`}
+                          {!approveValid
+                            ? ' Enter a valid amount to approve'
+                            : isDeposit
+                              ? ` Approve & Credit $${approveNum} to Wallet`
+                              : approveNum < r.amount
+                                ? ` Approve Partial $${approveNum} (Refund $${Number((r.amount - approveNum).toFixed(2))})`
+                                : ` Approve Payout of $${approveNum}`}
                         </button>
                         <button
                           className="btn-danger"
@@ -1134,7 +1163,7 @@ export default function AdminWithdrawals() {
                       const isOffered = status === 'offered';
                       const isAccepted = status === 'accepted_by_seller';
                       const isCompleted = status === 'approved';
-                      const lowBalance = l.walletBalance < (l.pendingRequest?.offeredFee || 50);
+                      const lowBalance = l.walletBalance < limitFeeOf(l);
                       const pct = Math.min(100, Math.round((l.successfulWithdrawalCount / (l.requiredWithdrawalsForIncrease || 1)) * 100));
                       const reached = l.successfulWithdrawalCount >= l.requiredWithdrawalsForIncrease;
 
@@ -1172,7 +1201,7 @@ export default function AdminWithdrawals() {
                             )}
                           </td>
                           <td>
-                            <b className="tone-amber">{money(l.pendingRequest?.offeredFee !== undefined ? l.pendingRequest.offeredFee : l.upgradeFee)}</b>
+                            <b className="tone-amber">{money(limitFeeOf(l))}</b>
                           </td>
                           <td>
                             {isPending && <span className="pd-stage-chip tone-amber">● Quote needed</span>}
@@ -1373,7 +1402,7 @@ export default function AdminWithdrawals() {
                 <div>
                   <small style={{ fontSize: 11, color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Upgrade Fee to Deduct</small>
                   <div style={{ fontSize: 16, fontWeight: 900, color: '#d97706' }}>
-                    {money(finalizeItem.pendingRequest?.offeredFee !== undefined ? finalizeItem.pendingRequest.offeredFee : 50)}
+                    {money(limitFeeOf(finalizeItem))}
                   </div>
                 </div>
                 <div>
@@ -1385,10 +1414,19 @@ export default function AdminWithdrawals() {
                 <div>
                   <small style={{ fontSize: 11, color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>Balance After Fee</small>
                   <div style={{ fontSize: 15, fontWeight: 800, color: '#2563eb' }}>
-                    {money(finalizeItem.walletBalance - (finalizeItem.pendingRequest?.offeredFee || 50))}
+                    {money(finalizeItem.walletBalance - limitFeeOf(finalizeItem))}
                   </div>
                 </div>
               </div>
+
+              {finalizeItem.walletBalance < limitFeeOf(finalizeItem) && (
+                <div className="pd-note" style={{ marginBottom: 14, background: '#fef2f2', borderColor: '#fecaca', color: '#b91c1c' }}>
+                  <Ic name="alert" size={15} />
+                  <span>
+                    Seller ka balance fee se kam hai. Activate nahi ho sakta — pehle seller balance add kare ya fee kam karke naya offer bhejein.
+                  </span>
+                </div>
+              )}
 
               <div className="modal-bottom-actions">
                 <button type="button" className="btn-cancel" onClick={() => setShowFinalizeModal(false)}>
@@ -1397,7 +1435,7 @@ export default function AdminWithdrawals() {
                 <button
                   type="submit"
                   className="btn-primary"
-                  disabled={submittingFinalize}
+                  disabled={submittingFinalize || finalizeItem.walletBalance < limitFeeOf(finalizeItem)}
                   style={{ background: '#16a34a', borderColor: '#15803d' }}
                 >
                   {submittingFinalize ? 'Activating...' : `⚡ Confirm & Activate Limit ($${finalizeItem.pendingRequest?.offeredLimit || 2000})`}

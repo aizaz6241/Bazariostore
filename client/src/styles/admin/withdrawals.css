@@ -1919,3 +1919,5 @@
 }
 .pd-card-flush .admin-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .pd-card-flush .pd-table { min-width: 980px; }
+.pd-input input.invalid { border-color: #fca5a5; background: #fef2f2; }
+.pd-input input.invalid:focus { border-color: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15); }
