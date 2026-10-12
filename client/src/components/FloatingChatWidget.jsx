@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { sapi, api, fmtDate, compressImage, dropClearedMessages } from '../api.js';
+import { sapi, api, fmtDate, compressImage, dropClearedMessages, addChatMessage } from '../api.js';
 import { getSocket, getGuestId } from '../socket.js';
 import Ic from './Icons.jsx';
 import ChatAttachment from './ChatAttachment.jsx';
@@ -29,6 +29,8 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
   const scrollRef = useRef(null);
   const fileInputRef = useRef(null);
   const textInputRef = useRef(null);
+  // Blocks a second send while one is still going (fast double Enter / double click)
+  const sendingRef = useRef(false);
 
   // ─── DRAGGABLE FLOATING FAB STATE & REFS ───
   const buttonRef = useRef(null);
@@ -341,11 +343,7 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
           if (!msgSellerId || !mySellerId || String(msgSellerId) !== String(mySellerId)) return;
         }
 
-        setMessages((prev) => {
-          if (!Array.isArray(prev)) return [msg];
-          if (prev.some((m) => m?._id === msg?._id)) return prev;
-          return [...prev, msg];
-        });
+        setMessages((prev) => addChatMessage(prev, msg));
 
         if (!isOpen && (msg.sender === 'admin' || msg.sender === 'staff')) {
           setUnreadCount((prev) => prev + 1);
@@ -362,11 +360,7 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
       } else {
         // Admin
         if (msg.conversation === selectedConvoId) {
-          setMessages((prev) => {
-            if (!Array.isArray(prev)) return [msg];
-            if (prev.some((m) => m?._id === msg?._id)) return prev;
-            return [...prev, msg];
-          });
+          setMessages((prev) => addChatMessage(prev, msg));
         }
         if (!isOpen && (msg.sender === 'seller' || msg.sender === 'customer' || msg.sender === 'guest')) {
           setUnreadCount((prev) => prev + 1);
@@ -502,7 +496,9 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
     if (e?.preventDefault) e.preventDefault();
     const clean = (overrideText !== null ? overrideText : text).trim();
     if (!clean && !file) return;
+    if (sendingRef.current) return;
 
+    sendingRef.current = true;
     setSending(true);
     let attachmentUrl = null;
     let attachmentType = null;
@@ -592,6 +588,7 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
       setText(clean);
       alert('Failed to send message: ' + err.message);
     } finally {
+      sendingRef.current = false;
       setSending(false);
       setUploading(false);
     }

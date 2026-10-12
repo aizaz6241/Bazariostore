@@ -979,10 +979,18 @@ router.put('/messages/:id', authSellerOrAdmin, async (req, res) => {
     msg.editedAt = new Date();
     await msg.save();
 
-    // If conversation lastMessage was this, update it
+    // The inbox preview shows the latest message: only change it when this IS the latest one
+    // (editing an old message must not put its text on the inbox card)
     if (msg.conversation) {
-      await Conversation.findByIdAndUpdate(msg.conversation, { lastMessage: msg.text.slice(0, 70) });
+      const latest = await Message.findOne({ conversation: msg.conversation, isDeleted: { $ne: true } })
+        .sort({ createdAt: -1 }).select('_id').lean();
+      if (latest && String(latest._id) === String(msg._id)) {
+        await Conversation.findByIdAndUpdate(msg.conversation, { lastMessage: msg.text.slice(0, 70) });
+      }
     }
+
+    // Replies quote a copy of this message's text: keep those quotes in step with the edit
+    await Message.updateMany({ 'replyTo.messageId': msg._id }, { $set: { 'replyTo.text': msg.text } });
 
     const editPayload = {
       _id: msg._id,
@@ -1038,6 +1046,12 @@ router.delete('/messages/:id', authSellerOrAdmin, async (req, res) => {
       await deleteUnreferencedAttachments([attachmentUrl]);
     }
 
+    // Replies quote a copy of this message: a deleted message's text must not live on inside them
+    await Message.updateMany(
+      { 'replyTo.messageId': msg._id },
+      { $set: { 'replyTo.text': '🚫 This message was deleted', 'replyTo.attachmentType': null, 'replyTo.attachmentName': '' } }
+    );
+
     // If conversation lastMessage was this, update it to previous non-deleted message
     if (msg.conversation) {
       const conv = await Conversation.findById(msg.conversation);
@@ -1079,6 +1093,16 @@ router.delete('/messages/:id', authSellerOrAdmin, async (req, res) => {
       if (msg.guestId) io.to(`customer:${msg.guestId}`).emit('message:delete', deletePayload);
       io.to(adminRoom('chat')).emit('message:delete', deletePayload);
       // (no broadcast to everyone: only the people in this conversation and the admins are told)
+    }
+
+    // Admin log: which admin deleted which message, and when (not the text: a deleted message stays deleted)
+    if (req.admin) {
+      await audit(req, 'chat_message_deleted', 'message', msg._id, {
+        conversation: msg.conversation ? String(msg.conversation) : '',
+        sender: msg.sender,
+        sentAt: msg.createdAt,
+        hadAttachment: Boolean(attachmentUrl),
+      });
     }
 
     res.json({ message: 'Message deleted successfully', msg, isDeleted: true, deletedAt: msg.deletedAt });
