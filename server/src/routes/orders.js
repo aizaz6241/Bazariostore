@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import Order, { STATUSES } from '../models/Order.js';
+import Seller from '../models/Seller.js';
 import Product from '../models/Product.js';
 import Discount from '../models/Discount.js';
 import Refund from '../models/Refund.js';
@@ -320,35 +321,270 @@ router.post('/:id/refund-request', authUser, async (req, res) => {
 });
 
 // ---------- admin ----------
+const escapeRx = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 router.get('/', authAdmin('orders'), async (req, res) => {
-  const { status, q, sellerId } = req.query;
-  const filter = {};
-  if (status && STATUSES.includes(status)) filter.status = status;
-  if (sellerId) {
-    filter.$or = [{ seller: sellerId }, { 'items.seller': sellerId }];
-  }
-  if (q?.trim()) {
-    const rx = { $regex: q.trim(), $options: 'i' };
-    const qFilters = [{ orderNumber: rx }, { 'contact.phone': rx }, { 'contact.email': rx }, { 'shippingAddress.fullName': rx }];
-    if (filter.$or) {
-      filter.$and = [{ $or: filter.$or }, { $or: qFilters }];
-      delete filter.$or;
-    } else {
-      filter.$or = qFilters;
+  try {
+    const { status, sellerId } = req.query;
+    const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 80) : '';
+    const filter = {};
+    if (status && STATUSES.includes(status)) filter.status = status;
+    if (sellerId) {
+      // an unknown id matches nothing (it used to crash the request and the screen waited 30 s)
+      if (!mongoose.Types.ObjectId.isValid(String(sellerId))) return res.json([]);
+      filter.$or = [{ seller: sellerId }, { 'items.seller': sellerId }];
     }
+    if (q) {
+      // typed text is matched literally: "(" or "+" in a search no longer breaks the request
+      const rx = { $regex: escapeRx(q), $options: 'i' };
+      const qFilters = [{ orderNumber: rx }, { 'contact.phone': rx }, { 'contact.email': rx }, { 'shippingAddress.fullName': rx }, { 'items.sellerName': rx }];
+      if (filter.$or) {
+        filter.$and = [{ $or: filter.$or }, { $or: qFilters }];
+        delete filter.$or;
+      } else {
+        filter.$or = qFilters;
+      }
+    }
+    const orders = await Order.find(filter)
+      .populate('seller', 'storeName ownerName email phone')
+      .populate('items.product', 'name price image')
+      .sort({ createdAt: -1 })
+      .limit(300);
+    res.json(orders);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
-  const orders = await Order.find(filter)
-    .populate('seller', 'storeName ownerName email phone')
-    .populate('items.product', 'name price image')
-    .sort({ createdAt: -1 })
-    .limit(300);
-  res.json(orders);
+});
+
+// GET /api/orders/analytics/overview?days=30&sellerId=&scope=all|client
+// Charts on top of the admin Orders page: order and GMV trend, status mix, payment mix,
+// a per-seller leaderboard (orders, value, delivered / cancelled rate, open orders), top
+// products, top cities and when in the day orders come in. Values are per seller share of
+// each order (items.price × qty), so a multi-seller order is split fairly.
+const OPEN_EXCLUDE = ['delivered', 'cancelled', 'refunded'];
+const FULFILLMENT = ['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery'];
+
+router.get('/analytics/overview', authAdmin('orders'), async (req, res) => {
+  try {
+    const days = Math.min(365, Math.max(7, parseInt(req.query.days, 10) || 30));
+    const sellerId = req.query.sellerId && mongoose.Types.ObjectId.isValid(String(req.query.sellerId)) ? String(req.query.sellerId) : '';
+    const scope = req.query.scope === 'client' ? 'client' : 'all';
+    // the browser's Date#getTimezoneOffset(), so "busiest hours" are in the admin's own time
+    const tzMin = Math.max(-840, Math.min(840, parseInt(req.query.tz, 10) || 0));
+    const now = new Date();
+    const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (days - 1)));
+    const prevSince = new Date(since.getTime() - days * 86400000);
+
+    const sellerQuery = scope === 'client' ? { isTestAccount: { $ne: true }, isPreviousStoreSeller: { $ne: true } } : {};
+    const sellers = await Seller.find(sellerQuery).select('storeName ownerName status isTestAccount').lean();
+    const sellerMap = new Map(sellers.map((s) => [String(s._id), s]));
+
+    const match = { createdAt: { $gte: prevSince } };
+    if (sellerId) match.$or = [{ seller: sellerId }, { 'items.seller': sellerId }];
+    const [orders, statusAgg, openNow] = await Promise.all([
+      Order.find(match)
+        .select('status total paymentMethod placedBy createdAt seller shippingAddress.city shippingAddress.state items.seller items.sellerName items.name items.product items.price items.qty items.image')
+        .lean(),
+      Order.aggregate([
+        { $match: sellerId ? { $or: [{ seller: new mongoose.Types.ObjectId(sellerId) }, { 'items.seller': new mongoose.Types.ObjectId(sellerId) }] } : {} },
+        { $group: { _id: '$status', n: { $sum: 1 } } },
+      ]),
+      Order.find({ status: { $nin: OPEN_EXCLUDE }, ...(sellerId ? { $or: [{ seller: sellerId }, { 'items.seller': sellerId }] } : {}) })
+        .select('createdAt status')
+        .lean(),
+    ]);
+
+    const round = (n) => Math.round((Number(n) || 0) * 100) / 100;
+    const dayKey = (d) => new Date(d).toISOString().slice(0, 10);
+    const dayList = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(since.getTime() + i * 86400000);
+      dayList.push({ key: dayKey(d), label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) });
+    }
+    const byDay = new Map(dayList.map((d) => [d.key, { label: d.label, orders: 0, gmv: 0, delivered: 0, cancelled: 0 }]));
+
+    const totals = { orders: 0, gmv: 0, items: 0, delivered: 0, cancelled: 0, open: 0, deliveredValue: 0, adminPlaced: 0 };
+    const prev = { orders: 0, gmv: 0, delivered: 0, cancelled: 0 };
+    const windowStatus = new Map();
+    const payment = new Map();
+    const perSeller = new Map();
+    const products = new Map();
+    const cities = new Map();
+    const hours = Array.from({ length: 24 }, (_, h) => ({ hour: h, label: `${String(h).padStart(2, '0')}:00`, orders: 0 }));
+    const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label) => ({ label, orders: 0, gmv: 0 }));
+
+    const sellerRow = (sid, fallbackName) => {
+      let r = perSeller.get(sid);
+      if (!r) {
+        const s = sellerMap.get(sid);
+        r = { _id: sid, storeName: s?.storeName || (sid ? fallbackName || 'Store' : 'Bazario Direct'), ownerName: s?.ownerName || '', isTestAccount: Boolean(s?.isTestAccount), orders: 0, gmv: 0, delivered: 0, cancelled: 0, open: 0, items: 0 };
+        perSeller.set(sid, r);
+      }
+      return r;
+    };
+
+    orders.forEach((o) => {
+      const st = (o.status || 'pending').toLowerCase();
+      const created = new Date(o.createdAt);
+      const inWindow = created >= since;
+      const dead = st === 'cancelled' || st === 'refunded';
+      const ordSeller = o.seller ? String(o.seller) : '';
+
+      // each seller's share of this order
+      const shares = new Map();
+      (o.items || []).forEach((it) => {
+        const sid = it.seller ? String(it.seller) : ordSeller;
+        if (sellerId && sid !== sellerId) return;
+        if (scope === 'client' && !sellerMap.has(sid)) return;
+        const sh = shares.get(sid) || { value: 0, qty: 0, name: it.sellerName };
+        sh.value += (Number(it.price) || 0) * (Number(it.qty) || 1);
+        sh.qty += Number(it.qty) || 1;
+        shares.set(sid, sh);
+      });
+      if (!shares.size) return;
+      let value = 0;
+      let qty = 0;
+      shares.forEach((sh) => {
+        value += sh.value;
+        qty += sh.qty;
+      });
+
+      if (!inWindow) {
+        prev.orders += 1;
+        if (!dead) prev.gmv += value;
+        if (st === 'delivered') prev.delivered += 1;
+        if (dead) prev.cancelled += 1;
+        return;
+      }
+
+      totals.orders += 1;
+      totals.items += qty;
+      if (!dead) totals.gmv += value;
+      if (st === 'delivered') {
+        totals.delivered += 1;
+        totals.deliveredValue += value;
+      }
+      if (dead) totals.cancelled += 1;
+      if (!OPEN_EXCLUDE.includes(st)) totals.open += 1;
+      if (o.placedBy === 'admin' || o.placedBy === 'staff') totals.adminPlaced += 1;
+      windowStatus.set(st, (windowStatus.get(st) || 0) + 1);
+
+      const day = byDay.get(dayKey(created));
+      if (day) {
+        day.orders += 1;
+        if (!dead) day.gmv += value;
+        if (st === 'delivered') day.delivered += 1;
+        if (dead) day.cancelled += 1;
+      }
+      const local = new Date(created.getTime() - tzMin * 60000);
+      hours[local.getUTCHours()].orders += 1;
+      const wd = weekdays[local.getUTCDay()];
+      wd.orders += 1;
+      if (!dead) wd.gmv += value;
+
+      const pm = o.paymentMethod || 'cod';
+      const p = payment.get(pm) || { method: pm, orders: 0, gmv: 0 };
+      p.orders += 1;
+      if (!dead) p.gmv += value;
+      payment.set(pm, p);
+
+      const city = (o.shippingAddress?.city || '').trim();
+      if (city) {
+        const key = city.toLowerCase();
+        const c = cities.get(key) || { city, state: o.shippingAddress?.state || '', orders: 0, gmv: 0 };
+        c.orders += 1;
+        if (!dead) c.gmv += value;
+        cities.set(key, c);
+      }
+
+      shares.forEach((sh, sid) => {
+        const r = sellerRow(sid, sh.name);
+        r.orders += 1;
+        r.items += sh.qty;
+        if (!dead) r.gmv += sh.value;
+        if (st === 'delivered') r.delivered += 1;
+        if (dead) r.cancelled += 1;
+        if (!OPEN_EXCLUDE.includes(st)) r.open += 1;
+      });
+
+      if (!dead) {
+        (o.items || []).forEach((it) => {
+          const sid = it.seller ? String(it.seller) : ordSeller;
+          if (!shares.has(sid)) return;
+          const key = String(it.product || it.name || '');
+          if (!key) return;
+          const pr = products.get(key) || { name: it.name || 'Product', image: it.image || '', storeName: it.sellerName || '', qty: 0, gmv: 0 };
+          pr.qty += Number(it.qty) || 1;
+          pr.gmv += (Number(it.price) || 0) * (Number(it.qty) || 1);
+          products.set(key, pr);
+        });
+      }
+    });
+
+    // open orders by age (all open orders, not only this window): what is stuck
+    const aging = [
+      { label: '< 24h', maxH: 24, count: 0 },
+      { label: '1–2 days', maxH: 48, count: 0 },
+      { label: '2–7 days', maxH: 168, count: 0 },
+      { label: '7+ days', maxH: Infinity, count: 0 },
+    ];
+    openNow.forEach((o) => {
+      const ageH = (now - new Date(o.createdAt)) / 3600000;
+      aging.find((b) => ageH < b.maxH).count += 1;
+    });
+
+    const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
+    const leaderboard = [...perSeller.values()]
+      .map((r) => ({
+        ...r,
+        gmv: round(r.gmv),
+        aov: r.orders - r.cancelled > 0 ? round(r.gmv / (r.orders - r.cancelled)) : 0,
+        deliveryRate: pct(r.delivered, r.orders),
+        cancelRate: pct(r.cancelled, r.orders),
+      }))
+      .sort((a, b) => b.gmv - a.gmv || b.orders - a.orders);
+
+    const liveOrders = totals.orders - totals.cancelled;
+    res.json({
+      days,
+      scope,
+      sellerId,
+      totals: {
+        ...totals,
+        gmv: round(totals.gmv),
+        deliveredValue: round(totals.deliveredValue),
+        aov: liveOrders > 0 ? round(totals.gmv / liveOrders) : 0,
+        deliveryRate: pct(totals.delivered, totals.orders),
+        cancelRate: pct(totals.cancelled, totals.orders),
+        activeSellers: leaderboard.length,
+      },
+      previous: { ...prev, gmv: round(prev.gmv) },
+      statusCounts: Object.fromEntries(statusAgg.map((x) => [x._id || 'pending', x.n])),
+      windowStatus: Object.fromEntries(windowStatus),
+      trend: [...byDay.values()].map((d) => ({ ...d, gmv: round(d.gmv) })),
+      payment: [...payment.values()].map((p) => ({ ...p, gmv: round(p.gmv) })).sort((a, b) => b.orders - a.orders),
+      leaderboard: leaderboard.slice(0, 50),
+      topProducts: [...products.values()].map((p) => ({ ...p, gmv: round(p.gmv) })).sort((a, b) => b.gmv - a.gmv).slice(0, 8),
+      topCities: [...cities.values()].map((c) => ({ ...c, gmv: round(c.gmv) })).sort((a, b) => b.orders - a.orders).slice(0, 8),
+      hours: hours.map(({ label, orders: n }) => ({ label, orders: n })),
+      weekdays: weekdays.map((w) => ({ ...w, gmv: round(w.gmv) })),
+      aging: aging.map(({ label, count }) => ({ label, count })),
+      openTotal: openNow.length,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 router.get('/:id', authAdmin('orders'), async (req, res) => {
-  const order = await Order.findById(req.params.id);
-  if (!order) return res.status(404).json({ message: 'Order not found' });
-  res.json(order);
+  try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Order not found' });
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+    res.json(order);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 const orderStatusHandler = async (req, res) => {

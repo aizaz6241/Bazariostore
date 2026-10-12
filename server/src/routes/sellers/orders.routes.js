@@ -197,9 +197,20 @@ async function advanceSellerTargets(app, sellerId) {
   if (!seller || !Array.isArray(seller.targets) || seller.targets.length === 0) return;
 
   let touched = false;
+  const nowTime = Date.now();
   for (let i = 0; i < seller.targets.length; i += 1) {
     const target = seller.targets[i];
     if (target.status !== 'active') continue;
+
+    // past its deadline: the target closes as "expired" and this delivery no longer counts for it
+    if (target.expiresAt && new Date(target.expiresAt).getTime() < nowTime) {
+      const closed = await Seller.updateOne(
+        { _id: seller._id, [`targets.${i}._id`]: target._id, [`targets.${i}.status`]: 'active' },
+        { $set: { [`targets.${i}.status`]: 'expired' } }
+      );
+      if (closed.modifiedCount) touched = true;
+      continue;
+    }
 
     // count this delivery (in the database, so two deliveries at once are both counted)
     const after = await Seller.findOneAndUpdate(
@@ -1102,9 +1113,13 @@ export async function processOrderPenalties(app) {
 
         seller.accountHealth = seller.accountHealth || {};
         seller.accountHealth.score = newScore;
-        seller.accountHealth.status = 'frozen';
-        seller.status = 'frozen';
-        seller.freezeReason = `Automatic Freeze: Order #${ord.orderNumber} remained unconfirmed for over 48 hours.`;
+        // only an active store is frozen here: a suspended store must stay suspended (setting it to
+        // "frozen" quietly lifted the suspension) and a frozen one keeps its original reason
+        if (seller.status === 'active') {
+          seller.accountHealth.status = 'frozen';
+          seller.status = 'frozen';
+          seller.freezeReason = `Automatic Freeze: Order #${ord.orderNumber} remained unconfirmed for over 48 hours.`;
+        }
 
         seller.accountHealth.history = seller.accountHealth.history || [];
         seller.accountHealth.history.unshift({
@@ -1138,7 +1153,7 @@ export async function processOrderPenalties(app) {
               `Order Number: #${ord.orderNumber}\n` +
               `Reason: Exceeded 48-Hour Confirmation Deadline\n` +
               `Health Score Penalty: -25 Points (New Score: ${newScore}/100)\n` +
-              `Account Status: FROZEN\n\n` +
+              `Account Status: ${String(seller.status || 'frozen').toUpperCase()}\n\n` +
               `Your seller store has been temporarily frozen. Please contact platform support immediately to request unfreezing.\n` +
               `━━━━━━━━━━━━━━━━━━━━━━━━━`;
 

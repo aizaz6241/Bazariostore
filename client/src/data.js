@@ -38,6 +38,10 @@ export const PAYMENT_LABELS = {
   debit_card: 'Debit Card',
   stripe: 'Stripe',
   paypal: 'PayPal',
+  upi: 'UPI / Online Transfer',
+  easypaisa: 'EasyPaisa',
+  jazzcash: 'JazzCash',
+  usdt: 'USDT',
 };
 
 export const PRODUCT_LABELS = {

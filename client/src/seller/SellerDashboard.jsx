@@ -431,10 +431,12 @@ export default function SellerDashboard() {
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
             {data.seller.targets.map((tgt) => {
-              const current = tgt.currentOrderCount || 0;
-              const target = tgt.targetOrderCount || 1;
+              const current = tgt.currentOrders ?? tgt.currentOrderCount ?? 0;
+              const target = tgt.targetOrders || tgt.targetOrderCount || 1;
               const pct = Math.min(100, Math.round((current / target) * 100));
-              const isCompleted = tgt.status === 'completed' || current >= target;
+              const isCompleted = tgt.status === 'completed' || tgt.status === 'claimed' || current >= target;
+              const isExpired = !isCompleted && (tgt.status === 'expired' || (tgt.expiresAt && new Date(tgt.expiresAt) < new Date()));
+              const note = tgt.description || tgt.adminNote;
 
               return (
                 <div
@@ -449,7 +451,12 @@ export default function SellerDashboard() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                     <div>
                       <b style={{ fontSize: 14, color: '#0f172a' }}>{tgt.title}</b>
-                      {tgt.description && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>{tgt.description}</p>}
+                      {note && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>{note}</p>}
+                      {tgt.expiresAt && !isCompleted && (
+                        <p style={{ margin: '2px 0 0', fontSize: 11.5, color: isExpired ? '#64748b' : '#b45309', fontWeight: 600 }}>
+                          {isExpired ? 'Ended' : 'Ends'} {new Date(tgt.expiresAt).toLocaleDateString()}
+                        </p>
+                      )}
                     </div>
                     <span
                       style={{
@@ -457,11 +464,11 @@ export default function SellerDashboard() {
                         borderRadius: 6,
                         fontSize: 11,
                         fontWeight: 800,
-                        background: isCompleted ? '#dcfce7' : '#fef3c7',
-                        color: isCompleted ? '#166534' : '#92400e',
+                        background: isCompleted ? '#dcfce7' : isExpired ? '#f1f5f9' : '#fef3c7',
+                        color: isCompleted ? '#166534' : isExpired ? '#475569' : '#92400e',
                       }}
                     >
-                      {isCompleted ? '🎉 COMPLETED' : 'IN PROGRESS'}
+                      {isCompleted ? '🎉 COMPLETED' : isExpired ? 'EXPIRED' : 'IN PROGRESS'}
                     </span>
                   </div>
 

@@ -1,21 +1,39 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  ResponsiveContainer, LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
-  XAxis, YAxis, Tooltip, CartesianGrid, Legend,
-} from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { api, money, fmtDate } from '../api.js';
 import { STATUS_LABELS, PAYMENT_LABELS } from '../data.js';
-import { CHART_COLORS, ErrorBox } from './ui.jsx';
+import { ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
 import { getSocket } from '../socket.js';
 import UsdtWalletHistoryModal from './UsdtWalletHistoryModal.jsx';
+import {
+  Hero, MetaChip, Kpi, KpiGrid, Card, ChartGrid, Seg, Badge, Avatar, RankList, SplitBar, ChartTip, Empty,
+  SERIES, STATUS, GRID, AXIS, shortMoney, delta,
+} from './insights.jsx';
+
+const FULFILLMENT = ['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery'];
+const STATUS_TONE = {
+  pending: 'warning',
+  delivered: 'good',
+  cancelled: 'critical',
+  refunded: 'neutral',
+};
+const fmtUsdt = (val) => `${Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+}
 
 export default function Dashboard() {
   const [d, setD] = useState(null);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [metric, setMetric] = useState('revenue');
   const [usdtHistoryModalOpen, setUsdtHistoryModalOpen] = useState(false);
   const [usdtHistoryTab, setUsdtHistoryTab] = useState('all');
+  const [updatedAt, setUpdatedAt] = useState(null);
 
   const openUsdtHistory = (tab = 'all') => {
     setUsdtHistoryTab(tab);
@@ -23,17 +41,27 @@ export default function Dashboard() {
   };
 
   const loadData = () => {
-    api('/analytics/dashboard').then(setD).catch((e) => setError(e.message));
+    setLoading(true);
+    return api('/analytics/dashboard')
+      .then((res) => {
+        setD(res);
+        setError('');
+        setUpdatedAt(new Date());
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {
     loadData();
   }, []);
 
-  // Real-time synchronization on WebSocket events
+  // Real-time: a burst of socket events (one order touches orders, wallets and sellers at once)
+  // reloads the dashboard once, instead of once per event.
+  const timer = useRef(null);
   useEffect(() => {
     const socket = getSocket();
-    if (!socket) return;
+    if (!socket) return undefined;
 
     const adminToken = localStorage.getItem('ng_admin_token');
     const rejoin = () => {
@@ -45,401 +73,383 @@ export default function Dashboard() {
     socket.on('connect', rejoin);
 
     const handleSync = () => {
-      loadData();
+      clearTimeout(timer.current);
+      timer.current = setTimeout(loadData, 1500);
     };
-
-    socket.on('order:update', handleSync);
-    socket.on('order:status_update', handleSync);
-    socket.on('order:new', handleSync);
-    socket.on('withdrawal:new', handleSync);
-    socket.on('withdrawal:update', handleSync);
-    socket.on('seller:status_update', handleSync);
-    socket.on('wallet:update', handleSync);
+    const events = ['order:update', 'order:status_update', 'order:new', 'withdrawal:new', 'withdrawal:update', 'seller:status_update', 'wallet:update', 'seller:health_update'];
+    events.forEach((ev) => socket.on(ev, handleSync));
 
     return () => {
+      clearTimeout(timer.current);
       socket.off('connect', rejoin);
-      socket.off('order:update', handleSync);
-      socket.off('order:status_update', handleSync);
-      socket.off('order:new', handleSync);
-      socket.off('withdrawal:new', handleSync);
-      socket.off('withdrawal:update', handleSync);
-      socket.off('seller:status_update', handleSync);
-      socket.off('wallet:update', handleSync);
+      events.forEach((ev) => socket.off(ev, handleSync));
     };
   }, []);
 
-  if (error) return <ErrorBox error={error} />;
-  if (!d) return <p className="muted">Loading…</p>;
+  if (!d) {
+    return (
+      <div className="ins-page">
+        <Hero icon="grid" title="Dashboard" subtitle="Loading your store overview…" />
+        {error ? (
+          <div>
+            <ErrorBox error={error} />
+            <button type="button" className="ins-btn" onClick={loadData} style={{ marginTop: 10 }}>
+              <Ic name="refresh" size={14} /> Try again
+            </button>
+          </div>
+        ) : (
+          <KpiGrid>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div className="ins-kpi" key={i}>
+                <span className="ins-skel" style={{ width: '50%' }} />
+                <span className="ins-skel" style={{ width: '70%', height: 22 }} />
+                <span className="ins-skel" style={{ width: '40%' }} />
+              </div>
+            ))}
+          </KpiGrid>
+        )}
+      </div>
+    );
+  }
 
-  const fmtUsdt = (val) => {
-    const n = Number(val || 0);
-    return `${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`;
-  };
+  const w = d.usdtWallet || {};
+  const cur = d.period?.current || { revenue: 0, orders: 0, aov: 0, delivered: 0, cancelled: 0 };
+  const prev = d.period?.previous || { revenue: 0, orders: 0, aov: 0, delivered: 0, cancelled: 0 };
+  const sb = d.ordersByStatus || {};
+  const totalOrders = Object.values(sb).reduce((a, b) => a + b, 0);
+  const sellers = d.sellers || {};
+  const health = d.health || {};
+  const targets = d.targets || {};
+  const req = d.requests || { deposits: { count: 0, amount: 0 }, withdrawals: { count: 0, amount: 0 } };
+  const revenue30 = d.revenue30 || [];
+  const hasDaily = revenue30.some((r) => r.orders > 0);
+  const hasMonthly = (d.monthly12 || []).some((m) => m.orders > 0);
+  const usdtTrend = w.trend || [];
+  const hasUsdt = usdtTrend.some((x) => x.amount > 0);
 
-  const w = d.usdtWallet || {
-    total: 0,
-    today: 0,
-    week: 0,
-    month: 0,
-    year: 0,
-    grossDeposits: 0,
-    helpingAmount: 0,
-    depositCount: 0,
-    clientSellersCount: 0,
-  };
-
-  const usdtCards = [
-    {
-      tab: 'all',
-      label: 'USDT Wallet',
-      value: fmtUsdt(w.total),
-      sub: `${w.depositCount || 0} deposits · Real Clients`,
-      icon: 'wallet',
-      badge: 'Main Balance',
-      isPrimary: true,
-      color: '#059669',
-      bg: '#ecfdf5',
-    },
-    {
-      tab: 'today',
-      label: "Today Received",
-      value: fmtUsdt(w.today),
-      sub: "Today's Client Inflow",
-      icon: 'clock',
-      badge: 'Today',
-      color: '#0284c7',
-      bg: '#f0f9ff',
-    },
-    {
-      tab: 'week',
-      label: 'Weekly Received',
-      value: fmtUsdt(w.week),
-      sub: "This Week's Client Inflow",
-      icon: 'sparkle',
-      badge: '7 Days',
-      color: '#7c3aed',
-      bg: '#faf5ff',
-    },
-    {
-      tab: 'month',
-      label: 'Monthly Received',
-      value: fmtUsdt(w.month),
-      sub: "This Month's Client Inflow",
-      icon: 'banknote',
-      badge: '30 Days',
-      color: '#ea580c',
-      bg: '#fff7ed',
-    },
+  const attention = [
+    { to: '/admin/applications', icon: '📝', color: '#6250d6', title: 'Applications waiting', sub: 'New stores to review', count: sellers.pendingApplications || 0 },
+    { to: '/admin/withdrawals', icon: '💸', color: '#eb6834', title: 'Withdrawal requests', sub: money(req.withdrawals.amount), count: req.withdrawals.count },
+    { to: '/admin/withdrawals', icon: '💰', color: '#2a78d6', title: 'Deposit requests', sub: money(req.deposits.amount), count: req.deposits.count },
+    { to: '/admin/orders?status=pending', icon: '⏳', color: '#c98500', title: 'Orders open > 48 h', sub: 'Not delivered or cancelled yet', count: d.staleOpenOrders || 0 },
+    { to: '/admin/complaints', icon: '🛡️', color: '#d03b3b', title: 'Stores at risk', sub: 'Health 30 or below', count: sellers.atRisk || 0 },
+    { to: '/admin/inventory', icon: '📦', color: '#475569', title: 'Out of stock', sub: `${d.lowStock?.length || 0} more running low`, count: d.outOfStock?.length || 0 },
   ];
-
-  const statusPie = Object.entries(d.ordersByStatus).map(([k, v]) => ({ name: STATUS_LABELS[k] || k, value: v }));
-  const payPie = d.paymentSplit.map((p) => ({ name: PAYMENT_LABELS[p.label] || p.label, value: p.n }));
+  const openItems = attention.reduce((a, x) => a + (x.count > 0 ? 1 : 0), 0);
 
   return (
-    <>
-      <h1 className="admin-h1">Dashboard</h1>
-
-      {/* ─── USDT WALLET SECTION (REAL CLIENT FUNDS ONLY) ─── */}
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ display: 'inline-flex', padding: '6px 8px', borderRadius: 8, background: '#ecfdf5', color: '#059669' }}>
-                <Ic name="wallet" size={20} />
-              </span>
-              USDT Wallet
-            </h2>
-            <span style={{
-              background: '#ecfdf5',
-              color: '#047857',
-              border: '1px solid #a7f3d0',
-              fontSize: 11,
-              fontWeight: 700,
-              padding: '3px 10px',
-              borderRadius: 20,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-            }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }}></span>
-              Real Client Accounts Only (Tests & Previous Stores Excluded)
-            </span>
-            {w.helpingAmount > 0 && (
-              <span style={{
-                background: '#f8fafc',
-                color: '#64748b',
-                border: '1px solid #e2e8f0',
-                fontSize: 11,
-                fontWeight: 600,
-                padding: '3px 9px',
-                borderRadius: 6,
-              }}>
-                Gross: {fmtUsdt(w.grossDeposits)} | Helping: -{fmtUsdt(w.helpingAmount)}
-              </span>
-            )}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              type="button"
-              onClick={() => openUsdtHistory('all')}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                background: '#ecfdf5',
-                border: '1.5px solid #10b981',
-                borderRadius: 8,
-                padding: '6px 14px',
-                fontSize: 12,
-                fontWeight: 700,
-                color: '#047857',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = '#d1fae5';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = '#ecfdf5';
-              }}
-              title="Click to view detailed USDT transactions, sellers, amounts & dates"
-            >
-              <Ic name="wallet" size={14} />
-              <span>Click for USDT History &amp; Breakdown</span>
+    <div className="ins-page">
+      <Hero
+        icon="grid"
+        title={`${greeting()} 👋`}
+        subtitle="Your marketplace at a glance: sales, orders, stores and the money moving through seller wallets. Updates live as orders and payments come in."
+        actions={
+          <>
+            <button type="button" className="ins-btn" onClick={() => openUsdtHistory('all')}>
+              <Ic name="wallet" size={14} /> USDT history
             </button>
+            <button type="button" className="ins-btn ins-btn-primary" onClick={loadData} disabled={loading}>
+              <Ic name="refresh" size={14} /> {loading ? 'Updating…' : 'Refresh'}
+            </button>
+          </>
+        }
+      >
+        <MetaChip live>Live</MetaChip>
+        <MetaChip>Today {money(d.sales?.today?.revenue || 0)} · {d.sales?.today?.orders || 0} orders</MetaChip>
+        {updatedAt && <MetaChip>Updated {updatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</MetaChip>}
+      </Hero>
 
-            <Link
-              to="/admin/withdrawals"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-                background: '#ffffff',
-                border: '1px solid #cbd5e1',
-                borderRadius: 8,
-                padding: '6px 12px',
-                fontSize: 12,
-                fontWeight: 700,
-                color: '#0f172a',
-                textDecoration: 'none',
-              }}
-            >
-              <span>Manage Deposits & Payouts</span>
-              <span>→</span>
-            </Link>
-          </div>
-        </div>
+      <ErrorBox error={error} />
 
-        <div className="stat-grid stat-grid-4">
-          {usdtCards.map((c) => (
-            <div
-              className="card stat-card"
-              key={c.label}
-              onClick={() => openUsdtHistory(c.tab)}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  openUsdtHistory(c.tab);
-                }
-              }}
-              title={`Click to view transaction history for ${c.label}`}
-              style={{
-                cursor: 'pointer',
-                transition: 'all 0.18s ease',
-                position: 'relative',
-                ...(c.isPrimary ? {
-                  border: '1.5px solid #a7f3d0',
-                  background: 'linear-gradient(180deg, #ffffff 0%, #f0fdf4 100%)',
-                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.08)',
-                } : {}),
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 6px 14px rgba(0, 0, 0, 0.08)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'none';
-                e.currentTarget.style.boxShadow = c.isPrimary ? '0 2px 8px rgba(16, 185, 129, 0.08)' : '';
-              }}
-            >
-              <i style={{ background: c.bg, color: c.color }}>
-                <Ic name={c.icon} size={22} />
-              </i>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 2 }}>
-                  <span style={{ fontSize: 11.5, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.3px' }}>
-                    {c.label}
-                  </span>
-                  <span style={{ fontSize: 9.5, fontWeight: 800, padding: '1px 6px', borderRadius: 4, background: c.bg, color: c.color }}>
-                    {c.badge}
-                  </span>
-                </div>
-                <b style={{ fontSize: 18, fontWeight: 900, color: c.isPrimary ? '#047857' : '#0f172a', letterSpacing: '-0.3px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span>{c.value}</span>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: c.color, opacity: 0.85 }} title="Click to view history">↗</span>
-                </b>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 3 }}>
-                  <small style={{ color: '#64748b', fontSize: 11 }}>
-                    {c.sub}
-                  </small>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: c.color }}>
-                    History ↗
-                  </span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <KpiGrid dim={loading}>
+        <Kpi icon="banknote" tone="blue" label="Revenue · 30 days" value={money(cur.revenue)} change={delta(cur.revenue, prev.revenue)} sub={`vs ${money(prev.revenue)} the 30 days before`} />
+        <Kpi icon="box" tone="aqua" label="Orders · 30 days" value={cur.orders.toLocaleString('en-US')} change={delta(cur.orders, prev.orders)} sub={`${cur.delivered} delivered · ${cur.cancelled} cancelled`} />
+        <Kpi icon="tag" tone="violet" label="Average order" value={money(cur.aov)} change={delta(cur.aov, prev.aov)} sub="Last 30 days" />
+        <Kpi icon="package" tone="orange" label="Selling stores" value={sellers.active || 0} sub={`${sellers.newThisMonth || 0} new this month · ${sellers.total || 0} approved`} />
+        <Kpi icon="user" tone="magenta" label="Customers" value={(d.customers?.total || 0).toLocaleString('en-US')} sub={`${d.customers?.newThisMonth || 0} new this month · ${d.customers?.returning || 0} returning`} />
+        <Kpi icon="wallet" tone="green" label="USDT received" value={fmtUsdt(w.total)} sub={`${w.depositCount || 0} client deposits`} onClick={() => openUsdtHistory('all')} title="Open the USDT history" />
+      </KpiGrid>
 
-      <div className="stat-grid stat-grid-4">
-        {[
-          { icon: 'clock', label: 'Pending Orders', value: d.ordersByStatus.pending || 0, link: '/admin/orders?status=pending' },
-          { icon: 'package', label: 'Processing', value: (d.ordersByStatus.processing || 0) + (d.ordersByStatus.packed || 0), link: '/admin/orders?status=processing' },
-          { icon: 'checkCircle', label: 'Delivered', value: d.ordersByStatus.delivered || 0, link: '/admin/orders?status=delivered' },
-          { icon: 'refresh', label: 'Cancelled / Refunded', value: (d.ordersByStatus.cancelled || 0) + (d.ordersByStatus.refunded || 0), link: '/admin/orders?status=cancelled' },
-        ].map((c) => (
-          <Link className="card stat-card" key={c.label} to={c.link}>
-            <i><Ic name={c.icon} size={22} /></i>
-            <div><b>{c.value}</b><small>{c.label}</small></div>
-          </Link>
-        ))}
-      </div>
-
-      <div className="chart-grid">
-        <div className="card chart-card chart-wide">
-          <h3>Revenue — Last 30 Days</h3>
-          <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={d.revenue30}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f3d3de" />
-              <XAxis dataKey="label" fontSize={11} />
-              <YAxis fontSize={11} />
-              <Tooltip formatter={(v) => money(v)} />
-              <Line type="monotone" dataKey="revenue" stroke="#e0446e" strokeWidth={2.5} dot={{ r: 3 }} />
-            </LineChart>
+      <ChartGrid dim={loading}>
+        <Card
+          title={metric === 'revenue' ? 'Revenue — last 30 days' : 'Orders — last 30 days'}
+          hint={metric === 'revenue' ? `${money(cur.revenue)} · cancelled & refunded left out` : `${cur.orders} orders`}
+          wide
+          actions={<Seg small label="Metric" value={metric} onChange={setMetric} options={[{ value: 'revenue', label: 'Revenue' }, { value: 'orders', label: 'Orders' }]} />}
+          empty={!hasDaily && 'No orders in the last 30 days'}
+        >
+          <ResponsiveContainer width="100%" height={330}>
+            <AreaChart data={revenue30} margin={{ top: 6, right: 8, left: -10, bottom: 0 }}>
+              <defs>
+                <linearGradient id="dashTrend" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={SERIES[0]} stopOpacity={0.24} />
+                  <stop offset="100%" stopColor={SERIES[0]} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke={GRID} vertical={false} />
+              <XAxis dataKey="label" {...AXIS} minTickGap={18} />
+              <YAxis {...AXIS} tickFormatter={metric === 'revenue' ? shortMoney : undefined} allowDecimals={false} />
+              <Tooltip
+                cursor={{ stroke: '#cbd5e1', strokeDasharray: '3 3' }}
+                content={<ChartTip fmt={(v, n, p) => (metric === 'revenue' ? `${money(v)} · ${p.payload.orders} orders` : `${v} · ${p.payload.delivered} delivered`)} />}
+              />
+              <Area type="monotone" dataKey={metric} name={metric === 'revenue' ? 'Revenue' : 'Orders'} stroke={SERIES[0]} strokeWidth={2} fill="url(#dashTrend)" activeDot={{ r: 4, strokeWidth: 2, stroke: '#fff' }} />
+            </AreaChart>
           </ResponsiveContainer>
-        </div>
-        <div className="card chart-card">
-          <h3>Orders by Status</h3>
-          <ResponsiveContainer width="100%" height={240}>
-            <PieChart>
-              <Pie data={statusPie} dataKey="value" nameKey="name" outerRadius={80} label={(e) => e.value}>
-                {statusPie.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-              </Pie>
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="card chart-card chart-wide">
-          <h3>Monthly Revenue — Last 12 Months</h3>
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={d.monthly12}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f3d3de" />
-              <XAxis dataKey="label" fontSize={11} />
-              <YAxis fontSize={11} />
-              <Tooltip formatter={(v) => money(v)} />
-              <Bar dataKey="revenue" fill="#e0446e" radius={[6, 6, 0, 0]} />
+        </Card>
+
+        <Card title="Needs your attention" hint={openItems ? `${openItems} area${openItems === 1 ? '' : 's'} waiting on you` : 'Nothing waiting — all clear'}>
+          <ul className="ins-attn">
+            {attention.map((x) => (
+              <li key={x.title}>
+                <Link to={x.to}>
+                  <span className="ins-attn-icon" style={{ background: `${x.color}1a` }}>{x.icon}</span>
+                  <span className="ins-attn-text">
+                    <b>{x.title}</b>
+                    <span>{x.sub}</span>
+                  </span>
+                  <span className="ins-attn-count" style={{ color: x.count ? x.color : '#cbd5e1' }}>{x.count}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
+
+        <Card title="Monthly revenue — last 12 months" hint={`This year ${money(d.sales?.year?.revenue || 0)} · this month ${money(d.sales?.month?.revenue || 0)}`} wide empty={!hasMonthly && 'No revenue in the last 12 months'}>
+          <ResponsiveContainer width="100%" height={230}>
+            <BarChart data={d.monthly12} margin={{ top: 6, right: 8, left: -10, bottom: 0 }}>
+              <CartesianGrid stroke={GRID} vertical={false} />
+              <XAxis dataKey="label" {...AXIS} />
+              <YAxis {...AXIS} tickFormatter={shortMoney} />
+              <Tooltip cursor={{ fill: '#f1f5f9' }} content={<ChartTip fmt={(v, n, p) => `${money(v)} · ${p.payload.orders} orders`} />} />
+              <Bar dataKey="revenue" name="Revenue" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={30} />
             </BarChart>
           </ResponsiveContainer>
-        </div>
-        <div className="card chart-card">
-          <h3>Payment Methods</h3>
-          <ResponsiveContainer width="100%" height={240}>
-            <PieChart>
-              <Pie data={payPie} dataKey="value" nameKey="name" innerRadius={45} outerRadius={80} label={(e) => e.value}>
-                {payPie.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
-              </Pie>
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
+        </Card>
 
-      <div className="stat-grid">
-        {[
-          { icon: 'user', label: 'Total Customers', value: d.customers.total },
-          { icon: 'sparkle', label: 'New This Month', value: d.customers.newThisMonth },
-          { icon: 'refresh', label: 'Returning Customers', value: d.customers.returning },
-          { icon: 'box', label: 'Low Stock Products', value: d.lowStock.length },
-          { icon: 'x', label: 'Out of Stock', value: d.outOfStock.length },
-        ].map((c) => (
-          <div className="card stat-card" key={c.label}>
-            <i><Ic name={c.icon} size={22} /></i>
-            <div><b>{c.value}</b><small>{c.label}</small></div>
+        <Card title="Order pipeline" hint={`${totalOrders.toLocaleString('en-US')} orders all time`} empty={!totalOrders && 'No orders yet'}>
+          <SplitBar
+            height={14}
+            parts={[
+              { label: '⏳ Waiting', value: sb.pending || 0, color: STATUS.warning },
+              { label: '🚚 In fulfilment', value: FULFILLMENT.reduce((a, k) => a + (sb[k] || 0), 0), color: SERIES[0] },
+              { label: '✓ Delivered', value: sb.delivered || 0, color: STATUS.good },
+              { label: '✕ Cancelled / refunded', value: (sb.cancelled || 0) + (sb.refunded || 0), color: STATUS.critical },
+            ]}
+          />
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 14 }}>
+            <Link to="/admin/orders?status=pending" className="ins-btn ins-btn-sm">Waiting orders →</Link>
+            <Link to="/admin/orders" className="ins-btn ins-btn-sm">All orders →</Link>
           </div>
-        ))}
+        </Card>
+      </ChartGrid>
+
+      <div className="ins-section-title">
+        <h2>💵 USDT wallet</h2>
+        <span>Real client accounts only — test and previous-store accounts left out{w.helpingAmount > 0 ? ` · gross ${fmtUsdt(w.grossDeposits)}, helping −${fmtUsdt(w.helpingAmount)}` : ''}</span>
       </div>
 
-      <div className="dash-lists">
-        <div className="card">
-          <div className="card-head"><h3>Best Selling Products</h3><Link className="see-all" to="/admin/products">All products →</Link></div>
-          {d.bestSelling.map((p) => (
-            <div className="os-item" key={p._id}>
-              <span className="cart-thumb"><img src={p.image} alt="" /></span>
-              <span className="os-name">{p.name}<small className="muted">{p.sold} sold · {p.stock} in stock</small></span>
-              <b>{money(p.price)}</b>
-            </div>
-          ))}
-        </div>
-        <div className="card">
-          <div className="card-head"><h3>Stock Alerts</h3><Link className="see-all" to="/admin/inventory">Inventory →</Link></div>
-          {[...d.outOfStock, ...d.lowStock].length === 0 && <p className="muted">Sab products ka stock theek hai 🎉</p>}
-          {d.outOfStock.map((p) => (
-            <div className="os-item" key={p._id}>
-              <span className="cart-thumb"><img src={p.image} alt="" /></span>
-              <span className="os-name">{p.name}</span>
-              <span className="status-pill st-cancelled">OUT OF STOCK</span>
-            </div>
-          ))}
-          {d.lowStock.map((p) => (
-            <div className="os-item" key={p._id}>
-              <span className="cart-thumb"><img src={p.image} alt="" /></span>
-              <span className="os-name">{p.name}</span>
-              <span className="status-pill st-pending">{p.stock} left</span>
-            </div>
-          ))}
-        </div>
+      <KpiGrid dim={loading}>
+        <Kpi icon="wallet" tone="green" label="Total received" value={fmtUsdt(w.total)} sub={`${w.clientSellersCount || 0} client stores`} onClick={() => openUsdtHistory('all')} />
+        <Kpi icon="clock" tone="blue" label="Today" value={fmtUsdt(w.today)} sub="Since midnight" onClick={() => openUsdtHistory('today')} />
+        <Kpi icon="sparkle" tone="violet" label="This week" value={fmtUsdt(w.week)} sub="Since Monday" onClick={() => openUsdtHistory('week')} />
+        <Kpi icon="banknote" tone="orange" label="This month" value={fmtUsdt(w.month)} sub="Since the 1st" onClick={() => openUsdtHistory('month')} />
+      </KpiGrid>
+
+      <ChartGrid dim={loading}>
+        <Card title="USDT received per day" hint="Net client deposits, last 30 days" wide empty={!hasUsdt && 'No client deposits in the last 30 days'}>
+          <ResponsiveContainer width="100%" height={210}>
+            <BarChart data={usdtTrend} margin={{ top: 6, right: 8, left: -10, bottom: 0 }}>
+              <CartesianGrid stroke={GRID} vertical={false} />
+              <XAxis dataKey="label" {...AXIS} minTickGap={18} />
+              <YAxis {...AXIS} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v)} />
+              <Tooltip cursor={{ fill: '#f1f5f9' }} content={<ChartTip fmt={(v) => fmtUsdt(v)} />} />
+              <Bar dataKey="amount" name="Received" fill={SERIES[2]} radius={[4, 4, 0, 0]} maxBarSize={16} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+
+        <Card title="Latest client deposits" actions={<button type="button" className="ins-btn ins-btn-sm" onClick={() => openUsdtHistory('all')}>All →</button>}>
+          {(w.recentPayments || []).length === 0 ? (
+            <Empty text="No client deposits yet" />
+          ) : (
+            <ul className="ins-stats">
+              {w.recentPayments.map((p) => (
+                <li key={p._id}>
+                  <span style={{ minWidth: 0 }}>
+                    <span className="ins-strong ins-clip" style={{ display: 'block' }}>{p.storeName || 'Store'}</span>
+                    <span className="ins-sub">{fmtDate(p.createdAt)}</span>
+                  </span>
+                  <b style={{ color: '#006300' }}>+{fmtUsdt(p.netUsdt)}</b>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </ChartGrid>
+
+      <div className="ins-section-title">
+        <h2>🏪 Stores &amp; sellers</h2>
+        <span>
+          <Link to="/admin/sellers" style={{ color: '#2a78d6', fontWeight: 600 }}>Open Sellers →</Link>
+        </span>
       </div>
 
-      <div className="card">
-        <div className="card-head"><h3>Recent Orders</h3><Link to="/admin/orders" className="see-all">See all →</Link></div>
-        {d.recent.length === 0 ? (
-          <p className="muted">Abhi tak koi order nahi.</p>
+      <ChartGrid dim={loading}>
+        <Card title="Top stores · 30 days" hint="By order value">
+          <RankList
+            rows={(d.topSellers || []).map((s, i) => ({ key: String(s._id || i), label: s.storeName, value: s.gmv, sub: `${s.orders} orders` }))}
+            color={SERIES[0]}
+            empty="No store sales in the last 30 days"
+          />
+        </Card>
+
+        <Card title="Store health" hint={`${sellers.total || 0} approved stores`}>
+          <SplitBar
+            height={14}
+            parts={[
+              { label: 'Healthy (80+)', value: health.healthy || 0, color: STATUS.good },
+              { label: 'Watch (31–79)', value: health.watch || 0, color: STATUS.warning },
+              { label: 'Freeze zone (21–30)', value: health.atRisk || 0, color: STATUS.serious },
+              { label: 'Suspension zone (≤20)', value: health.critical || 0, color: STATUS.critical },
+            ]}
+          />
+          <ul className="ins-stats" style={{ marginTop: 10 }}>
+            <li><span>Frozen</span><b>{sellers.frozen || 0}</b></li>
+            <li><span>Suspended</span><b>{sellers.suspended || 0}</b></li>
+            <li><span>Active warnings</span><b>{sellers.warned || 0}</b></li>
+          </ul>
+        </Card>
+
+        <Card title="Targets & bonuses" actions={<Link to="/admin/targets" className="ins-btn ins-btn-sm">Manage →</Link>}>
+          <ul className="ins-stats">
+            <li><span>⚡ In progress</span><b>{targets.active || 0}</b></li>
+            <li><span>🏆 Completed</span><b>{targets.completed || 0}</b></li>
+            <li><span>⌛ Expired</span><b>{targets.expired || 0}</b></li>
+            <li><span>Bonus paid out</span><b style={{ color: '#006300' }}>{money(targets.bonusPaid || 0)}</b></li>
+            <li><span>Bonus still on offer</span><b>{money(targets.bonusOpen || 0)}</b></li>
+          </ul>
+        </Card>
+
+        <Card title="Payment methods" hint="Live orders, all time">
+          <RankList
+            rows={(d.paymentSplit || []).map((p) => ({ key: p.label || 'other', label: PAYMENT_LABELS[p.label] || p.label || 'Other', value: p.n, sub: money(p.revenue) })).sort((a, b) => b.value - a.value)}
+            color={SERIES[2]}
+            format={(v) => `${v} orders`}
+            empty="No orders yet"
+          />
+        </Card>
+
+        <Card title="Best-selling products" actions={<Link to="/admin/treasury" className="ins-btn ins-btn-sm">Products →</Link>}>
+          {(d.bestSelling || []).length === 0 ? (
+            <Empty text="No sales yet" />
+          ) : (
+            <ul className="ins-stats">
+              {d.bestSelling.map((p) => (
+                <li key={p._id}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                    <span style={{ width: 34, height: 34, borderRadius: 8, background: '#f1f5f9', overflow: 'hidden', flexShrink: 0 }}>
+                      {p.image && <img src={p.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
+                    </span>
+                    <span style={{ minWidth: 0 }}>
+                      <span className="ins-strong ins-clip" style={{ display: 'block', maxWidth: 180 }}>{p.name}</span>
+                      <span className="ins-sub">{p.sold || 0} sold · {p.stock} in stock</span>
+                    </span>
+                  </span>
+                  <b>{money(p.price)}</b>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card title="Stock alerts" actions={<Link to="/admin/inventory" className="ins-btn ins-btn-sm">Inventory →</Link>}>
+          {[...(d.outOfStock || []), ...(d.lowStock || [])].length === 0 ? (
+            <Empty icon="✅" text="Every product has enough stock" />
+          ) : (
+            <ul className="ins-stats">
+              {(d.outOfStock || []).slice(0, 4).map((p) => (
+                <li key={p._id}>
+                  <span className="ins-clip" style={{ maxWidth: 200 }}>{p.name}</span>
+                  <Badge tone="critical">Out of stock</Badge>
+                </li>
+              ))}
+              {(d.lowStock || []).slice(0, Math.max(0, 6 - Math.min(4, (d.outOfStock || []).length))).map((p) => (
+                <li key={p._id}>
+                  <span className="ins-clip" style={{ maxWidth: 200 }}>{p.name}</span>
+                  <Badge tone="warning">{p.stock} left</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </ChartGrid>
+
+      <div className="ins-table-card">
+        <div className="ins-table-head">
+          <div>
+            <h3>🧾 Recent orders</h3>
+            <span className="ins-card-hint">The latest {d.recent?.length || 0} orders</span>
+          </div>
+          <Link to="/admin/orders" className="ins-btn ins-btn-sm">All orders →</Link>
+        </div>
+        {(d.recent || []).length === 0 ? (
+          <Empty icon="📦" text="No orders yet" />
         ) : (
-          <div className="admin-table-wrap">
-            <table className="admin-table">
+          <div className="ins-table-scroll">
+            <table className="ins-table">
               <thead>
-                <tr><th>Order #</th><th>Date</th><th>Customer</th><th>City</th><th>Total</th><th>Payment</th><th>Status</th><th /></tr>
+                <tr>
+                  <th>Order</th>
+                  <th>Store</th>
+                  <th>Customer</th>
+                  <th className="num">Total</th>
+                  <th>Payment</th>
+                  <th>Status</th>
+                  <th />
+                </tr>
               </thead>
               <tbody>
-                {d.recent.map((o) => (
-                  <tr key={o._id}>
-                    <td><b>{o.orderNumber}</b></td>
-                    <td>{fmtDate(o.createdAt)}</td>
-                    <td>{o.shippingAddress?.fullName}</td>
-                    <td>{o.shippingAddress?.city}</td>
-                    <td>{money(o.total)}</td>
-                    <td><span className="pay-chip">{(PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod || '').toUpperCase()}</span></td>
-                    <td><span className={`status-pill st-${o.status}`}>{STATUS_LABELS[o.status]}</span></td>
-                    <td><Link className="row-link" to={`/admin/orders/${o._id}`}>View</Link></td>
-                  </tr>
-                ))}
+                {d.recent.map((o) => {
+                  const store = o.items?.[0]?.sellerName || '';
+                  return (
+                    <tr key={o._id}>
+                      <td>
+                        <b style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12.5 }}>#{o.orderNumber}</b>
+                        <span className="ins-sub">{fmtDate(o.createdAt)}</span>
+                      </td>
+                      <td>
+                        {store ? (
+                          <div className="ins-cell-who">
+                            <Avatar name={store} size={28} />
+                            <span className="ins-clip" style={{ maxWidth: 150 }}>{store}</span>
+                          </div>
+                        ) : (
+                          <span className="ins-sub">Bazario Direct</span>
+                        )}
+                      </td>
+                      <td>
+                        <span className="ins-strong">{o.shippingAddress?.fullName || 'Guest'}</span>
+                        <span className="ins-sub">{o.shippingAddress?.city || ''}</span>
+                      </td>
+                      <td className="num"><b>{money(o.total)}</b></td>
+                      <td><span className="ins-sub" style={{ color: '#334155' }}>{PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod || 'COD'}</span></td>
+                      <td><Badge tone={STATUS_TONE[o.status] || 'info'}>{STATUS_LABELS[o.status] || o.status}</Badge></td>
+                      <td>
+                        <div className="ins-actions">
+                          <Link className="ins-btn ins-btn-sm" to={`/admin/orders/${o._id}`}>View</Link>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </div>
 
-      {/* ─── USDT WALLET TRANSACTIONS & HISTORY MODAL ─── */}
-      <UsdtWalletHistoryModal
-        isOpen={usdtHistoryModalOpen}
-        onClose={() => setUsdtHistoryModalOpen(false)}
-        initialTab={usdtHistoryTab}
-      />
-    </>
+      <UsdtWalletHistoryModal isOpen={usdtHistoryModalOpen} onClose={() => setUsdtHistoryModalOpen(false)} initialTab={usdtHistoryTab} />
+    </div>
   );
 }

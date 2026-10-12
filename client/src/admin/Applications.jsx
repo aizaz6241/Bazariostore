@@ -1,26 +1,96 @@
-import { useEffect, useState } from 'react';
-import { api, fmtDate, money } from '../api.js';
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend, Cell } from 'recharts';
+import { api, fmtDate } from '../api.js';
+import { ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
+import {
+  Hero, MetaChip, Kpi, KpiGrid, Card, ChartGrid, Seg, Badge, Avatar, RankList, SplitBar, ChartTip,
+  Toolbar, SearchBox, Empty, Meter, SERIES, STATUS, GRID, AXIS, legendText, pctOf, delta,
+} from './insights.jsx';
+
+const DAY = 86400000;
+// one hue, lighter → darker as an application waits longer
+const WAIT_STEPS = ['#f7c9b5', '#ec835a', '#d95926', '#9a3412'];
+
+const DOC_TITLES = {
+  aadhaarFront: '🪪 Aadhaar Card (Front)',
+  aadhaarBack: '🪪 Aadhaar Card (Back)',
+  panFront: '📑 PAN Card (Front)',
+  panBack: '📑 PAN Card (Back)',
+  idCard: '🪪 National ID (legacy)',
+  passport: '🛂 Passport (legacy)',
+  bankStatement: '🏦 Bank Statement / Passbook',
+};
+const getDocTitle = (docType) => DOC_TITLES[docType] || '📄 KYC Document';
+
+const kycValue = (s, docType) => {
+  const k = s?.kycDocuments || {};
+  if (docType === 'aadhaarFront') return k.aadhaarFront || k.idCard || k.idDocumentUrl || '';
+  if (docType === 'aadhaarBack') return k.aadhaarBack || '';
+  if (docType === 'panFront') return k.panFront || k.passport || k.passportDocumentUrl || '';
+  if (docType === 'panBack') return k.panBack || '';
+  if (docType === 'idCard') return k.idCard || k.idDocumentUrl || k.aadhaarFront || '';
+  if (docType === 'passport') return k.passport || k.passportDocumentUrl || k.panFront || '';
+  if (docType === 'bankStatement') return k.bankStatement || k.bankStatementUrl || '';
+  return k[docType] || '';
+};
+
+const hasKyc = (s, docType) => {
+  if (kycValue(s, docType)) return true;
+  if (s?.kycAvailable?.[docType]) return true;
+  if (docType === 'aadhaarFront' && (s?.kycAvailable?.idCard || kycValue(s, 'idCard'))) return true;
+  if (docType === 'panFront' && (s?.kycAvailable?.passport || kycValue(s, 'passport'))) return true;
+  if (docType === 'idCard' && (s?.kycAvailable?.aadhaarFront || kycValue(s, 'aadhaarFront'))) return true;
+  if (docType === 'passport' && (s?.kycAvailable?.panFront || kycValue(s, 'panFront'))) return true;
+  return false;
+};
+
+// The five documents a complete application has
+const CORE_DOCS = [
+  { key: 'aadhaarFront', label: 'Aadhaar front' },
+  { key: 'aadhaarBack', label: 'Aadhaar back' },
+  { key: 'panFront', label: 'PAN front' },
+  { key: 'panBack', label: 'PAN back' },
+  { key: 'bankStatement', label: 'Bank statement' },
+];
+
+// One outcome per registration, used by the tabs, the counts and the charts alike
+// (before, the tab counts and the tab contents used different rules and did not match).
+function outcomeOf(s) {
+  if (s.status === 'pending_approval') return 'pending';
+  if (s.status === 'suspended' && (s.registrationRejectedAt || /reject/i.test(s.freezeReason || ''))) return 'rejected';
+  return 'approved';
+}
+const OUTCOME_META = {
+  pending: { label: 'Waiting for review', tone: 'warning', icon: '⏳' },
+  approved: { label: 'Approved', tone: 'good', icon: '✓' },
+  rejected: { label: 'Rejected', tone: 'critical', icon: '✕' },
+};
+const affiliateOf = (s) => s.securityDeposit?.referralCode || s.referralCode || '';
+const waitingDays = (s) => Math.max(0, Math.floor((Date.now() - new Date(s.createdAt).getTime()) / DAY));
 
 export default function Applications() {
   const [sellers, setSellers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('pending'); // 'pending' | 'approved' | 'rejected' | 'all'
+  const [error, setError] = useState('');
+  const [tab, setTab] = useState('pending');
   const [q, setQ] = useState('');
+  const [range, setRange] = useState(30);
 
-  // Pending Approvals & KYC Modal
-  const [pendingApproveModal, setPendingApproveModal] = useState(null);
-  const [pendingRejectModal, setPendingRejectModal] = useState(null);
+  const [approveModal, setApproveModal] = useState(null);
+  const [rejectModal, setRejectModal] = useState(null);
   const [kycDocModal, setKycDocModal] = useState(null);
-  const [kycLoading, setKycLoading] = useState(''); // "<sellerId>:<docType>" while that picture downloads
+  const [kycLoading, setKycLoading] = useState('');
   const [approving, setApproving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
+  const [modalError, setModalError] = useState('');
 
   // Team members / partners a seller can belong to (finance is divided by this owner)
   const [teamMembers, setTeamMembers] = useState([]);
   const [teamLoading, setTeamLoading] = useState(false);
-  const approveSellerId = pendingApproveModal?.seller?._id || '';
+  const approveSellerId = approveModal?.seller?._id || '';
 
   useEffect(() => {
     if (!approveSellerId) return;
@@ -31,10 +101,8 @@ export default function Applications() {
         if (cancelled) return;
         setTeamMembers(res.members || []);
         // Pre-select the current owner, unless the admin already picked someone
-        setPendingApproveModal((prev) =>
-          prev && prev.seller?._id === approveSellerId && !prev.assignedMemberId
-            ? { ...prev, assignedMemberId: res.assignedMemberId || '' }
-            : prev
+        setApproveModal((prev) =>
+          prev && prev.seller?._id === approveSellerId && !prev.assignedMemberId ? { ...prev, assignedMemberId: res.assignedMemberId || '' } : prev
         );
       })
       .catch(() => {})
@@ -45,43 +113,6 @@ export default function Applications() {
       cancelled = true;
     };
   }, [approveSellerId]);
-
-  // perf: the sellers list no longer carries the KYC files themselves (they are large base64 images).
-  // `kycAvailable` says which documents exist; the file is fetched only when the admin opens it.
-  const getDocTitle = (docType) => {
-    switch (docType) {
-      case 'aadhaarFront': return '🪪 Aadhaar Card (Front Side)';
-      case 'aadhaarBack': return '🪪 Aadhaar Card (Back Side)';
-      case 'panFront': return '📑 PAN Card (Front Side)';
-      case 'panBack': return '📑 PAN Card (Back Side)';
-      case 'idCard': return '🪪 National ID / Aadhaar Front (Legacy)';
-      case 'passport': return '🛂 Passport / PAN Front (Legacy)';
-      case 'bankStatement': return '🏦 Bank Account Statement / Passbook';
-      default: return '📄 KYC Document';
-    }
-  };
-
-  const kycValue = (s, docType) => {
-    const k = s?.kycDocuments || {};
-    if (docType === 'aadhaarFront') return k.aadhaarFront || k.idCard || k.idDocumentUrl || '';
-    if (docType === 'aadhaarBack') return k.aadhaarBack || '';
-    if (docType === 'panFront') return k.panFront || k.passport || k.passportDocumentUrl || '';
-    if (docType === 'panBack') return k.panBack || '';
-    if (docType === 'idCard') return k.idCard || k.idDocumentUrl || k.aadhaarFront || '';
-    if (docType === 'passport') return k.passport || k.passportDocumentUrl || k.panFront || '';
-    if (docType === 'bankStatement') return k.bankStatement || k.bankStatementUrl || '';
-    return k[docType] || '';
-  };
-
-  const hasKyc = (s, docType) => {
-    if (kycValue(s, docType)) return true;
-    if (s?.kycAvailable?.[docType]) return true;
-    if (docType === 'aadhaarFront' && (s?.kycAvailable?.idCard || kycValue(s, 'idCard'))) return true;
-    if (docType === 'panFront' && (s?.kycAvailable?.passport || kycValue(s, 'passport'))) return true;
-    if (docType === 'idCard' && (s?.kycAvailable?.aadhaarFront || kycValue(s, 'aadhaarFront'))) return true;
-    if (docType === 'passport' && (s?.kycAvailable?.panFront || kycValue(s, 'panFront'))) return true;
-    return false;
-  };
 
   const openKycDoc = async (s, docType) => {
     let docUrl = kycValue(s, docType);
@@ -95,7 +126,6 @@ export default function Applications() {
         // keep it in memory so the next click is instant
         if (docUrl) setSellers((prev) => prev.map((it) => (it._id === s._id ? { ...it, kycDocuments: { ...(it.kycDocuments || {}), [docType]: docUrl } } : it)));
       } catch (e) {
-        console.error(e);
         alert('Could not load this document: ' + (e.message || 'Network error'));
         return;
       } finally {
@@ -103,7 +133,7 @@ export default function Applications() {
       }
     }
     if (!docUrl) {
-      alert(`No ${getDocTitle(docType)} found for this merchant.`);
+      alert(`No ${getDocTitle(docType)} found for this applicant.`);
       return;
     }
     setKycDocModal({ seller: s, docType, docUrl, title: getDocTitle(docType) });
@@ -111,12 +141,10 @@ export default function Applications() {
 
   const loadSellers = () => {
     setLoading(true);
+    setError('');
     api('/sellers')
-      .then((data) => {
-        const list = Array.isArray(data) ? data : data.sellers || [];
-        setSellers(list);
-      })
-      .catch((e) => console.error(e))
+      .then((data) => setSellers(Array.isArray(data) ? data : data.sellers || []))
+      .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   };
 
@@ -132,42 +160,59 @@ export default function Applications() {
         alert(res.message);
         return;
       }
-      setSellers((prev) =>
-        prev.map((s) => (s._id === sellerId ? { ...s, isTestAccount: res.seller?.isTestAccount, accountType: res.seller?.accountType } : s))
-      );
+      setSellers((prev) => prev.map((s) => (s._id === sellerId ? { ...s, isTestAccount: res.seller?.isTestAccount, accountType: res.seller?.accountType } : s)));
     } catch (err) {
-      alert('Error toggling account type: ' + err.message);
+      alert('Could not change the account type: ' + err.message);
     }
+  };
+
+  const openApprove = (s) => {
+    const o = outcomeOf(s);
+    setModalError('');
+    setApproveModal({
+      seller: s,
+      mode: o === 'approved' ? 'edit' : o === 'rejected' ? 'reapprove' : 'approve',
+      securityDepositAmount: o === 'approved' ? s.securityDeposit?.amount ?? 500 : 500,
+      securityDepositPaid: o === 'approved' ? Boolean(s.securityDeposit?.paid) : true,
+      referralCode: affiliateOf(s),
+      commissionRate: s.commissionRate ?? 10,
+      isTestAccount: Boolean(s.isTestAccount),
+      // sent back unchanged unless the admin flips it (it used to be sent as "false" every time,
+      // which on a previous-store seller opened a needless two-person change request)
+      isPreviousStoreSeller: Boolean(s.isPreviousStoreSeller),
+      assignedMemberId: '',
+    });
   };
 
   const handleApproveSubmit = async (e) => {
     e.preventDefault();
-    if (!pendingApproveModal?.seller) return;
-    if (!pendingApproveModal.isTestAccount && !pendingApproveModal.assignedMemberId) {
-      alert('Please choose who this seller is assigned to (Assigned To).');
+    if (!approveModal?.seller) return;
+    setModalError('');
+    if (!approveModal.isTestAccount && !approveModal.assignedMemberId) {
+      setModalError('Please choose who this seller is assigned to (Assigned To).');
       return;
     }
     setApproving(true);
     try {
-      const approveRes = await api(`/sellers/${pendingApproveModal.seller._id}/approve`, {
+      const res = await api(`/sellers/${approveModal.seller._id}/approve`, {
         method: 'POST',
         body: {
-          securityDepositAmount: Number(pendingApproveModal.securityDepositAmount || 0),
-          securityDepositPaid: Boolean(pendingApproveModal.securityDepositPaid),
-          assignedReferralCode: pendingApproveModal.referralCode?.trim() || '',
-          commissionRate: Number(pendingApproveModal.commissionRate || 10),
-          isTestAccount: Boolean(pendingApproveModal.isTestAccount),
-          accountType: pendingApproveModal.isTestAccount ? 'test' : 'client',
-          isPreviousStoreSeller: Boolean(pendingApproveModal.isPreviousStoreSeller),
-          assignedMemberId: pendingApproveModal.assignedMemberId || '',
+          securityDepositAmount: Number(approveModal.securityDepositAmount || 0),
+          securityDepositPaid: Boolean(approveModal.securityDepositPaid),
+          assignedReferralCode: approveModal.referralCode?.trim() || '',
+          commissionRate: Number(approveModal.commissionRate ?? 10),
+          isTestAccount: Boolean(approveModal.isTestAccount),
+          accountType: approveModal.isTestAccount ? 'test' : 'client',
+          isPreviousStoreSeller: Boolean(approveModal.isPreviousStoreSeller),
+          assignedMemberId: approveModal.assignedMemberId || '',
         },
       });
       // An owner / account-type change on an already approved seller waits for the other partner
-      alert(approveRes?.pendingApproval ? approveRes.message : `🎉 Store "${pendingApproveModal.seller.storeName}" has been successfully approved! Notification sent.`);
-      setPendingApproveModal(null);
+      if (res?.pendingApproval) alert(res.message);
+      setApproveModal(null);
       loadSellers();
     } catch (err) {
-      alert('Error approving seller: ' + err.message);
+      setModalError(err.message);
     } finally {
       setApproving(false);
     }
@@ -175,348 +220,441 @@ export default function Applications() {
 
   const handleRejectSubmit = async (e) => {
     e.preventDefault();
-    if (!pendingRejectModal?.seller) return;
+    if (!rejectModal?.seller) return;
+    setModalError('');
     setRejecting(true);
     try {
-      await api(`/sellers/${pendingRejectModal.seller._id}/reject`, {
+      await api(`/sellers/${rejectModal.seller._id}/reject`, {
         method: 'POST',
         body: {
-          reason: pendingRejectModal.reason?.trim() || 'Application does not meet platform merchant criteria.',
-          isTestAccount: Boolean(pendingRejectModal.isTestAccount),
-          accountType: pendingRejectModal.isTestAccount ? 'test' : 'client',
+          reason: rejectModal.reason?.trim() || 'Application does not meet platform merchant criteria.',
+          isTestAccount: Boolean(rejectModal.isTestAccount),
+          accountType: rejectModal.isTestAccount ? 'test' : 'client',
         },
       });
-      alert(`Seller application for "${pendingRejectModal.seller.storeName}" has been rejected.`);
-      setPendingRejectModal(null);
+      setRejectModal(null);
       loadSellers();
     } catch (err) {
-      alert('Error rejecting seller: ' + err.message);
+      setModalError(err.message);
     } finally {
       setRejecting(false);
     }
   };
 
-  const pendingList = sellers.filter((s) => s.status === 'pending_approval');
-  const approvedList = sellers.filter((s) => s.status === 'active' || s.verified);
-  const rejectedList = sellers.filter((s) => s.status === 'suspended' && s.freezeReason?.includes('reject'));
+  // ── Analytics (everything comes from the one sellers list)
+  const a = useMemo(() => {
+    const now = Date.now();
+    const counts = { pending: 0, approved: 0, rejected: 0 };
+    const startDay = new Date(new Date().setHours(0, 0, 0, 0)).getTime() - (range - 1) * DAY;
+    const days = [];
+    for (let i = 0; i < range; i++) {
+      const d = new Date(startDay + i * DAY);
+      days.push({ t: d.getTime(), label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), pending: 0, approved: 0, rejected: 0 });
+    }
+    const waits = [
+      { label: '< 1 day', max: 1, count: 0 },
+      { label: '1–3 days', max: 3, count: 0 },
+      { label: '3–7 days', max: 7, count: 0 },
+      { label: '7+ days', max: Infinity, count: 0 },
+    ];
+    const docs = Object.fromEntries(CORE_DOCS.map((d) => [d.key, 0]));
+    const codes = new Map();
+    let pendingComplete = 0;
+    let oldest = 0;
+    let week = 0;
+    let prevWeek = 0;
+    let test = 0;
+    sellers.forEach((s) => {
+      const o = outcomeOf(s);
+      counts[o] += 1;
+      if (s.isTestAccount) test += 1;
+      const created = new Date(s.createdAt).getTime();
+      const age = (now - created) / DAY;
+      if (age < 7) week += 1;
+      else if (age < 14) prevWeek += 1;
+      if (created >= startDay) {
+        const idx = Math.floor((created - startDay) / DAY);
+        if (days[idx]) days[idx][o] += 1;
+      }
+      const code = affiliateOf(s);
+      if (code) {
+        const c = codes.get(code) || { key: code, label: code, value: 0, approved: 0 };
+        c.value += 1;
+        if (o === 'approved') c.approved += 1;
+        codes.set(code, c);
+      }
+      if (o === 'pending') {
+        const wd = waitingDays(s);
+        oldest = Math.max(oldest, wd);
+        waits.find((w) => age < w.max).count += 1;
+        let n = 0;
+        CORE_DOCS.forEach((d) => {
+          if (hasKyc(s, d.key)) {
+            docs[d.key] += 1;
+            n += 1;
+          }
+        });
+        if (n === CORE_DOCS.length) pendingComplete += 1;
+      }
+    });
+    const decided = counts.approved + counts.rejected;
+    return {
+      counts,
+      days,
+      waits,
+      oldest,
+      week,
+      prevWeek,
+      test,
+      pendingComplete,
+      approvalRate: decided ? pctOf(counts.approved, decided) : null,
+      docRows: CORE_DOCS.map((d) => ({ ...d, n: docs[d.key], pct: pctOf(docs[d.key], counts.pending) })),
+      codes: [...codes.values()].sort((x, y) => y.value - x.value).slice(0, 6).map((c) => ({ ...c, sub: `${c.approved} approved` })),
+      inRange: days.reduce((acc, d) => acc + d.pending + d.approved + d.rejected, 0),
+    };
+  }, [sellers, range]);
 
-  const displayed = sellers.filter((s) => {
-    if (tab === 'pending' && s.status !== 'pending_approval') return false;
-    if (tab === 'approved' && s.status !== 'active') return false;
-    if (tab === 'rejected' && s.status !== 'suspended') return false;
+  const displayed = sellers
+    .filter((s) => {
+      if (tab !== 'all' && outcomeOf(s) !== tab) return false;
+      if (!q.trim()) return true;
+      const needle = q.trim().toLowerCase();
+      return [s.storeName, s.ownerName, s.email, s.phone, affiliateOf(s)].some((v) => String(v ?? '').toLowerCase().includes(needle));
+    })
+    // waiting applications oldest first (first come, first served); others newest first
+    .sort((x, y) => (tab === 'pending' ? 1 : -1) * (new Date(x.createdAt) - new Date(y.createdAt)));
 
-    if (!q) return true;
-    const match =
-      s.storeName?.toLowerCase().includes(q.toLowerCase()) ||
-      s.ownerName?.toLowerCase().includes(q.toLowerCase()) ||
-      s.email?.toLowerCase().includes(q.toLowerCase()) ||
-      s.phone?.toLowerCase().includes(q.toLowerCase());
-    return match;
-  });
+  const docButtons = (s) => {
+    const hasAadhaarFront = hasKyc(s, 'aadhaarFront');
+    const hasPanFront = hasKyc(s, 'panFront');
+    return [
+      { key: 'aadhaarFront', label: 'Aadhaar F', show: hasAadhaarFront },
+      { key: 'aadhaarBack', label: 'Aadhaar B', show: hasKyc(s, 'aadhaarBack') },
+      { key: 'panFront', label: 'PAN F', show: hasPanFront },
+      { key: 'panBack', label: 'PAN B', show: hasKyc(s, 'panBack') },
+      { key: 'idCard', label: 'ID', show: hasKyc(s, 'idCard') && !hasAadhaarFront },
+      { key: 'passport', label: 'Passport', show: hasKyc(s, 'passport') && !hasPanFront },
+      { key: 'bankStatement', label: 'Bank', show: hasKyc(s, 'bankStatement') },
+    ].filter((d) => d.show);
+  };
+
+  const renderDocs = (s) => {
+    const list = docButtons(s);
+    if (!list.length) return <span className="ins-sub">No documents</span>;
+    return (
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', maxWidth: 230 }}>
+        {list.map((d) => {
+          const busy = kycLoading === `${s._id}:${d.key}`;
+          return (
+            <button key={d.key} type="button" className="ins-btn ins-btn-sm" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => openKycDoc(s, d.key)} disabled={busy} title={`View ${getDocTitle(d.key)}`}>
+              {busy ? '⏳' : <Ic name="eye" size={11} />} {d.label}
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderActions = (s) => {
+    const o = outcomeOf(s);
+    if (o === 'pending') {
+      return (
+        <>
+          <button type="button" className="ins-btn ins-btn-sm ins-btn-good" onClick={() => openApprove(s)}>
+            <Ic name="check" size={12} /> Approve
+          </button>
+          <button type="button" className="ins-btn ins-btn-sm ins-btn-bad" onClick={() => { setModalError(''); setRejectModal({ seller: s, reason: '', isTestAccount: Boolean(s.isTestAccount) }); }}>
+            Reject
+          </button>
+        </>
+      );
+    }
+    if (o === 'rejected') {
+      return (
+        <button type="button" className="ins-btn ins-btn-sm" onClick={() => openApprove(s)}>
+          Re-approve
+        </button>
+      );
+    }
+    // Saving the approval form sets the store to "active": a frozen or suspended store is
+    // managed on the Complaints page instead, so it is not unfrozen from here by accident.
+    if (s.status !== 'active') {
+      return (
+        <Link to="/admin/complaints" className="ins-btn ins-btn-sm">
+          Manage in Complaints
+        </Link>
+      );
+    }
+    return (
+      <button type="button" className="ins-btn ins-btn-sm" onClick={() => openApprove(s)}>
+        Edit deposit &amp; settings
+      </button>
+    );
+  };
+
+  const statusBadge = (s) => {
+    const o = outcomeOf(s);
+    if (o === 'approved' && s.status !== 'active') {
+      return <Badge tone={s.status === 'frozen' ? 'info' : 'critical'} icon={s.status === 'frozen' ? '❄' : '⛔'}>{s.status === 'frozen' ? 'Frozen' : 'Suspended'}</Badge>;
+    }
+    const m = OUTCOME_META[o];
+    return <Badge tone={m.tone} icon={m.icon}>{m.label}</Badge>;
+  };
+
+  const weekChange = delta(a.week, a.prevWeek);
+  const am = approveModal;
 
   return (
-    <div className="admin-sellers-page">
-      <div className="admin-header-row">
-        <div>
-          <h2>⏳ New Merchant Applications &amp; KYC Verification</h2>
-          <p className="muted">
-            Review self-registration submissions, verify KYC identity documents (Aadhaar Card, PAN Card, National ID, Bank Statement), and configure security deposits upon onboarding approval.
-          </p>
-        </div>
-      </div>
+    <div className="ins-page">
+      <Hero
+        icon="badgeCheck"
+        tone="violet"
+        title="New Applications"
+        subtitle="Review new store registrations: check the KYC documents, set the security deposit and owner, then approve or reject. Oldest applications are shown first so nobody waits too long."
+        actions={
+          <button type="button" className="ins-btn" onClick={loadSellers} disabled={loading}>
+            <Ic name="refresh" size={14} /> {loading ? 'Loading…' : 'Refresh'}
+          </button>
+        }
+      >
+        <MetaChip>{sellers.length} registrations</MetaChip>
+        {a.counts.pending > 0 && <MetaChip>⏳ Oldest waiting {a.oldest} day{a.oldest === 1 ? '' : 's'}</MetaChip>}
+        <MetaChip>{a.test} test accounts</MetaChip>
+      </Hero>
 
-      {/* Summary KPI Tabs */}
-      <div className="wallet-action-tabs" style={{ marginBottom: 16 }}>
-        <button
-          type="button"
-          className={`wallet-action-tab ${tab === 'pending' ? 'active' : ''}`}
-          onClick={() => setTab('pending')}
-        >
-          ⏳ Pending Review ({pendingList.length})
-        </button>
-        <button
-          type="button"
-          className={`wallet-action-tab ${tab === 'approved' ? 'active' : ''}`}
-          onClick={() => setTab('approved')}
-        >
-          ✅ Approved &amp; Active ({approvedList.length})
-        </button>
-        <button
-          type="button"
-          className={`wallet-action-tab ${tab === 'rejected' ? 'active' : ''}`}
-          onClick={() => setTab('rejected')}
-        >
-          ❌ Rejected ({rejectedList.length})
-        </button>
-        <button
-          type="button"
-          className={`wallet-action-tab ${tab === 'all' ? 'active' : ''}`}
-          onClick={() => setTab('all')}
-        >
-          📋 All Registrations ({sellers.length})
-        </button>
-      </div>
+      <ErrorBox error={error} />
 
-      <div className="table-search-row">
-        <div className="search-field">
-          <Ic name="search" size={16} />
-          <input
-            type="text"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search applicants by store name, owner, email, phone..."
-          />
-        </div>
-      </div>
+      <KpiGrid dim={loading && sellers.length > 0}>
+        <Kpi icon="clock" tone="orange" label="Waiting for review" value={a.counts.pending} sub={a.counts.pending ? `${a.pendingComplete} with all 5 KYC documents` : 'All caught up 🎉'} onClick={() => setTab('pending')} active={tab === 'pending'} />
+        <Kpi icon="checkCircle" tone="green" label="Approved" value={a.counts.approved} sub="Stores live on the platform" onClick={() => setTab('approved')} active={tab === 'approved'} />
+        <Kpi icon="x" tone="red" label="Rejected" value={a.counts.rejected} sub="Registrations turned down" onClick={() => setTab('rejected')} active={tab === 'rejected'} />
+        <Kpi icon="badgeCheck" tone="violet" label="Approval rate" value={a.approvalRate === null ? '—' : `${a.approvalRate}%`} sub="Of all decided applications" />
+        <Kpi icon="sparkle" tone="blue" label="New this week" value={a.week} change={weekChange} sub={`${a.prevWeek} the week before`} />
+      </KpiGrid>
 
-      {/* Applications Table */}
-      <div className="admin-card">
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+      {sellers.length > 0 && (
+        <ChartGrid dim={loading}>
+          <Card
+            title="Registrations per day"
+            hint={`${a.inRange} in the last ${range} days, coloured by where they stand now`}
+            wide
+            actions={<Seg small label="Time range" value={range} onChange={setRange} options={[{ value: 14, label: '14d' }, { value: 30, label: '30d' }, { value: 90, label: '90d' }]} />}
+          >
+            {a.inRange === 0 ? (
+              <Empty text={`No registrations in the last ${range} days`} />
+            ) : (
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={a.days} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
+                  <CartesianGrid stroke={GRID} vertical={false} />
+                  <XAxis dataKey="label" {...AXIS} minTickGap={16} />
+                  <YAxis {...AXIS} allowDecimals={false} />
+                  <Tooltip cursor={{ fill: '#f1f5f9' }} content={<ChartTip />} />
+                  <Legend iconType="square" formatter={legendText} wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="approved" name="Approved" stackId="a" fill={STATUS.good} maxBarSize={18} stroke="#fff" strokeWidth={1} />
+                  <Bar dataKey="pending" name="Waiting" stackId="a" fill={STATUS.warning} maxBarSize={18} stroke="#fff" strokeWidth={1} />
+                  <Bar dataKey="rejected" name="Rejected" stackId="a" fill={STATUS.critical} radius={[4, 4, 0, 0]} maxBarSize={18} stroke="#fff" strokeWidth={1} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </Card>
+
+          <Card title="Outcome of all applications" hint={`${sellers.length} registrations`}>
+            <SplitBar
+              height={14}
+              parts={[
+                { label: '✓ Approved', value: a.counts.approved, color: STATUS.good },
+                { label: '⏳ Waiting', value: a.counts.pending, color: STATUS.warning },
+                { label: '✕ Rejected', value: a.counts.rejected, color: STATUS.critical },
+              ]}
+            />
+          </Card>
+
+          <Card title="How long applications are waiting" hint={`${a.counts.pending} waiting now`} empty={!a.counts.pending && 'Nothing waiting — all caught up'}>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={a.waits} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
+                <CartesianGrid stroke={GRID} vertical={false} />
+                <XAxis dataKey="label" {...AXIS} />
+                <YAxis {...AXIS} allowDecimals={false} />
+                <Tooltip cursor={{ fill: '#f1f5f9' }} content={<ChartTip />} />
+                <Bar dataKey="count" name="Applications" radius={[4, 4, 0, 0]} maxBarSize={38}>
+                  {a.waits.map((w, i) => (
+                    <Cell key={w.label} fill={WAIT_STEPS[i]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+
+          <Card title="KYC documents of waiting applicants" hint="Share of waiting applicants who uploaded each one" empty={!a.counts.pending && 'Nothing waiting'}>
+            <ul className="ins-stats">
+              {a.docRows.map((d) => (
+                <li key={d.key}>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span>{d.label}</span>
+                      <span className="ins-sub">{d.n}/{a.counts.pending}</span>
+                    </span>
+                    <Meter value={d.pct} color={SERIES[0]} height={6} label={`${d.pct}% uploaded`} />
+                  </span>
+                  <b style={{ width: 48, textAlign: 'right' }}>{d.pct}%</b>
+                </li>
+              ))}
+            </ul>
+          </Card>
+
+          <Card title="Top affiliate codes" hint="Registrations per code">
+            <RankList rows={a.codes} color={SERIES[6]} format={(v) => `${v}`} empty="No affiliate codes used yet" />
+          </Card>
+        </ChartGrid>
+      )}
+
+      <div className="ins-table-card">
+        <div className="ins-table-head">
           <div>
-            <h3 style={{ margin: 0, fontSize: 16 }}>
-              {tab === 'pending' ? '⏳ Applications Awaiting Admin Review' : tab === 'approved' ? '✅ Approved Merchant Accounts' : tab === 'rejected' ? '❌ Rejected Merchant Registrations' : '📋 All Merchant Applications'}
-            </h3>
-            <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#64748b' }}>
-              Inspect uploaded identification documents and configure security deposit before activating seller accounts.
-            </p>
+            <h3>📋 Applications</h3>
+            <span className="ins-card-hint">{displayed.length} shown{tab === 'pending' ? ' · oldest first' : ' · newest first'}</span>
           </div>
-          {tab === 'pending' && (
-            <span className="badge-pill" style={{ background: '#fef3c7', color: '#92400e', fontWeight: 800 }}>
-              {pendingList.length} Pending Decision
-            </span>
-          )}
+          <Toolbar>
+            <Seg
+              label="Filter by outcome"
+              value={tab}
+              onChange={setTab}
+              options={[
+                { value: 'pending', label: 'Waiting', count: a.counts.pending },
+                { value: 'approved', label: 'Approved', count: a.counts.approved },
+                { value: 'rejected', label: 'Rejected', count: a.counts.rejected },
+                { value: 'all', label: 'All', count: sellers.length },
+              ]}
+            />
+            <SearchBox value={q} onChange={setQ} placeholder="Search store, owner, email, phone, code…" />
+          </Toolbar>
         </div>
 
-        <div className="admin-table-wrap">
-          <table className="admin-table">
+        <div className="ins-table-scroll ins-hide-mobile">
+          <table className="ins-table">
             <thead>
               <tr>
-                <th>Applicant Store</th>
-                <th>Owner &amp; Contacts</th>
-                <th>Affiliate Code</th>
-                <th>KYC Documents</th>
-                <th>Application Date</th>
+                <th>Applicant</th>
+                <th>Contact</th>
+                <th>KYC documents</th>
+                <th>Affiliate</th>
+                <th>Applied</th>
                 <th>Status</th>
-                <th>Decision Actions</th>
+                <th />
               </tr>
             </thead>
             <tbody>
-              {loading && (
-                <tr>
-                  <td colSpan="7" className="text-center py-8 muted">Loading registration applications...</td>
-                </tr>
-              )}
+              {loading && sellers.length === 0 &&
+                Array.from({ length: 4 }).map((_, i) => (
+                  <tr key={i}>
+                    {Array.from({ length: 7 }).map((__, j) => (
+                      <td key={j}><span className="ins-skel" style={{ width: `${45 + ((i + j) % 4) * 13}%` }} /></td>
+                    ))}
+                  </tr>
+                ))}
               {!loading && displayed.length === 0 && (
                 <tr>
-                  <td colSpan="7" className="text-center py-8 muted">
-                    {tab === 'pending'
-                      ? '🎉 No pending merchant registrations awaiting approval.'
-                      : 'No applications found matching your search.'}
+                  <td colSpan={7}>
+                    <Empty icon={tab === 'pending' ? '🎉' : '🔍'} text={tab === 'pending' && !q ? 'No application is waiting for review.' : 'No application matches this filter.'} />
                   </td>
                 </tr>
               )}
-              {displayed.map((s) => (
-                <tr key={s._id}>
-                  <td>
-                    <div className="seller-name-cell">
-                      <div className="avatar-chip">{s.storeName?.[0] || 'S'}</div>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <b>{s.storeName}</b>
-                          {(s.verified || s.status === 'active') && (
-                            <VerifiedStoreBadge variant="icon" size={14} title="Verified Merchant Store" />
-                          )}
-                        </div>
-                        <small className="muted block">{s.description || 'Merchant Store'}</small>
-                        <div style={{ marginTop: 4 }}>
+              {displayed.map((s) => {
+                const o = outcomeOf(s);
+                const wd = waitingDays(s);
+                return (
+                  <tr key={s._id}>
+                    <td>
+                      <div className="ins-cell-who">
+                        <Avatar name={s.storeName} />
+                        <div>
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <b className="ins-clip">{s.storeName || 'Store'}</b>
+                            {o === 'approved' && s.status === 'active' && <VerifiedStoreBadge variant="icon" size={13} title="Verified store" />}
+                          </span>
                           <button
                             type="button"
                             onClick={() => handleToggleTest(s._id)}
-                            title="Click to toggle Test Account / Client Account"
-                            style={{
-                              padding: '2px 8px',
-                              borderRadius: 12,
-                              fontSize: 10.5,
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 4,
-                              background: s.isTestAccount ? '#f3e8ff' : '#ecfdf5',
-                              color: s.isTestAccount ? '#7e22ce' : '#047857',
-                              border: `1px solid ${s.isTestAccount ? '#d8b4fe' : '#a7f3d0'}`,
-                            }}
+                            title="Switch between test account and client account"
+                            className={`ins-badge ins-badge-${s.isTestAccount ? 'violet' : 'neutral'}`}
+                            style={{ cursor: 'pointer', marginTop: 3, width: 'fit-content' }}
                           >
-                            {s.isTestAccount ? '🧪 Test Account' : '👤 Client Account'}
-                            <span style={{ fontSize: 9, opacity: 0.7 }}>⇄</span>
+                            {s.isTestAccount ? '🧪 Test' : '👤 Client'} ⇄
                           </button>
                         </div>
                       </div>
-                    </div>
-                  </td>
-                  <td>
-                    <b>{s.ownerName}</b>
-                    <small className="muted block">✉️ {s.email}</small>
-                    <small className="muted block">📞 {s.phone || 'N/A'}</small>
-                  </td>
-                  <td>
-                    {s.securityDeposit?.referralCode || s.referralCode ? (
-                      <span style={{ fontSize: 11, fontWeight: 800, background: '#eff6ff', color: '#2563eb', padding: '2px 8px', borderRadius: 4 }}>
-                        🔑 {s.securityDeposit?.referralCode || s.referralCode}
-                      </span>
-                    ) : (
-                      <span className="muted-sm">Direct / None</span>
-                    )}
-                  </td>
-                  <td>
-                    {(() => {
-                      const hasAadhaarFront = hasKyc(s, 'aadhaarFront');
-                      const hasAadhaarBack = hasKyc(s, 'aadhaarBack');
-                      const hasPanFront = hasKyc(s, 'panFront');
-                      const hasPanBack = hasKyc(s, 'panBack');
-                      const hasBank = hasKyc(s, 'bankStatement');
-                      const hasIdCard = hasKyc(s, 'idCard') && !hasAadhaarFront;
-                      const hasPassport = hasKyc(s, 'passport') && !hasPanFront;
-
-                      const docButtons = [
-                        { key: 'aadhaarFront', label: '🪪 Aadhaar Front', show: hasAadhaarFront, bg: '#eff6ff', border: '#bfdbfe', color: '#1d4ed8' },
-                        { key: 'aadhaarBack', label: '🪪 Aadhaar Back', show: hasAadhaarBack, bg: '#eff6ff', border: '#bfdbfe', color: '#1d4ed8' },
-                        { key: 'panFront', label: '📑 PAN Front', show: hasPanFront, bg: '#fef3c7', border: '#fde68a', color: '#92400e' },
-                        { key: 'panBack', label: '📑 PAN Back', show: hasPanBack, bg: '#fef3c7', border: '#fde68a', color: '#92400e' },
-                        { key: 'idCard', label: '🪪 View ID', show: hasIdCard, bg: '#f1f5f9', border: '#cbd5e1', color: '#334155' },
-                        { key: 'passport', label: '🛂 Passport', show: hasPassport, bg: '#f1f5f9', border: '#cbd5e1', color: '#334155' },
-                        { key: 'bankStatement', label: '🏦 Statement', show: hasBank, bg: '#f0fdf4', border: '#bbf7d0', color: '#166534' },
-                      ].filter((d) => d.show);
-
-                      if (docButtons.length === 0) {
-                        return <small className="muted-sm" style={{ color: '#94a3b8' }}>No Documents</small>;
-                      }
-
-                      return (
-                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', maxWidth: 220 }}>
-                          {docButtons.map((d) => (
-                            <button
-                              key={d.key}
-                              type="button"
-                              onClick={() => openKycDoc(s, d.key)}
-                              disabled={kycLoading === `${s._id}:${d.key}`}
-                              style={{
-                                opacity: kycLoading === `${s._id}:${d.key}` ? 0.6 : 1,
-                                padding: '3px 7px',
-                                background: d.bg,
-                                border: `1px solid ${d.border}`,
-                                color: d.color,
-                                borderRadius: 4,
-                                fontSize: 11,
-                                fontWeight: 700,
-                                cursor: 'pointer',
-                                whiteSpace: 'nowrap',
-                              }}
-                              title={`Click to view ${d.label}`}
-                            >
-                              {kycLoading === `${s._id}:${d.key}` ? '⏳ Loading…' : d.label}
-                            </button>
-                          ))}
-                        </div>
-                      );
-                    })()}
-                  </td>
-                  <td>
-                    <small>{fmtDate(s.createdAt)}</small>
-                  </td>
-                  <td>
-                    <span
-                      style={{
-                        background: s.status === 'active' ? '#ecfdf5' : s.status === 'pending_approval' ? '#fef3c7' : '#fef2f2',
-                        color: s.status === 'active' ? '#059669' : s.status === 'pending_approval' ? '#b45309' : '#dc2626',
-                        border: `1px solid ${s.status === 'active' ? '#a7f3d0' : s.status === 'pending_approval' ? '#fde68a' : '#fecaca'}`,
-                        fontWeight: 700,
-                        padding: '3px 8px',
-                        borderRadius: 12,
-                        fontSize: 11,
-                      }}
-                    >
-                      {s.status === 'active' ? '● Active' : s.status === 'pending_approval' ? '⏳ Pending Review' : '⛔ Rejected / Suspended'}
-                    </span>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      {s.status === 'pending_approval' ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => setPendingApproveModal({ seller: s, securityDepositAmount: 500, securityDepositPaid: true, referralCode: s.securityDeposit?.referralCode || s.referralCode || '', commissionRate: s.commissionRate || 10, isTestAccount: Boolean(s.isTestAccount) })}
-                            style={{ padding: '6px 12px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 800, cursor: 'pointer' }}
-                          >
-                            ✅ Approve
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setPendingRejectModal({ seller: s, reason: '', isTestAccount: Boolean(s.isTestAccount) })}
-                            style={{ padding: '6px 12px', background: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
-                          >
-                            ❌ Reject
-                          </button>
-                        </>
-                      ) : s.status === 'active' ? (
-                        <button
-                          type="button"
-                          onClick={() => setPendingApproveModal({ seller: s, securityDepositAmount: s.securityDeposit?.amount || 500, securityDepositPaid: s.securityDeposit?.paid || false, referralCode: s.securityDeposit?.referralCode || '', commissionRate: s.commissionRate || 10, isTestAccount: Boolean(s.isTestAccount) })}
-                          style={{ padding: '5px 10px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
-                        >
-                          ✏️ Edit Deposit / Settings
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setPendingApproveModal({ seller: s, securityDepositAmount: 500, securityDepositPaid: true, referralCode: s.securityDeposit?.referralCode || '', commissionRate: 10, isTestAccount: Boolean(s.isTestAccount) })}
-                          style={{ padding: '5px 10px', background: '#ecfdf5', color: '#059669', border: '1px solid #a7f3d0', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
-                        >
-                          🔄 Re-Approve
-                        </button>
+                    </td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <span className="ins-strong">{s.ownerName || '—'}</span>
+                      <span className="ins-sub ins-clip">{s.email}</span>
+                      <span className="ins-sub">{s.phone || 'No phone'}</span>
+                    </td>
+                    <td>{renderDocs(s)}</td>
+                    <td>{affiliateOf(s) ? <Badge tone="info">🔑 {affiliateOf(s)}</Badge> : <span className="ins-sub">Direct</span>}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <span>{fmtDate(s.createdAt)}</span>
+                      {o === 'pending' && (
+                        <span className="ins-sub" style={{ color: wd >= 3 ? '#a5461f' : undefined, fontWeight: wd >= 3 ? 700 : 400 }}>
+                          {wd === 0 ? 'Today' : `Waiting ${wd} day${wd === 1 ? '' : 's'}`}
+                        </span>
                       )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                      {o === 'rejected' && s.freezeReason && <span className="ins-sub ins-clip" title={s.freezeReason}>{s.freezeReason}</span>}
+                    </td>
+                    <td>{statusBadge(s)}</td>
+                    <td>
+                      <div className="ins-actions">{renderActions(s)}</div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
+
+        <div className="ins-cards">
+          {displayed.map((s) => (
+            <div className="ins-mcard" key={s._id}>
+              <div className="ins-cell-who">
+                <Avatar name={s.storeName} size={30} />
+                <div style={{ flex: 1 }}>
+                  <b>{s.storeName}</b>
+                  <span className="ins-sub">{s.ownerName} · {fmtDate(s.createdAt)}</span>
+                </div>
+                {statusBadge(s)}
+              </div>
+              <div className="ins-mcard-row">
+                <span>Contact</span>
+                <span className="ins-clip" style={{ maxWidth: 200 }}>{s.email}</span>
+              </div>
+              <div>{renderDocs(s)}</div>
+              <div className="ins-actions" style={{ justifyContent: 'flex-start' }}>{renderActions(s)}</div>
+            </div>
+          ))}
+          {!loading && displayed.length === 0 && <Empty text="No application matches this filter." />}
+        </div>
       </div>
 
-      {/* ─── Modal 1: Approve Seller Application ─── */}
-      {pendingApproveModal && (
-        <div className="admin-modal-overlay" onClick={() => setPendingApproveModal(null)}>
-          <div className="admin-modal-box" style={{ maxWidth: 500 }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-top">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 24 }}>✅</span>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 16 }}>Approve Merchant: <b>{pendingApproveModal.seller.storeName}</b></h3>
-                  <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>Configure security deposit collateral &amp; activate account</p>
-                </div>
+      {/* ─── Approve / edit ─── */}
+      {am && (
+        <div className="admin-modal-overlay" onClick={() => !approving && setApproveModal(null)}>
+          <div className="admin-modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="ins-modal-head">
+              <div>
+                <h3>{am.mode === 'edit' ? 'Edit store settings' : am.mode === 'reapprove' ? 'Re-approve store' : 'Approve store'}: {am.seller.storeName}</h3>
+                <p>{am.seller.ownerName} · {am.seller.email}</p>
               </div>
-              <button onClick={() => setPendingApproveModal(null)} className="btn-close-modal">✕</button>
+              <button type="button" className="ins-modal-close" onClick={() => setApproveModal(null)} aria-label="Close">✕</button>
             </div>
 
-            <form onSubmit={handleApproveSubmit} style={{ padding: '18px 22px' }}>
-              <div style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 16 }}>
-                <div style={{ fontSize: 13, color: '#1e293b' }}>
-                  <b>Applicant:</b> {pendingApproveModal.seller.ownerName} &bull; <b>Email:</b> {pendingApproveModal.seller.email}
-                </div>
-              </div>
-
-              {/* Assigned To: which partner / team member this seller belongs to */}
-              <div style={{ marginBottom: 14, background: '#fffbeb', border: '1.5px solid #fde68a', padding: '12px 16px', borderRadius: 8 }}>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 800, color: '#92400e', marginBottom: 6 }}>
-                  Assigned To {pendingApproveModal.isTestAccount ? '(optional for test account)' : '*'}
-                </label>
+            <form className="ins-form" onSubmit={handleApproveSubmit}>
+              <div className="ins-field">
+                <label>Assigned to {am.isTestAccount ? '(optional for a test account)' : '*'}</label>
                 <select
-                  value={pendingApproveModal.assignedMemberId || ''}
-                  onChange={(e) => setPendingApproveModal({ ...pendingApproveModal, assignedMemberId: e.target.value })}
-                  required={!pendingApproveModal.isTestAccount}
+                  className="ins-input"
+                  value={am.assignedMemberId || ''}
+                  onChange={(e) => setApproveModal({ ...am, assignedMemberId: e.target.value })}
+                  required={!am.isTestAccount}
                   disabled={teamLoading}
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: 6, border: '1px solid #fcd34d', background: '#fff', fontSize: 13.5, fontWeight: 700, color: '#1e293b' }}
                 >
                   <option value="">{teamLoading ? 'Loading team…' : 'Select partner or team member…'}</option>
                   {teamMembers.map((m) => (
@@ -525,123 +663,66 @@ export default function Applications() {
                     </option>
                   ))}
                 </select>
-                <small style={{ color: '#b45309', fontSize: 11.5, display: 'block', marginTop: 5 }}>
-                  Ye seller kis ka hai. Is ke deposit aur withdraw ka hisaab isi ke mutabiq batega, is liye client seller ke liye ye lazmi hai.
-                </small>
+                <small>Who this store belongs to. Its deposits and withdrawals are divided for this person, so a client store must have one.</small>
               </div>
 
-              {/* Account Classification Toggle (Client Account vs Test Account) */}
-              <div
-                style={{
-                  marginBottom: 14,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  background: pendingApproveModal.isTestAccount ? '#faf5ff' : '#eff6ff',
-                  border: `1.5px solid ${pendingApproveModal.isTestAccount ? '#d8b4fe' : '#bfdbfe'}`,
-                  padding: '12px 16px',
-                  borderRadius: 8,
-                }}
-              >
+              <div className="ins-switch-row">
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 16 }}>{pendingApproveModal.isTestAccount ? '🧪' : '👤'}</span>
-                    <b style={{ color: pendingApproveModal.isTestAccount ? '#6b21a8' : '#1d4ed8', fontSize: 13.5 }}>
-                      {pendingApproveModal.isTestAccount ? 'Test Seller Account' : 'Client Account (Live Merchant)'}
-                    </b>
-                  </div>
-                  <small style={{ color: pendingApproveModal.isTestAccount ? '#7c3aed' : '#2563eb', fontSize: 11.5, display: 'block', marginTop: 2 }}>
-                    {pendingApproveModal.isTestAccount
-                      ? 'Marked for internal admin testing & software feature verification'
-                      : 'Live client / vendor account operating in the marketplace'}
-                  </small>
+                  <b>{am.isTestAccount ? '🧪 Test account' : '👤 Client account'}</b>
+                  <small>{am.isTestAccount ? 'Internal testing — left out of every finance total' : 'Real store — counted in finance totals'}</small>
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPendingApproveModal({
-                      ...pendingApproveModal,
-                      isTestAccount: !pendingApproveModal.isTestAccount,
-                    })
-                  }
-                  style={{
-                    padding: '6px 14px',
-                    borderRadius: 20,
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontWeight: 800,
-                    fontSize: 12,
-                    background: pendingApproveModal.isTestAccount ? '#7c3aed' : '#2563eb',
-                    color: '#fff',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.08)',
-                  }}
-                >
-                  {pendingApproveModal.isTestAccount ? '🧪 Switch to Client' : '👤 Switch to Test'}
+                <button type="button" className="ins-btn ins-btn-sm" onClick={() => setApproveModal({ ...am, isTestAccount: !am.isTestAccount })}>
+                  Switch to {am.isTestAccount ? 'client' : 'test'}
                 </button>
               </div>
 
-              <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px 16px', borderRadius: 8 }}>
+              <div className="ins-switch-row">
                 <div>
-                  <b style={{ color: '#166534', fontSize: 13.5, display: 'block' }}>Security Deposit Paid by Merchant</b>
-                  <small style={{ color: '#15803d', fontSize: 12 }}>Lock collateral in seller wallet ledger</small>
+                  <b>{am.isPreviousStoreSeller ? '🏛️ Previous-store seller' : '✨ Current-store seller'}</b>
+                  <small>Previous-store sellers are left out of the client totals</small>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={pendingApproveModal.securityDepositPaid}
-                  onChange={(e) => setPendingApproveModal({ ...pendingApproveModal, securityDepositPaid: e.target.checked })}
-                  style={{ width: 20, height: 20, cursor: 'pointer' }}
-                />
+                <button type="button" className="ins-btn ins-btn-sm" onClick={() => setApproveModal({ ...am, isPreviousStoreSeller: !am.isPreviousStoreSeller })}>
+                  Switch
+                </button>
               </div>
 
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
-                  Security Deposit Collateral ($ USD):
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={pendingApproveModal.securityDepositAmount}
-                  onChange={(e) => setPendingApproveModal({ ...pendingApproveModal, securityDepositAmount: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 14 }}
-                  required
-                />
-                <small className="muted-sm">This amount will show in the seller's wallet as Security Deposit.</small>
+              {am.mode !== 'approve' && (
+                <div className="ins-callout ins-callout-info">
+                  <span aria-hidden="true">ℹ️</span>
+                  <span>This store was approved before: a change of account type, previous-store setting or owner is sent to the other partner for approval first.</span>
+                </div>
+              )}
+
+              <div className="ins-switch-row">
+                <div>
+                  <b>Security deposit paid</b>
+                  <small>Recorded in the seller's wallet as collateral</small>
+                </div>
+                <input type="checkbox" checked={am.securityDepositPaid} onChange={(e) => setApproveModal({ ...am, securityDepositPaid: e.target.checked })} style={{ width: 20, height: 20, cursor: 'pointer' }} />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
-                <div>
-                  <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
-                    Affiliate Code:
-                  </label>
-                  <input
-                    type="text"
-                    value={pendingApproveModal.referralCode}
-                    onChange={(e) => setPendingApproveModal({ ...pendingApproveModal, referralCode: e.target.value.toUpperCase() })}
-                    placeholder="e.g. BAZARIO2026"
-                    style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
-                  />
+              <div className="ins-form-grid">
+                <div className="ins-field">
+                  <label>Security deposit (USD)</label>
+                  <input className="ins-input" type="number" min="0" step="1" value={am.securityDepositAmount} disabled={!am.securityDepositPaid} onChange={(e) => setApproveModal({ ...am, securityDepositAmount: e.target.value })} />
                 </div>
-                <div>
-                  <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
-                    Commission Rate (%):
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={pendingApproveModal.commissionRate}
-                    onChange={(e) => setPendingApproveModal({ ...pendingApproveModal, commissionRate: e.target.value })}
-                    style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
-                    required
-                  />
+                <div className="ins-field">
+                  <label>Commission rate (%)</label>
+                  <input className="ins-input" type="number" min="0" max="100" value={am.commissionRate} onChange={(e) => setApproveModal({ ...am, commissionRate: e.target.value })} required />
                 </div>
               </div>
 
-              <div className="modal-bottom-actions">
-                <button type="button" onClick={() => setPendingApproveModal(null)} className="btn-cancel">Cancel</button>
-                <button type="submit" className="btn-primary" disabled={approving} style={{ background: '#16a34a', borderColor: '#16a34a' }}>
-                  {approving ? 'Approving...' : '🎉 Approve Merchant & Send Welcome Notice'}
+              <div className="ins-field">
+                <label>Affiliate code</label>
+                <input className="ins-input" value={am.referralCode} onChange={(e) => setApproveModal({ ...am, referralCode: e.target.value.toUpperCase() })} placeholder="e.g. BAZARIO2026" />
+              </div>
+
+              {modalError && <ErrorBox error={modalError} />}
+
+              <div className="ins-modal-foot">
+                <button type="button" className="ins-btn" onClick={() => setApproveModal(null)} disabled={approving}>Cancel</button>
+                <button type="submit" className="ins-btn ins-btn-primary" disabled={approving}>
+                  {approving ? 'Saving…' : am.mode === 'edit' ? 'Save settings' : 'Approve & send welcome'}
                 </button>
               </div>
             </form>
@@ -649,82 +730,46 @@ export default function Applications() {
         </div>
       )}
 
-      {/* ─── Modal 2: Reject Seller Application ─── */}
-      {pendingRejectModal && (
-        <div className="admin-modal-overlay" onClick={() => setPendingRejectModal(null)}>
-          <div className="admin-modal-box" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-top">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 22 }}>❌</span>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 16 }}>Reject Application: <b>{pendingRejectModal.seller.storeName}</b></h3>
-                  <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>Provide a reason for rejection</p>
-                </div>
+      {/* ─── Reject ─── */}
+      {rejectModal && (
+        <div className="admin-modal-overlay" onClick={() => !rejecting && setRejectModal(null)}>
+          <div className="admin-modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="ins-modal-head">
+              <div>
+                <h3>Reject application: {rejectModal.seller.storeName}</h3>
+                <p>The reason is saved on the store and shown to the seller.</p>
               </div>
-              <button onClick={() => setPendingRejectModal(null)} className="btn-close-modal">✕</button>
+              <button type="button" className="ins-modal-close" onClick={() => setRejectModal(null)} aria-label="Close">✕</button>
             </div>
-
-            <form onSubmit={handleRejectSubmit} style={{ padding: '18px 22px' }}>
-              {/* Account Classification Toggle in Reject Modal */}
-              <div
-                style={{
-                  marginBottom: 14,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  background: pendingRejectModal.isTestAccount ? '#faf5ff' : '#f8fafc',
-                  border: `1.5px solid ${pendingRejectModal.isTestAccount ? '#d8b4fe' : '#e2e8f0'}`,
-                  padding: '10px 14px',
-                  borderRadius: 8,
-                }}
-              >
-                <div>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: pendingRejectModal.isTestAccount ? '#6b21a8' : '#334155', display: 'flex', alignItems: 'center', gap: 5 }}>
-                    {pendingRejectModal.isTestAccount ? '🧪 Test Seller Account' : '👤 Client Account'}
-                  </span>
-                  <small style={{ display: 'block', fontSize: 11, color: '#64748b' }}>Account classification record</small>
+            <form className="ins-form" onSubmit={handleRejectSubmit}>
+              <div className="ins-field">
+                <span className="ins-label">Common reasons</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {['KYC documents are blurry or unreadable.', 'Name on the documents does not match the application.', 'Bank statement is missing or invalid.', 'Duplicate registration.'].map((r) => (
+                    <button key={r} type="button" className="ins-btn ins-btn-sm" onClick={() => setRejectModal({ ...rejectModal, reason: r })}>
+                      {r}
+                    </button>
+                  ))}
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPendingRejectModal({
-                      ...pendingRejectModal,
-                      isTestAccount: !pendingRejectModal.isTestAccount,
-                    })
-                  }
-                  style={{
-                    padding: '4px 12px',
-                    borderRadius: 14,
-                    border: '1px solid #cbd5e1',
-                    background: pendingRejectModal.isTestAccount ? '#7c3aed' : '#fff',
-                    color: pendingRejectModal.isTestAccount ? '#fff' : '#334155',
-                    cursor: 'pointer',
-                    fontWeight: 700,
-                    fontSize: 11.5,
-                  }}
-                >
-                  {pendingRejectModal.isTestAccount ? '🧪 Switch to Client' : 'Mark as Test'}
+              </div>
+              <div className="ins-field">
+                <label>Reason *</label>
+                <textarea className="ins-input" rows={4} value={rejectModal.reason} onChange={(e) => setRejectModal({ ...rejectModal, reason: e.target.value })} placeholder="e.g. Submitted ID documents are blurry. Please re-apply with clear copies." required />
+              </div>
+              <div className="ins-switch-row">
+                <div>
+                  <b>{rejectModal.isTestAccount ? '🧪 Test account' : '👤 Client account'}</b>
+                  <small>Account type recorded with this registration</small>
+                </div>
+                <button type="button" className="ins-btn ins-btn-sm" onClick={() => setRejectModal({ ...rejectModal, isTestAccount: !rejectModal.isTestAccount })}>
+                  Switch
                 </button>
               </div>
-
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 6 }}>
-                  Rejection Reason:
-                </label>
-                <textarea
-                  rows={4}
-                  value={pendingRejectModal.reason}
-                  onChange={(e) => setPendingRejectModal({ ...pendingRejectModal, reason: e.target.value })}
-                  placeholder="e.g. Submitted ID documents are blurry or invalid. Please re-apply with a clear passport copy."
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, fontFamily: 'inherit' }}
-                  required
-                />
-              </div>
-
-              <div className="modal-bottom-actions">
-                <button type="button" onClick={() => setPendingRejectModal(null)} className="btn-cancel">Cancel</button>
-                <button type="submit" className="btn-primary" disabled={rejecting} style={{ background: '#dc2626', borderColor: '#dc2626' }}>
-                  {rejecting ? 'Rejecting...' : 'Confirm Rejection'}
+              {modalError && <ErrorBox error={modalError} />}
+              <div className="ins-modal-foot">
+                <button type="button" className="ins-btn" onClick={() => setRejectModal(null)} disabled={rejecting}>Cancel</button>
+                <button type="submit" className="ins-btn ins-btn-bad" disabled={rejecting}>
+                  {rejecting ? 'Rejecting…' : 'Reject application'}
                 </button>
               </div>
             </form>
@@ -732,54 +777,34 @@ export default function Applications() {
         </div>
       )}
 
-      {/* ─── Modal 3: View KYC Documents ─── */}
+      {/* ─── KYC document viewer ─── */}
       {kycDocModal && (
         <div className="admin-modal-overlay" onClick={() => setKycDocModal(null)}>
-          <div className="admin-modal-box" style={{ maxWidth: 680 }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-top">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 22 }}>📄</span>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 16 }}>
-                    KYC Document: <b>{kycDocModal.title || getDocTitle(kycDocModal.docType)}</b>
-                  </h3>
-                  <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>Merchant: {kycDocModal.seller.storeName} ({kycDocModal.seller.ownerName}) &bull; {kycDocModal.seller.email}</p>
-                </div>
+          <div className="admin-modal-box large" onClick={(e) => e.stopPropagation()}>
+            <div className="ins-modal-head">
+              <div>
+                <h3>{kycDocModal.title}</h3>
+                <p>{kycDocModal.seller.storeName} · {kycDocModal.seller.ownerName} · {kycDocModal.seller.email}</p>
               </div>
-              <button onClick={() => setKycDocModal(null)} className="btn-close-modal">✕</button>
+              <button type="button" className="ins-modal-close" onClick={() => setKycDocModal(null)} aria-label="Close">✕</button>
             </div>
-
-            <div style={{ padding: '20px', textAlign: 'center', background: '#0f172a', borderRadius: '0 0 8px 8px' }}>
+            <div style={{ padding: 16, textAlign: 'center', background: '#0f172a', borderRadius: 12 }}>
               {kycDocModal.docUrl?.toLowerCase().endsWith('.pdf') || kycDocModal.docUrl?.startsWith('data:application/pdf') ? (
                 <div style={{ padding: '30px 20px', color: '#fff' }}>
-                  <p style={{ fontSize: 15, marginBottom: 14 }}>📄 PDF Document Uploaded</p>
-                  <a
-                    href={kycDocModal.docUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ display: 'inline-block', padding: '10px 18px', background: '#3b82f6', color: '#fff', borderRadius: 6, fontWeight: 700, textDecoration: 'none' }}
-                  >
-                    Open PDF in New Window ↗
+                  <p style={{ fontSize: 15, marginBottom: 14 }}>📄 PDF document</p>
+                  <a href={kycDocModal.docUrl} target="_blank" rel="noreferrer" className="ins-btn ins-btn-primary">
+                    Open PDF in a new window ↗
                   </a>
                 </div>
               ) : (
-                <div>
-                  <img
-                    src={kycDocModal.docUrl}
-                    alt={kycDocModal.title || 'KYC Document Preview'}
-                    style={{ maxWidth: '100%', maxHeight: 500, objectFit: 'contain', borderRadius: 6, background: '#1e293b' }}
-                  />
-                  <div style={{ marginTop: 12 }}>
-                    <a
-                      href={kycDocModal.docUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ color: '#93c5fd', fontSize: 12, textDecoration: 'underline', fontWeight: 600 }}
-                    >
-                      Open Full Size Image ↗
+                <>
+                  <img src={kycDocModal.docUrl} alt={kycDocModal.title} style={{ maxWidth: '100%', maxHeight: 520, objectFit: 'contain', borderRadius: 8 }} />
+                  <div style={{ marginTop: 10 }}>
+                    <a href={kycDocModal.docUrl} target="_blank" rel="noreferrer" style={{ color: '#93c5fd', fontSize: 12, fontWeight: 600 }}>
+                      Open full size ↗
                     </a>
                   </div>
-                </div>
+                </>
               )}
             </div>
           </div>
