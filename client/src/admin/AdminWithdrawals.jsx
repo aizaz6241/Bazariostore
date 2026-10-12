@@ -5,11 +5,22 @@ import CurrencyConverterWidget from '../components/CurrencyConverterWidget.jsx';
 import { getSocket } from '../socket.js';
 import SplitDepositModal from './SplitDepositModal.jsx';
 import AddFundsModal from './AddFundsModal.jsx';
+import PayoutsAnalytics from './PayoutsAnalytics.jsx';
 
-const STATUS_COLOR = { pending: 'chip-orange', approved: 'chip-green', rejected: 'chip-red' };
+// "3h", "2d" — how long a request has been waiting
+function timeAgo(d) {
+  const m = Math.max(0, (Date.now() - new Date(d).getTime()) / 60000);
+  if (m < 60) return `${Math.round(m)}m`;
+  const h = m / 60;
+  if (h < 48) return `${Math.round(h)}h`;
+  return `${Math.round(h / 24)}d`;
+}
 
 export default function AdminWithdrawals() {
-  const [activeTab, setActiveTab] = useState('requests'); // 'requests' | 'limits' | 'ledger'
+  const [activeTab, setActiveTab] = useState('requests'); // 'requests' | 'analytics' | 'limits' | 'ledger'
+  const [queueSearch, setQueueSearch] = useState('');
+  const [copiedKey, setCopiedKey] = useState('');
+  const [analyticsKey, setAnalyticsKey] = useState(0);
   const [requests, setRequests] = useState([]);
   const [limitRequests, setLimitRequests] = useState([]);
   const [summary, setSummary] = useState({});
@@ -205,6 +216,7 @@ export default function AdminWithdrawals() {
     const handleSync = () => {
       load();
       loadDepositsLedger();
+      setAnalyticsKey((k) => k + 1);
     };
 
     socket.on('withdrawal:new', handleSync);
@@ -444,801 +456,538 @@ export default function AdminWithdrawals() {
     }
   };
 
+  const pendingLimitCount = limitRequests.filter((l) => l.pendingRequest?.status === 'pending').length;
+
+  const visibleRequests = useMemo(() => {
+    const q = queueSearch.trim().toLowerCase();
+    if (!q) return requests;
+    return requests.filter((r) =>
+      [r.storeName, r.seller?.ownerName, r.seller?.email, r.depositRef, r.transactionRef, r.upiId, r.accountNumber, r.accountTitle, r.walletAddress]
+        .some((v) => v && String(v).toLowerCase().includes(q))
+    );
+  }, [requests, queueSearch]);
+
+  const limitStages = useMemo(() => {
+    const c = { pending: 0, offered: 0, accepted_by_seller: 0, approved: 0, closed: 0 };
+    limitRequests.forEach((l) => {
+      const s = l.pendingRequest?.status;
+      if (s === 'rejected' || s === 'declined_by_seller') c.closed += 1;
+      else if (c[s] !== undefined) c[s] += 1;
+    });
+    return c;
+  }, [limitRequests]);
+
+  const copyText = (key, value) => {
+    if (!value) return;
+    try {
+      navigator.clipboard?.writeText(String(value));
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey((k) => (k === key ? '' : k)), 1400);
+    } catch {}
+  };
+
+  // One label/value cell of a request's details. `copy` adds a copy-to-clipboard button.
+  const Field = ({ label, value, tone, mono, copy, id, internal }) => (
+    <div className={`pd-field ${internal ? 'pd-field-internal' : ''}`}>
+      <span className="pd-field-label">{label}</span>
+      <span className={`pd-field-value ${mono ? 'mono' : ''}`} style={tone ? { color: tone } : undefined}>
+        {value}
+        {copy && (
+          <button type="button" className="pd-copy" onClick={() => copyText(id, copy)} title="Copy">
+            <Ic name={copiedKey === id ? 'check' : 'paperclip'} size={12} />
+            <span>{copiedKey === id ? 'Copied' : 'Copy'}</span>
+          </button>
+        )}
+      </span>
+    </div>
+  );
+
+  const METHOD_TEXT = { bank: '🏦 Bank Transfer', upi: '⚡ UPI', paytm: '📱 Paytm', gpay: '🔵 Google Pay', phonepe: '🟣 PhonePe', usdt: '💎 USDT Crypto' };
+
   return (
-    <div className="admin-page">
-      <div className="admin-page-head flex justify-between items-center flex-wrap gap-3">
-        <div>
-          <h2>💼 Wallet & Payout Control Desk</h2>
-          <p className="muted-sm">Sellers ki deposit/withdrawal requests process karein aur direct wallet adjustments karein.</p>
-        </div>
-        <button className="btn-primary" onClick={() => setShowAdjustModal(true)}>
-          <Ic name="plus" size={16} /> 💳 Direct Add / Adjust Funds
-        </button>
-      </div>
-
-      {/* Summary Bar */}
-      <div className="withdraw-summary-row mt-3">
-        <div className="withdraw-stat">
-          <b>{summary.pending || 0}</b>
-          <small>Pending Payouts</small>
-        </div>
-        <div className="withdraw-stat" style={{ color: '#059669' }}>
-          <b>{money(summary.pendingDeposits || 0)}</b>
-          <small>Pending Deposits</small>
-        </div>
-        <div className="withdraw-stat" style={{ color: '#dc2626' }}>
-          <b>{money(summary.pendingWithdrawals || 0)}</b>
-          <small>Pending Withdrawals</small>
-        </div>
-        <div className="withdraw-stat" style={{ color: '#2563eb' }}>
-          <b>{limitRequests.filter((l) => l.pendingRequest?.status === 'pending').length}</b>
-          <small>Pending Limit Upgrades</small>
-        </div>
-      </div>
-
-      {/* Main View Tab Switcher */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, margin: '20px 0 16px', borderBottom: '2px solid #e2e8f0', paddingBottom: 10 }}>
-        <button
-          type="button"
-          onClick={() => setActiveTab('requests')}
-          style={{
-            padding: '8px 16px',
-            borderRadius: 8,
-            fontWeight: 700,
-            fontSize: 13.5,
-            border: 'none',
-            cursor: 'pointer',
-            background: activeTab === 'requests' ? '#0f172a' : '#f1f5f9',
-            color: activeTab === 'requests' ? '#ffffff' : '#64748b',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          <span>💸 Payouts &amp; Deposits Queue</span>
-          {(summary.pending || 0) > 0 && (
-            <span style={{ background: '#ef4444', color: '#fff', fontSize: 10.5, padding: '1px 6px', borderRadius: 10, fontWeight: 800 }}>
-              {summary.pending}
-            </span>
-          )}
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('ledger')}
-          style={{
-            padding: '8px 16px',
-            borderRadius: 8,
-            fontWeight: 700,
-            fontSize: 13.5,
-            border: 'none',
-            cursor: 'pointer',
-            background: activeTab === 'ledger' ? '#0f172a' : '#f1f5f9',
-            color: activeTab === 'ledger' ? '#ffffff' : '#64748b',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          <span>📑 Deposits Ledger &amp; Helping Split</span>
-          <span style={{ background: '#7c3aed', color: '#fff', fontSize: 10.5, padding: '1px 6px', borderRadius: 10, fontWeight: 800 }}>
-            {depositsLedger.length > 0 ? depositsLedger.length : 'Ledger'}
+    <div className="admin-page pd-root">
+      {/* ─── HERO HEADER ─── */}
+      <section className="pd-hero">
+        <div className="pd-hero-main">
+          <span className="pd-hero-eyebrow">
+            <span className="pd-live"><span /></span> Finance • Live queue
           </span>
-        </button>
+          <h2>Wallet &amp; Payout Control Desk</h2>
+          <p>Sellers ki deposit / withdrawal requests process karein, helping split manage karein aur limit upgrades approve karein.</p>
+        </div>
+        <div className="pd-hero-actions">
+          <button
+            type="button"
+            className="pd-btn-glass"
+            onClick={() => { load(); if (activeTab === 'ledger') loadDepositsLedger(); setAnalyticsKey((k) => k + 1); }}
+            disabled={loading}
+          >
+            <Ic name="refresh" size={15} /> Refresh
+          </button>
+          <button type="button" className="pd-btn-light" onClick={() => setShowAdjustModal(true)}>
+            <Ic name="plus" size={15} /> Add / Adjust Funds
+          </button>
+        </div>
+      </section>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab('limits')}
-          style={{
-            padding: '8px 16px',
-            borderRadius: 8,
-            fontWeight: 700,
-            fontSize: 13.5,
-            border: 'none',
-            cursor: 'pointer',
-            background: activeTab === 'limits' ? '#0f172a' : '#f1f5f9',
-            color: activeTab === 'limits' ? '#ffffff' : '#64748b',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          <span>🚀 Withdrawal Limit Upgrade Requests</span>
-          {limitRequests.filter((l) => l.pendingRequest?.status === 'pending').length > 0 && (
-            <span style={{ background: '#f59e0b', color: '#fff', fontSize: 10.5, padding: '1px 6px', borderRadius: 10, fontWeight: 800 }}>
-              {limitRequests.filter((l) => l.pendingRequest?.status === 'pending').length}
-            </span>
-          )}
-        </button>
+      {/* ─── KPI CARDS ─── */}
+      <div className="pd-kpis">
+        <div className="pd-kpi">
+          <span className="pd-kpi-icon tone-slate"><Ic name="clock" size={18} /></span>
+          <div>
+            <small>Pending Payouts</small>
+            <b>{summary.pending || 0}</b>
+            <em>Requests waiting for a decision</em>
+          </div>
+        </div>
+        <div className="pd-kpi">
+          <span className="pd-kpi-icon tone-blue"><Ic name="wallet" size={18} /></span>
+          <div>
+            <small>Pending Deposits</small>
+            <b>{money(summary.pendingDeposits || 0)}</b>
+            <em>To be credited on approval</em>
+          </div>
+        </div>
+        <div className="pd-kpi">
+          <span className="pd-kpi-icon tone-orange"><Ic name="banknote" size={18} /></span>
+          <div>
+            <small>Pending Withdrawals</small>
+            <b>{money(summary.pendingWithdrawals || 0)}</b>
+            <em>Locked from seller balances</em>
+          </div>
+        </div>
+        <div className="pd-kpi">
+          <span className="pd-kpi-icon tone-violet"><Ic name="shield" size={18} /></span>
+          <div>
+            <small>Pending Limit Upgrades</small>
+            <b>{pendingLimitCount}</b>
+            <em>{limitStages.accepted_by_seller} accepted • ready to activate</em>
+          </div>
+        </div>
       </div>
+
+      {/* ─── TABS ─── */}
+      <nav className="pd-tabs" role="tablist">
+        {[
+          { key: 'requests', icon: 'banknote', label: 'Payouts & Deposits Queue', badge: summary.pending || 0, tone: 'red' },
+          { key: 'analytics', icon: 'grid', label: 'Analytics', badge: null },
+          { key: 'ledger', icon: 'fileText', label: 'Deposits Ledger & Helping Split', badge: depositsLedger.length || null, tone: 'violet' },
+          { key: 'limits', icon: 'shield', label: 'Limit Upgrade Requests', badge: pendingLimitCount, tone: 'amber' },
+        ].map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === t.key}
+            className={`pd-tab ${activeTab === t.key ? 'active' : ''}`}
+            onClick={() => setActiveTab(t.key)}
+          >
+            <Ic name={t.icon} size={15} />
+            <span>{t.label}</span>
+            {t.badge > 0 && <span className={`pd-badge pd-badge-${t.tone}`}>{t.badge}</span>}
+          </button>
+        ))}
+      </nav>
 
       {/* ─────────────────────────────────────────────────────────────
           VIEW 1: DEPOSIT & WITHDRAWAL PAYOUTS QUEUE
           ───────────────────────────────────────────────────────────── */}
       {activeTab === 'requests' && (
         <>
-          {/* Filters */}
-          <div style={{ display: 'flex', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
-            <div>
-              <div className="filter-label">Filter By Type:</div>
-              <div className="period-tabs">
+          <div className="pd-toolbar">
+            <div className="pd-toolbar-group">
+              <span className="pd-toolbar-label">Type</span>
+              <div className="pd-seg">
                 {[
-                  { val: 'all', label: '📋 All Types' },
-                  { val: 'deposit', label: '💰 Deposits' },
-                  { val: 'withdrawal', label: '💸 Withdrawals' },
+                  { val: 'all', label: 'All' },
+                  { val: 'deposit', label: 'Deposits' },
+                  { val: 'withdrawal', label: 'Withdrawals' },
                 ].map((t) => (
-                  <button key={t.val} className={`period-tab ${typeFilter === t.val ? 'active' : ''}`} onClick={() => setTypeFilter(t.val)}>
+                  <button key={t.val} type="button" className={typeFilter === t.val ? 'active' : ''} onClick={() => setTypeFilter(t.val)}>
                     {t.label}
                   </button>
                 ))}
               </div>
             </div>
-            <div>
-              <div className="filter-label">Filter By Status:</div>
-              <div className="period-tabs">
+            <div className="pd-toolbar-group">
+              <span className="pd-toolbar-label">Status</span>
+              <div className="pd-seg">
                 {['pending', 'approved', 'rejected', 'all'].map((s) => (
-                  <button key={s} className={`period-tab ${statusFilter === s ? 'active' : ''}`} onClick={() => setStatusFilter(s)}>
+                  <button key={s} type="button" className={statusFilter === s ? 'active' : ''} onClick={() => setStatusFilter(s)}>
                     {s.charAt(0).toUpperCase() + s.slice(1)}
                   </button>
                 ))}
               </div>
             </div>
+            <div className="pd-search">
+              <Ic name="search" size={14} />
+              <input
+                type="text"
+                placeholder="Search store, seller, UTR, UPI, account…"
+                value={queueSearch}
+                onChange={(e) => setQueueSearch(e.target.value)}
+              />
+              {queueSearch && (
+                <button type="button" onClick={() => setQueueSearch('')} aria-label="Clear search"><Ic name="x" size={13} /></button>
+              )}
+            </div>
           </div>
 
-          {loading && <div className="admin-loading">Loading wallet requests...</div>}
-
-          {!loading && requests.length === 0 && (
-            <div className="empty-box">
-              <Ic name="banknote" size={44} stroke={1.2} />
-              <p>Koi wallet request nahi mili.</p>
+          {!loading && requests.length > 0 && (
+            <div className="pd-result-count">
+              Showing <b>{visibleRequests.length}</b> of {requests.length} requests
             </div>
           )}
 
-          {!loading && requests.map((r) => {
-            const isDeposit = r.type === 'deposit';
-            const isPending = r.status === 'pending';
-            const currentApprovedAmt = approvedAmountMap[r._id] !== undefined ? approvedAmountMap[r._id] : r.amount;
+          {loading && (
+            <div className="pd-skeleton-list">
+              {[0, 1, 2].map((i) => <div key={i} className="pd-skeleton pd-skeleton-tall" />)}
+            </div>
+          )}
 
-            return (
-              <div key={r._id} className={`withdrawal-card ${isPending ? 'withdrawal-pending' : ''}`}>
-                {/* Header Badge */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <div
-                      className="request-type-badge"
-                      style={{
-                        background: isDeposit ? '#d1fae5' : '#dbeafe',
-                        color: isDeposit ? '#065f46' : '#1d4ed8',
-                        marginBottom: 0,
-                      }}
-                    >
-                      {r.isManualAdjustment ? '⚡ DIRECT ADMIN ADJUSTMENT' : (isDeposit ? '💰 DEPOSIT REQUEST' : '💸 WITHDRAWAL REQUEST')}
-                    </div>
-                    {(r.seller?.isTestAccount || r.seller?.accountType === 'test' || r.storeName?.toLowerCase().includes('test')) && (
-                      <span
-                        style={{
-                          background: '#f3e8ff',
-                          color: '#7e22ce',
-                          border: '1px solid #d8b4fe',
-                          padding: '2px 8px',
-                          borderRadius: 12,
-                          fontSize: 10.5,
-                          fontWeight: 800,
-                        }}
-                      >
-                        🧪 Test Account
-                      </span>
-                    )}
-                  </div>
-                  <span className={`status-chip ${STATUS_COLOR[r.status] || ''}`}>
-                    {r.status?.toUpperCase()}
-                  </span>
-                </div>
+          {!loading && visibleRequests.length === 0 && (
+            <div className="pd-empty">
+              <Ic name="banknote" size={40} stroke={1.2} />
+              <p>{queueSearch ? 'Is search se koi request match nahi hui.' : 'Koi wallet request nahi mili.'}</p>
+              {queueSearch && <button type="button" className="pd-btn-ghost" onClick={() => setQueueSearch('')}>Clear search</button>}
+            </div>
+          )}
 
-                <div className="withdrawal-top">
-                  <div className="withdrawal-seller">
-                    <div className="avatar-chip">{r.storeName?.[0] || 'S'}</div>
-                    <div>
-                      <b>{r.storeName}</b>
-                      <small className="muted-sm block">{r.seller?.ownerName} • {r.seller?.email}</small>
-                    </div>
-                  </div>
+          <div className="pd-req-list">
+            {!loading && visibleRequests.map((r) => {
+              const isDeposit = r.type === 'deposit';
+              const isPending = r.status === 'pending';
+              const currentApprovedAmt = approvedAmountMap[r._id] !== undefined ? approvedAmountMap[r._id] : r.amount;
+              const isTest = r.seller?.isTestAccount || r.seller?.accountType === 'test' || r.storeName?.toLowerCase().includes('test');
+              const waitMs = Date.now() - new Date(r.createdAt).getTime();
+              const hasInternal = Number(r.helpingAmount) > 0 || Number(r.binanceRate) > 0 || Number(r.inrAmount) > 0 || Number(r.usdtAmount) > 0;
 
-                  <div className="withdrawal-amt-box">
-                    <span className="muted-sm block">Requested Amount</span>
-                    <b style={{ fontSize: 18, color: isDeposit ? '#16a34a' : '#dc2626' }}>
-                      {money(r.amount)}
-                    </b>
-                  </div>
-                </div>
-
-                {/* Details Section */}
-                <div className="withdrawal-details-grid" style={{ margin: '12px 0', padding: '10px 14px', background: '#f8fafc', borderRadius: 8 }}>
-                  <div>
-                    <span className="muted-sm block">Requested At:</span>
-                    <small><b>{fmtDay(r.createdAt)}</b></small>
-                  </div>
-                  {isDeposit ? (
-                    <>
-                      <div>
-                        <span className="muted-sm block">Payment Ref / UTR:</span>
-                        <small><b>{r.depositRef || r.transactionRef || 'N/A'}</b></small>
-                      </div>
-                      <div>
-                        <span className="muted-sm block">{r.isManualAdjustment ? 'Reason / Note:' : 'Seller Note:'}</span>
-                        <small>{r.depositNote || r.adminNote || 'None'}</small>
-                      </div>
-                      {Number(r.helpingAmount) > 0 && (
-                        <div>
-                          <span className="muted-sm block">🤝 Helping Amount:</span>
-                          <small><b style={{ color: '#7c3aed' }}>${Number(r.helpingAmount).toLocaleString('en-US')}</b> <span style={{ fontSize: 10, color: '#6b7280' }}>(Admin Internal)</span></small>
+              return (
+                <article key={r._id} className={`pd-req ${isDeposit ? 'is-deposit' : 'is-withdraw'} ${isPending ? 'is-pending' : ''}`}>
+                  {/* Header */}
+                  <header className="pd-req-head">
+                    <div className="pd-req-who">
+                      <div className="pd-avatar">{r.storeName?.[0] || 'S'}</div>
+                      <div className="pd-req-who-text">
+                        <div className="pd-req-tags">
+                          <span className={`pd-type ${isDeposit ? 'pd-type-deposit' : 'pd-type-withdraw'}`}>
+                            {r.isManualAdjustment ? '⚡ Direct Admin Adjustment' : (isDeposit ? '↓ Deposit Request' : '↑ Withdrawal Request')}
+                          </span>
+                          {isTest && <span className="pd-pill pd-pill-violet">🧪 Test Account</span>}
                         </div>
-                      )}
-                      {Number(r.binanceRate) > 0 && (
-                        <div>
-                          <span className="muted-sm block">🟡 B.Rate (Binance):</span>
-                          <small><b style={{ color: '#b45309' }}>₹{r.binanceRate} / USDT</b> <span style={{ fontSize: 10, color: '#6b7280' }}>(Admin Internal)</span></small>
-                        </div>
-                      )}
-                      {Number(r.inrAmount) > 0 && (
-                        <div>
-                          <span className="muted-sm block">🇮🇳 INR Deposit:</span>
-                          <small><b style={{ color: '#0f172a' }}>₹{Number(r.inrAmount).toLocaleString('en-IN')}</b> <span style={{ fontSize: 10, color: '#6b7280' }}>(Admin Internal)</span></small>
-                        </div>
-                      )}
-                      {Number(r.usdtAmount) > 0 && (
-                        <div>
-                          <span className="muted-sm block">💎 Resulting USDT:</span>
-                          <small><b style={{ color: '#15803d' }}>{r.usdtAmount} USDT</b> <span style={{ fontSize: 10, color: '#6b7280' }}>(Admin Internal)</span></small>
-                        </div>
-                      )}
-                      <div>
-                        <span className="muted-sm block">Admin Split:</span>
-                        <button
-                          type="button"
-                          onClick={() => setSplitModalDeposit(r)}
-                          style={{
-                            background: '#faf5ff',
-                            border: '1px solid #c4b5fd',
-                            borderRadius: 6,
-                            padding: '3px 8px',
-                            fontSize: 11,
-                            fontWeight: 700,
-                            color: '#7c3aed',
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4,
-                          }}
-                          title="Split or edit Helping Amount for this deposit"
-                        >
-                          <span>✏️ Split Helping</span>
-                          {Number(r.helpingAmount) > 0 && (
-                            <span style={{ fontSize: 9.5, background: '#ede9fe', padding: '0 4px', borderRadius: 3 }}>
-                              ${Number(r.helpingAmount).toLocaleString('en-US')}
-                            </span>
-                          )}
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div>
-                        <span className="muted-sm block">Method:</span>
-                        <small>
-                          <b style={{ color: '#2563eb' }}>
-                            {r.method === 'bank' ? '🏦 BANK TRANSFER' : r.method === 'upi' ? '⚡ UPI VPA' : r.method === 'paytm' ? '📱 PAYTM' : r.method === 'gpay' ? '🔵 GOOGLE PAY' : r.method === 'phonepe' ? '🟣 PHONEPE' : r.method === 'usdt' ? '💎 USDT CRYPTO' : (r.method?.toUpperCase() || 'BANK')}
-                          </b>
-                        </small>
-                      </div>
-                      {r.accountTitle && (
-                        <div>
-                          <span className="muted-sm block">Account Title:</span>
-                          <small><b>{r.accountTitle}</b></small>
-                        </div>
-                      )}
-                      {r.upiId && (
-                        <div>
-                          <span className="muted-sm block">UPI ID / VPA:</span>
-                          <small><b style={{ color: '#059669' }}>{r.upiId}</b></small>
-                        </div>
-                      )}
-                      {r.phone && (
-                        <div>
-                          <span className="muted-sm block">Phone / Mobile:</span>
-                          <small><b>{r.phone}</b></small>
-                        </div>
-                      )}
-                      {r.accountNumber && (
-                        <div>
-                          <span className="muted-sm block">Account No:</span>
-                          <small><b>{r.accountNumber}</b></small>
-                        </div>
-                      )}
-                      {r.bankName && (
-                        <div>
-                          <span className="muted-sm block">Bank Name:</span>
-                          <small><b>{r.bankName}</b></small>
-                        </div>
-                      )}
-                      {r.ifscCode && (
-                        <div>
-                          <span className="muted-sm block">IFSC Code:</span>
-                          <small><b style={{ color: '#d97706' }}>{r.ifscCode}</b></small>
-                        </div>
-                      )}
-                      {r.walletAddress && (
-                        <div>
-                          <span className="muted-sm block">USDT Wallet ({r.network || 'TRC-20'}):</span>
-                          <small><b style={{ fontFamily: 'monospace', color: '#16a34a' }}>{r.walletAddress}</b></small>
-                        </div>
-                      )}
-                      {Number(r.binanceRate) > 0 && (
-                        <div>
-                          <span className="muted-sm block">🟡 B.Rate (Binance):</span>
-                          <small><b style={{ color: '#b45309' }}>₹{r.binanceRate} / USDT</b> <span style={{ fontSize: 10, color: '#6b7280' }}>(Admin Internal)</span></small>
-                        </div>
-                      )}
-                      {Number(r.inrAmount) > 0 && (
-                        <div>
-                          <span className="muted-sm block">🇮🇳 INR Payout:</span>
-                          <small><b style={{ color: '#0f172a' }}>₹{Number(r.inrAmount).toLocaleString('en-IN')}</b> <span style={{ fontSize: 10, color: '#6b7280' }}>(Admin Internal)</span></small>
-                        </div>
-                      )}
-                      {Number(r.usdtAmount) > 0 && (
-                        <div>
-                          <span className="muted-sm block">💎 Resulting USDT:</span>
-                          <small><b style={{ color: '#15803d' }}>{r.usdtAmount} USDT</b> <span style={{ fontSize: 10, color: '#6b7280' }}>(Admin Internal)</span></small>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                {/* Approval Action Form */}
-                {isPending && (
-                  <div style={{ borderTop: '1px dashed #e2e8f0', paddingTop: 12, marginTop: 12 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10, marginBottom: 10 }}>
-                      <div>
-                        <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4 }}>
-                          Approved Amount ($):
-                        </label>
-                        <input
-                          type="number"
-                          value={currentApprovedAmt}
-                          onChange={(e) => setApprovedAmountMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
-                          style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, fontWeight: 700 }}
-                        />
-                      </div>
-                      {isDeposit && (
-                        <div>
-                          <label style={{ fontSize: 11, fontWeight: 800, display: 'block', marginBottom: 4, color: '#7c3aed' }}>
-                            🤝 Helping Amount ($ USD) <span style={{ fontSize: 10, fontWeight: 600, color: '#6b7280' }}>(Admin Internal • Hidden from Seller)</span>:
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            step="any"
-                            placeholder="0"
-                            value={helpingAmountMap[r._id] !== undefined ? helpingAmountMap[r._id] : (r.helpingAmount || '')}
-                            onChange={(e) => setHelpingAmountMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
-                            style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1.5px solid #c4b5fd', background: '#faf5ff', fontSize: 13, fontWeight: 700, color: '#6b21a8' }}
-                          />
-                        </div>
-                      )}
-                      <div>
-                        <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4 }}>
-                          Bank Ref / UTR Number:
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="e.g. UTR9876543210"
-                          value={refMap[r._id] || ''}
-                          onChange={(e) => setRefMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
-                          style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
-                        />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4 }}>
-                          Admin Note (Sent to Seller Chat):
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Payout processed via NEFT / IMPS"
-                          value={noteMap[r._id] || ''}
-                          onChange={(e) => setNoteMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
-                          style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
-                        />
+                        <b className="pd-req-store">{r.storeName}</b>
+                        <small className="pd-req-sub">{r.seller?.ownerName} • {r.seller?.email}</small>
                       </div>
                     </div>
-
-                    {/* Binance B.Rate & USDT Calculator (Admin Internal for both Deposits & Withdrawals) */}
-                    {(() => {
-                      const appNum = Number(currentApprovedAmt !== undefined && currentApprovedAmt !== '' ? currentApprovedAmt : (r.amount || 0));
-                      const defaultInr = '';
-                      const currentInr = inrAmountMap[r._id] !== undefined
-                        ? inrAmountMap[r._id]
-                        : (r.inrAmount ? String(r.inrAmount) : defaultInr);
-                      const currentBRate = bRateMap[r._id] !== undefined
-                        ? bRateMap[r._id]
-                        : (r.binanceRate ? String(r.binanceRate) : '');
-                      const typedUsdtVal = usdtMap[r._id] !== undefined ? usdtMap[r._id] : '';
-                      const shownRate = (Number(currentInr) > 0 && Number(typedUsdtVal) > 0)
-                        ? (Number(currentInr) / Number(typedUsdtVal)).toFixed(2)
-                        : null;
-                      const calcUsdt = Number(typedUsdtVal) > 0
-                        ? Number(typedUsdtVal).toFixed(2)
-                        : (Number(currentInr) > 0 && Number(currentBRate) > 0)
-                          ? (Number(currentInr) / Number(currentBRate)).toFixed(2)
-                          : null;
-
-                      return (
-                        <div style={{
-                          background: 'linear-gradient(135deg, #fefce8 0%, #fffdf0 100%)',
-                          border: '1.5px solid #fde047',
-                          borderRadius: 10,
-                          padding: '12px 14px',
-                          marginBottom: 12,
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ fontSize: 16 }}>🟡</span>
-                              <b style={{ fontSize: 12.5, color: '#854d0e' }}>
-                                {isDeposit ? 'Binance USDT Received' : 'Binance USDT Sent'}
-                              </b>
-                              <span style={{ fontSize: 10, background: '#fef9c3', color: '#a16207', padding: '1px 6px', borderRadius: 4, fontWeight: 700, border: '1px solid #fde047' }}>
-                                Admin Internal • Hidden from Seller
-                              </span>
-                            </div>
-                            {calcUsdt && (
-                              <div style={{ background: '#16a34a', color: '#ffffff', padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 5 }}>
-                                <span>💎 Binance USDT:</span>
-                                <span>{calcUsdt} USDT</span>
-                              </div>
-                            )}
-                          </div>
-
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, alignItems: 'flex-start' }}>
-                            <div>
-                              <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4, color: '#713f12' }}>
-                                {isDeposit ? '🇮🇳 Indian Rupees Received / Value (₹ INR):' : '🇮🇳 Indian Rupees Payout (₹ INR):'}
-                              </label>
-                              <input
-                                type="number"
-                                step="any"
-                                placeholder="e.g. 8350"
-                                value={currentInr}
-                                onChange={(e) => setInrAmountMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
-                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid #fde047', background: '#ffffff', fontSize: 13, fontWeight: 700, color: '#0f172a' }}
-                              />
-                              <small style={{ fontSize: 10.5, color: '#a16207', display: 'block', marginTop: 2 }}>
-                                Asli INR likhein jo is transaction me aaye / gaye
-                              </small>
-                            </div>
-
-                            <div>
-                              <label style={{ fontSize: 11, fontWeight: 800, display: 'block', marginBottom: 4, color: '#15803d' }}>
-                                {isDeposit ? '💎 USDT Received (Binance me aaye):' : '💎 USDT Sent (Binance se gaye):'}
-                              </label>
-                              <input
-                                type="number"
-                                step="any"
-                                min="0"
-                                placeholder="e.g. 46.45"
-                                value={typedUsdtVal}
-                                onChange={(e) => setUsdtMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
-                                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1.5px solid #86efac', background: '#ffffff', fontSize: 13, fontWeight: 800, color: '#15803d' }}
-                              />
-                              <small style={{ fontSize: 10.5, color: '#a16207', display: 'block', marginTop: 2 }}>
-                                Binance me dekh kar asli amount likhein (Admin Only)
-                              </small>
-                            </div>
-
-                            <div>
-                              <label style={{ fontSize: 11, fontWeight: 700, display: 'block', marginBottom: 4, color: '#713f12' }}>
-                                🟡 Rate (khud nikalta hai):
-                              </label>
-                              <div style={{
-                                padding: '6px 10px',
-                                borderRadius: 6,
-                                background: shownRate ? '#fefce8' : '#f8fafc',
-                                border: `1.5px solid ${shownRate ? '#fde047' : '#cbd5e1'}`,
-                                fontSize: 13,
-                                fontWeight: 800,
-                                color: shownRate ? '#854d0e' : '#94a3b8',
-                                minHeight: 33,
-                                display: 'flex',
-                                alignItems: 'center',
-                              }}>
-                                <span>{shownRate ? `₹${shownRate} / USDT` : 'INR aur USDT likhein'}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                    <div className="withdrawal-btns mt-2" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <button
-                        className="btn-primary"
-                        disabled={processing[r._id]}
-                        onClick={() => handleAction(r._id, 'approved', r.type)}
-                      >
-                        <Ic name="check" size={15} />
-                        {isDeposit
-                          ? ` Approve & Credit $${currentApprovedAmt || r.amount} to Wallet`
-                          : Number(currentApprovedAmt || r.amount) < r.amount
-                            ? ` Approve Partial $${currentApprovedAmt} (Refund $${r.amount - currentApprovedAmt})`
-                            : ` Approve Payout of $${currentApprovedAmt || r.amount}`}
-                      </button>
-
-                      <button
-                        className="btn-danger"
-                        disabled={processing[r._id]}
-                        onClick={() => handleAction(r._id, 'rejected', r.type)}
-                      >
-                        <Ic name="x" size={15} /> Reject Request (Full Refund)
-                      </button>
-
-                      <small className="muted-sm ml-auto">
-                        Approve/Reject karne par seller ko chat mein auto-receipt aur sound alert jayegi.
+                    <div className="pd-req-amount">
+                      <span className={`pd-status pd-status-${r.status}`}>{r.status?.toUpperCase()}</span>
+                      <b className={isDeposit ? 'tone-dep' : 'tone-wd'}>{money(r.amount)}</b>
+                      <small>
+                        Requested {fmtDay(r.createdAt)}
+                        {isPending && (
+                          <span className={`pd-age ${waitMs > 24 * 3600000 ? 'pd-age-late' : ''}`}> • waiting {timeAgo(r.createdAt)}</span>
+                        )}
                       </small>
                     </div>
+                  </header>
+
+                  {/* Details */}
+                  <div className="pd-fields">
+                    {isDeposit ? (
+                      <>
+                        <Field label="Payment Ref / UTR" value={r.depositRef || r.transactionRef || 'N/A'} mono copy={r.depositRef || r.transactionRef} id={`${r._id}-ref`} />
+                        <Field label={r.isManualAdjustment ? 'Reason / Note' : 'Seller Note'} value={r.depositNote || r.adminNote || 'None'} />
+                      </>
+                    ) : (
+                      <>
+                        <Field
+                          label="Method"
+                          tone="#1d4ed8"
+                          value={METHOD_TEXT[r.method] || (r.method?.toUpperCase() || 'BANK')}
+                        />
+                        {r.accountTitle && <Field label="Account Title" value={r.accountTitle} copy={r.accountTitle} id={`${r._id}-title`} />}
+                        {r.upiId && <Field label="UPI ID / VPA" value={r.upiId} tone="#047857" mono copy={r.upiId} id={`${r._id}-upi`} />}
+                        {r.phone && <Field label="Phone / Mobile" value={r.phone} mono copy={r.phone} id={`${r._id}-phone`} />}
+                        {r.accountNumber && <Field label="Account No" value={r.accountNumber} mono copy={r.accountNumber} id={`${r._id}-acc`} />}
+                        {r.bankName && <Field label="Bank Name" value={r.bankName} />}
+                        {r.ifscCode && <Field label="IFSC Code" value={r.ifscCode} tone="#b45309" mono copy={r.ifscCode} id={`${r._id}-ifsc`} />}
+                        {r.walletAddress && (
+                          <Field label={`USDT Wallet (${r.network || 'TRC-20'})`} value={r.walletAddress} tone="#15803d" mono copy={r.walletAddress} id={`${r._id}-wallet`} />
+                        )}
+                      </>
+                    )}
                   </div>
-                )}
-              </div>
-            );
-          })}
+
+                  {/* Admin-internal numbers (hidden from seller) */}
+                  {(hasInternal || isDeposit) && (
+                    <div className="pd-internal">
+                      <span className="pd-internal-tag"><Ic name="lock" size={12} /> Admin internal</span>
+                      {isDeposit && Number(r.helpingAmount) > 0 && (
+                        <span className="pd-internal-item">🤝 Helping <b className="tone-violet">${Number(r.helpingAmount).toLocaleString('en-US')}</b></span>
+                      )}
+                      {Number(r.binanceRate) > 0 && (
+                        <span className="pd-internal-item">🟡 B.Rate <b>₹{r.binanceRate} / USDT</b></span>
+                      )}
+                      {Number(r.inrAmount) > 0 && (
+                        <span className="pd-internal-item">🇮🇳 {isDeposit ? 'INR Deposit' : 'INR Payout'} <b>₹{Number(r.inrAmount).toLocaleString('en-IN')}</b></span>
+                      )}
+                      {Number(r.usdtAmount) > 0 && (
+                        <span className="pd-internal-item">💎 USDT <b className="tone-green">{r.usdtAmount}</b></span>
+                      )}
+                      {isDeposit && (
+                        <button type="button" className="pd-chip-btn" onClick={() => setSplitModalDeposit(r)} title="Split or edit Helping Amount for this deposit">
+                          ✏️ Split Helping
+                          {Number(r.helpingAmount) > 0 && <span>${Number(r.helpingAmount).toLocaleString('en-US')}</span>}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Approval Action Form */}
+                  {isPending && (
+                    <div className="pd-action">
+                      <div className="pd-action-grid">
+                        <label className="pd-input">
+                          <span>Approved Amount ($)</span>
+                          <input
+                            type="number"
+                            className="strong"
+                            value={currentApprovedAmt}
+                            onChange={(e) => setApprovedAmountMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
+                          />
+                        </label>
+                        {isDeposit && (
+                          <label className="pd-input pd-input-violet">
+                            <span>🤝 Helping Amount ($) <em>hidden from seller</em></span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              placeholder="0"
+                              value={helpingAmountMap[r._id] !== undefined ? helpingAmountMap[r._id] : (r.helpingAmount || '')}
+                              onChange={(e) => setHelpingAmountMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
+                            />
+                          </label>
+                        )}
+                        <label className="pd-input">
+                          <span>Bank Ref / UTR Number</span>
+                          <input
+                            type="text"
+                            placeholder="e.g. UTR9876543210"
+                            value={refMap[r._id] || ''}
+                            onChange={(e) => setRefMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
+                          />
+                        </label>
+                        <label className="pd-input">
+                          <span>Admin Note <em>sent to seller chat</em></span>
+                          <input
+                            type="text"
+                            placeholder="e.g. Payout processed via NEFT / IMPS"
+                            value={noteMap[r._id] || ''}
+                            onChange={(e) => setNoteMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
+                          />
+                        </label>
+                      </div>
+
+                      {/* Binance B.Rate & USDT Calculator (Admin Internal for both Deposits & Withdrawals) */}
+                      {(() => {
+                        const currentInr = inrAmountMap[r._id] !== undefined
+                          ? inrAmountMap[r._id]
+                          : (r.inrAmount ? String(r.inrAmount) : '');
+                        const currentBRate = bRateMap[r._id] !== undefined
+                          ? bRateMap[r._id]
+                          : (r.binanceRate ? String(r.binanceRate) : '');
+                        const typedUsdtVal = usdtMap[r._id] !== undefined ? usdtMap[r._id] : '';
+                        const shownRate = (Number(currentInr) > 0 && Number(typedUsdtVal) > 0)
+                          ? (Number(currentInr) / Number(typedUsdtVal)).toFixed(2)
+                          : null;
+                        const calcUsdt = Number(typedUsdtVal) > 0
+                          ? Number(typedUsdtVal).toFixed(2)
+                          : (Number(currentInr) > 0 && Number(currentBRate) > 0)
+                            ? (Number(currentInr) / Number(currentBRate)).toFixed(2)
+                            : null;
+
+                        return (
+                          <div className="pd-binance">
+                            <div className="pd-binance-head">
+                              <b>🟡 {isDeposit ? 'Binance USDT Received' : 'Binance USDT Sent'}</b>
+                              <span className="pd-pill pd-pill-amber">Admin internal • hidden from seller</span>
+                              {calcUsdt && <span className="pd-binance-result">💎 {calcUsdt} USDT</span>}
+                            </div>
+                            <div className="pd-action-grid">
+                              <label className="pd-input pd-input-amber">
+                                <span>{isDeposit ? '🇮🇳 INR Received / Value (₹)' : '🇮🇳 INR Payout (₹)'}</span>
+                                <input
+                                  type="number"
+                                  step="any"
+                                  placeholder="e.g. 8350"
+                                  value={currentInr}
+                                  onChange={(e) => setInrAmountMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
+                                />
+                                <small>Asli INR likhein jo is transaction me aaye / gaye</small>
+                              </label>
+                              <label className="pd-input pd-input-green">
+                                <span>{isDeposit ? '💎 USDT Received (Binance me aaye)' : '💎 USDT Sent (Binance se gaye)'}</span>
+                                <input
+                                  type="number"
+                                  step="any"
+                                  min="0"
+                                  placeholder="e.g. 46.45"
+                                  value={typedUsdtVal}
+                                  onChange={(e) => setUsdtMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
+                                />
+                                <small>Binance me dekh kar asli amount likhein (Admin Only)</small>
+                              </label>
+                              <div className="pd-input">
+                                <span>🟡 Rate (khud nikalta hai)</span>
+                                <div className={`pd-rate ${shownRate ? 'on' : ''}`}>
+                                  {shownRate ? `₹${shownRate} / USDT` : 'INR aur USDT likhein'}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      <div className="pd-action-btns">
+                        <button
+                          className="btn-primary"
+                          disabled={processing[r._id]}
+                          onClick={() => handleAction(r._id, 'approved', r.type)}
+                        >
+                          <Ic name="check" size={15} />
+                          {isDeposit
+                            ? ` Approve & Credit $${currentApprovedAmt || r.amount} to Wallet`
+                            : Number(currentApprovedAmt || r.amount) < r.amount
+                              ? ` Approve Partial $${currentApprovedAmt} (Refund $${r.amount - currentApprovedAmt})`
+                              : ` Approve Payout of $${currentApprovedAmt || r.amount}`}
+                        </button>
+                        <button
+                          className="btn-danger"
+                          disabled={processing[r._id]}
+                          onClick={() => handleAction(r._id, 'rejected', r.type)}
+                        >
+                          <Ic name="x" size={15} /> Reject (Full Refund)
+                        </button>
+                        <small className="pd-action-hint">
+                          <Ic name="bell" size={12} /> Seller ko chat mein auto-receipt aur sound alert jayegi.
+                        </small>
+                      </div>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
         </>
       )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          VIEW 2: ANALYTICS
+          ───────────────────────────────────────────────────────────── */}
+      {activeTab === 'analytics' && <PayoutsAnalytics refreshKey={analyticsKey} />}
 
       {/* ─────────────────────────────────────────────────────────────
           VIEW 3: DEPOSITS LEDGER & HELPING AMOUNT SPLIT
           ───────────────────────────────────────────────────────────── */}
       {activeTab === 'ledger' && (
-        <div className="admin-deposits-ledger-section">
-          {/* Header & Direct Adjustment Trigger */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+        <div className="admin-deposits-ledger-section pd-section">
+          <div className="pd-section-head">
             <div>
-              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ display: 'inline-flex', padding: '6px 8px', borderRadius: 8, background: '#ede9fe', color: '#7c3aed' }}>
-                  🤝
-                </span>
-                Sellers Deposits Ledger &amp; Helping Split
-              </h2>
-              <p style={{ margin: '4px 0 0', fontSize: 12.5, color: '#64748b' }}>
-                Yahan par sellers ke tamam deposits ka record hai. Kisi bhi deposit par click karke Admin Helping Amount split kar sakta hai jo Admin USDT Wallet se minus ho jayegi.
+              <h3>🤝 Sellers Deposits Ledger &amp; Helping Split</h3>
+              <p>
+                Sellers ke tamam deposits ka record. Kisi bhi deposit par Admin Helping Amount split karein jo Admin USDT Wallet se minus ho jayegi.
               </p>
             </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button
-                type="button"
-                onClick={loadDepositsLedger}
-                disabled={ledgerLoading}
-                style={{
-                  background: '#ffffff',
-                  border: '1px solid #cbd5e1',
-                  borderRadius: 8,
-                  padding: '7px 12px',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: '#475569',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 5,
-                }}
-              >
-                <Ic name="refresh" size={13} />
-                <span>Refresh</span>
+            <div className="pd-section-actions">
+              <button type="button" className="pd-btn-ghost" onClick={loadDepositsLedger} disabled={ledgerLoading}>
+                <Ic name="refresh" size={13} /> Refresh
               </button>
-
-              <button
-                type="button"
-                onClick={() => setShowAdjustModal(true)}
-                style={{
-                  background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
-                  color: '#ffffff',
-                  border: 'none',
-                  borderRadius: 8,
-                  padding: '7px 14px',
-                  fontSize: 12.5,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  boxShadow: '0 2px 6px rgba(5, 150, 105, 0.25)',
-                }}
-              >
-                <span>➕ Direct Deposit Adjustment</span>
+              <button type="button" className="pd-btn-green" onClick={() => setShowAdjustModal(true)}>
+                <Ic name="plus" size={14} /> Direct Deposit Adjustment
               </button>
             </div>
           </div>
 
-          {/* Ledger KPI Cards */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
-              gap: 12,
-              marginBottom: 16,
-            }}
-          >
-            {/* Total Gross Deposited */}
-            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
-                Total Gross Deposited
-              </div>
-              <div style={{ fontSize: 19, fontWeight: 900, color: '#0f172a', marginTop: 2 }}>
-                {money(ledgerGrossTotal)}
-              </div>
-              <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 2 }}>
-                Full seller credited funds
-              </div>
+          <div className="pd-ledger-kpis">
+            <div className="pd-mini-kpi">
+              <small>Total Gross Deposited</small>
+              <b>{money(ledgerGrossTotal)}</b>
+              <em>Full seller credited funds</em>
             </div>
-
-            {/* Total Helping Split */}
-            <div style={{ background: '#ffffff', border: '1.5px solid #ddd6fe', borderRadius: 12, padding: '12px 16px', boxShadow: '0 1px 3px rgba(124, 58, 237, 0.06)' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', textTransform: 'uppercase' }}>
-                🤝 Total Helping Split
-              </div>
-              <div style={{ fontSize: 19, fontWeight: 900, color: '#7c3aed', marginTop: 2 }}>
-                -{money(ledgerHelpingTotal)}
-              </div>
-              <div style={{ fontSize: 10.5, color: '#8b5cf6', marginTop: 2 }}>
-                Excluded from Admin USDT Wallet
-              </div>
+            <div className="pd-mini-kpi tone-violet">
+              <small>🤝 Total Helping Split</small>
+              <b>-{money(ledgerHelpingTotal)}</b>
+              <em>Excluded from Admin USDT Wallet</em>
             </div>
-
-            {/* Real Seller Inflow (USDT Wallet) */}
-            <div style={{ background: '#ffffff', border: '1.5px solid #a7f3d0', borderRadius: 12, padding: '12px 16px', boxShadow: '0 1px 3px rgba(16, 185, 129, 0.08)' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#047857', textTransform: 'uppercase' }}>
-                👤 Real Seller Inflow
-              </div>
-              <div style={{ fontSize: 19, fontWeight: 900, color: '#047857', marginTop: 2 }}>
-                +{money(ledgerRealTotal)}
-              </div>
-              <div style={{ fontSize: 10.5, color: '#059669', marginTop: 2 }}>
-                Counted in Admin USDT Wallet
-              </div>
+            <div className="pd-mini-kpi tone-green">
+              <small>👤 Real Seller Inflow</small>
+              <b>+{money(ledgerRealTotal)}</b>
+              <em>Counted in Admin USDT Wallet</em>
             </div>
-
-            {/* Filtered Count */}
-            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '12px 16px', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
-                Deposits Count
-              </div>
-              <div style={{ fontSize: 19, fontWeight: 900, color: '#0f172a', marginTop: 2 }}>
-                {filteredLedger.length}
-              </div>
-              <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 2 }}>
-                Recorded deposits
-              </div>
+            <div className="pd-mini-kpi">
+              <small>Deposits Count</small>
+              <b>{filteredLedger.length}</b>
+              <em>Recorded deposits</em>
             </div>
           </div>
 
-          {/* Filters & Search Toolbar */}
-          <div
-            style={{
-              background: '#ffffff',
-              borderRadius: 12,
-              padding: '12px 16px',
-              border: '1px solid #e2e8f0',
-              marginBottom: 16,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 12,
-              flexWrap: 'wrap',
-            }}
-          >
-            {/* Status pills & Real Clients Filter Badge */}
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {[
-                  { val: 'all', label: 'All Deposits' },
-                  { val: 'approved', label: '✓ Approved' },
-                  { val: 'pending', label: '⏳ Pending' },
-                  { val: 'rejected', label: '✕ Rejected' },
-                ].map((s) => (
-                  <button
-                    key={s.val}
-                    type="button"
-                    onClick={() => setLedgerStatus(s.val)}
-                    style={{
-                      padding: '6px 12px',
-                      borderRadius: 8,
-                      fontSize: 12,
-                      fontWeight: 700,
-                      border: 'none',
-                      cursor: 'pointer',
-                      background: ledgerStatus === s.val ? '#0f172a' : '#f1f5f9',
-                      color: ledgerStatus === s.val ? '#ffffff' : '#64748b',
-                    }}
-                  >
-                    {s.label}
-                  </button>
-                ))}
+          {/* Real vs helping split bar */}
+          {ledgerGrossTotal > 0 && (
+            <div className="pd-splitbar" title="Real inflow vs helping split">
+              <span className="real" style={{ width: `${(ledgerRealTotal / ledgerGrossTotal) * 100}%` }} />
+              <span className="help" style={{ width: `${(ledgerHelpingTotal / ledgerGrossTotal) * 100}%` }} />
+              <div className="pd-splitbar-legend">
+                <span><i className="real" /> Real {((ledgerRealTotal / ledgerGrossTotal) * 100).toFixed(1)}%</span>
+                <span><i className="help" /> Helping {((ledgerHelpingTotal / ledgerGrossTotal) * 100).toFixed(1)}%</span>
               </div>
-
-              {/* Indicator: Testing accounts excluded */}
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 5,
-                  fontSize: 11,
-                  fontWeight: 800,
-                  color: '#047857',
-                  background: '#ecfdf5',
-                  border: '1px solid #a7f3d0',
-                  padding: '4px 10px',
-                  borderRadius: 20,
-                  whiteSpace: 'nowrap',
-                }}
-                title="Testing accounts aur demo sellers ke deposits is ledger mein shamil nahi hain"
-              >
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
-                <span>Real Clients Only (Testing Excluded)</span>
-              </span>
             </div>
+          )}
 
-            {/* Search Input */}
-            <div style={{ position: 'relative', minWidth: 260, flex: 1, maxWidth: 420 }}>
+          <div className="pd-toolbar">
+            <div className="pd-seg">
+              {[
+                { val: 'all', label: 'All Deposits' },
+                { val: 'approved', label: 'Approved' },
+                { val: 'pending', label: 'Pending' },
+                { val: 'rejected', label: 'Rejected' },
+              ].map((s) => (
+                <button key={s.val} type="button" className={ledgerStatus === s.val ? 'active' : ''} onClick={() => setLedgerStatus(s.val)}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <span className="pd-pill pd-pill-green" title="Testing accounts aur demo sellers ke deposits is ledger mein shamil nahi hain">
+              <span className="pd-dot" /> Real Clients Only (Testing Excluded)
+            </span>
+            <div className="pd-search">
+              <Ic name="search" size={14} />
               <input
                 type="text"
-                placeholder="Search store, seller, UTR reference, note..."
+                placeholder="Search store, seller, UTR reference, note…"
                 value={ledgerSearch}
                 onChange={(e) => setLedgerSearch(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '7px 12px 7px 32px',
-                  borderRadius: 8,
-                  border: '1px solid #cbd5e1',
-                  fontSize: 12.5,
-                  outline: 'none',
-                }}
               />
-              <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }}>
-                <Ic name="search" size={14} />
-              </span>
               {ledgerSearch && (
-                <button
-                  type="button"
-                  onClick={() => setLedgerSearch('')}
-                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
-                >
-                  <Ic name="x" size={13} />
-                </button>
+                <button type="button" onClick={() => setLedgerSearch('')} aria-label="Clear search"><Ic name="x" size={13} /></button>
               )}
             </div>
           </div>
 
-          {/* Ledger Table */}
           {ledgerLoading ? (
-            <div className="card text-center py-5">
-              <p className="muted">Loading deposits ledger…</p>
-            </div>
+            <div className="pd-skeleton pd-skeleton-tall" />
           ) : filteredLedger.length === 0 ? (
-            <div className="empty-box">
-              <Ic name="wallet" size={44} stroke={1.2} />
+            <div className="pd-empty">
+              <Ic name="wallet" size={40} stroke={1.2} />
               <p>Koi deposit transaction nahi mili.</p>
               {ledgerSearch && (
-                <button
-                  type="button"
-                  onClick={() => setLedgerSearch('')}
-                  className="btn-outline btn-sm mt-2"
-                >
-                  Clear Search
-                </button>
+                <button type="button" onClick={() => setLedgerSearch('')} className="pd-btn-ghost">Clear Search</button>
               )}
             </div>
           ) : (
-            <div className="admin-card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div className="pd-card pd-card-flush">
               <div className="admin-table-wrap">
-                <table className="admin-table">
+                <table className="pd-table">
                   <thead>
                     <tr>
                       <th>Date &amp; Time</th>
@@ -1247,7 +996,7 @@ export default function AdminWithdrawals() {
                       <th>Split (Real vs Helping)</th>
                       <th>Method &amp; Ref (UTR)</th>
                       <th>Status</th>
-                      <th style={{ textAlign: 'right' }}>Admin Split Action</th>
+                      <th className="num">Admin Split Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1255,122 +1004,70 @@ export default function AdminWithdrawals() {
                       const gross = d.approvedAmount !== null && d.approvedAmount !== undefined ? d.approvedAmount : d.amount;
                       const helping = d.helpingAmount || 0;
                       const real = Math.max(0, gross - helping);
+                      const realPct = gross > 0 ? (real / gross) * 100 : 100;
 
                       return (
                         <tr key={d._id}>
                           <td>
-                            <div style={{ fontWeight: 700, color: '#0f172a' }}>
-                              {fmtDate(d.processedAt || d.createdAt)}
-                            </div>
-                            <small className="muted-sm">ID #{String(d._id).slice(-6)}</small>
+                            <div className="pd-strong">{fmtDate(d.processedAt || d.createdAt)}</div>
+                            <small className="pd-muted mono">#{String(d._id).slice(-6)}</small>
                           </td>
-
                           <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <span style={{ fontWeight: 800, color: '#0f172a' }}>
-                                {d.storeName || d.seller?.storeName || 'Store'}
-                              </span>
-                            </div>
-                            <div style={{ fontSize: 11, color: '#64748b' }}>
-                              {d.seller?.ownerName} {d.seller?.email && `• ${d.seller.email}`}
+                            <div className="pd-cell-who">
+                              <span className="pd-avatar pd-avatar-sm">{(d.storeName || d.seller?.storeName || 'S')[0]}</span>
+                              <div>
+                                <div className="pd-strong">{d.storeName || d.seller?.storeName || 'Store'}</div>
+                                <small className="pd-muted">{d.seller?.ownerName} {d.seller?.email && `• ${d.seller.email}`}</small>
+                              </div>
                             </div>
                           </td>
-
                           <td>
-                            <b style={{ fontSize: 14, color: '#0f172a' }}>{money(gross)}</b>
-                            {d.isManualAdjustment && (
-                              <span style={{ fontSize: 10, display: 'block', color: '#059669', fontWeight: 700 }}>
-                                Manual Adjustment
-                              </span>
-                            )}
+                            <b className="pd-amount">{money(gross)}</b>
+                            {d.isManualAdjustment && <small className="pd-tag-green">Manual Adjustment</small>}
                             {Number(d.binanceRate) > 0 && (
-                              <div style={{ marginTop: 3 }}>
-                                <span style={{ fontSize: 10.5, color: '#b45309', fontWeight: 800, background: '#fef3c7', padding: '1px 5px', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                                  🟡 ₹{d.binanceRate}/USDT
-                                  {Number(d.usdtAmount) > 0 && ` • ₮${d.usdtAmount}`}
-                                </span>
-                              </div>
+                              <span className="pd-rate-chip">
+                                🟡 ₹{d.binanceRate}/USDT{Number(d.usdtAmount) > 0 && ` • ₮${d.usdtAmount}`}
+                              </span>
                             )}
                           </td>
-
                           <td>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                              <div style={{ fontSize: 12, color: '#047857', fontWeight: 800 }}>
-                                👤 Real: {money(real)}
+                            <div className="pd-split-cell">
+                              <div className="pd-split-mini">
+                                <span className="real" style={{ width: `${realPct}%` }} />
+                                <span className="help" style={{ width: `${100 - realPct}%` }} />
                               </div>
+                              <small className="tone-green">👤 Real {money(real)}</small>
                               {helping > 0 ? (
-                                <div style={{ fontSize: 11, color: '#7c3aed', fontWeight: 700, background: '#faf5ff', padding: '1px 6px', borderRadius: 4, display: 'inline-block' }}>
-                                  🤝 Helping: -{money(helping)}
-                                </div>
+                                <small className="tone-violet">🤝 Helping -{money(helping)}</small>
                               ) : (
-                                <small style={{ color: '#94a3b8', fontSize: 10.5 }}>
-                                  No helping deduction
-                                </small>
+                                <small className="pd-muted">No helping deduction</small>
                               )}
                             </div>
                           </td>
-
                           <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                              <span className="pay-chip" style={{ fontSize: 10 }}>
-                                {(d.method || 'bank').toUpperCase()}
-                              </span>
-                              <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#334155' }}>
-                                {d.depositRef || d.transactionRef || 'N/A'}
-                              </span>
+                            <div className="pd-cell-ref">
+                              <span className="pd-method-chip">{(d.method || 'bank').toUpperCase()}</span>
+                              <span className="mono">{d.depositRef || d.transactionRef || 'N/A'}</span>
                             </div>
                             {Number(d.inrAmount) > 0 && (
-                              <small style={{ color: '#0f172a', fontWeight: 700, display: 'block', marginTop: 2 }}>
-                                ₹{Number(d.inrAmount).toLocaleString('en-IN')} INR
-                              </small>
+                              <small className="pd-strong pd-block">₹{Number(d.inrAmount).toLocaleString('en-IN')} INR</small>
                             )}
                             {(d.depositNote || d.adminNote) && (
-                              <small style={{ color: '#64748b', display: 'block', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {d.depositNote || d.adminNote}
-                              </small>
+                              <small className="pd-muted pd-ellipsis">{d.depositNote || d.adminNote}</small>
                             )}
                           </td>
-
                           <td>
-                            <span className={`status-chip ${STATUS_COLOR[d.status] || ''}`}>
-                              {d.status?.toUpperCase()}
-                            </span>
+                            <span className={`pd-status pd-status-${d.status}`}>{d.status?.toUpperCase()}</span>
                           </td>
-
-                          <td style={{ textAlign: 'right' }}>
+                          <td className="num">
                             <button
                               type="button"
+                              className="pd-chip-btn"
                               onClick={() => setSplitModalDeposit(d)}
-                              style={{
-                                background: '#faf5ff',
-                                border: '1.5px solid #c4b5fd',
-                                borderRadius: 7,
-                                padding: '5px 10px',
-                                fontSize: 11.5,
-                                fontWeight: 800,
-                                color: '#6b21a8',
-                                cursor: 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 4,
-                                transition: 'all 0.15s ease',
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = '#ede9fe';
-                                e.currentTarget.style.borderColor = '#8b5cf6';
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background = '#faf5ff';
-                                e.currentTarget.style.borderColor = '#c4b5fd';
-                              }}
                               title="Click to split or edit Helping Amount for this deposit"
                             >
-                              <span>✏️ Split / Edit Helping</span>
-                              {helping > 0 && (
-                                <span style={{ background: '#8b5cf6', color: '#fff', fontSize: 10, padding: '1px 5px', borderRadius: 4 }}>
-                                  ${helping}
-                                </span>
-                              )}
+                              ✏️ Split / Edit
+                              {helping > 0 && <span>${helping}</span>}
                             </button>
                           </td>
                         </tr>
@@ -1385,26 +1082,46 @@ export default function AdminWithdrawals() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          VIEW 2: WITHDRAWAL LIMIT UPGRADE APPLICATIONS (3-STEP PROTOCOL)
+          VIEW 4: WITHDRAWAL LIMIT UPGRADE APPLICATIONS (3-STEP PROTOCOL)
           ───────────────────────────────────────────────────────────── */}
       {activeTab === 'limits' && (
-        <div className="admin-limit-requests-section">
+        <div className="admin-limit-requests-section pd-section">
+          {/* Pipeline summary */}
+          <div className="pd-pipeline">
+            {[
+              { key: 'pending', label: 'Quote needed', hint: 'Step 1 • send offer', tone: 'amber' },
+              { key: 'offered', label: 'Waiting seller', hint: 'Step 2 • seller reviews', tone: 'blue' },
+              { key: 'accepted_by_seller', label: 'Seller accepted', hint: 'Step 3 • activate', tone: 'green' },
+              { key: 'approved', label: 'Activated', hint: 'Limit live', tone: 'slate' },
+              { key: 'closed', label: 'Declined', hint: 'Rejected / seller declined', tone: 'red' },
+            ].map((s, i) => (
+              <div key={s.key} className={`pd-stage tone-${s.tone}`}>
+                <span className="pd-stage-n">{i + 1}</span>
+                <div>
+                  <b>{limitStages[s.key]}</b>
+                  <span>{s.label}</span>
+                  <small>{s.hint}</small>
+                </div>
+              </div>
+            ))}
+          </div>
+
           {limitRequests.length === 0 ? (
-            <div className="empty-box">
-              <Ic name="shield" size={44} stroke={1.2} />
+            <div className="pd-empty">
+              <Ic name="shield" size={40} stroke={1.2} />
               <p>Koi limit upgrade application nahi mili.</p>
             </div>
           ) : (
-            <div className="admin-card">
+            <div className="pd-card pd-card-flush">
               <div className="admin-table-wrap">
-                <table className="admin-table">
+                <table className="pd-table">
                   <thead>
                     <tr>
                       <th>Store &amp; Seller</th>
                       <th>Wallet Balance</th>
                       <th>Current Tier &amp; Limit</th>
                       <th>Withdrawal Milestones</th>
-                      <th>Proposed / Requested Limit</th>
+                      <th>Proposed / Requested</th>
                       <th>Upgrade Fee</th>
                       <th>Pipeline Stage</th>
                       <th>Actions</th>
@@ -1417,163 +1134,74 @@ export default function AdminWithdrawals() {
                       const isOffered = status === 'offered';
                       const isAccepted = status === 'accepted_by_seller';
                       const isCompleted = status === 'approved';
+                      const lowBalance = l.walletBalance < (l.pendingRequest?.offeredFee || 50);
+                      const pct = Math.min(100, Math.round((l.successfulWithdrawalCount / (l.requiredWithdrawalsForIncrease || 1)) * 100));
+                      const reached = l.successfulWithdrawalCount >= l.requiredWithdrawalsForIncrease;
 
                       return (
-                        <tr key={l.sellerId} style={{ background: isAccepted ? '#f0fdf4' : 'transparent' }}>
+                        <tr key={l.sellerId} className={isAccepted ? 'pd-row-highlight' : ''}>
                           <td>
-                            <b>{l.storeName}</b>
-                            <small className="muted-sm block">{l.ownerName} • {l.email}</small>
-                          </td>
-                          <td>
-                            <b style={{ color: l.walletBalance < (l.pendingRequest?.offeredFee || 50) ? '#dc2626' : '#0f172a' }}>
-                              {money(l.walletBalance)}
-                            </b>
-                            {l.walletBalance < (l.pendingRequest?.offeredFee || 50) && (
-                              <small className="block" style={{ fontSize: 10.5, color: '#dc2626', fontWeight: 700 }}>
-                                ⚠️ Low Balance for fee
-                              </small>
-                            )}
-                          </td>
-                          <td>
-                            <span style={{ fontWeight: 700, color: '#0f172a' }}>{money(l.currentMaxAmount)}</span>
-                            <small className="muted-sm block">{l.currentTierName}</small>
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                              <span style={{ fontSize: 11.5, fontWeight: 800, color: l.successfulWithdrawalCount >= l.requiredWithdrawalsForIncrease ? '#16a34a' : '#d97706' }}>
-                                {l.successfulWithdrawalCount} / {l.requiredWithdrawalsForIncrease} Payouts
-                              </span>
-                              <div style={{ width: 90, height: 5, background: '#e2e8f0', borderRadius: 4, overflow: 'hidden' }}>
-                                <div
-                                  style={{
-                                    width: `${Math.min(100, Math.round((l.successfulWithdrawalCount / (l.requiredWithdrawalsForIncrease || 1)) * 100))}%`,
-                                    height: '100%',
-                                    background: l.successfulWithdrawalCount >= l.requiredWithdrawalsForIncrease ? '#16a34a' : '#2563eb',
-                                  }}
-                                />
+                            <div className="pd-cell-who">
+                              <span className="pd-avatar pd-avatar-sm">{(l.storeName || 'S')[0]}</span>
+                              <div>
+                                <div className="pd-strong">{l.storeName}</div>
+                                <small className="pd-muted">{l.ownerName} • {l.email}</small>
                               </div>
                             </div>
                           </td>
                           <td>
-                            <b style={{ fontSize: 14, color: '#2563eb' }}>
-                              {money(l.pendingRequest?.offeredLimit || l.pendingRequest?.requestedLimit || 0)}
-                            </b>
-                            {l.pendingRequest?.reason && (
-                              <small className="muted-sm block" style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                "{l.pendingRequest.reason}"
+                            <b className={lowBalance ? 'tone-red' : 'pd-strong'}>{money(l.walletBalance)}</b>
+                            {lowBalance && <small className="tone-red pd-block">⚠️ Low balance for fee</small>}
+                          </td>
+                          <td>
+                            <div className="pd-strong">{money(l.currentMaxAmount)}</div>
+                            <small className="pd-muted">{l.currentTierName}</small>
+                          </td>
+                          <td>
+                            <div className="pd-progress-cell">
+                              <small className={reached ? 'tone-green' : 'tone-amber'}>
+                                {l.successfulWithdrawalCount} / {l.requiredWithdrawalsForIncrease} payouts
                               </small>
+                              <div className="pd-progress"><span className={reached ? 'done' : ''} style={{ width: `${pct}%` }} /></div>
+                            </div>
+                          </td>
+                          <td>
+                            <b className="tone-blue">{money(l.pendingRequest?.offeredLimit || l.pendingRequest?.requestedLimit || 0)}</b>
+                            {l.pendingRequest?.reason && (
+                              <small className="pd-muted pd-ellipsis">"{l.pendingRequest.reason}"</small>
                             )}
                           </td>
                           <td>
-                            <span style={{ fontWeight: 700, color: '#d97706' }}>
-                              {money(l.pendingRequest?.offeredFee !== undefined ? l.pendingRequest.offeredFee : l.upgradeFee)}
-                            </span>
+                            <b className="tone-amber">{money(l.pendingRequest?.offeredFee !== undefined ? l.pendingRequest.offeredFee : l.upgradeFee)}</b>
                           </td>
                           <td>
-                            {isPending && (
-                              <span className="status-chip chip-orange" style={{ fontWeight: 800 }}>
-                                🟡 QUOTE NEEDED
-                              </span>
-                            )}
-                            {isOffered && (
-                              <span className="status-chip chip-blue" style={{ fontWeight: 800, background: '#eff6ff', color: '#1d4ed8' }}>
-                                🔵 WAITING SELLER
-                              </span>
-                            )}
-                            {isAccepted && (
-                              <span className="status-chip chip-green" style={{ fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #86efac' }}>
-                                🟢 SELLER ACCEPTED
-                              </span>
-                            )}
-                            {isCompleted && (
-                              <span className="status-chip chip-green">
-                                ✅ ACTIVATED
-                              </span>
-                            )}
+                            {isPending && <span className="pd-stage-chip tone-amber">● Quote needed</span>}
+                            {isOffered && <span className="pd-stage-chip tone-blue">● Waiting seller</span>}
+                            {isAccepted && <span className="pd-stage-chip tone-green">● Seller accepted</span>}
+                            {isCompleted && <span className="pd-stage-chip tone-slate">✓ Activated</span>}
                             {(status === 'rejected' || status === 'declined_by_seller') && (
-                              <span className="status-chip chip-red">
-                                ❌ {status === 'declined_by_seller' ? 'SELLER DECLINED' : 'REJECTED'}
-                              </span>
+                              <span className="pd-stage-chip tone-red">✕ {status === 'declined_by_seller' ? 'Seller declined' : 'Rejected'}</span>
                             )}
                           </td>
                           <td>
-                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                              {/* Step 1 Action: Quote Terms & Send Offer */}
+                            <div className="pd-row-actions">
                               {(isPending || isOffered) && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenOffer(l)}
-                                  style={{
-                                    padding: '5px 10px',
-                                    fontSize: 11.5,
-                                    fontWeight: 700,
-                                    borderRadius: 6,
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    background: '#2563eb',
-                                    color: '#fff',
-                                  }}
-                                >
-                                  {isOffered ? '✏️ Edit Offer' : '📝 Send Offer Quote'}
+                                <button type="button" className="pd-act pd-act-blue" onClick={() => handleOpenOffer(l)}>
+                                  {isOffered ? '✏️ Edit Offer' : '📝 Send Offer'}
                                 </button>
                               )}
-
-                              {/* Step 3 Action: Finalize & Activate Limit */}
                               {isAccepted && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenFinalize(l)}
-                                  style={{
-                                    padding: '6px 12px',
-                                    fontSize: 12,
-                                    fontWeight: 800,
-                                    borderRadius: 6,
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    background: '#16a34a',
-                                    color: '#fff',
-                                    boxShadow: '0 2px 6px rgba(22, 163, 74, 0.3)',
-                                  }}
-                                >
-                                  ⚡ Finalize &amp; Activate Limit
+                                <button type="button" className="pd-act pd-act-green" onClick={() => handleOpenFinalize(l)}>
+                                  ⚡ Finalize &amp; Activate
                                 </button>
                               )}
-
-                              {/* Re-configure after completed */}
                               {isCompleted && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenOffer(l)}
-                                  style={{
-                                    padding: '4px 8px',
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                    borderRadius: 6,
-                                    border: '1px solid #cbd5e1',
-                                    background: '#f8fafc',
-                                    cursor: 'pointer',
-                                  }}
-                                >
+                                <button type="button" className="pd-act pd-act-ghost" onClick={() => handleOpenOffer(l)}>
                                   ⚙️ Offer New Tier
                                 </button>
                               )}
-
-                              {/* Reject / Decline */}
                               {(isPending || isOffered || isAccepted) && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenReject(l)}
-                                  style={{
-                                    padding: '5px 8px',
-                                    fontSize: 11.5,
-                                    fontWeight: 700,
-                                    borderRadius: 6,
-                                    border: '1px solid #fecaca',
-                                    cursor: 'pointer',
-                                    background: '#fff',
-                                    color: '#dc2626',
-                                  }}
-                                >
+                                <button type="button" className="pd-act pd-act-red" onClick={() => handleOpenReject(l)}>
                                   ✕ Decline
                                 </button>
                               )}
