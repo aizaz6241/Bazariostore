@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, money, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
+import SellersAnalytics from './SellersAnalytics.jsx';
 
 export default function Sellers() {
   const [sellers, setSellers] = useState([]);
@@ -9,6 +10,8 @@ export default function Sellers() {
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'active' | 'frozen' | 'suspended' | 'warned' | 'at_risk'
   const [viewMode, setViewMode] = useState('cards'); // 'cards' | 'table'
+  const [sortBy, setSortBy] = useState('newest');
+  const [analyticsKey, setAnalyticsKey] = useState(0); // bump to reload the analytics panel
 
   // Create Seller Modal
   const [createOpen, setCreateOpen] = useState(false);
@@ -574,81 +577,94 @@ export default function Sellers() {
 
   const activeSellers = sellers.filter((s) => s.status !== 'pending_approval');
 
-  // Filtered list
-  const filtered = activeSellers.filter((s) => {
-    const score = s.accountHealth?.score !== undefined ? s.accountHealth.score : 100;
-    if (statusFilter === 'active' && s.status !== 'active') return false;
-    if (statusFilter === 'client' && (s.isTestAccount || s.isPreviousStoreSeller)) return false;
-    if (statusFilter === 'test' && !s.isTestAccount) return false;
-    if (statusFilter === 'previous' && !s.isPreviousStoreSeller) return false;
-    if (statusFilter === 'frozen' && s.status !== 'frozen') return false;
-    if (statusFilter === 'suspended' && s.status !== 'suspended') return false;
-    if (statusFilter === 'warned' && !s.warning?.active) return false;
-    if (statusFilter === 'at_risk' && score > 30) return false;
-
-    if (!q) return true;
-    const match =
-      s.storeName?.toLowerCase().includes(q.toLowerCase()) ||
-      s.ownerName?.toLowerCase().includes(q.toLowerCase()) ||
-      s.email?.toLowerCase().includes(q.toLowerCase()) ||
-      s.phone?.toLowerCase().includes(q.toLowerCase());
-    return match;
-  });
-
   const clientCount = activeSellers.filter((s) => !s.isTestAccount && !s.isPreviousStoreSeller).length;
   const testCount = activeSellers.filter((s) => s.isTestAccount).length;
   const previousCount = activeSellers.filter((s) => s.isPreviousStoreSeller).length;
-  const healthyCount = activeSellers.filter((s) => s.status === 'active' && (s.accountHealth?.score ?? 100) >= 80).length;
+  const activeCount = activeSellers.filter((s) => s.status === 'active').length;
   const warnedCount = activeSellers.filter((s) => s.warning?.active).length;
-  const frozenCount = activeSellers.filter((s) => s.status === 'frozen' || s.status === 'suspended').length;
-  const totalProducts = activeSellers.reduce((a, b) => a + (b.productCount || 0), 0);
+  const frozenOnlyCount = activeSellers.filter((s) => s.status === 'frozen').length;
+  const suspendedCount = activeSellers.filter((s) => s.status === 'suspended').length;
+  const atRiskCount = activeSellers.filter((s) => (s.accountHealth?.score ?? 100) <= 30).length;
   const totalGMV = activeSellers.reduce((a, b) => a + (b.lifetimeSales || 0), 0);
+
+  const FILTERS = [
+    { key: 'all', label: 'All', count: activeSellers.length },
+    { key: 'active', label: '🟢 Active', count: activeCount },
+    { key: 'client', label: '👤 Client', count: clientCount },
+    { key: 'test', label: '🧪 Test', count: testCount },
+    { key: 'previous', label: '🏛️ Previous', count: previousCount },
+    { key: 'warned', label: '⚠️ Warned', count: warnedCount },
+    { key: 'at_risk', label: '🔴 At risk', count: atRiskCount },
+    { key: 'frozen', label: '❄️ Frozen', count: frozenOnlyCount },
+    { key: 'suspended', label: '⛔ Suspended', count: suspendedCount },
+  ];
+
+  const SORTS = {
+    newest: { label: 'Newest first', fn: (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0) },
+    sales: { label: 'Highest sales', fn: (a, b) => (b.lifetimeSales || 0) - (a.lifetimeSales || 0) },
+    pending: { label: 'Most pending orders', fn: (a, b) => (b.pendingOrders || 0) - (a.pendingOrders || 0) },
+    wallet: { label: 'Highest wallet balance', fn: (a, b) => (b.wallet?.balance || 0) - (a.wallet?.balance || 0) },
+    locked: { label: 'Most locked funds', fn: (a, b) => (b.wallet?.processingFund || 0) - (a.wallet?.processingFund || 0) },
+    health: { label: 'Lowest health first', fn: (a, b) => (a.accountHealth?.score ?? 100) - (b.accountHealth?.score ?? 100) },
+    name: { label: 'Store name A–Z', fn: (a, b) => (a.storeName || '').localeCompare(b.storeName || '') },
+  };
+
+  // Filtered list
+  const filtered = activeSellers
+    .filter((s) => {
+      const score = s.accountHealth?.score !== undefined ? s.accountHealth.score : 100;
+      if (statusFilter === 'active' && s.status !== 'active') return false;
+      if (statusFilter === 'client' && (s.isTestAccount || s.isPreviousStoreSeller)) return false;
+      if (statusFilter === 'test' && !s.isTestAccount) return false;
+      if (statusFilter === 'previous' && !s.isPreviousStoreSeller) return false;
+      if (statusFilter === 'frozen' && s.status !== 'frozen') return false;
+      if (statusFilter === 'suspended' && s.status !== 'suspended') return false;
+      if (statusFilter === 'warned' && !s.warning?.active) return false;
+      if (statusFilter === 'at_risk' && score > 30) return false;
+
+      if (!q) return true;
+      const match =
+        s.storeName?.toLowerCase().includes(q.toLowerCase()) ||
+        s.ownerName?.toLowerCase().includes(q.toLowerCase()) ||
+        s.email?.toLowerCase().includes(q.toLowerCase()) ||
+        s.phone?.toLowerCase().includes(q.toLowerCase());
+      return match;
+    })
+    .sort((SORTS[sortBy] || SORTS.newest).fn);
+
+  // A store picked from one of the analytics "top" lists
+  const openSellerById = (id) => {
+    const s = sellers.find((x) => String(x._id) === String(id));
+    if (s) handleOpenProfile(s, 'dashboard');
+  };
 
   return (
     <div className="admin-sellers-page">
       {/* Top Header */}
-      <div className="admin-header-row">
+      <div className="admin-header-row sellers-hero">
         <div>
-          <h2>🏬 Multi-Vendor Sellers &amp; Merchants Directory</h2>
+          <h2>🏬 Sellers &amp; Vendors</h2>
           <p className="muted">
-            Manage merchant cards, open full profiles (Account, Documents, Dashboard &amp; Upgrades), and onboard new vendors.
+            {activeSellers.length} stores · {clientCount} real clients · lifetime GMV <b>{money(totalGMV)}</b>
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button type="button" onClick={() => { loadSellers(); setAnalyticsKey((k) => k + 1); }} className="btn-ghost-refresh" title="Reload sellers and analytics">
+            <Ic name="refresh" size={15} /> Refresh
+          </button>
           <button onClick={() => setCreateOpen(true)} className="btn-primary">
-            <Ic name="plus" size={16} /> + Onboard New Seller
+            <Ic name="plus" size={16} /> Onboard New Seller
           </button>
         </div>
       </div>
 
-      {/* Summary KPI Stats Bar */}
-      <div className="admin-sellers-stats-bar">
-        <div className="stat-box" style={{ borderLeft: '4px solid #2563eb' }}>
-          <span className="lbl">Total Active Sellers</span>
-          <b className="val" style={{ color: '#2563eb' }}>{activeSellers.length}</b>
-        </div>
-        <div className="stat-box" style={{ borderLeft: '4px solid #16a34a' }}>
-          <span className="lbl">Healthy Accounts (80+)</span>
-          <b className="val" style={{ color: '#16a34a' }}>{healthyCount}</b>
-        </div>
-        <div className="stat-box" style={{ borderLeft: '4px solid #d97706' }}>
-          <span className="lbl">Active Warnings</span>
-          <b className="val" style={{ color: '#d97706' }}>{warnedCount}</b>
-        </div>
-        <div className="stat-box" style={{ borderLeft: '4px solid #dc2626' }}>
-          <span className="lbl">Frozen / Suspended</span>
-          <b className="val" style={{ color: '#dc2626' }}>{frozenCount}</b>
-        </div>
-        <div className="stat-box" style={{ borderLeft: '4px solid #0f172a' }}>
-          <span className="lbl">Total Merchant Sales (GMV)</span>
-          <b className="val">{money(totalGMV)}</b>
-        </div>
-      </div>
+      {/* Analytics: wallet, pending orders, money movement */}
+      <SellersAnalytics onOpenSeller={openSellerById} refreshKey={analyticsKey} />
 
       {/* Filter Tabs & Search Toolbar */}
-      <div className="admin-sellers-toolbar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: 1 }}>
-          <div className="search-field" style={{ minWidth: 260, maxWidth: 380 }}>
+      <div className="admin-sellers-toolbar sellers-toolbar-v2">
+        <div className="sellers-toolbar-row">
+          <div className="search-field" style={{ flex: 1, minWidth: 220, maxWidth: 420 }}>
             <Ic name="search" size={16} />
             <input
               type="text"
@@ -658,157 +674,51 @@ export default function Sellers() {
             />
           </div>
 
-          {/* Quick Filter Pills */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <select className="sellers-sort" value={sortBy} onChange={(e) => setSortBy(e.target.value)} aria-label="Sort sellers">
+            {Object.entries(SORTS).map(([key, s]) => (
+              <option key={key} value={key}>
+                Sort: {s.label}
+              </option>
+            ))}
+          </select>
+
+          {/* View Mode Switcher: Cards View vs Table View */}
+          <div className="admin-view-toggle">
             <button
               type="button"
-              onClick={() => setStatusFilter('all')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 20,
-                border: statusFilter === 'all' ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
-                background: statusFilter === 'all' ? '#eff6ff' : '#ffffff',
-                color: statusFilter === 'all' ? '#1d4ed8' : '#64748b',
-                fontWeight: 700,
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
+              className={`admin-view-toggle-btn ${viewMode === 'cards' ? 'active' : ''}`}
+              onClick={() => setViewMode('cards')}
+              title="Display sellers as Cards"
             >
-              All ({activeSellers.length})
+              🎴 Cards
             </button>
             <button
               type="button"
-              onClick={() => setStatusFilter('active')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 20,
-                border: statusFilter === 'active' ? '1.5px solid #16a34a' : '1px solid #cbd5e1',
-                background: statusFilter === 'active' ? '#ecfdf5' : '#ffffff',
-                color: statusFilter === 'active' ? '#047857' : '#64748b',
-                fontWeight: 700,
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
+              className={`admin-view-toggle-btn ${viewMode === 'table' ? 'active' : ''}`}
+              onClick={() => setViewMode('table')}
+              title="Display sellers as Table"
             >
-              🟢 Active
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('client')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 20,
-                border: statusFilter === 'client' ? '1.5px solid #059669' : '1px solid #cbd5e1',
-                background: statusFilter === 'client' ? '#ecfdf5' : '#ffffff',
-                color: statusFilter === 'client' ? '#047857' : '#64748b',
-                fontWeight: 700,
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
-            >
-              👤 Client ({clientCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('test')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 20,
-                border: statusFilter === 'test' ? '1.5px solid #7c3aed' : '1px solid #cbd5e1',
-                background: statusFilter === 'test' ? '#faf5ff' : '#ffffff',
-                color: statusFilter === 'test' ? '#6b21a8' : '#64748b',
-                fontWeight: 700,
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
-            >
-              🧪 Test ({testCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('previous')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 20,
-                border: statusFilter === 'previous' ? '1.5px solid #d97706' : '1px solid #cbd5e1',
-                background: statusFilter === 'previous' ? '#fffbeb' : '#ffffff',
-                color: statusFilter === 'previous' ? '#b45309' : '#64748b',
-                fontWeight: 700,
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
-            >
-              🏛️ Previous Stores ({previousCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('warned')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 20,
-                border: statusFilter === 'warned' ? '1.5px solid #d97706' : '1px solid #cbd5e1',
-                background: statusFilter === 'warned' ? '#fffbeb' : '#ffffff',
-                color: statusFilter === 'warned' ? '#b45309' : '#64748b',
-                fontWeight: 700,
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
-            >
-              ⚠️ Warned ({warnedCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('frozen')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 20,
-                border: statusFilter === 'frozen' ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
-                background: statusFilter === 'frozen' ? '#eff6ff' : '#ffffff',
-                color: statusFilter === 'frozen' ? '#1e40af' : '#64748b',
-                fontWeight: 700,
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
-            >
-              ❄️ Frozen
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('suspended')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 20,
-                border: statusFilter === 'suspended' ? '1.5px solid #dc2626' : '1px solid #cbd5e1',
-                background: statusFilter === 'suspended' ? '#fef2f2' : '#ffffff',
-                color: statusFilter === 'suspended' ? '#b91c1c' : '#64748b',
-                fontWeight: 700,
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
-            >
-              ⛔ Suspended
+              📄 Table
             </button>
           </div>
         </div>
 
-        {/* View Mode Switcher: Cards View vs Table View */}
-        <div className="admin-view-toggle">
-          <button
-            type="button"
-            className={`admin-view-toggle-btn ${viewMode === 'cards' ? 'active' : ''}`}
-            onClick={() => setViewMode('cards')}
-            title="Display sellers as Cards"
-          >
-            🎴 Cards View
-          </button>
-          <button
-            type="button"
-            className={`admin-view-toggle-btn ${viewMode === 'table' ? 'active' : ''}`}
-            onClick={() => setViewMode('table')}
-            title="Display sellers as Table"
-          >
-            📄 Table View
-          </button>
+        {/* Quick Filter Pills */}
+        <div className="sellers-filter-pills">
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              className={`sellers-pill${statusFilter === f.key ? ' on' : ''}`}
+              onClick={() => setStatusFilter(f.key)}
+            >
+              {f.label}
+              <span className="sellers-pill-count">{f.count}</span>
+            </button>
+          ))}
+          <span className="sellers-result-count">
+            Showing {filtered.length} of {activeSellers.length}
+          </span>
         </div>
       </div>
 
