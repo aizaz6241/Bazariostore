@@ -237,6 +237,18 @@ export default function SellerSupport() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  // A seller removes their own message (e.g. wrong bank details sent by mistake): gone for support too
+  const handleDeleteOwn = async (msg) => {
+    if (!msg?._id || msg.sender !== 'seller') return;
+    if (!window.confirm('Delete this message? It will be removed for support as well.')) return;
+    try {
+      await sapi(`/chat/messages/${msg._id}`, { method: 'DELETE' });
+      setMessages((prev) => prev.filter((m) => m._id !== msg._id));
+    } catch (err) {
+      alert(err.message || 'Could not delete the message');
+    }
+  };
+
   const handleStartReply = (msg) => {
     setReplyingTo(msg);
     textInputRef.current?.focus();
@@ -441,6 +453,7 @@ export default function SellerSupport() {
                 isMe={isMe}
                 myRole="seller"
                 onReply={handleStartReply}
+                onDelete={isMe ? handleDeleteOwn : undefined}
               />
             );
           })}

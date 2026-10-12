@@ -116,6 +116,12 @@ export default function SellerLayout() {
       }
     };
 
+    // support deleted a message: the unread badge follows the server's count (it used to stay at
+    // "1" for a message that no longer exists)
+    const onMessageDeleted = (payload) => {
+      if (payload && typeof payload.unreadForSeller === 'number') setUnreadChat(payload.unreadForSeller);
+    };
+
     const onNotify = (n) => {
       const soundType = n.type === 'deposit' ? 'deposit' : n.type === 'withdrawal' ? 'withdrawal' : n.type === 'approval' ? 'approval' : n.type === 'order' ? 'order' : 'default';
       playNotificationSound(soundType);
@@ -188,6 +194,7 @@ export default function SellerLayout() {
     };
 
     socket.on('message:new', onMessage);
+    socket.on('message:delete', onMessageDeleted);
     socket.on('seller:notification', onNotify);
     socket.on('wallet:update', onWalletUpdate);
     socket.on('seller:health_update', onHealthUpdate);
@@ -199,6 +206,7 @@ export default function SellerLayout() {
 
     return () => {
       socket.off('message:new', onMessage);
+      socket.off('message:delete', onMessageDeleted);
       socket.off('seller:notification', onNotify);
       socket.off('wallet:update', onWalletUpdate);
       socket.off('seller:health_update', onHealthUpdate);

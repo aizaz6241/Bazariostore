@@ -32,14 +32,25 @@ export async function handleAutoReply(app, conv) {
     const isAutoReplyOn = Boolean(settings.autoReplyEnabled || settings.awayMode);
     if (!isAutoReplyOn) return;
 
-    // Prevent spam: Check if auto-reply already sent recently to this conversation (within last 3 minutes)
-    const recentAutoReply = await Message.findOne({
+    // Only when nobody from support is talking to this seller / guest: a real reply in the last
+    // 30 minutes means support is here (the bot used to cut in every 3 minutes in a live chat).
+    const QUIET_MS = 30 * 60 * 1000;
+    const since = new Date(Date.now() - QUIET_MS);
+    const humanReply = await Message.exists({
       conversation: conv._id,
-      sender: 'admin',
-      isAutoReply: true,
-      createdAt: { $gt: new Date(Date.now() - 3 * 60 * 1000) },
+      sender: { $in: ['admin', 'staff'] },
+      isAutoReply: { $ne: true },
+      createdAt: { $gt: since },
     });
-    if (recentAutoReply) return;
+    if (humanReply) return;
+
+    // At most one auto-reply per 30 minutes, claimed in one database step: two messages sent a
+    // moment apart both used to pass the check and got two auto-replies.
+    const claimed = await Conversation.updateOne(
+      { _id: conv._id, $or: [{ lastAutoReplyAt: null }, { lastAutoReplyAt: { $lt: since } }] },
+      { $set: { lastAutoReplyAt: new Date() } }
+    );
+    if (!claimed.modifiedCount) return;
 
     const autoReplyText =
       settings.autoReplyMessage ||
@@ -62,15 +73,12 @@ export async function handleAutoReply(app, conv) {
         });
         await replyMsg.save();
 
-        conv.lastMessage = `🤖 ${autoReplyText.slice(0, 50)}...`;
-        conv.lastSender = 'admin';
-        conv.lastAt = new Date();
-        if (conv.type === 'seller') {
-          conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
-        } else {
-          conv.unreadForCustomer = (conv.unreadForCustomer || 0) + 1;
-        }
-        await conv.save();
+        // The inbox keeps showing what the seller / guest wrote (the preview used to become the
+        // bot's text, hiding every question). Only their unread count goes up.
+        await Conversation.updateOne(
+          { _id: conv._id },
+          { $inc: conv.type === 'seller' || sId ? { unreadForSeller: 1 } : { unreadForCustomer: 1 } }
+        );
 
         const io = app.get('io');
         if (io) {
@@ -178,7 +186,18 @@ router.get('/seller/thread', authSeller, async (req, res) => {
 });
 
 // POST /api/chat/seller/send (Seller sends message to admin)
-router.post('/seller/send', authSeller, async (req, res) => {
+// A seller writes at most 40 messages a minute (like guests): every message pushes a phone
+// notification to every admin, so a flood (or a misused account) used to have no limit.
+const sellerSendLimit = limit({
+  name: 'seller-chat-send',
+  max: 40,
+  windowMs: 60 * 1000,
+  key: (req) => String(req.seller?.id || req.seller?._id || ''),
+  message: 'You are sending messages too fast. Please wait a moment.',
+});
+const ATTACHMENT_TYPES = ['image', 'pdf', 'file'];
+
+router.post('/seller/send', authSeller, sellerSendLimit, async (req, res) => {
   try {
     const sellerId = req.seller.id;
     const { attachmentType, attachmentName, attachmentSize, replyTo } = req.body;
@@ -192,17 +211,25 @@ router.post('/seller/send', authSeller, async (req, res) => {
     const seller = await Seller.findById(sellerId);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
-    let conv = await Conversation.findOne({ seller: sellerId, type: { $ne: 'internal' } });
+    // the seller's support chat, created in one step when it does not exist yet (two first
+    // messages sent at once used to open two separate chats)
+    let conv = await Conversation.findOne({ seller: sellerId, type: { $ne: 'internal' } }).sort({ lastAt: -1 });
     if (!conv) {
-      conv = new Conversation({
-        type: 'seller',
-        seller: seller._id,
-        storeName: seller.storeName,
-        sellerName: seller.ownerName,
-        sellerEmail: seller.email,
-        sellerPhone: seller.phone || '',
-        subject: 'General Seller Support & Operations',
-      });
+      conv = await Conversation.findOneAndUpdate(
+        { seller: seller._id, type: 'seller' },
+        {
+          $setOnInsert: {
+            type: 'seller',
+            seller: seller._id,
+            storeName: seller.storeName,
+            sellerName: seller.ownerName,
+            sellerEmail: seller.email,
+            sellerPhone: seller.phone || '',
+            subject: 'General Seller Support & Operations',
+          },
+        },
+        { upsert: true, new: true }
+      );
     }
 
     const previewMsg = cleanText || (attachmentType === 'pdf' ? `📄 ${attachmentName || 'PDF Document'}` : '📷 Image Attachment');
@@ -220,9 +247,10 @@ router.post('/seller/send', authSeller, async (req, res) => {
       senderName: seller.storeName || seller.ownerName,
       text: cleanText,
       attachment: attachment || null,
-      attachmentType: attachmentType || (attachment?.toLowerCase().endsWith('.pdf') ? 'pdf' : attachment ? 'image' : null),
-      attachmentName: attachmentName || '',
-      attachmentSize: attachmentSize || 0,
+      // only a known type is kept (anything else used to end in a 500); no attachment, no type
+      attachmentType: !attachment ? null : ATTACHMENT_TYPES.includes(attachmentType) ? attachmentType : attachment.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image',
+      attachmentName: attachment ? asText(attachmentName, 200) : '',
+      attachmentSize: attachment ? Math.max(0, Number(attachmentSize) || 0) : 0,
       replyTo: replyTo && (replyTo.text || replyTo?.attachmentName) ? {
         messageId: replyTo.messageId || replyTo._id || null,
         sender: replyTo.sender || '',
@@ -1032,6 +1060,8 @@ router.delete('/messages/:id', authSellerOrAdmin, async (req, res) => {
     }
 
     const attachmentUrl = msg.attachment;
+    const wasUnseenFromSupport = (msg.sender === 'admin' || msg.sender === 'staff') && !msg.isSeen;
+    const fromSellerOrGuest = ['seller', 'guest', 'customer'].includes(msg.sender);
 
     msg.isDeleted = true;
     msg.deletedAt = new Date();
@@ -1053,8 +1083,18 @@ router.delete('/messages/:id', authSellerOrAdmin, async (req, res) => {
     );
 
     // If conversation lastMessage was this, update it to previous non-deleted message
+    let unreadForSellerNow;
     if (msg.conversation) {
+      // a deleted message that nobody had read yet no longer counts as unread (the seller's badge
+      // used to stay at "1" with nothing new to read)
+      if (wasUnseenFromSupport) {
+        await Conversation.updateOne({ _id: msg.conversation, unreadForSeller: { $gt: 0 } }, { $inc: { unreadForSeller: -1 } });
+        await Conversation.updateOne({ _id: msg.conversation, unreadForCustomer: { $gt: 0 } }, { $inc: { unreadForCustomer: -1 } });
+      } else if (fromSellerOrGuest) {
+        await Conversation.updateOne({ _id: msg.conversation, unreadForAdmin: { $gt: 0 } }, { $inc: { unreadForAdmin: -1 } });
+      }
       const conv = await Conversation.findById(msg.conversation);
+      if (conv) unreadForSellerNow = conv.unreadForSeller || 0;
       if (conv) {
         const latest = await Message.findOne({
           conversation: msg.conversation,
@@ -1088,7 +1128,7 @@ router.delete('/messages/:id', authSellerOrAdmin, async (req, res) => {
     // Broadcast deletion to relevant rooms
     const io = req.app.get('io');
     if (io) {
-      if (msg.seller) io.to(`seller:${msg.seller}`).emit('message:delete', deletePayload);
+      if (msg.seller) io.to(`seller:${msg.seller}`).emit('message:delete', { ...deletePayload, unreadForSeller: unreadForSellerNow });
       if (msg.guestId) io.to(`guest:${msg.guestId}`).emit('message:delete', deletePayload);
       if (msg.guestId) io.to(`customer:${msg.guestId}`).emit('message:delete', deletePayload);
       io.to(adminRoom('chat')).emit('message:delete', deletePayload);
