@@ -1,7 +1,7 @@
 import Order from '../models/Order.js';
 import Product from '../models/Product.js';
 import { StockHistory } from '../models/StockHistory.js';
-import { adjustTreasuryStock } from './stockSync.js';
+import { adjustTreasuryStock, settleTreasurySale } from './stockSync.js';
 
 /**
  * Stock movements of an order, each done exactly ONCE.
@@ -30,8 +30,10 @@ export async function settleDeliveredStock(order) {
     if (!it.product) continue;
     const q = qtyOf(it);
     try {
-      await Product.updateOne({ _id: idOf(it.product) }, { $inc: { reservedStock: -q, sold: q } });
+      const p = await Product.findOneAndUpdate({ _id: idOf(it.product) }, { $inc: { reservedStock: -q, sold: q } }, { new: true }).select('treasuryProduct').lean();
       await Product.updateOne({ _id: idOf(it.product), reservedStock: { $lt: 0 } }, { $set: { reservedStock: 0 } });
+      // a Central Treasury product: its master reservation becomes a sale too
+      if (p?.treasuryProduct) await settleTreasurySale(p.treasuryProduct, q);
     } catch (e) {
       console.error('settleDeliveredStock:', e.message);
     }
@@ -69,7 +71,7 @@ export async function restockOrder(order, reason, by) {
       // If product is linked to Central Treasury, synchronize master and all sellers
       if (p.treasuryProduct) {
         await adjustTreasuryStock(p.treasuryProduct, q, {
-          releaseReserved: true,
+          kind: wasSettled ? 'unsell' : 'release',
           reason: reason || 'order_restocked',
           note: `Order #${order.orderNumber} restocked`,
           by: by || 'Admin',
@@ -126,6 +128,7 @@ export async function reinstateOrderStock(order, by) {
       await StockHistory.create({ product: p._id, productName: p.name, change: -l.q, stockAfter: p.stock, reason: 'order_reinstated', note: order.orderNumber, by });
       if (p.treasuryProduct) {
         await adjustTreasuryStock(p.treasuryProduct, -l.q, {
+          kind: wasSettled ? 'resell' : 'reserve',
           reason: 'order_reinstated',
           note: `Order #${order.orderNumber} brought back`,
           by: by || 'Admin',

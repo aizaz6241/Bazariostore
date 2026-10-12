@@ -39,6 +39,8 @@ export default function AdminTreasuryEdit() {
   const fileRef = useRef(null);
 
   const [p, setP] = useState(EMPTY);
+  // the stock this page opened with (see the save below)
+  const [loadedStock, setLoadedStock] = useState(null);
   const [cats, setCats] = useState([]);
   const [urlInput, setUrlInput] = useState('');
   const [error, setError] = useState('');
@@ -65,6 +67,7 @@ export default function AdminTreasuryEdit() {
             oldPrice: prod.oldPrice ?? '',
             stock: prod.stock ?? 0,
           });
+          setLoadedStock(prod.stock ?? 0);
           setOriginalKeys((prod.images || []).map((i) => i.key).filter(Boolean));
         })
         .catch((e) => setError(e.message));
@@ -156,6 +159,14 @@ export default function AdminTreasuryEdit() {
         lowStockThreshold: Number(p.lowStockThreshold || 10),
         image: p.images[0]?.url || '',
       };
+      // the stock is sent only when it was changed here, together with the number this page
+      // opened with: saving other fields never writes an old stock back over newer orders
+      if (!isNew) {
+        delete payload.sold;
+        delete payload.reservedStock;
+        if (Number(p.stock) === Number(loadedStock)) delete payload.stock;
+        else payload.stockWas = loadedStock;
+      }
 
       if (isNew) {
         const created = await api('/treasury', { method: 'POST', body: payload });
@@ -163,7 +174,8 @@ export default function AdminTreasuryEdit() {
         setTimeout(() => navigate(`/admin/treasury/${created._id}`), 700);
       } else {
         const updated = await api(`/treasury/${id}`, { method: 'PUT', body: payload });
-        setP((prev) => ({ ...prev, ...updated }));
+        setP((prev) => ({ ...prev, ...updated, category: updated.category?._id || updated.category || prev.category }));
+        setLoadedStock(updated.stock ?? 0);
         setOk('Treasury product updated & synchronized across all seller listings!');
       }
     } catch (err) {

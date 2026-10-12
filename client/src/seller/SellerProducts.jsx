@@ -185,6 +185,8 @@ export default function SellerProducts() {
         lowStockThreshold: Number(form.lowStockThreshold || 5),
         image: form.images[0]?.url || '',
       };
+      // a Treasury product's stock is the platform's central stock: never sent from here
+      if (editingProd?.treasuryProduct) delete payload.stock;
 
       if (editingProd) {
         await sapi(`/sellers/products/${editingProd._id}`, {
@@ -692,8 +694,13 @@ export default function SellerProducts() {
                       value={form.stock}
                       onChange={(e) => setForm({ ...form, stock: e.target.value })}
                       required
+                      disabled={Boolean(editingProd?.treasuryProduct)}
                     />
-                    <small className="field-hint">Available units ready to be dispatched.</small>
+                    <small className="field-hint">
+                      {editingProd?.treasuryProduct
+                        ? 'Central Treasury stock, managed by the platform (shared by all sellers of this product).'
+                        : 'Available units ready to be dispatched.'}
+                    </small>
                   </div>
 
                   <div className="form-field">

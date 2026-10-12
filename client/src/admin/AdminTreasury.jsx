@@ -20,6 +20,11 @@ export default function AdminTreasury() {
   const [sortBy, setSortBy] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  // pages of 100: the list used to stop at the newest 100 products without saying so
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // Quick Restock Modal state
   const [restockModal, setRestockModal] = useState(null); // { product, delta: '', newStock: '', mode: 'add' }
@@ -28,22 +33,44 @@ export default function AdminTreasury() {
   // View Sellers Modal state
   const [sellersModal, setSellersModal] = useState(null); // { product, sellers: [], loading: false }
 
-  const loadData = () => {
-    setLoading(true);
-    let url = '/treasury?';
+  const treasuryUrl = (pageNo) => {
     const params = new URLSearchParams();
     if (q.trim()) params.append('q', q.trim());
     if (selectedCat) params.append('category', selectedCat);
     if (sortBy) params.append('sort', sortBy);
-    url += params.toString();
+    params.append('page', String(pageNo));
+    return '/treasury?' + params.toString();
+  };
 
-    api(url)
+  const loadData = () => {
+    setLoading(true);
+    api(treasuryUrl(1))
       .then((res) => {
         setProducts(res.products || []);
+        setPage(1);
+        setPages(res.pages || 1);
+        setTotal(res.total ?? (res.products || []).length);
         if (res.summary) setSummary(res.summary);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
+  };
+
+  const loadMore = () => {
+    if (loadingMore || page >= pages) return;
+    setLoadingMore(true);
+    api(treasuryUrl(page + 1))
+      .then((res) => {
+        setProducts((prev) => {
+          const seen = new Set(prev.map((x) => x._id));
+          return [...prev, ...(res.products || []).filter((x) => !seen.has(x._id))];
+        });
+        setPage(page + 1);
+        setPages(res.pages || pages);
+        setTotal(res.total ?? total);
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setLoadingMore(false));
   };
 
   useEffect(() => {
@@ -62,6 +89,9 @@ export default function AdminTreasury() {
   };
 
   const toggleActive = async (p) => {
+    if (p.active && (p.sellersCount || 0) > 0 && !window.confirm(
+      `Pause "${p.name}"?\n\nIts ${p.sellersCount} seller listing(s) also go off sale until you switch it on again.`
+    )) return;
     try {
       const updated = await api(`/treasury/${p._id}/active`, { method: 'PATCH' });
       setProducts((prev) =>
@@ -75,7 +105,7 @@ export default function AdminTreasury() {
   const deleteProduct = async (p) => {
     if (
       !window.confirm(
-        `Are you sure you want to delete "${p.name}" from Treasury? This master product will be removed from the central catalog.`
+        `Are you sure you want to delete "${p.name}" from Treasury? This master product will be removed from the central catalog.${(p.sellersCount || 0) > 0 ? `\n\nIts ${p.sellersCount} seller listing(s) go off sale (stock 0). Open orders still finish normally.` : ''}`
       )
     )
       return;
@@ -252,7 +282,7 @@ export default function AdminTreasury() {
 
           <div className="treasury-filter-meta-group">
             <span className="treasury-filter-stats">
-              Total: <b>{products.length}</b> items
+              Showing <b>{products.length}</b>{total > products.length ? <> of <b>{total}</b></> : null} items
             </span>
             <div className="treasury-view-toggle">
               <button
@@ -519,6 +549,14 @@ export default function AdminTreasury() {
           </div>
         )}
       </div>
+
+      {!loading && page < pages && (
+        <div style={{ textAlign: 'center', margin: '16px 0' }}>
+          <button type="button" className="btn-treasury-add" onClick={loadMore} disabled={loadingMore}>
+            {loadingMore ? 'Loading…' : `Load more (${Math.max(0, total - products.length)} more)`}
+          </button>
+        </div>
+      )}
 
       {/* Quick Restock Modal */}
       {restockModal && (

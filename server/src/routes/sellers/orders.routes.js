@@ -926,6 +926,7 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
 
     let subtotal = 0;
     const lineItems = [];
+    const wanted = [];
 
     for (const item of items) {
       if (!item.productId) return res.status(400).json({ message: 'Product ID is required for each line item' });
@@ -959,11 +960,30 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
         trackingNumber: item.trackingNumber || '',
       });
 
-      // Deduct stock if product exists
-      if (prod && prod.stock >= qty) {
-        prod.stock -= qty;
-        prod.sold = (prod.sold || 0) + qty;
-        await prod.save();
+      wanted.push({ prod, qty });
+    }
+
+    // Take the stock the same way a checkout does (shelf -> reserved, Central Treasury included),
+    // all lines or none. Before, the stock was taken without a reservation, "sold" was counted at
+    // once and the Treasury master was not touched, but a later cancel still put the items back
+    // on the master — so every cancelled manual order created stock out of nothing.
+    // When the stock is not there, the order is still created (as before) but holds no stock.
+    const taken = [];
+    let stockHeld = true;
+    for (const { prod, qty } of wanted) {
+      const p = await Product.findOneAndUpdate({ _id: prod._id, stock: { $gte: qty } }, { $inc: { stock: -qty, reservedStock: qty } }, { new: true });
+      if (!p) { stockHeld = false; break; }
+      taken.push({ p, qty });
+      if (p.treasuryProduct) {
+        const master = await adjustTreasuryStock(p.treasuryProduct, -qty, { kind: 'reserve', reason: 'order_placement', note: `Manual order ${orderNumber}`, by: req.admin?.name || 'Admin' });
+        if (!master) { stockHeld = false; break; }
+        taken[taken.length - 1].treasury = p.treasuryProduct;
+      }
+    }
+    if (!stockHeld) {
+      for (const { p, qty, treasury } of taken) {
+        await Product.updateOne({ _id: p._id }, { $inc: { stock: qty, reservedStock: -qty } });
+        if (treasury) await adjustTreasuryStock(treasury, qty, { kind: 'release', reason: 'order_placement_undone', note: `Manual order ${orderNumber}` });
       }
     }
 
@@ -999,6 +1019,8 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
       paymentStatus: paymentMethod === 'cod' ? 'pending' : 'paid',
       status: 'pending', // Starts as pending so seller confirms to lock funds
       adminNotes: adminNotes || '',
+      // an order that could not take its stock holds none: a cancel must not put any back
+      stockRestored: !stockHeld,
       statusHistory: [
         {
           status: 'pending',

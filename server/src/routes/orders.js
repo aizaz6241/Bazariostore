@@ -2,6 +2,7 @@ import { Router } from 'express';
 import Order, { STATUSES, PAYMENT_STATUSES } from '../models/Order.js';
 import Seller from '../models/Seller.js';
 import Product from '../models/Product.js';
+import TreasuryProduct from '../models/TreasuryProduct.js';
 import Discount from '../models/Discount.js';
 import Refund from '../models/Refund.js';
 import { Conversation } from '../models/Chat.js';
@@ -149,6 +150,24 @@ router.post('/', placeOrderLimit, softUser, async (req, res) => {
         return res.status(400).json({ message: `"${l.product.name}" ka sirf ${Math.max(0, left?.stock || 0)} stock reh gaya hai` });
       }
       reserved.push({ product: taken, qty: l.qty });
+
+      // A Central Treasury product: every seller's listing shows the SAME master stock, so the
+      // master is the real limit. Taken in one step too: two customers buying the last piece
+      // through two different sellers can no longer both get it.
+      if (taken.treasuryProduct) {
+        const master = await adjustTreasuryStock(taken.treasuryProduct, -l.qty, {
+          kind: 'reserve',
+          reason: 'order_placement',
+          note: `Checkout via seller "${taken.sellerName || ''}"`,
+          by: taken.sellerName || 'Customer Checkout',
+        });
+        if (!master) {
+          await releaseReserved(reserved);
+          const left = await TreasuryProduct.findById(taken.treasuryProduct).select('stock').lean();
+          return res.status(400).json({ message: `"${l.product.name}" ka sirf ${Math.max(0, left?.stock || 0)} stock reh gaya hai` });
+        }
+        reserved[reserved.length - 1].treasury = taken.treasuryProduct;
+      }
     }
 
     const order = await createOrderWithNumber({
@@ -195,21 +214,10 @@ router.post('/', placeOrderLimit, softUser, async (req, res) => {
     if (pay.status === 'awaiting_payment') order.paymentStatus = 'awaiting_payment';
     await order.save();
 
-    // stock history + treasury sync (the stock itself was already taken above)
+    // stock history (the stock itself, Central Treasury included, was already taken above)
     for (const { product: p, qty } of held) {
-      const l = { qty };
       if (p) {
-        await StockHistory.create({ product: p._id, productName: p.name, change: -l.qty, stockAfter: p.stock, reason: 'order', note: order.orderNumber });
-
-        // If product is linked to Central Treasury, synchronize master and all sellers
-        if (p.treasuryProduct) {
-          await adjustTreasuryStock(p.treasuryProduct, -l.qty, {
-            reason: 'order_placement',
-            note: `Order #${order.orderNumber} via seller "${p.sellerName}"`,
-            by: p.sellerName || 'Customer Checkout',
-          });
-        }
-
+        await StockHistory.create({ product: p._id, productName: p.name, change: -qty, stockAfter: p.stock, reason: 'order', note: order.orderNumber });
         await stockAlerts(req.app, p);
       }
     }
@@ -254,9 +262,10 @@ router.post('/', placeOrderLimit, softUser, async (req, res) => {
 
 /** Put back stock that was taken for an order which then could not be created. */
 async function releaseReserved(reserved) {
-  for (const { product, qty } of reserved.splice(0)) {
+  for (const { product, qty, treasury } of reserved.splice(0)) {
     try {
       await Product.updateOne({ _id: product._id }, { $inc: { stock: qty, reservedStock: -qty } });
+      if (treasury) await adjustTreasuryStock(treasury, qty, { kind: 'release', reason: 'checkout_failed', note: 'Order could not be placed' });
     } catch (e) {
       console.error('[place-order] could not release reserved stock:', e.message);
     }
