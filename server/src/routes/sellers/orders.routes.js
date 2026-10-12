@@ -13,6 +13,7 @@ import { scheduleNextOrderStep } from '../../services/orderProgressionService.js
 import { Conversation, Message } from '../../models/Chat.js';
 import { walletApply, walletNow } from '../../utils/wallet.js';
 import { restockOrder, settleDeliveredStock } from '../../utils/orderStock.js';
+import { adminRoom } from '../../utils/permissions.js';
 
 const router = express.Router();
 
@@ -691,8 +692,8 @@ router.post('/orders/:id/confirm', authSellerOrAdmin, async (req, res) => {
     // Real-time synchronization to Admin and Seller sockets
     const io = req.app.get('io');
     if (io) {
-      io.to('admins').emit('order:update', order);
-      io.to('admins').emit('order:status_update', { orderId: order._id, orderNumber: order.orderNumber, status: order.status, order });
+      io.to(adminRoom('orders')).emit('order:update', order);
+      io.to(adminRoom('orders')).emit('order:status_update', { orderId: order._id, orderNumber: order.orderNumber, status: order.status, order });
       io.to(`seller:${sellerId}`).emit('order:update', order);
       io.to(`seller:${sellerId}`).emit('seller:status_update', { order });
     }
@@ -823,8 +824,8 @@ export const handleStatusUpdate = async (req, res) => {
     // Broadcast real-time socket events to Admin and all affected Sellers
     const io = req.app.get('io');
     if (io) {
-      io.to('admins').emit('order:update', order);
-      io.to('admins').emit('order:status_update', { orderId: order._id, orderNumber: order.orderNumber, status: order.status, order });
+      io.to(adminRoom('orders')).emit('order:update', order);
+      io.to(adminRoom('orders')).emit('order:status_update', { orderId: order._id, orderNumber: order.orderNumber, status: order.status, order });
       for (const sId of affectedSellerIds) {
         io.to(`seller:${sId}`).emit('order:update', order);
         io.to(`seller:${sId}`).emit('seller:status_update', { order });
@@ -1007,8 +1008,8 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
       link: `/admin/orders/${order._id}`,
     });
 
-    req.app.get('io')?.to('admins').emit('order:new', order);
-    req.app.get('io')?.to('admins').emit('order:update', order);
+    req.app.get('io')?.to(adminRoom('orders')).emit('order:new', order);
+    req.app.get('io')?.to(adminRoom('orders')).emit('order:update', order);
 
     res.status(201).json(order);
   } catch (err) {

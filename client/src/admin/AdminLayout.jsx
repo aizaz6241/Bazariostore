@@ -15,7 +15,7 @@ const NAV_GROUPS = [
     title: 'Overview',
     items: [
       { to: '/admin', icon: 'grid', label: 'Dashboard', end: true },
-      { to: '/admin/reports', icon: 'chart', label: 'Analytics & Reports', perm: 'orders' },
+      { to: '/admin/reports', icon: 'chart', label: 'Analytics & Reports', perm: 'reports' },
     ],
   },
   {
@@ -44,11 +44,28 @@ const NAV_GROUPS = [
     title: 'System',
     items: [
       { to: '/admin/staff', icon: 'user', label: 'Staff & Team', perm: 'staff' },
-      { to: '/admin/backup', icon: 'database', label: 'Database Backup', perm: 'settings' },
+      { to: '/admin/backup', icon: 'database', label: 'Database Backup', perm: 'backup' },
     ],
   },
 ];
 const NAV = NAV_GROUPS.flatMap((g) => g.items);
+
+const ROLE_TITLES = {
+  super_admin: 'Super Admin Control Center',
+  admin: 'Administrator',
+  manager: 'Store Manager',
+  support: 'Support Agent',
+  order_manager: 'Order Fulfillment',
+  inventory: 'Inventory Specialist',
+};
+
+function storedAdmin() {
+  try {
+    return JSON.parse(localStorage.getItem('ng_admin') || 'null') || { name: localStorage.getItem('ng_admin_name') || 'Admin', permissions: [] };
+  } catch {
+    return { name: 'Admin', permissions: [] };
+  }
+}
 
 export default function AdminLayout() {
   const navigate = useNavigate();
@@ -56,13 +73,30 @@ export default function AdminLayout() {
   const { logoutAdmin } = useAuth();
   const token = localStorage.getItem('ng_admin_token');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const admin = (() => {
-    try {
-      return JSON.parse(localStorage.getItem('ng_admin') || 'null') || { name: localStorage.getItem('ng_admin_name') || 'Admin', permissions: [] };
-    } catch {
-      return { name: 'Admin', permissions: [] };
-    }
-  })();
+  const [admin, setAdmin] = useState(storedAdmin);
+  // The role / permissions saved at login can be out of date (changed on the Staff screen since):
+  // ask the server for the current ones, and again whenever this tab comes back into focus.
+  useEffect(() => {
+    if (!token) return undefined;
+    const refresh = () =>
+      api('/auth/me')
+        .then((res) => {
+          if (!res?.admin) return;
+          const prev = storedAdmin();
+          const next = { ...prev, ...res.admin };
+          localStorage.setItem('ng_admin', JSON.stringify(next));
+          // access changed: re-join so live updates follow the new permissions
+          if (prev.role !== next.role || JSON.stringify(prev.permissions || []) !== JSON.stringify(next.permissions || [])) {
+            const t = localStorage.getItem('ng_admin_token');
+            if (t) getSocket()?.emit('admin:join', { token: t });
+          }
+          setAdmin((cur) => (JSON.stringify(cur) === JSON.stringify(next) ? cur : next));
+        })
+        .catch(() => {});
+    refresh();
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
+  }, [token]);
   const can = (n) => {
     if (typeof n === 'string') return !n || admin.role === 'super_admin' || (admin.permissions || []).includes(n);
     if (n?.superAdminOnly) return admin.role === 'super_admin';
@@ -191,7 +225,7 @@ export default function AdminLayout() {
             </div>
             <button className="mobile-close-drawer" onClick={() => setMobileSidebarOpen(false)}>✕</button>
           </div>
-          <small>Super Admin Control Center</small>
+          <small>{ROLE_TITLES[admin.role] || 'Admin Control Center'}</small>
         </div>
         <nav>
           {NAV_GROUPS.map((g) => {
@@ -280,7 +314,7 @@ export default function AdminLayout() {
                 </div>
               )}
             </span>
-            <span className="admin-user"><span className="admin-av">{admin.name[0]}</span> <span className="hide-on-mobile">{admin.name}</span></span>
+            <span className="admin-user"><span className="admin-av">{(admin.name || 'A')[0]}</span> <span className="hide-on-mobile">{admin.name}</span></span>
           </span>
         </header>
         <div className="admin-content">

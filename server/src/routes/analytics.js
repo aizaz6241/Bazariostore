@@ -5,6 +5,7 @@ import User from '../models/User.js';
 import Seller from '../models/Seller.js';
 import Withdrawal from '../models/Withdrawal.js';
 import { authAdmin } from '../middleware/auth.js';
+import { hasPermission } from '../utils/permissions.js';
 
 const router = Router();
 
@@ -19,7 +20,29 @@ const startOf = {
   year: () => new Date(new Date().getFullYear(), 0, 1),
 };
 
+// Every admin opens the dashboard, but each part of it is only sent to the roles that cover it:
+//   sales / orders / customers -> Orders or Reports,  recent orders (names, cities) -> Orders,
+//   products & stock -> Products or Inventory,          USDT wallet -> Finance,
+//   seller pipeline -> Sellers.
 router.get('/dashboard', authAdmin(), async (req, res) => {
+  const can = (p) => hasPermission(req.admin, p);
+  const sections = {
+    sales: can('orders') || can('reports'),
+    recentOrders: can('orders'),
+    stock: can('products') || can('inventory'),
+    wallet: can('finance'),
+    sellers: can('sellers'),
+  };
+  const out = { sections };
+  if (sections.sales) Object.assign(out, await salesSection());
+  if (sections.sellers) out.sellers = await sellersSection();
+  if (sections.recentOrders) out.recent = await Order.find().sort({ createdAt: -1 }).limit(8);
+  if (sections.stock) Object.assign(out, await stockSection());
+  if (sections.wallet) out.usdtWallet = await walletSection();
+  res.json(out);
+});
+
+async function salesSection() {
   const valid = { status: { $nin: ['cancelled', 'refunded'] } };
   const sumSince = async (since) => {
     const agg = await Order.aggregate([
@@ -48,12 +71,6 @@ router.get('/dashboard', authAdmin(), async (req, res) => {
     { $group: { _id: '$user', n: { $sum: 1 } } },
     { $match: { n: { $gte: 2 } } },
     { $count: 'returning' },
-  ]);
-
-  const [bestSelling, lowStock, outOfStock] = await Promise.all([
-    Product.find({ active: true }).sort({ sold: -1 }).limit(5).select('name sold stock image price'),
-    Product.find({ stock: { $gt: 0 }, $expr: { $lte: ['$stock', '$lowStockThreshold'] } }).limit(10).select('name stock lowStockThreshold image'),
-    Product.find({ stock: { $lte: 0 } }).limit(10).select('name stock image'),
   ]);
 
   // last 30 days daily revenue (line chart)
@@ -106,7 +123,20 @@ router.get('/dashboard', authAdmin(), async (req, res) => {
     months12.push({ key: k, label: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }), revenue: byMonth.get(k)?.revenue || 0, orders: byMonth.get(k)?.orders || 0 });
   }
 
-  // seller pipeline (KYC photos are never loaded here)
+  return {
+    sales: { today, week, month, year },
+    ordersByStatus,
+    customers: { total: totalCustomers, newThisMonth: newCustomers, returning: returningAgg[0]?.returning || 0 },
+    revenue30,
+    monthly12,
+    daily30,
+    months12,
+    paymentSplit,
+  };
+}
+
+// seller pipeline (KYC photos are never loaded here)
+async function sellersSection() {
   const sellerAgg = await Seller.aggregate([
     {
       $group: {
@@ -120,7 +150,7 @@ router.get('/dashboard', authAdmin(), async (req, res) => {
     },
   ]);
   const sAgg = sellerAgg[0] || {};
-  const sellers = {
+  return {
     total: sAgg.total || 0,
     active: sAgg.active || 0,
     pending: sAgg.pending || 0,
@@ -128,9 +158,18 @@ router.get('/dashboard', authAdmin(), async (req, res) => {
     other: Math.max(0, (sAgg.total || 0) - (sAgg.active || 0) - (sAgg.pending || 0) - (sAgg.rejected || 0)),
     newThisMonth: sAgg.newThisMonth || 0,
   };
+}
 
-  const recent = await Order.find().sort({ createdAt: -1 }).limit(8);
+async function stockSection() {
+  const [bestSelling, lowStock, outOfStock] = await Promise.all([
+    Product.find({ active: true }).sort({ sold: -1 }).limit(5).select('name sold stock image price'),
+    Product.find({ stock: { $gt: 0 }, $expr: { $lte: ['$stock', '$lowStockThreshold'] } }).limit(10).select('name stock lowStockThreshold image'),
+    Product.find({ stock: { $lte: 0 } }).limit(10).select('name stock image'),
+  ]);
+  return { bestSelling, lowStock, outOfStock };
+}
 
+async function walletSection() {
   // ─── USDT WALLET (REAL CLIENT SELLERS ONLY - EXCLUDES TEST ACCOUNTS & PREVIOUS STORE SELLERS) ───
   const clientSellers = await Seller.find({
     isTestAccount: { $ne: true },
@@ -201,23 +240,8 @@ router.get('/dashboard', authAdmin(), async (req, res) => {
     })),
   };
 
-  res.json({
-    usdtWallet,
-    sales: { today, week, month, year },
-    ordersByStatus,
-    customers: { total: totalCustomers, newThisMonth: newCustomers, returning: returningAgg[0]?.returning || 0 },
-    bestSelling,
-    lowStock,
-    outOfStock,
-    revenue30,
-    monthly12,
-    daily30,
-    months12,
-    sellers,
-    paymentSplit,
-    recent,
-  });
-});
+  return usdtWallet;
+}
 
 // GET /api/analytics/usdt-wallet-history — Detailed USDT Wallet transactions breakdown
 router.get('/usdt-wallet-history', authAdmin('finance'), async (req, res) => {

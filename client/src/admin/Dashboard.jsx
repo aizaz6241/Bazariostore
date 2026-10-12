@@ -143,6 +143,9 @@ export default function Dashboard() {
   const sales = d.sales || {};
   const sellers = d.sellers || { total: 0, active: 0, pending: 0, rejected: 0, other: 0, newThisMonth: 0 };
   const os = d.ordersByStatus || {};
+  // the server only sends the parts this admin's role covers
+  const show = d.sections || { sales: true, recentOrders: true, stock: true, wallet: true, sellers: true };
+  const nothing = !show.sales && !show.recentOrders && !show.stock && !show.wallet && !show.sellers;
 
   const salesTiles = [
     { key: 'today', label: 'Today', icon: 'clock' },
@@ -176,20 +179,31 @@ export default function Dashboard() {
           <span className="dsh-date">{new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>
           <h1>{greeting()}, {adminName.split(' ')[0]}</h1>
           <p>
-            {money(sales.today?.revenue || 0)} in sales today from {sales.today?.orders || 0} order{sales.today?.orders === 1 ? '' : 's'}
-            {sellers.pending ? <> · <b>{sellers.pending}</b> seller application{sellers.pending === 1 ? '' : 's'} waiting</> : null}
+            {show.sales ? (
+              <>{money(sales.today?.revenue || 0)} in sales today from {sales.today?.orders || 0} order{sales.today?.orders === 1 ? '' : 's'}</>
+            ) : nothing ? (
+              'Your role does not include dashboard figures. Use the menu to open the sections you work on.'
+            ) : (
+              'Here is what your role covers today.'
+            )}
+            {show.sellers && sellers.pending ? <> · <b>{sellers.pending}</b> seller application{sellers.pending === 1 ? '' : 's'} waiting</> : null}
           </p>
         </div>
         <div className="dsh-hero-actions">
-          <Link to="/admin/applications" className="dsh-hero-btn">
-            <Ic name="badgeCheck" size={16} /> Applications {sellers.pending > 0 && <span className="dsh-badge">{sellers.pending}</span>}
-          </Link>
-          <Link to="/admin/affiliates" className="dsh-hero-btn"><Ic name="tag" size={16} /> Affiliate codes</Link>
-          <Link to="/admin/reports" className="dsh-hero-btn solid"><Ic name="chart" size={16} /> Full reports</Link>
+          {show.sellers && (
+            <>
+              <Link to="/admin/applications" className="dsh-hero-btn">
+                <Ic name="badgeCheck" size={16} /> Applications {sellers.pending > 0 && <span className="dsh-badge">{sellers.pending}</span>}
+              </Link>
+              <Link to="/admin/affiliates" className="dsh-hero-btn"><Ic name="tag" size={16} /> Affiliate codes</Link>
+            </>
+          )}
+          {show.sales && <Link to="/admin/reports" className="dsh-hero-btn solid"><Ic name="chart" size={16} /> Full reports</Link>}
         </div>
       </section>
 
       {/* ─── Sales KPIs ─── */}
+      {show.sales && (
       <div className="dsh-kpis">
         {salesTiles.map((t) => (
           <div className="dsh-kpi" key={t.key}>
@@ -202,9 +216,12 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+      )}
 
       {/* ─── Revenue + seller pipeline ─── */}
-      <div className="dsh-grid dsh-grid-main">
+      {(show.sales || show.sellers) && (
+      <div className={show.sales && show.sellers ? 'dsh-grid dsh-grid-main' : 'dsh-grid'}>
+        {show.sales && (
         <ChartCard
           icon="trend"
           title={revMetric === 'revenue' ? 'Revenue — last 30 days' : 'Orders — last 30 days'}
@@ -244,7 +261,9 @@ export default function Dashboard() {
             </AreaChart>
           </ResponsiveContainer>
         </ChartCard>
+        )}
 
+        {show.sellers && (
         <ChartCard icon="users" title="Seller pipeline" sub={`${sellers.total} sellers · ${sellers.newThisMonth} new this month`} action={<Link className="dsh-more" to="/admin/sellers">Sellers →</Link>}>
           <div className="dsh-pipe-bar" aria-hidden="true">
             {sellerBar.map((s) => (s.value > 0 ? <i key={s.key} style={{ flexGrow: s.value, background: s.color }} /> : null))}
@@ -266,9 +285,12 @@ export default function Dashboard() {
             </Link>
           )}
         </ChartCard>
+        )}
       </div>
+      )}
 
       {/* ─── USDT wallet ─── */}
+      {show.wallet && d.usdtWallet && (
       <section className="dsh-card dsh-usdt">
         <header className="dsh-card-head">
           <div>
@@ -293,8 +315,11 @@ export default function Dashboard() {
           ))}
         </div>
       </section>
+      )}
 
       {/* ─── Order pipeline ─── */}
+      {show.sales && (
+      <>
       <div className="dsh-orders">
         {orderTiles.map((c) => (
           <Link key={c.label} to={c.link} className={`dsh-order-tile tone-${c.tone}`}>
@@ -348,8 +373,12 @@ export default function Dashboard() {
           )}
         </ChartCard>
       </div>
+      </>
+      )}
 
+      {(show.sales || show.stock || show.sellers) && (
       <div className="dsh-grid dsh-grid-2">
+        {show.sales && (
         <ChartCard icon="package" title="Orders by status" sub="All time" action={<Link className="dsh-more" to="/admin/orders">Orders →</Link>}>
           {derived.statusBars.length === 0 ? (
             <div className="dsh-empty">No orders yet.</div>
@@ -364,16 +393,25 @@ export default function Dashboard() {
             </ResponsiveContainer>
           )}
         </ChartCard>
+        )}
 
         <ChartCard icon="user" title="Customers & stock" sub="Shoppers and inventory health">
           <div className="dsh-mini-grid">
             {[
-              { icon: 'user', label: 'Customers', value: d.customers?.total || 0 },
-              { icon: 'sparkle', label: 'New this month', value: d.customers?.newThisMonth || 0 },
-              { icon: 'refresh', label: 'Returning', value: d.customers?.returning || 0 },
-              { icon: 'box', label: 'Low stock', value: d.lowStock?.length || 0, warn: (d.lowStock?.length || 0) > 0, link: '/admin/inventory' },
-              { icon: 'x', label: 'Out of stock', value: d.outOfStock?.length || 0, warn: (d.outOfStock?.length || 0) > 0, link: '/admin/inventory' },
-              { icon: 'users', label: 'Active sellers', value: sellers.active, link: '/admin/sellers' },
+              ...(show.sales
+                ? [
+                    { icon: 'user', label: 'Customers', value: d.customers?.total || 0 },
+                    { icon: 'sparkle', label: 'New this month', value: d.customers?.newThisMonth || 0 },
+                    { icon: 'refresh', label: 'Returning', value: d.customers?.returning || 0 },
+                  ]
+                : []),
+              ...(show.stock
+                ? [
+                    { icon: 'box', label: 'Low stock', value: d.lowStock?.length || 0, warn: (d.lowStock?.length || 0) > 0, link: '/admin/inventory' },
+                    { icon: 'x', label: 'Out of stock', value: d.outOfStock?.length || 0, warn: (d.outOfStock?.length || 0) > 0, link: '/admin/inventory' },
+                  ]
+                : []),
+              ...(show.sellers ? [{ icon: 'users', label: 'Active sellers', value: sellers.active, link: '/admin/sellers' }] : []),
             ].map((c) => {
               const body = (
                 <>
@@ -391,8 +429,10 @@ export default function Dashboard() {
           </div>
         </ChartCard>
       </div>
+      )}
 
       {/* ─── Lists ─── */}
+      {show.stock && (
       <div className="dsh-grid dsh-grid-2">
         <ChartCard icon="star" title="Best selling products" action={<Link className="dsh-more" to="/admin/products">All products →</Link>}>
           {(d.bestSelling || []).length === 0 && <div className="dsh-empty">No sales yet.</div>}
@@ -433,7 +473,9 @@ export default function Dashboard() {
           </ul>
         </ChartCard>
       </div>
+      )}
 
+      {show.recentOrders && (
       <ChartCard icon="list" title="Recent orders" action={<Link to="/admin/orders" className="dsh-more">See all →</Link>}>
         {(d.recent || []).length === 0 ? (
           <div className="dsh-empty">No orders yet.</div>
@@ -461,12 +503,15 @@ export default function Dashboard() {
           </div>
         )}
       </ChartCard>
+      )}
 
+      {show.wallet && (
       <UsdtWalletHistoryModal
         isOpen={usdtHistoryModalOpen}
         onClose={() => setUsdtHistoryModalOpen(false)}
         initialTab={usdtHistoryTab}
       />
+      )}
     </div>
   );
 }
