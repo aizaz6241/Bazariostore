@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import express from 'express';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import Seller from '../../models/Seller.js';
 import Product from '../../models/Product.js';
@@ -16,6 +17,8 @@ import { rememberPassword, readPassword, encryptionOn } from '../../utils/seller
 import { forgetAuthCache } from '../../middleware/auth.js';
 import { slugify, calculateHealthStatus } from './helpers.js';
 import { adminRoom } from '../../utils/permissions.js';
+import { asText } from '../../middleware/sanitize.js';
+import { normalizeCode, codeFormatError, getMasterCode, resolveAffiliateCode, usageByCode } from '../../utils/affiliateCodes.js';
 
 const router = express.Router();
 
@@ -114,6 +117,234 @@ router.get('/team/members', authAdmin('sellers'), async (req, res) => {
     }
 
     res.json({ members, assignedMemberId });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/sellers/analytics/overview?scope=client|all&days=30
+// Numbers for the charts on top of the admin Sellers page: wallet totals, pending orders (real
+// money still in flight), wallet movements per day, sales trend and the top stores.
+// scope=client (default) leaves out test accounts and previous-store sellers, so the totals are real money.
+const OPEN_ORDER_EXCLUDE = ['delivered', 'cancelled', 'refunded'];
+const WALLET_MOVE_TYPES = ['deposit', 'withdrawal', 'order_processing_lock', 'order_delivered_release', 'order_cancelled_release', 'adjustment'];
+
+router.get('/analytics/overview', authAdmin('sellers'), async (req, res) => {
+  try {
+    const scope = req.query.scope === 'all' ? 'all' : 'client';
+    const days = Math.min(90, Math.max(7, parseInt(req.query.days, 10) || 30));
+    const now = new Date();
+    const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (days - 1)));
+
+    const sellerFilter = { status: { $ne: 'pending_approval' } };
+    if (scope === 'client') {
+      sellerFilter.isTestAccount = { $ne: true };
+      sellerFilter.isPreviousStoreSeller = { $ne: true };
+    }
+
+    const sellers = await Seller.find(sellerFilter).select('storeName status wallet accountHealth warning createdAt').lean();
+    const sellerIds = sellers.map((s) => s._id);
+    const inScope = new Map(sellers.map((s) => [String(s._id), s]));
+
+    const [orders, moves] = await Promise.all([
+      Order.find({
+        $or: [{ createdAt: { $gte: since } }, { status: { $nin: OPEN_ORDER_EXCLUDE } }],
+        $and: [{ $or: [{ seller: { $in: sellerIds } }, { 'items.seller': { $in: sellerIds } }] }],
+      })
+        .select('status seller createdAt items.seller items.price items.qty items.lockedAmount items.processingLocked items.profitAmount')
+        .lean(),
+      Withdrawal.find({
+        seller: { $in: sellerIds },
+        type: { $in: WALLET_MOVE_TYPES },
+        $or: [{ createdAt: { $gte: since } }, { processedAt: { $gte: since } }, { status: { $in: ['pending', 'processing'] } }],
+      })
+        .select('type status amount approvedAmount createdAt processedAt seller')
+        .lean(),
+    ]);
+
+    // ── Day buckets for the trend charts
+    const dayKey = (d) => new Date(d).toISOString().slice(0, 10);
+    const dayList = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(since.getTime() + i * 86400000);
+      dayList.push({ key: dayKey(d), label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) });
+    }
+    const salesByDay = new Map(dayList.map((d) => [d.key, { label: d.label, sales: 0, orders: 0 }]));
+    const movesByDay = new Map(
+      dayList.map((d) => [d.key, { label: d.label, deposits: 0, withdrawals: 0, locked: 0, released: 0, refunded: 0, adjustments: 0 }])
+    );
+
+    // ── Orders: pending value per status, age buckets, per-store numbers
+    const round = (n) => Math.round((Number(n) || 0) * 100) / 100;
+    const pendingByStatus = new Map();
+    const aging = [
+      { label: '< 24h', maxH: 24, count: 0, amount: 0 },
+      { label: '1–3 days', maxH: 72, count: 0, amount: 0 },
+      { label: '3–7 days', maxH: 168, count: 0, amount: 0 },
+      { label: '7+ days', maxH: Infinity, count: 0, amount: 0 },
+    ];
+    const perStore = new Map();
+    const storeStat = (id) => {
+      let st = perStore.get(id);
+      if (!st) {
+        st = { sales: 0, orders: 0, pendingAmount: 0, pendingOrders: 0 };
+        perStore.set(id, st);
+      }
+      return st;
+    };
+    const pending = { orders: 0, amount: 0, locked: 0, expectedProfit: 0 };
+
+    orders.forEach((ord) => {
+      const ordSeller = ord.seller ? String(ord.seller) : '';
+      const st = (ord.status || '').toLowerCase();
+      const isOpen = !OPEN_ORDER_EXCLUDE.includes(st);
+      const inWindow = new Date(ord.createdAt) >= since;
+      const ageH = (now - new Date(ord.createdAt)) / 3600000;
+
+      // value of this order that belongs to each in-scope store
+      const shares = new Map();
+      (ord.items || []).forEach((it) => {
+        const sid = it.seller ? String(it.seller) : ordSeller;
+        if (!inScope.has(sid)) return;
+        const sh = shares.get(sid) || { value: 0, locked: 0, profit: 0 };
+        sh.value += (it.price || 0) * (it.qty || 1);
+        if (it.processingLocked) {
+          sh.locked += it.lockedAmount || 0;
+          sh.profit += it.profitAmount || 0;
+        }
+        shares.set(sid, sh);
+      });
+      if (!shares.size) return;
+
+      let orderValue = 0;
+      shares.forEach((sh, sid) => {
+        orderValue += sh.value;
+        const ss = storeStat(sid);
+        if (inWindow && st !== 'cancelled' && st !== 'refunded') {
+          ss.sales += sh.value;
+          ss.orders += 1;
+        }
+        if (isOpen) {
+          ss.pendingAmount += sh.value;
+          ss.pendingOrders += 1;
+          pending.locked += sh.locked;
+          pending.expectedProfit += sh.profit;
+        }
+      });
+
+      if (inWindow && st !== 'cancelled' && st !== 'refunded') {
+        const day = salesByDay.get(dayKey(ord.createdAt));
+        if (day) {
+          day.sales += orderValue;
+          day.orders += 1;
+        }
+      }
+
+      if (isOpen) {
+        pending.orders += 1;
+        pending.amount += orderValue;
+        const ps = pendingByStatus.get(st) || { status: st, count: 0, amount: 0 };
+        ps.count += 1;
+        ps.amount += orderValue;
+        pendingByStatus.set(st, ps);
+        const bucket = aging.find((b) => ageH < b.maxH);
+        bucket.count += 1;
+        bucket.amount += orderValue;
+      }
+    });
+
+    // ── Wallet movements: settled lines per day, open requests separately
+    const requests = { deposits: { count: 0, amount: 0 }, withdrawals: { count: 0, amount: 0 } };
+    const totalsInWindow = { deposits: 0, withdrawals: 0, locked: 0, released: 0, refunded: 0, adjustments: 0 };
+    const moveField = {
+      deposit: 'deposits',
+      withdrawal: 'withdrawals',
+      order_processing_lock: 'locked',
+      order_delivered_release: 'released',
+      order_cancelled_release: 'refunded',
+      adjustment: 'adjustments',
+    };
+    moves.forEach((m) => {
+      const amt = m.approvedAmount !== null && m.approvedAmount !== undefined ? Number(m.approvedAmount) || 0 : Number(m.amount) || 0;
+      if (m.status === 'pending' || m.status === 'processing') {
+        if (m.type === 'deposit') {
+          requests.deposits.count += 1;
+          requests.deposits.amount += amt;
+        } else if (m.type === 'withdrawal') {
+          requests.withdrawals.count += 1;
+          requests.withdrawals.amount += amt;
+        }
+        return;
+      }
+      if (!['approved', 'completed'].includes(m.status)) return;
+      const when = m.processedAt || m.createdAt;
+      if (new Date(when) < since) return;
+      const field = moveField[m.type];
+      const day = movesByDay.get(dayKey(when));
+      if (day) day[field] += amt;
+      totalsInWindow[field] += amt;
+    });
+
+    // ── Wallet totals and seller mix
+    const wallet = { balance: 0, processingFund: 0, totalEarned: 0, totalProfitEarned: 0, totalDeposited: 0, totalWithdrawn: 0, securityDeposit: 0 };
+    const health = { healthy: 0, watch: 0, atRisk: 0, critical: 0 };
+    const status = { active: 0, frozen: 0, suspended: 0, warned: 0 };
+    sellers.forEach((s) => {
+      Object.keys(wallet).forEach((k) => {
+        wallet[k] += Number(s.wallet?.[k]) || 0;
+      });
+      const score = s.accountHealth?.score ?? 100;
+      if (score >= 80) health.healthy += 1;
+      else if (score >= 31) health.watch += 1;
+      else if (score > 20) health.atRisk += 1;
+      else health.critical += 1;
+      if (status[s.status] !== undefined) status[s.status] += 1;
+      if (s.warning?.active) status.warned += 1;
+    });
+
+    const storeRows = sellers.map((s) => {
+      const st = perStore.get(String(s._id)) || { sales: 0, orders: 0, pendingAmount: 0, pendingOrders: 0 };
+      return {
+        _id: s._id,
+        storeName: s.storeName || 'Store',
+        sales: round(st.sales),
+        orders: st.orders,
+        pendingAmount: round(st.pendingAmount),
+        pendingOrders: st.pendingOrders,
+        balance: round(s.wallet?.balance),
+        processingFund: round(s.wallet?.processingFund),
+      };
+    });
+    const top = (key) =>
+      [...storeRows]
+        .filter((r) => r[key] > 0)
+        .sort((a, b) => b[key] - a[key])
+        .slice(0, 8);
+
+    const roundObj = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, round(v)]));
+
+    res.json({
+      scope,
+      days,
+      sellerCount: sellers.length,
+      newSellers: sellers.filter((s) => new Date(s.createdAt) >= since).length,
+      wallet: roundObj(wallet),
+      pending: roundObj(pending),
+      pendingByStatus: [...pendingByStatus.values()].map((p) => ({ ...p, amount: round(p.amount) })).sort((a, b) => b.amount - a.amount),
+      aging: aging.map(({ label, count, amount }) => ({ label, count, amount: round(amount) })),
+      requests: {
+        deposits: { ...requests.deposits, amount: round(requests.deposits.amount) },
+        withdrawals: { ...requests.withdrawals, amount: round(requests.withdrawals.amount) },
+      },
+      moveTotals: roundObj(totalsInWindow),
+      movesTrend: [...movesByDay.values()].map((d) => ({ ...roundObj({ ...d, label: 0 }), label: d.label })),
+      salesTrend: [...salesByDay.values()].map((d) => ({ label: d.label, sales: round(d.sales), orders: d.orders })),
+      health,
+      status,
+      topBySales: top('sales'),
+      topByPending: top('pendingAmount'),
+      topByBalance: top('balance'),
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -666,12 +897,37 @@ router.post('/:id/health', authAdmin('sellers'), async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────
 // AFFILIATE / REFERRAL CODES MANAGEMENT ROUTES
+// (rules live in utils/affiliateCodes.js: CAPITALS, 3-32 chars, a seller may only register with
+//  the master code or an ACTIVE custom code)
 // ─────────────────────────────────────────────────────────────
+
+const cleanRate = (v) => {
+  if (v === undefined || v === null || v === '') return { value: null };
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0 || n > 100) return { error: 'Commission must be a number between 0 and 100' };
+  return { value: Math.round(n * 100) / 100 };
+};
+const cleanBonus = (v) => {
+  if (v === undefined || v === null || v === '') return { value: 0 };
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0 || n > 1000000) return { error: 'Welcome bonus must be a positive number' };
+  return { value: Math.round(n * 100) / 100 };
+};
+const isDuplicateKey = (err) => err?.code === 11000;
+
+// For an admin (approve / edit seller) a code must exist; a switched-off code is still allowed
+// because the seller may have registered while it was active. Returns an error text or ''.
+async function adminAffiliateError(code) {
+  if (!code) return '';
+  const r = await resolveAffiliateCode(code);
+  if (r.ok || r.reason === 'inactive') return '';
+  return `Affiliate code "${code}" does not exist. Correct it (see Affiliate Codes) or clear the field.`;
+}
 
 // GET /api/sellers/master-affiliate or /api/sellers/master-referral (Get platform master affiliate code)
 router.get(['/master-affiliate', '/master-referral'], authAdmin('sellers'), async (req, res) => {
   try {
-    const code = (await getSetting('master_affiliate_code')) || (await getSetting('master_referral_code', 'REF-BAZARIO-2026'));
+    const code = await getMasterCode();
     res.json({ masterReferralCode: code, masterAffiliateCode: code });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -681,12 +937,25 @@ router.get(['/master-affiliate', '/master-referral'], authAdmin('sellers'), asyn
 // POST /api/sellers/master-affiliate or /api/sellers/master-referral (Update platform master affiliate code)
 router.post(['/master-affiliate', '/master-referral'], authAdmin('sellers'), async (req, res) => {
   try {
-    const { code } = req.body || {};
-    if (!code || !code.trim()) return res.status(400).json({ message: 'Affiliate code cannot be empty' });
-    const cleanCode = code.trim().toUpperCase();
+    const cleanCode = normalizeCode(req.body?.code);
+    const formatErr = codeFormatError(cleanCode);
+    if (formatErr) return res.status(400).json({ message: formatErr });
+    if (await ReferralCode.exists({ code: cleanCode })) {
+      return res.status(400).json({ message: `"${cleanCode}" is already a custom affiliate code. Pick a different master code.` });
+    }
+    const previous = await getMasterCode();
     await setSetting('master_affiliate_code', cleanCode);
     await setSetting('master_referral_code', cleanCode);
-    audit(req, 'update', 'system_setting', null, `Updated master affiliate code to ${cleanCode}`);
+    // The old master code stays known (switched off): sellers who joined with it keep counting
+    // under it and can still be approved, but nobody new can register with it.
+    if (previous && previous !== cleanCode) {
+      await ReferralCode.updateOne(
+        { code: previous },
+        { $setOnInsert: { code: previous, description: 'Former master affiliate code', status: 'inactive', createdBy: req.admin?.name || 'Admin' } },
+        { upsert: true }
+      ).catch(() => {});
+    }
+    audit(req, 'update', 'system_setting', null, `Updated master affiliate code from ${previous} to ${cleanCode}`);
     res.json({
       message: 'Master affiliate code updated successfully',
       masterReferralCode: cleanCode,
@@ -697,42 +966,84 @@ router.post(['/master-affiliate', '/master-referral'], authAdmin('sellers'), asy
   }
 });
 
-// GET /api/sellers/affiliates or /api/sellers/referrals (Admin lists all affiliate codes with live usage counts)
+// GET /api/sellers/affiliates or /api/sellers/referrals
+// Admin lists every affiliate code with live usage (approved / pending / rejected), a 12-week
+// sign-up trend, and the codes sellers used that match no code at all (typos from before the check).
 router.get(['/affiliates', '/referrals'], authAdmin('sellers'), async (req, res) => {
   try {
-    const masterCode = (await getSetting('master_affiliate_code')) || (await getSetting('master_referral_code', 'REF-BAZARIO-2026'));
-    const customCodes = await ReferralCode.find().sort({ createdAt: -1 });
+    const WEEKS = 12;
+    const weekStart = (d) => {
+      const x = new Date(d);
+      x.setUTCHours(0, 0, 0, 0);
+      x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 6) % 7));
+      return x;
+    };
+    const firstWeek = weekStart(new Date());
+    firstWeek.setUTCDate(firstWeek.getUTCDate() - 7 * (WEEKS - 1));
 
-    // Aggregate seller count for master code
-    const masterCount = await Seller.countDocuments({
-      $or: [
-        { 'securityDeposit.referralCode': masterCode },
-        { referralCode: masterCode },
-      ],
+    const [masterCode, customCodes, usage, totalSellers, recentSellers] = await Promise.all([
+      getMasterCode(),
+      ReferralCode.find().sort({ createdAt: -1 }).lean(),
+      usageByCode(Seller),
+      Seller.countDocuments(),
+      Seller.find({ createdAt: { $gte: firstWeek } }).select('createdAt securityDeposit.referralCode').lean(),
+    ]);
+
+    const empty = { total: 0, active: 0, pending: 0, rejected: 0, other: 0, last: null };
+    const statsOf = (code) => usage.get(code) || empty;
+    const masterStats = statsOf(masterCode);
+
+    const enrichedCodes = customCodes.map((rc) => {
+      const st = statsOf(normalizeCode(rc.code));
+      return {
+        ...rc,
+        usageCount: st.total,
+        approvedCount: st.active,
+        pendingCount: st.pending,
+        rejectedCount: st.rejected,
+        lastUsedAt: st.last,
+      };
     });
 
-    // Aggregate seller count for each custom code
-    const enrichedCodes = await Promise.all(
-      customCodes.map(async (rc) => {
-        const usageCount = await Seller.countDocuments({
-          $or: [
-            { 'securityDeposit.referralCode': rc.code },
-            { referralCode: rc.code },
-          ],
-        });
-        return {
-          ...rc.toObject(),
-          usageCount,
-        };
-      })
-    );
+    const known = new Set([masterCode, ...customCodes.map((rc) => normalizeCode(rc.code))]);
+    const unknownCodes = [...usage.entries()]
+      .filter(([code]) => !known.has(code))
+      .map(([code, st]) => ({ code, count: st.total, lastUsedAt: st.last }))
+      .sort((a, b) => b.count - a.count);
 
+    // weekly sign-ups: with a known code, with an unknown code, without a code
+    const trend = [];
+    for (let i = 0; i < WEEKS; i++) {
+      const d = new Date(firstWeek);
+      d.setUTCDate(d.getUTCDate() + 7 * i);
+      trend.push({ week: d.toISOString().slice(0, 10), withCode: 0, unknownCode: 0, direct: 0 });
+    }
+    for (const s of recentSellers) {
+      const idx = Math.floor((weekStart(s.createdAt) - firstWeek) / (7 * 24 * 3600 * 1000));
+      if (idx < 0 || idx >= WEEKS) continue;
+      const code = normalizeCode(s.securityDeposit?.referralCode);
+      if (!code) trend[idx].direct += 1;
+      else if (known.has(code)) trend[idx].withCode += 1;
+      else trend[idx].unknownCode += 1;
+    }
+
+    const viaCodes = masterStats.total + enrichedCodes.reduce((t, c) => t + c.usageCount, 0);
     res.json({
       masterReferralCode: masterCode,
       masterAffiliateCode: masterCode,
-      masterUsageCount: masterCount,
+      masterUsageCount: masterStats.total,
+      masterStats: { approved: masterStats.active, pending: masterStats.pending, rejected: masterStats.rejected, lastUsedAt: masterStats.last },
       referralCodes: enrichedCodes,
       affiliateCodes: enrichedCodes,
+      unknownCodes,
+      trend,
+      totals: {
+        sellers: totalSellers,
+        viaCodes,
+        unknown: unknownCodes.reduce((t, c) => t + c.count, 0),
+        activeCodes: enrichedCodes.filter((c) => c.status === 'active').length + 1,
+        inactiveCodes: enrichedCodes.filter((c) => c.status !== 'active').length,
+      },
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -743,26 +1054,36 @@ router.get(['/affiliates', '/referrals'], authAdmin('sellers'), async (req, res)
 router.post(['/affiliates', '/referrals'], authAdmin('sellers'), async (req, res) => {
   try {
     const { code, description, commissionRate, bonusAmount, status } = req.body || {};
-    if (!code || !code.trim()) {
-      return res.status(400).json({ message: 'Affiliate code is required' });
+    const cleanCode = normalizeCode(code);
+    const formatErr = codeFormatError(cleanCode);
+    if (formatErr) return res.status(400).json({ message: formatErr });
+    if (cleanCode === (await getMasterCode())) {
+      return res.status(400).json({ message: `"${cleanCode}" is the master affiliate code already` });
     }
+    const rate = cleanRate(commissionRate);
+    if (rate.error) return res.status(400).json({ message: rate.error });
+    const bonus = cleanBonus(bonusAmount);
+    if (bonus.error) return res.status(400).json({ message: bonus.error });
 
-    const cleanCode = code.trim().toUpperCase();
-    const existing = await ReferralCode.findOne({ code: cleanCode });
-    if (existing) {
+    if (await ReferralCode.exists({ code: cleanCode })) {
       return res.status(400).json({ message: `Affiliate code "${cleanCode}" already exists` });
     }
 
     const newCode = new ReferralCode({
       code: cleanCode,
-      description: (description || '').trim(),
-      commissionRate: commissionRate !== undefined && commissionRate !== '' ? Number(commissionRate) : null,
-      bonusAmount: bonusAmount !== undefined && bonusAmount !== '' ? Number(bonusAmount) : 0,
+      description: asText(description, 200).trim(),
+      commissionRate: rate.value,
+      bonusAmount: bonus.value,
       status: status === 'inactive' ? 'inactive' : 'active',
       createdBy: req.admin?.name || 'Admin',
     });
-
-    await newCode.save();
+    try {
+      await newCode.save();
+    } catch (err) {
+      // two admins creating the same code at the same moment
+      if (isDuplicateKey(err)) return res.status(400).json({ message: `Affiliate code "${cleanCode}" already exists` });
+      throw err;
+    }
 
     audit(req, 'create', 'referral_code', newCode._id, `Created affiliate code: ${cleanCode}`);
 
@@ -776,9 +1097,93 @@ router.post(['/affiliates', '/referrals'], authAdmin('sellers'), async (req, res
   }
 });
 
+// POST /api/sellers/affiliates/bulk (Admin generates several codes at once: PREFIX-XXXXXX)
+router.post('/affiliates/bulk', authAdmin('sellers'), async (req, res) => {
+  try {
+    const { prefix, count, description, commissionRate, bonusAmount, status } = req.body || {};
+    const cleanPrefix = normalizeCode(prefix).replace(/[-_]+$/, '');
+    if (cleanPrefix && !/^[A-Z0-9][A-Z0-9_-]{0,15}$/.test(cleanPrefix)) {
+      return res.status(400).json({ message: 'Prefix can be up to 16 letters, numbers, "-" or "_"' });
+    }
+    const n = Math.floor(Number(count));
+    if (!Number.isFinite(n) || n < 1 || n > 50) return res.status(400).json({ message: 'You can generate between 1 and 50 codes at a time' });
+    const rate = cleanRate(commissionRate);
+    if (rate.error) return res.status(400).json({ message: rate.error });
+    const bonus = cleanBonus(bonusAmount);
+    if (bonus.error) return res.status(400).json({ message: bonus.error });
+
+    const masterCode = await getMasterCode();
+    const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O, 1/I: easy to read out loud
+    const randomPart = () => Array.from(crypto.randomBytes(6), (b) => ALPHABET[b % ALPHABET.length]).join('');
+    const wanted = new Set();
+    let guard = 0;
+    while (wanted.size < n && guard++ < n * 20) {
+      const c = cleanPrefix ? `${cleanPrefix}-${randomPart()}` : randomPart();
+      if (c !== masterCode) wanted.add(c);
+    }
+    const taken = new Set((await ReferralCode.find({ code: { $in: [...wanted] } }).select('code').lean()).map((r) => r.code));
+    const docs = [...wanted]
+      .filter((c) => !taken.has(c))
+      .map((c) => ({
+        code: c,
+        description: asText(description, 200).trim(),
+        commissionRate: rate.value,
+        bonusAmount: bonus.value,
+        status: status === 'inactive' ? 'inactive' : 'active',
+        createdBy: req.admin?.name || 'Admin',
+      }));
+
+    let created = [];
+    try {
+      created = await ReferralCode.insertMany(docs, { ordered: false });
+    } catch (err) {
+      // a code created by someone else in between is skipped, the rest are kept
+      if (!isDuplicateKey(err) && !err?.writeErrors) throw err;
+      created = err.insertedDocs || [];
+    }
+    audit(req, 'create', 'referral_code', null, `Generated ${created.length} affiliate codes${cleanPrefix ? ` (prefix ${cleanPrefix})` : ''}`);
+    res.status(201).json({
+      message: `${created.length} affiliate code${created.length === 1 ? '' : 's'} generated`,
+      codes: created.map((c) => c.code),
+      affiliateCodes: created,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PATCH /api/sellers/affiliates/:id (Admin edits description / commission / bonus / status).
+// The code itself is not renamed: sellers who already used it keep pointing to it.
+router.patch(['/affiliates/:id', '/referrals/:id'], authAdmin('sellers'), async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Affiliate code not found' });
+    const rc = await ReferralCode.findById(req.params.id);
+    if (!rc) return res.status(404).json({ message: 'Affiliate code not found' });
+    const { description, commissionRate, bonusAmount, status } = req.body || {};
+    if (description !== undefined) rc.description = asText(description, 200).trim();
+    if (commissionRate !== undefined) {
+      const rate = cleanRate(commissionRate);
+      if (rate.error) return res.status(400).json({ message: rate.error });
+      rc.commissionRate = rate.value;
+    }
+    if (bonusAmount !== undefined) {
+      const bonus = cleanBonus(bonusAmount);
+      if (bonus.error) return res.status(400).json({ message: bonus.error });
+      rc.bonusAmount = bonus.value;
+    }
+    if (status !== undefined) rc.status = status === 'inactive' ? 'inactive' : 'active';
+    await rc.save();
+    audit(req, 'update', 'referral_code', rc._id, `Edited affiliate code: ${rc.code}`);
+    res.json({ ok: true, message: `Affiliate code "${rc.code}" updated.`, referralCode: rc, affiliateCode: rc });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // DELETE /api/sellers/affiliates/:id or /api/sellers/referrals/:id (Admin deletes an affiliate code)
 router.delete(['/affiliates/:id', '/referrals/:id'], authAdmin('sellers'), async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Affiliate code not found' });
     const rc = await ReferralCode.findById(req.params.id);
     if (!rc) return res.status(404).json({ message: 'Affiliate code not found' });
 
@@ -794,6 +1199,7 @@ router.delete(['/affiliates/:id', '/referrals/:id'], authAdmin('sellers'), async
 // PATCH /api/sellers/affiliates/:id/toggle or /api/sellers/referrals/:id/toggle (Admin toggles active / inactive)
 router.patch(['/affiliates/:id/toggle', '/referrals/:id/toggle'], authAdmin('sellers'), async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Affiliate code not found' });
     const rc = await ReferralCode.findById(req.params.id);
     if (!rc) return res.status(404).json({ message: 'Affiliate code not found' });
 
@@ -917,6 +1323,16 @@ router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
       isPreviousStoreSeller,
     } = req.body;
 
+    let cleanReferral;
+    if (referralCode !== undefined) {
+      cleanReferral = normalizeCode(referralCode);
+      // the seller's current code may stay as it is (even an old one); a new one must exist
+      if (cleanReferral !== normalizeCode(seller.securityDeposit?.referralCode)) {
+        const referralErr = await adminAffiliateError(cleanReferral);
+        if (referralErr) return res.status(400).json({ code: 'INVALID_AFFILIATE_CODE', message: referralErr });
+      }
+    }
+
     // Checked before anything is changed below (the status can be edited in this same request)
     const twoPeopleForType = await isApprovedSeller(seller);
 
@@ -960,7 +1376,7 @@ router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
         paid: isPaid,
         amount: cleanAmt,
         paidAt: isPaid ? (seller.securityDeposit?.paidAt || new Date()) : null,
-        referralCode: referralCode !== undefined ? (referralCode || '').trim() : (seller.securityDeposit?.referralCode || ''),
+        referralCode: cleanReferral !== undefined ? cleanReferral : (seller.securityDeposit?.referralCode || ''),
         note: note !== undefined ? (note || '').trim() : (seller.securityDeposit?.note || ''),
       };
 
@@ -1110,7 +1526,14 @@ router.post('/:id/approve', authAdmin('sellers'), async (req, res) => {
 
     const isPaid = Boolean(securityDepositPaid);
     const depAmt = isPaid ? Math.max(0, Number(securityDepositAmount) || 0) : 0;
-    const finalReferral = (assignedReferralCode || referralCode || seller.securityDeposit?.referralCode || '').trim();
+    // The code typed in the approve form wins, even when it was cleared (empty = no code)
+    const finalReferral = normalizeCode(
+      assignedReferralCode !== undefined ? assignedReferralCode : referralCode !== undefined ? referralCode : seller.securityDeposit?.referralCode
+    );
+    // a first approval must carry a real code; an already approved seller may keep the one it has
+    const keepsOldCode = wasApproved && finalReferral === normalizeCode(seller.securityDeposit?.referralCode);
+    const referralErr = keepsOldCode ? '' : await adminAffiliateError(finalReferral);
+    if (referralErr) return res.status(400).json({ code: 'INVALID_AFFILIATE_CODE', message: referralErr });
 
     seller.status = 'active';
     seller.registrationRejectedAt = undefined;

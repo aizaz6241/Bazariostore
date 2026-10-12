@@ -22,7 +22,8 @@ const startOf = {
 
 // Every admin opens the dashboard, but each part of it is only sent to the roles that cover it:
 //   sales / orders / customers -> Orders or Reports,  recent orders (names, cities) -> Orders,
-//   products & stock -> Products or Inventory,          USDT wallet -> Finance.
+//   products & stock -> Products or Inventory,          USDT wallet -> Finance,
+//   seller pipeline -> Sellers.
 router.get('/dashboard', authAdmin(), async (req, res) => {
   const can = (p) => hasPermission(req.admin, p);
   const sections = {
@@ -30,9 +31,11 @@ router.get('/dashboard', authAdmin(), async (req, res) => {
     recentOrders: can('orders'),
     stock: can('products') || can('inventory'),
     wallet: can('finance'),
+    sellers: can('sellers'),
   };
   const out = { sections };
   if (sections.sales) Object.assign(out, await salesSection());
+  if (sections.sellers) out.sellers = await sellersSection();
   if (sections.recentOrders) out.recent = await Order.find().sort({ createdAt: -1 }).limit(8);
   if (sections.stock) Object.assign(out, await stockSection());
   if (sections.wallet) out.usdtWallet = await walletSection();
@@ -93,13 +96,67 @@ async function salesSection() {
     { $project: { _id: 0, label: '$_id', n: 1, revenue: 1 } },
   ]);
 
+  // every day / month is present (0 when there were no orders), so the charts have no gaps
+  const dayKey = (d) => d.toISOString().slice(0, 10);
+  const byDay = new Map(
+    (
+      await Order.aggregate([
+        { $match: { ...valid, createdAt: { $gte: new Date(Date.now() - 30 * 24 * 3600 * 1000) } } },
+        { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, revenue: { $sum: '$total' }, orders: { $sum: 1 } } },
+      ])
+    ).map((r) => [r._id, r])
+  );
+  const daily30 = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 24 * 3600 * 1000);
+    const k = dayKey(d);
+    const r = byDay.get(k);
+    daily30.push({ date: k, label: d.toLocaleDateString('en-US', { day: '2-digit', month: 'short', timeZone: 'UTC' }), revenue: r?.revenue || 0, orders: r?.orders || 0 });
+  }
+  const byMonth = new Map(monthly12.map((m) => [m.label, m]));
+  const months12 = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date();
+    d.setUTCDate(1);
+    d.setUTCMonth(d.getUTCMonth() - i);
+    const k = d.toISOString().slice(0, 7);
+    months12.push({ key: k, label: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }), revenue: byMonth.get(k)?.revenue || 0, orders: byMonth.get(k)?.orders || 0 });
+  }
+
   return {
     sales: { today, week, month, year },
     ordersByStatus,
     customers: { total: totalCustomers, newThisMonth: newCustomers, returning: returningAgg[0]?.returning || 0 },
     revenue30,
     monthly12,
+    daily30,
+    months12,
     paymentSplit,
+  };
+}
+
+// seller pipeline (KYC photos are never loaded here)
+async function sellersSection() {
+  const sellerAgg = await Seller.aggregate([
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        active: { $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] } },
+        pending: { $sum: { $cond: [{ $and: [{ $eq: ['$status', 'pending_approval'] }, { $not: [{ $ifNull: ['$registrationRejectedAt', false] }] }] }, 1, 0] } },
+        rejected: { $sum: { $cond: [{ $and: [{ $ne: ['$status', 'active'] }, { $ifNull: ['$registrationRejectedAt', false] }] }, 1, 0] } },
+        newThisMonth: { $sum: { $cond: [{ $gte: ['$createdAt', startOf.month()] }, 1, 0] } },
+      },
+    },
+  ]);
+  const sAgg = sellerAgg[0] || {};
+  return {
+    total: sAgg.total || 0,
+    active: sAgg.active || 0,
+    pending: sAgg.pending || 0,
+    rejected: sAgg.rejected || 0,
+    other: Math.max(0, (sAgg.total || 0) - (sAgg.active || 0) - (sAgg.pending || 0) - (sAgg.rejected || 0)),
+    newThisMonth: sAgg.newThisMonth || 0,
   };
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, money, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
+import SellersAnalytics from './SellersAnalytics.jsx';
 
 export default function Sellers() {
   const [sellers, setSellers] = useState([]);
@@ -9,6 +10,8 @@ export default function Sellers() {
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'active' | 'frozen' | 'suspended' | 'warned' | 'at_risk'
   const [viewMode, setViewMode] = useState('cards'); // 'cards' | 'table'
+  const [sortBy, setSortBy] = useState('newest');
+  const [analyticsKey, setAnalyticsKey] = useState(0); // bump to reload the analytics panel
 
   // Create Seller Modal
   const [createOpen, setCreateOpen] = useState(false);
@@ -574,81 +577,94 @@ export default function Sellers() {
 
   const activeSellers = sellers.filter((s) => s.status !== 'pending_approval');
 
-  // Filtered list
-  const filtered = activeSellers.filter((s) => {
-    const score = s.accountHealth?.score !== undefined ? s.accountHealth.score : 100;
-    if (statusFilter === 'active' && s.status !== 'active') return false;
-    if (statusFilter === 'client' && (s.isTestAccount || s.isPreviousStoreSeller)) return false;
-    if (statusFilter === 'test' && !s.isTestAccount) return false;
-    if (statusFilter === 'previous' && !s.isPreviousStoreSeller) return false;
-    if (statusFilter === 'frozen' && s.status !== 'frozen') return false;
-    if (statusFilter === 'suspended' && s.status !== 'suspended') return false;
-    if (statusFilter === 'warned' && !s.warning?.active) return false;
-    if (statusFilter === 'at_risk' && score > 30) return false;
-
-    if (!q) return true;
-    const match =
-      s.storeName?.toLowerCase().includes(q.toLowerCase()) ||
-      s.ownerName?.toLowerCase().includes(q.toLowerCase()) ||
-      s.email?.toLowerCase().includes(q.toLowerCase()) ||
-      s.phone?.toLowerCase().includes(q.toLowerCase());
-    return match;
-  });
-
   const clientCount = activeSellers.filter((s) => !s.isTestAccount && !s.isPreviousStoreSeller).length;
   const testCount = activeSellers.filter((s) => s.isTestAccount).length;
   const previousCount = activeSellers.filter((s) => s.isPreviousStoreSeller).length;
-  const healthyCount = activeSellers.filter((s) => s.status === 'active' && (s.accountHealth?.score ?? 100) >= 80).length;
+  const activeCount = activeSellers.filter((s) => s.status === 'active').length;
   const warnedCount = activeSellers.filter((s) => s.warning?.active).length;
-  const frozenCount = activeSellers.filter((s) => s.status === 'frozen' || s.status === 'suspended').length;
-  const totalProducts = activeSellers.reduce((a, b) => a + (b.productCount || 0), 0);
+  const frozenOnlyCount = activeSellers.filter((s) => s.status === 'frozen').length;
+  const suspendedCount = activeSellers.filter((s) => s.status === 'suspended').length;
+  const atRiskCount = activeSellers.filter((s) => (s.accountHealth?.score ?? 100) <= 30).length;
   const totalGMV = activeSellers.reduce((a, b) => a + (b.lifetimeSales || 0), 0);
+
+  const FILTERS = [
+    { key: 'all', label: 'All', count: activeSellers.length },
+    { key: 'active', label: '🟢 Active', count: activeCount },
+    { key: 'client', label: '👤 Client', count: clientCount },
+    { key: 'test', label: '🧪 Test', count: testCount },
+    { key: 'previous', label: '🏛️ Previous', count: previousCount },
+    { key: 'warned', label: '⚠️ Warned', count: warnedCount },
+    { key: 'at_risk', label: '🔴 At risk', count: atRiskCount },
+    { key: 'frozen', label: '❄️ Frozen', count: frozenOnlyCount },
+    { key: 'suspended', label: '⛔ Suspended', count: suspendedCount },
+  ];
+
+  const SORTS = {
+    newest: { label: 'Newest first', fn: (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0) },
+    sales: { label: 'Highest sales', fn: (a, b) => (b.lifetimeSales || 0) - (a.lifetimeSales || 0) },
+    pending: { label: 'Most pending orders', fn: (a, b) => (b.pendingOrders || 0) - (a.pendingOrders || 0) },
+    wallet: { label: 'Highest wallet balance', fn: (a, b) => (b.wallet?.balance || 0) - (a.wallet?.balance || 0) },
+    locked: { label: 'Most locked funds', fn: (a, b) => (b.wallet?.processingFund || 0) - (a.wallet?.processingFund || 0) },
+    health: { label: 'Lowest health first', fn: (a, b) => (a.accountHealth?.score ?? 100) - (b.accountHealth?.score ?? 100) },
+    name: { label: 'Store name A–Z', fn: (a, b) => (a.storeName || '').localeCompare(b.storeName || '') },
+  };
+
+  // Filtered list
+  const filtered = activeSellers
+    .filter((s) => {
+      const score = s.accountHealth?.score !== undefined ? s.accountHealth.score : 100;
+      if (statusFilter === 'active' && s.status !== 'active') return false;
+      if (statusFilter === 'client' && (s.isTestAccount || s.isPreviousStoreSeller)) return false;
+      if (statusFilter === 'test' && !s.isTestAccount) return false;
+      if (statusFilter === 'previous' && !s.isPreviousStoreSeller) return false;
+      if (statusFilter === 'frozen' && s.status !== 'frozen') return false;
+      if (statusFilter === 'suspended' && s.status !== 'suspended') return false;
+      if (statusFilter === 'warned' && !s.warning?.active) return false;
+      if (statusFilter === 'at_risk' && score > 30) return false;
+
+      if (!q) return true;
+      const match =
+        s.storeName?.toLowerCase().includes(q.toLowerCase()) ||
+        s.ownerName?.toLowerCase().includes(q.toLowerCase()) ||
+        s.email?.toLowerCase().includes(q.toLowerCase()) ||
+        s.phone?.toLowerCase().includes(q.toLowerCase());
+      return match;
+    })
+    .sort((SORTS[sortBy] || SORTS.newest).fn);
+
+  // A store picked from one of the analytics "top" lists
+  const openSellerById = (id) => {
+    const s = sellers.find((x) => String(x._id) === String(id));
+    if (s) handleOpenProfile(s, 'dashboard');
+  };
 
   return (
     <div className="admin-sellers-page">
       {/* Top Header */}
-      <div className="admin-header-row">
+      <div className="admin-header-row sellers-hero">
         <div>
-          <h2>🏬 Multi-Vendor Sellers &amp; Merchants Directory</h2>
+          <h2>🏬 Sellers &amp; Vendors</h2>
           <p className="muted">
-            Manage merchant cards, open full profiles (Account, Documents, Dashboard &amp; Upgrades), and onboard new vendors.
+            {activeSellers.length} stores · {clientCount} real clients · lifetime GMV <b>{money(totalGMV)}</b>
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <button type="button" onClick={() => { loadSellers(); setAnalyticsKey((k) => k + 1); }} className="btn-ghost-refresh" title="Reload sellers and analytics">
+            <Ic name="refresh" size={15} /> Refresh
+          </button>
           <button onClick={() => setCreateOpen(true)} className="btn-primary">
-            <Ic name="plus" size={16} /> + Onboard New Seller
+            <Ic name="plus" size={16} /> Onboard New Seller
           </button>
         </div>
       </div>
 
-      {/* Summary KPI Stats Bar */}
-      <div className="admin-sellers-stats-bar">
-        <div className="stat-box" style={{ borderLeft: '4px solid #2563eb' }}>
-          <span className="lbl">Total Active Sellers</span>
-          <b className="val" style={{ color: '#2563eb' }}>{activeSellers.length}</b>
-        </div>
-        <div className="stat-box" style={{ borderLeft: '4px solid #16a34a' }}>
-          <span className="lbl">Healthy Accounts (80+)</span>
-          <b className="val" style={{ color: '#16a34a' }}>{healthyCount}</b>
-        </div>
-        <div className="stat-box" style={{ borderLeft: '4px solid #d97706' }}>
-          <span className="lbl">Active Warnings</span>
-          <b className="val" style={{ color: '#d97706' }}>{warnedCount}</b>
-        </div>
-        <div className="stat-box" style={{ borderLeft: '4px solid #dc2626' }}>
-          <span className="lbl">Frozen / Suspended</span>
-          <b className="val" style={{ color: '#dc2626' }}>{frozenCount}</b>
-        </div>
-        <div className="stat-box" style={{ borderLeft: '4px solid #0f172a' }}>
-          <span className="lbl">Total Merchant Sales (GMV)</span>
-          <b className="val">{money(totalGMV)}</b>
-        </div>
-      </div>
+      {/* Analytics: wallet, pending orders, money movement */}
+      <SellersAnalytics onOpenSeller={openSellerById} refreshKey={analyticsKey} />
 
       {/* Filter Tabs & Search Toolbar */}
-      <div className="admin-sellers-toolbar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: 1 }}>
-          <div className="search-field" style={{ minWidth: 260, maxWidth: 380 }}>
+      <div className="admin-sellers-toolbar sellers-toolbar-v2">
+        <div className="sellers-toolbar-row">
+          <div className="search-field" style={{ flex: 1, minWidth: 220, maxWidth: 420 }}>
             <Ic name="search" size={16} />
             <input
               type="text"
@@ -658,157 +674,51 @@ export default function Sellers() {
             />
           </div>
 
-          {/* Quick Filter Pills */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <select className="sellers-sort" value={sortBy} onChange={(e) => setSortBy(e.target.value)} aria-label="Sort sellers">
+            {Object.entries(SORTS).map(([key, s]) => (
+              <option key={key} value={key}>
+                Sort: {s.label}
+              </option>
+            ))}
+          </select>
+
+          {/* View Mode Switcher: Cards View vs Table View */}
+          <div className="admin-view-toggle">
             <button
               type="button"
-              onClick={() => setStatusFilter('all')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 20,
-                border: statusFilter === 'all' ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
-                background: statusFilter === 'all' ? '#eff6ff' : '#ffffff',
-                color: statusFilter === 'all' ? '#1d4ed8' : '#64748b',
-                fontWeight: 700,
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
+              className={`admin-view-toggle-btn ${viewMode === 'cards' ? 'active' : ''}`}
+              onClick={() => setViewMode('cards')}
+              title="Display sellers as Cards"
             >
-              All ({activeSellers.length})
+              🎴 Cards
             </button>
             <button
               type="button"
-              onClick={() => setStatusFilter('active')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 20,
-                border: statusFilter === 'active' ? '1.5px solid #16a34a' : '1px solid #cbd5e1',
-                background: statusFilter === 'active' ? '#ecfdf5' : '#ffffff',
-                color: statusFilter === 'active' ? '#047857' : '#64748b',
-                fontWeight: 700,
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
+              className={`admin-view-toggle-btn ${viewMode === 'table' ? 'active' : ''}`}
+              onClick={() => setViewMode('table')}
+              title="Display sellers as Table"
             >
-              🟢 Active
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('client')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 20,
-                border: statusFilter === 'client' ? '1.5px solid #059669' : '1px solid #cbd5e1',
-                background: statusFilter === 'client' ? '#ecfdf5' : '#ffffff',
-                color: statusFilter === 'client' ? '#047857' : '#64748b',
-                fontWeight: 700,
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
-            >
-              👤 Client ({clientCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('test')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 20,
-                border: statusFilter === 'test' ? '1.5px solid #7c3aed' : '1px solid #cbd5e1',
-                background: statusFilter === 'test' ? '#faf5ff' : '#ffffff',
-                color: statusFilter === 'test' ? '#6b21a8' : '#64748b',
-                fontWeight: 700,
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
-            >
-              🧪 Test ({testCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('previous')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 20,
-                border: statusFilter === 'previous' ? '1.5px solid #d97706' : '1px solid #cbd5e1',
-                background: statusFilter === 'previous' ? '#fffbeb' : '#ffffff',
-                color: statusFilter === 'previous' ? '#b45309' : '#64748b',
-                fontWeight: 700,
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
-            >
-              🏛️ Previous Stores ({previousCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('warned')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 20,
-                border: statusFilter === 'warned' ? '1.5px solid #d97706' : '1px solid #cbd5e1',
-                background: statusFilter === 'warned' ? '#fffbeb' : '#ffffff',
-                color: statusFilter === 'warned' ? '#b45309' : '#64748b',
-                fontWeight: 700,
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
-            >
-              ⚠️ Warned ({warnedCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('frozen')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 20,
-                border: statusFilter === 'frozen' ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
-                background: statusFilter === 'frozen' ? '#eff6ff' : '#ffffff',
-                color: statusFilter === 'frozen' ? '#1e40af' : '#64748b',
-                fontWeight: 700,
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
-            >
-              ❄️ Frozen
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('suspended')}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 20,
-                border: statusFilter === 'suspended' ? '1.5px solid #dc2626' : '1px solid #cbd5e1',
-                background: statusFilter === 'suspended' ? '#fef2f2' : '#ffffff',
-                color: statusFilter === 'suspended' ? '#b91c1c' : '#64748b',
-                fontWeight: 700,
-                fontSize: 12,
-                cursor: 'pointer',
-              }}
-            >
-              ⛔ Suspended
+              📄 Table
             </button>
           </div>
         </div>
 
-        {/* View Mode Switcher: Cards View vs Table View */}
-        <div className="admin-view-toggle">
-          <button
-            type="button"
-            className={`admin-view-toggle-btn ${viewMode === 'cards' ? 'active' : ''}`}
-            onClick={() => setViewMode('cards')}
-            title="Display sellers as Cards"
-          >
-            🎴 Cards View
-          </button>
-          <button
-            type="button"
-            className={`admin-view-toggle-btn ${viewMode === 'table' ? 'active' : ''}`}
-            onClick={() => setViewMode('table')}
-            title="Display sellers as Table"
-          >
-            📄 Table View
-          </button>
+        {/* Quick Filter Pills */}
+        <div className="sellers-filter-pills">
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              className={`sellers-pill${statusFilter === f.key ? ' on' : ''}`}
+              onClick={() => setStatusFilter(f.key)}
+            >
+              {f.label}
+              <span className="sellers-pill-count">{f.count}</span>
+            </button>
+          ))}
+          <span className="sellers-result-count">
+            Showing {filtered.length} of {activeSellers.length}
+          </span>
         </div>
       </div>
 
@@ -830,241 +740,130 @@ export default function Sellers() {
       {/* ─── PRIMARY VIEW: SELLERS CARDS GRID ─── */}
       {/* ═════════════════════════════════════════════════════════════ */}
       {!loading && viewMode === 'cards' && (
-        <div className="admin-sellers-cards-grid">
+        <div className="admin-sellers-cards-grid scards-grid">
           {filtered.map((s) => {
             const score = s.accountHealth?.score !== undefined ? s.accountHealth.score : 100;
-            const tierColor = score >= 80 ? '#15803d' : score >= 31 ? '#854d0e' : score > 20 ? '#c2410c' : '#b91c1c';
-            const tierBg = score >= 80 ? '#dcfce7' : score >= 31 ? '#fef9c3' : score > 20 ? '#ffedd5' : '#fee2e2';
-            const fillBg = score >= 80 ? '#16a34a' : score >= 31 ? '#eab308' : score > 20 ? '#ea580c' : '#dc2626';
+            const tier = score >= 80 ? 'good' : score >= 31 ? 'watch' : score > 20 ? 'risk' : 'critical';
+            const statusKey = s.status === 'active' ? 'active' : s.status === 'frozen' ? 'frozen' : 'suspended';
+            const pending = s.pendingOrders || 0;
+            const locked = s.wallet?.processingFund || 0;
 
             return (
-              <div key={s._id} className="seller-card">
-                {/* Top Status Strip */}
-                <div
-                  className={`seller-card-top-bar ${
-                    s.status === 'active'
-                      ? 'status-active'
-                      : s.status === 'frozen'
-                      ? 'status-frozen'
-                      : 'status-suspended'
-                  }`}
-                />
-
-                {/* Card Header */}
-                <div className="seller-card-header">
-                  <div className="seller-card-identity">
-                    <div className="seller-card-avatar">
-                      {s.storeName?.[0]?.toUpperCase() || 'S'}
-                    </div>
-                    <div className="seller-card-meta">
-                      <div className="seller-card-store-title" title={s.storeName}>
-                        <span>{s.storeName}</span>
-                        {(s.verified || s.status === 'active') && (
-                          <VerifiedStoreBadge variant="icon" size={15} title="Verified Merchant Store" />
-                        )}
-                      </div>
-                      <span className="seller-card-owner" title={s.ownerName}>
-                        👤 {s.ownerName}
-                      </span>
-                    </div>
+              <article key={s._id} className={`scard scard-${statusKey}`}>
+                {/* Identity */}
+                <header className="scard-head">
+                  <div className="scard-avatar" aria-hidden="true">
+                    {s.storeName?.[0]?.toUpperCase() || 'S'}
                   </div>
-
-                  {/* Status Badges */}
-                  <div className="seller-card-badges">
-                    <button
-                      type="button"
-                      onClick={() => handleToggleTest(s._id)}
-                      title="Click to toggle Test Account / Client Account"
-                      style={{
-                        background: s.isTestAccount ? '#f3e8ff' : '#ecfdf5',
-                        color: s.isTestAccount ? '#7e22ce' : '#047857',
-                        border: `1px solid ${s.isTestAccount ? '#d8b4fe' : '#a7f3d0'}`,
-                        fontWeight: 700,
-                        padding: '3px 8px',
-                        borderRadius: 12,
-                        fontSize: 10.5,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 4,
-                      }}
-                    >
-                      {s.isTestAccount ? '🧪 Test' : '👤 Client'}
-                      <span style={{ fontSize: 9, opacity: 0.7 }}>⇄</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleTogglePreviousStore(s._id)}
-                      title="Click to toggle Previous Store Seller (Excluded from Admin USDT Wallet)"
-                      style={{
-                        background: s.isPreviousStoreSeller ? '#fef3c7' : '#f8fafc',
-                        color: s.isPreviousStoreSeller ? '#92400e' : '#64748b',
-                        border: `1px solid ${s.isPreviousStoreSeller ? '#fde68a' : '#e2e8f0'}`,
-                        fontWeight: 700,
-                        padding: '3px 8px',
-                        borderRadius: 12,
-                        fontSize: 10.5,
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 4,
-                      }}
-                    >
-                      {s.isPreviousStoreSeller ? '🏛️ Prev Store' : '✨ Current'}
-                      <span style={{ fontSize: 9, opacity: 0.7 }}>⇄</span>
-                    </button>
-                    <span
-                      style={{
-                        background: s.status === 'active' ? '#ecfdf5' : s.status === 'frozen' ? '#eff6ff' : '#fef2f2',
-                        color: s.status === 'active' ? '#059669' : s.status === 'frozen' ? '#2563eb' : '#dc2626',
-                        border: `1px solid ${s.status === 'active' ? '#a7f3d0' : s.status === 'frozen' ? '#bfdbfe' : '#fecaca'}`,
-                        fontWeight: 700,
-                        padding: '3px 8px',
-                        borderRadius: 12,
-                        fontSize: 11,
-                      }}
-                    >
-                      {s.status === 'active' ? '● Active' : s.status === 'frozen' ? '❄️ Frozen' : '⛔ Suspended'}
-                    </span>
-                    {s.warning?.active && (
-                      <span
-                        style={{
-                          fontSize: 10.5,
-                          background: '#fef3c7',
-                          color: '#b45309',
-                          border: '1px solid #fde68a',
-                          padding: '2px 6px',
-                          borderRadius: 8,
-                          fontWeight: 700,
-                        }}
-                      >
-                        ⚠️ Warned
-                      </span>
-                    )}
+                  <div className="scard-id">
+                    <div className="scard-name" title={s.storeName}>
+                      <span>{s.storeName}</span>
+                      {(s.verified || s.status === 'active') && (
+                        <VerifiedStoreBadge variant="icon" size={15} title="Verified Merchant Store" />
+                      )}
+                    </div>
+                    <div className="scard-owner" title={s.ownerName}>{s.ownerName || 'Owner not set'}</div>
                   </div>
-                </div>
+                  <span className={`scard-status scard-status-${statusKey}`}>
+                    {statusKey === 'active' ? '● Active' : statusKey === 'frozen' ? '❄️ Frozen' : '⛔ Suspended'}
+                  </span>
+                </header>
 
-                {/* Card Body */}
-                <div className="seller-card-body">
-                  {/* Contact Info */}
-                  <div className="seller-card-info-row">
-                    <div className="seller-card-info-item" title={s.email}>
-                      <span className="muted">✉️</span>
-                      <span style={{ fontWeight: 600 }}>{s.email}</span>
-                    </div>
-                    <div className="seller-card-info-item">
-                      <span className="muted">📞</span>
-                      <span>{s.phone || 'No phone provided'}</span>
-                    </div>
-                  </div>
-
-                  {/* Account Health Meter */}
-                  <div className="seller-card-health-section">
-                    <div className="seller-card-health-header">
-                      <span className="lbl">Account Health</span>
-                      <span
-                        style={{
-                          background: tierBg,
-                          color: tierColor,
-                          fontWeight: 800,
-                          fontSize: 11,
-                          padding: '2px 6px',
-                          borderRadius: 6,
-                        }}
-                      >
-                        {score >= 80 ? '🟢' : score >= 31 ? '🟡' : score > 20 ? '🟠' : '🔴'} {score}/100
-                      </span>
-                    </div>
-                    <div className="admin-health-bar-wrap" style={{ height: 6 }}>
-                      <div
-                        className="admin-health-bar-fill"
-                        style={{ width: `${Math.max(4, score)}%`, background: fillBg }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Key Metrics Grid */}
-                  <div className="seller-card-stats-grid">
-                    <div className="seller-card-stat-pill">
-                      <span className="lbl">Commission</span>
-                      <span className="val" style={{ color: '#2563eb' }}>{s.commissionRate || 10}%</span>
-                    </div>
-                    <div className="seller-card-stat-pill">
-                      <span className="lbl">Listed Items</span>
-                      <span className="val">{s.productCount || 0} Products</span>
-                    </div>
-                    <div className="seller-card-stat-pill">
-                      <span className="lbl">Pending Orders</span>
-                      <span
-                        className="val"
-                        style={{
-                          color: (s.pendingOrders || 0) > 0 ? '#ea580c' : '#0f172a',
-                          fontWeight: (s.pendingOrders || 0) > 0 ? 800 : 700,
-                        }}
-                      >
-                        {s.pendingOrders || 0} Orders
-                      </span>
-                    </div>
-                    <div className="seller-card-stat-pill">
-                      <span className="lbl">Avail Wallet</span>
-                      <span className="val" style={{ color: '#16a34a' }}>{money(s.wallet?.balance || 0)}</span>
-                    </div>
-                  </div>
-
-                  {s.wallet?.processingFund > 0 && (
-                    <div
-                      style={{
-                        background: '#fffbeb',
-                        border: '1px solid #fef3c7',
-                        borderRadius: 6,
-                        padding: '4px 8px',
-                        fontSize: 11,
-                        color: '#92400e',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                      }}
-                    >
-                      <span>🔒 Locked In-Flight:</span>
-                      <b>{money(s.wallet?.processingFund)}</b>
-                    </div>
-                  )}
-                </div>
-
-                {/* Card Footer Actions */}
-                <div className="seller-card-footer">
-                  {/* Primary Profile Action Button */}
+                {/* Classification chips (click to switch) */}
+                <div className="scard-chips">
                   <button
                     type="button"
-                    onClick={() => handleOpenProfile(s, 'account')}
-                    className="btn-card-profile"
-                    title="Open Complete Seller Profile"
+                    onClick={() => handleToggleTest(s._id)}
+                    title="Click to toggle Test Account / Client Account"
+                    className={`scard-chip ${s.isTestAccount ? 'chip-test' : 'chip-client'}`}
                   >
-                    👤 Profile
+                    {s.isTestAccount ? '🧪 Test' : '👤 Client'} <span className="scard-chip-swap">⇄</span>
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => handleTogglePreviousStore(s._id)}
+                    title="Click to toggle Previous Store Seller (Excluded from Admin USDT Wallet)"
+                    className={`scard-chip ${s.isPreviousStoreSeller ? 'chip-prev' : 'chip-current'}`}
+                  >
+                    {s.isPreviousStoreSeller ? '🏛️ Prev Store' : '✨ Current'} <span className="scard-chip-swap">⇄</span>
+                  </button>
+                  {s.warning?.active && <span className="scard-chip chip-warn">⚠️ Warned</span>}
+                </div>
 
-                  <div className="seller-card-footer-subactions">
-                    {/* Quick Password Reset */}
-                    <button
-                      type="button"
-                      onClick={() => handleOpenResetPassword(s)}
-                      className="btn-card-icon-action"
-                      title="Reset Seller Password"
-                    >
-                      <Ic name="lock" size={13} />
-                    </button>
-
-                    {/* Delete Seller */}
-                    <button
-                      type="button"
-                      onClick={() => setDeleteModalSeller(s)}
-                      className="btn-card-icon-action danger"
-                      title="Delete Seller Account"
-                    >
-                      <Ic name="x" size={13} />
-                    </button>
+                {/* Money & activity */}
+                <div className="scard-metrics">
+                  <div className="scard-metric">
+                    <span className="lbl">Wallet</span>
+                    <b className="val val-green">{money(s.wallet?.balance || 0)}</b>
+                  </div>
+                  <div className="scard-metric">
+                    <span className="lbl">
+                      <span className="lbl-long">Lifetime sales</span>
+                      <span className="lbl-short">Sales</span>
+                    </span>
+                    <b className="val">{money(s.lifetimeSales || 0)}</b>
+                  </div>
+                  <div className="scard-metric">
+                    <span className="lbl">
+                      <span className="lbl-long">Pending orders</span>
+                      <span className="lbl-short">Pending</span>
+                    </span>
+                    <b className={`val ${pending > 0 ? 'val-orange' : ''}`}>{pending}</b>
+                  </div>
+                  <div className="scard-metric">
+                    <span className="lbl">
+                      <span className="lbl-long">Products · Fee</span>
+                      <span className="lbl-short">Items · Fee</span>
+                    </span>
+                    <b className="val">
+                      {s.productCount || 0} · <span className="val-blue">{s.commissionRate || 10}%</span>
+                    </b>
                   </div>
                 </div>
-              </div>
+
+                {locked > 0 && (
+                  <div className="scard-locked">
+                    <span>🔒 <span className="lbl-long">Locked for orders</span><span className="lbl-short">Locked</span></span>
+                    <b>{money(locked)}</b>
+                  </div>
+                )}
+
+                {/* Health */}
+                <div className="scard-health">
+                  <div className="scard-health-row">
+                    <span className="lbl">Account health</span>
+                    <span className={`scard-health-val tier-${tier}`}>{score}/100</span>
+                  </div>
+                  <div className="scard-health-track">
+                    <span className={`tier-${tier}`} style={{ width: `${Math.max(4, score)}%` }} />
+                  </div>
+                </div>
+
+                {/* Contact */}
+                <div className="scard-contact">
+                  <span title={s.email}>✉️ {s.email}</span>
+                  <span>📞 {s.phone || 'No phone'}</span>
+                </div>
+
+                {/* Actions */}
+                <footer className="scard-actions">
+                  <button type="button" onClick={() => handleOpenProfile(s, 'account')} className="scard-btn-primary" title="Open Complete Seller Profile">
+                    Open profile
+                  </button>
+                  <button type="button" onClick={() => handleOpenProfile(s, 'dashboard')} className="scard-btn-icon" title="Seller dashboard: products, orders, wallet">
+                    📊
+                  </button>
+                  <button type="button" onClick={() => handleOpenProfile(s, 'upgrades')} className="scard-btn-icon" title="Compliance, warning, health and limits">
+                    ⚡
+                  </button>
+                  <button type="button" onClick={() => handleOpenResetPassword(s)} className="scard-btn-icon" title="Reset Seller Password">
+                    <Ic name="lock" size={14} />
+                  </button>
+                  <button type="button" onClick={() => setDeleteModalSeller(s)} className="scard-btn-icon danger" title="Delete Seller Account">
+                    <Ic name="x" size={14} />
+                  </button>
+                </footer>
+              </article>
             );
           })}
         </div>
@@ -1292,97 +1091,96 @@ export default function Sellers() {
       {/* ═════════════════════════════════════════════════════════════ */}
       {profileModalOpen && profileSeller && (
         <div className="admin-modal-overlay" onClick={() => setProfileModalOpen(false)}>
-          <div className="seller-profile-modal-box" onClick={(e) => e.stopPropagation()}>
+          <div className="seller-profile-modal-box spm" onClick={(e) => e.stopPropagation()}>
             {/* Modal Top Header */}
-            <div className="seller-profile-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 12,
-                    background: '#ffffff',
-                    color: '#0f172a',
-                    fontWeight: 900,
-                    fontSize: 18,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-                  }}
-                >
-                  {profileSeller.storeName?.[0]?.toUpperCase() || 'S'}
-                </div>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <h3 style={{ margin: 0, fontSize: 17, color: '#ffffff', fontWeight: 800 }}>
-                      {profileSeller.storeName}
-                    </h3>
-                    {(profileSeller.verified || profileSeller.status === 'active') && (
-                      <VerifiedStoreBadge variant="icon" size={16} title="Verified Merchant Store" />
-                    )}
+            {(() => {
+              const ps = profileSeller;
+              const statusKey = ps.status === 'active' ? 'active' : ps.status === 'frozen' ? 'frozen' : 'suspended';
+              const hScore = ps.accountHealth?.score !== undefined ? ps.accountHealth.score : 100;
+              const hTier = hScore >= 80 ? 'good' : hScore >= 31 ? 'watch' : hScore > 20 ? 'risk' : 'critical';
+              const pendingCount = profileData?.stats?.pendingOrders ?? ps.pendingOrders ?? 0;
+              return (
+                <div className="spm-hero">
+                  <div className="spm-hero-top">
+                    <div className="spm-identity">
+                      <div className="spm-avatar" aria-hidden="true">{ps.storeName?.[0]?.toUpperCase() || 'S'}</div>
+                      <div style={{ minWidth: 0 }}>
+                        <div className="spm-name">
+                          <h3>{ps.storeName}</h3>
+                          {(ps.verified || ps.status === 'active') && (
+                            <VerifiedStoreBadge variant="icon" size={16} title="Verified Merchant Store" />
+                          )}
+                        </div>
+                        <div className="spm-sub">
+                          <span>👤 {ps.ownerName || 'Owner not set'}</span>
+                          <span>✉️ {ps.email}</span>
+                          {ps.phone && <span>📞 {ps.phone}</span>}
+                        </div>
+                        <div className="spm-tags">
+                          <span className={`spm-tag spm-tag-${statusKey}`}>
+                            {statusKey === 'active' ? '● Active' : statusKey === 'frozen' ? '❄️ Frozen' : '⛔ Suspended'}
+                          </span>
+                          <span className="spm-tag">{ps.isTestAccount ? '🧪 Test account' : '👤 Client account'}</span>
+                          {ps.isPreviousStoreSeller && <span className="spm-tag">🏛️ Previous store</span>}
+                          {ps.warning?.active && <span className="spm-tag spm-tag-warn">⚠️ Warned</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <button type="button" onClick={() => setProfileModalOpen(false)} className="spm-close" aria-label="Close profile">
+                      ✕
+                    </button>
                   </div>
-                  <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2 }}>
-                    <span>Owner: <b>{profileSeller.ownerName}</b></span> &bull; <span>Email: {profileSeller.email}</span>
-                  </div>
-                </div>
-              </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span
-                  style={{
-                    background: profileSeller.status === 'active' ? '#ecfdf5' : profileSeller.status === 'frozen' ? '#eff6ff' : '#fef2f2',
-                    color: profileSeller.status === 'active' ? '#059669' : profileSeller.status === 'frozen' ? '#2563eb' : '#dc2626',
-                    fontWeight: 800,
-                    fontSize: 12,
-                    padding: '4px 10px',
-                    borderRadius: 20,
-                  }}
-                >
-                  {profileSeller.status === 'active' ? '● Active' : profileSeller.status === 'frozen' ? '❄️ Frozen' : '⛔ Suspended'}
-                </span>
+                  <div className="spm-stats">
+                    <div>
+                      <span>Wallet</span>
+                      <b>{money(ps.wallet?.balance || 0)}</b>
+                    </div>
+                    <div>
+                      <span>Locked</span>
+                      <b>{money(ps.wallet?.processingFund || 0)}</b>
+                    </div>
+                    <div>
+                      <span>Pending orders</span>
+                      <b>{pendingCount}</b>
+                    </div>
+                    <div>
+                      <span>Commission</span>
+                      <b>{ps.commissionRate ?? 10}%</b>
+                    </div>
+                    <div>
+                      <span>Health</span>
+                      <b className={`spm-health tier-${hTier}`}>{hScore}/100</b>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Profile Main Tabs Nav */}
+            <nav className="spm-tabs" role="tablist" aria-label="Seller profile sections">
+              {[
+                { key: 'account', icon: '👤', label: 'Account', hint: 'Login & business info' },
+                { key: 'documents', icon: '📄', label: 'Documents', hint: 'KYC uploads' },
+                { key: 'dashboard', icon: '📊', label: 'Dashboard', hint: 'Products, orders, wallet' },
+                { key: 'upgrades', icon: '⚡', label: 'Upgrades', hint: 'Status, warning, health, limits' },
+              ].map((t) => (
                 <button
+                  key={t.key}
                   type="button"
-                  onClick={() => setProfileModalOpen(false)}
-                  className="btn-close-modal"
-                  style={{ background: 'rgba(255,255,255,0.1)', color: '#ffffff', borderColor: 'transparent' }}
+                  role="tab"
+                  aria-selected={profileTab === t.key}
+                  className={`spm-tab ${profileTab === t.key ? 'active' : ''}`}
+                  onClick={() => setProfileTab(t.key)}
                 >
-                  ✕
+                  <span className="spm-tab-icon" aria-hidden="true">{t.icon}</span>
+                  <span className="spm-tab-text">
+                    <b>{t.label}</b>
+                    <small>{t.hint}</small>
+                  </span>
                 </button>
-              </div>
-            </div>
-
-            {/* Profile 4 Main Tabs Nav */}
-            <div className="seller-profile-tabs-nav">
-              <button
-                type="button"
-                className={`seller-profile-tab-btn ${profileTab === 'account' ? 'active' : ''}`}
-                onClick={() => setProfileTab('account')}
-              >
-                👤 1. Account
-              </button>
-              <button
-                type="button"
-                className={`seller-profile-tab-btn ${profileTab === 'documents' ? 'active' : ''}`}
-                onClick={() => setProfileTab('documents')}
-              >
-                📄 2. Documents
-              </button>
-              <button
-                type="button"
-                className={`seller-profile-tab-btn ${profileTab === 'dashboard' ? 'active' : ''}`}
-                onClick={() => setProfileTab('dashboard')}
-              >
-                📊 3. Dashboard
-              </button>
-              <button
-                type="button"
-                className={`seller-profile-tab-btn ${profileTab === 'upgrades' ? 'active' : ''}`}
-                onClick={() => setProfileTab('upgrades')}
-              >
-                ⚡ 4. Upgrades (Compliance, Warn, Health, Limits)
-              </button>
-            </div>
+              ))}
+            </nav>
 
             {/* Profile Modal Body */}
             <div className="seller-profile-content-wrap">
@@ -1397,12 +1195,12 @@ export default function Sellers() {
               {/* ───────────────────────────────────────────────────────────── */}
               {profileTab === 'account' && (
                 <div>
-                  <div style={{ marginBottom: 18, borderBottom: '1px solid #e2e8f0', paddingBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div className="spf-head spf-head-row">
                     <div>
-                      <h4 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#0f172a' }}>
+                      <h4>
                         👤 Merchant Account Profile &amp; Login Credentials
                       </h4>
-                      <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>
+                      <p className="muted">
                         View and update seller credentials, direct password visibility, and business info.
                       </p>
                     </div>
@@ -1511,7 +1309,7 @@ export default function Sellers() {
 
                     <div className="seller-form-grid-2">
                       <div>
-                        <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b', display: 'block', marginBottom: 4 }}>
+                        <label className="spf-label">
                           Store Name *
                         </label>
                         <input
@@ -1519,12 +1317,12 @@ export default function Sellers() {
                           value={accForm.storeName}
                           onChange={(e) => setAccForm({ ...accForm, storeName: e.target.value })}
                           required
-                          style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #cbd5e1', fontSize: 13 }}
+                          className="spf-input"
                         />
                       </div>
 
                       <div>
-                        <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b', display: 'block', marginBottom: 4 }}>
+                        <label className="spf-label">
                           Owner Full Name *
                         </label>
                         <input
@@ -1532,12 +1330,12 @@ export default function Sellers() {
                           value={accForm.ownerName}
                           onChange={(e) => setAccForm({ ...accForm, ownerName: e.target.value })}
                           required
-                          style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #cbd5e1', fontSize: 13 }}
+                          className="spf-input"
                         />
                       </div>
 
                       <div>
-                        <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b', display: 'block', marginBottom: 4 }}>
+                        <label className="spf-label">
                           Login Email Address *
                         </label>
                         <input
@@ -1545,12 +1343,12 @@ export default function Sellers() {
                           value={accForm.email}
                           onChange={(e) => setAccForm({ ...accForm, email: e.target.value })}
                           required
-                          style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #cbd5e1', fontSize: 13 }}
+                          className="spf-input"
                         />
                       </div>
 
                       <div>
-                        <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b', display: 'block', marginBottom: 4 }}>
+                        <label className="spf-label">
                           Phone Number
                         </label>
                         <input
@@ -1558,7 +1356,7 @@ export default function Sellers() {
                           value={accForm.phone}
                           onChange={(e) => setAccForm({ ...accForm, phone: e.target.value })}
                           placeholder="+92 300 1234567"
-                          style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #cbd5e1', fontSize: 13 }}
+                          className="spf-input"
                         />
                       </div>
                     </div>
@@ -1671,7 +1469,7 @@ export default function Sellers() {
 
                     <div className="seller-form-grid-3">
                       <div>
-                        <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b', display: 'block', marginBottom: 4 }}>
+                        <label className="spf-label">
                           Commission Rate (%)
                         </label>
                         <input
@@ -1681,12 +1479,12 @@ export default function Sellers() {
                           min="0"
                           max="100"
                           required
-                          style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #cbd5e1', fontSize: 13 }}
+                          className="spf-input"
                         />
                       </div>
 
                       <div>
-                        <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b', display: 'block', marginBottom: 4 }}>
+                        <label className="spf-label">
                           City / Location
                         </label>
                         <input
@@ -1694,12 +1492,12 @@ export default function Sellers() {
                           value={accForm.city}
                           onChange={(e) => setAccForm({ ...accForm, city: e.target.value })}
                           placeholder="e.g. New York / Lahore"
-                          style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #cbd5e1', fontSize: 13 }}
+                          className="spf-input"
                         />
                       </div>
 
                       <div>
-                        <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b', display: 'block', marginBottom: 4 }}>
+                        <label className="spf-label">
                           Street Address
                         </label>
                         <input
@@ -1707,7 +1505,7 @@ export default function Sellers() {
                           value={accForm.street}
                           onChange={(e) => setAccForm({ ...accForm, street: e.target.value })}
                           placeholder="e.g. Commercial Market Plaza"
-                          style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1.5px solid #cbd5e1', fontSize: 13 }}
+                          className="spf-input"
                         />
                       </div>
                     </div>
@@ -1731,11 +1529,11 @@ export default function Sellers() {
               {/* ───────────────────────────────────────────────────────────── */}
               {profileTab === 'documents' && (
                 <div>
-                  <div style={{ marginBottom: 18, borderBottom: '1px solid #e2e8f0', paddingBottom: 10 }}>
-                    <h4 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#0f172a' }}>
+                  <div className="spf-head">
+                    <h4>
                       📄 Registration &amp; KYC Verification Documents
                     </h4>
-                    <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>
+                    <p className="muted">
                       Identification documents uploaded by this merchant during self-registration.
                     </p>
                   </div>
@@ -1836,11 +1634,11 @@ export default function Sellers() {
               {/* ───────────────────────────────────────────────────────────── */}
               {profileTab === 'dashboard' && (
                 <div>
-                  <div style={{ marginBottom: 18, borderBottom: '1px solid #e2e8f0', paddingBottom: 10 }}>
-                    <h4 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#0f172a' }}>
+                  <div className="spf-head">
+                    <h4>
                       📊 Seller Account Metrics &amp; Operational Overview
                     </h4>
-                    <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>
+                    <p className="muted">
                       Inspect listed catalog products, pending fulfillment orders, wallet balances, and withdrawal history.
                     </p>
                   </div>
@@ -1861,81 +1659,63 @@ export default function Sellers() {
 
                     return (
                       <>
-                        <div className="seller-profile-kpi-grid">
-                          <div className="stat-box" style={{ padding: '12px 16px', borderLeft: '4px solid #16a34a' }}>
-                            <span className="lbl" style={{ fontSize: 11 }}>Available Balance</span>
-                            <b className="val" style={{ color: '#16a34a', fontSize: 19 }}>
+                        <div className="seller-profile-kpi-grid spf-kpi-grid">
+                          <div className="spf-kpi" style={{ '--tone': '#16a34a' }}>
+                            <span className="lbl">Available Balance</span>
+                            <b className="val" style={{ color: '#16a34a' }}>
                               {money(wallet.balance || 0)}
                             </b>
                           </div>
 
-                          <div className="stat-box" style={{ padding: '12px 16px', borderLeft: '4px solid #d97706' }}>
-                            <span className="lbl" style={{ fontSize: 11 }}>Locked In-Flight Funds</span>
-                            <b className="val" style={{ color: '#d97706', fontSize: 19 }}>
+                          <div className="spf-kpi" style={{ '--tone': '#d97706' }}>
+                            <span className="lbl">Locked In-Flight Funds</span>
+                            <b className="val" style={{ color: '#d97706' }}>
                               {money(wallet.processingFund || 0)}
                             </b>
                           </div>
 
-                          <div className="stat-box" style={{ padding: '12px 16px', borderLeft: '4px solid #2563eb' }}>
-                            <span className="lbl" style={{ fontSize: 11 }}>Total Withdrawn</span>
-                            <b className="val" style={{ color: '#2563eb', fontSize: 19 }}>
+                          <div className="spf-kpi" style={{ '--tone': '#2563eb' }}>
+                            <span className="lbl">Total Withdrawn</span>
+                            <b className="val" style={{ color: '#2563eb' }}>
                               {money(wallet.totalWithdrawn || 0)}
                             </b>
                           </div>
 
-                          <div className="stat-box" style={{ padding: '12px 16px', borderLeft: '4px solid #7c3aed' }}>
-                            <span className="lbl" style={{ fontSize: 11 }}>Net Profit Released</span>
-                            <b className="val" style={{ color: '#7c3aed', fontSize: 19 }}>
+                          <div className="spf-kpi" style={{ '--tone': '#7c3aed' }}>
+                            <span className="lbl">Net Profit Released</span>
+                            <b className="val" style={{ color: '#7c3aed' }}>
                               {money(wallet.totalProfitEarned || stats.netProfit || 0)}
                             </b>
                           </div>
 
-                          <div className="stat-box" style={{ padding: '12px 16px', borderLeft: '4px solid #ea580c' }}>
-                            <span className="lbl" style={{ fontSize: 11 }}>Pending Orders</span>
-                            <b className="val" style={{ color: pendingOrders > 0 ? '#ea580c' : '#0f172a', fontSize: 19 }}>
+                          <div className="spf-kpi" style={{ '--tone': '#ea580c' }}>
+                            <span className="lbl">Pending Orders</span>
+                            <b className="val" style={{ color: pendingOrders > 0 ? '#ea580c' : '#0f172a' }}>
                               {pendingOrders} Orders
                             </b>
                           </div>
 
-                          <div className="stat-box" style={{ padding: '12px 16px', borderLeft: '4px solid #0f172a' }}>
-                            <span className="lbl" style={{ fontSize: 11 }}>Total Listed Items</span>
-                            <b className="val" style={{ color: '#0f172a', fontSize: 19 }}>
+                          <div className="spf-kpi" style={{ '--tone': '#0f172a' }}>
+                            <span className="lbl">Total Listed Items</span>
+                            <b className="val" style={{ color: '#0f172a' }}>
                               {profileData?.products?.length || profileSeller.productCount || 0} Items
                             </b>
                           </div>
                         </div>
 
                         {/* Subtabs for Products vs Orders */}
-                        <div style={{ display: 'flex', gap: 10, borderBottom: '1.5px solid #e2e8f0', marginBottom: 14 }}>
+                        <div className="spf-subtabs">
                           <button
                             type="button"
                             onClick={() => setDashboardSubTab('products')}
-                            style={{
-                              padding: '8px 14px',
-                              background: 'none',
-                              border: 'none',
-                              borderBottom: dashboardSubTab === 'products' ? '2.5px solid #2563eb' : '2.5px solid transparent',
-                              color: dashboardSubTab === 'products' ? '#2563eb' : '#64748b',
-                              fontWeight: dashboardSubTab === 'products' ? 700 : 500,
-                              cursor: 'pointer',
-                              fontSize: 13,
-                            }}
+                            className={`spf-subtab ${dashboardSubTab === 'products' ? 'active' : ''}`}
                           >
                             📦 Listed Products ({profileData?.products?.length || 0})
                           </button>
                           <button
                             type="button"
                             onClick={() => setDashboardSubTab('orders')}
-                            style={{
-                              padding: '8px 14px',
-                              background: 'none',
-                              border: 'none',
-                              borderBottom: dashboardSubTab === 'orders' ? '2.5px solid #2563eb' : '2.5px solid transparent',
-                              color: dashboardSubTab === 'orders' ? '#2563eb' : '#64748b',
-                              fontWeight: dashboardSubTab === 'orders' ? 700 : 500,
-                              cursor: 'pointer',
-                              fontSize: 13,
-                            }}
+                            className={`spf-subtab ${dashboardSubTab === 'orders' ? 'active' : ''}`}
                           >
                             🛒 Orders ({profileData?.orders?.length || 0})
                             {pendingOrders > 0 && (
@@ -2064,11 +1844,11 @@ export default function Sellers() {
               {/* ───────────────────────────────────────────────────────────── */}
               {profileTab === 'upgrades' && (
                 <div>
-                  <div style={{ marginBottom: 16, borderBottom: '1px solid #e2e8f0', paddingBottom: 10 }}>
-                    <h4 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: '#0f172a' }}>
+                  <div className="spf-head">
+                    <h4>
                       ⚡ Merchant Governance, Upgrades &amp; Enforcement
                     </h4>
-                    <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>
+                    <p className="muted">
                       Manage account status compliance, broadcast portal warnings, evaluate health score (0-100), and configure banking withdrawal limit tiers.
                     </p>
                   </div>
@@ -2080,28 +1860,28 @@ export default function Sellers() {
                       className={`upgrades-subtab-btn ${profileUpgradeSubTab === 'compliance' ? 'active' : ''}`}
                       onClick={() => setProfileUpgradeSubTab('compliance')}
                     >
-                      ❄️ 4a Compliance (Status)
+                      ❄️ Compliance
                     </button>
                     <button
                       type="button"
                       className={`upgrades-subtab-btn ${profileUpgradeSubTab === 'warning' ? 'active' : ''}`}
                       onClick={() => setProfileUpgradeSubTab('warning')}
                     >
-                      ⚠️ 4b Warning
+                      ⚠️ Warning
                     </button>
                     <button
                       type="button"
                       className={`upgrades-subtab-btn ${profileUpgradeSubTab === 'health' ? 'active' : ''}`}
                       onClick={() => setProfileUpgradeSubTab('health')}
                     >
-                      🛡️ 4c Health (0-100)
+                      🛡️ Health score
                     </button>
                     <button
                       type="button"
                       className={`upgrades-subtab-btn ${profileUpgradeSubTab === 'limits' ? 'active' : ''}`}
                       onClick={() => setProfileUpgradeSubTab('limits')}
                     >
-                      💳 4d Limits (Tiers)
+                      💳 Withdrawal limits
                     </button>
                   </div>
 
@@ -2109,9 +1889,9 @@ export default function Sellers() {
                   {/* SUBTAB 4a: COMPLIANCE (Active, Frozen, Suspended with reason) */}
                   {/* ───────────────────────────────────────────────────────── */}
                   {profileUpgradeSubTab === 'compliance' && (
-                    <form onSubmit={handleFreezeSubmit} style={{ background: '#f8fafc', padding: 18, borderRadius: 12, border: '1px solid #e2e8f0' }}>
+                    <form onSubmit={handleFreezeSubmit} className="spf-panel">
                       <div style={{ marginBottom: 14 }}>
-                        <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 6, color: '#1e293b' }}>
+                        <label className="spf-label">
                           Account Access Status *
                         </label>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 8 }}>
@@ -2151,7 +1931,7 @@ export default function Sellers() {
                       </div>
 
                       <div style={{ marginBottom: 14 }}>
-                        <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 6, color: '#1e293b' }}>
+                        <label className="spf-label">
                           Reason / Policy Violation Details {freezeStatus !== 'active' ? '*' : '(Optional)'}
                         </label>
                         <textarea
@@ -2159,7 +1939,7 @@ export default function Sellers() {
                           value={freezeReason}
                           onChange={(e) => setFreezeReason(e.target.value)}
                           placeholder="e.g. Account frozen due to repeated unfulfilled orders or compliance audit."
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, fontFamily: 'inherit' }}
+                          className="spf-input"
                           required={freezeStatus !== 'active'}
                         />
                         <small className="muted" style={{ fontSize: 11 }}>
@@ -2184,7 +1964,7 @@ export default function Sellers() {
                   {/* SUBTAB 4b: WARNING ANNOUNCEMENT                           */}
                   {/* ───────────────────────────────────────────────────────── */}
                   {profileUpgradeSubTab === 'warning' && (
-                    <form onSubmit={handleWarnSubmit} style={{ background: '#f8fafc', padding: 18, borderRadius: 12, border: '1px solid #e2e8f0' }}>
+                    <form onSubmit={handleWarnSubmit} className="spf-panel">
                       <div style={{ marginBottom: 14, background: '#fffbeb', padding: '10px 12px', border: '1px solid #fef3c7', borderRadius: 6 }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontWeight: 700, fontSize: 13, color: '#92400e' }}>
                           <input
@@ -2199,13 +1979,13 @@ export default function Sellers() {
                       {warnActive && (
                         <>
                           <div style={{ marginBottom: 14 }}>
-                            <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 6, color: '#1e293b' }}>
+                            <label className="spf-label">
                               Warning Severity Level
                             </label>
                             <select
                               value={warnLevel}
                               onChange={(e) => setWarnLevel(e.target.value)}
-                              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                              className="spf-input"
                             >
                               <option value="warning">⚠️ Standard Warning (Amber Bar)</option>
                               <option value="critical">🚨 Critical Warning (High Alert Red Bar)</option>
@@ -2214,7 +1994,7 @@ export default function Sellers() {
                           </div>
 
                           <div style={{ marginBottom: 14 }}>
-                            <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 6, color: '#1e293b' }}>
+                            <label className="spf-label">
                               Custom Warning Message *
                             </label>
                             <textarea
@@ -2222,7 +2002,7 @@ export default function Sellers() {
                               value={warnMessage}
                               onChange={(e) => setWarnMessage(e.target.value)}
                               placeholder="e.g. Warning 1/3: High order cancellation rate. Please fulfill shipments within 24 hours."
-                              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, fontFamily: 'inherit' }}
+                              className="spf-input"
                               required={warnActive}
                             />
                             <small className="muted" style={{ fontSize: 11 }}>
@@ -2254,7 +2034,7 @@ export default function Sellers() {
                   {/* SUBTAB 4c: HEALTH SCORE (0-100)                           */}
                   {/* ───────────────────────────────────────────────────────── */}
                   {profileUpgradeSubTab === 'health' && (
-                    <form onSubmit={handleHealthSubmit} style={{ background: '#f8fafc', padding: 18, borderRadius: 12, border: '1px solid #e2e8f0' }}>
+                    <form onSubmit={handleHealthSubmit} className="spf-panel">
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#ffffff', padding: '12px 16px', borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 16 }}>
                         <div>
                           <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#64748b' }}>Current Rating</span>
@@ -2371,7 +2151,7 @@ export default function Sellers() {
                       </div>
 
                       <div style={{ marginBottom: 14 }}>
-                        <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 6, color: '#1e293b' }}>
+                        <label className="spf-label">
                           Reason / Notes *
                         </label>
                         <textarea
@@ -2379,7 +2159,7 @@ export default function Sellers() {
                           value={healthReason}
                           onChange={(e) => setHealthReason(e.target.value)}
                           placeholder="Enter reason for health score adjustment..."
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, fontFamily: 'inherit' }}
+                          className="spf-input"
                           required
                         />
                       </div>
@@ -2401,7 +2181,7 @@ export default function Sellers() {
                   {/* SUBTAB 4d: WITHDRAWAL LIMITS & TIER CONTROLS              */}
                   {/* ───────────────────────────────────────────────────────── */}
                   {profileUpgradeSubTab === 'limits' && (
-                    <form onSubmit={handleLimitEditSubmit} style={{ background: '#f8fafc', padding: 18, borderRadius: 12, border: '1px solid #e2e8f0' }}>
+                    <form onSubmit={handleLimitEditSubmit} className="spf-panel">
                       <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '10px 14px', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                         <div>
                           <span style={{ fontSize: 11, fontWeight: 700, color: '#166534', textTransform: 'uppercase' }}>Active Banking Tier:</span>
@@ -2480,7 +2260,7 @@ export default function Sellers() {
 
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 14 }}>
                         <div>
-                          <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                          <label className="spf-label">
                             Single Max Withdrawal Limit ($ USD) *
                           </label>
                           <input
@@ -2500,7 +2280,7 @@ export default function Sellers() {
                           />
                         </div>
                         <div>
-                          <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                          <label className="spf-label">
                             Minimum Allowed Payout ($ USD)
                           </label>
                           <input
@@ -2508,7 +2288,7 @@ export default function Sellers() {
                             min="1"
                             value={limitMinAmount}
                             onChange={(e) => setLimitMinAmount(e.target.value)}
-                            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                            className="spf-input"
                             required
                           />
                         </div>
@@ -2516,7 +2296,7 @@ export default function Sellers() {
 
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 14 }}>
                         <div>
-                          <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                          <label className="spf-label">
                             Required Withdrawals for Next Tier
                           </label>
                           <input
@@ -2524,12 +2304,12 @@ export default function Sellers() {
                             min="1"
                             value={limitRequiredCount}
                             onChange={(e) => setLimitRequiredCount(e.target.value)}
-                            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                            className="spf-input"
                             required
                           />
                         </div>
                         <div>
-                          <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                          <label className="spf-label">
                             Completed Withdrawals (Current Tier)
                           </label>
                           <input
@@ -2544,7 +2324,7 @@ export default function Sellers() {
 
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12, marginBottom: 14 }}>
                         <div>
-                          <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                          <label className="spf-label">
                             Upgrade Processing Fee ($ USD)
                           </label>
                           <input
@@ -2556,7 +2336,7 @@ export default function Sellers() {
                           />
                         </div>
                         <div>
-                          <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                          <label className="spf-label">
                             Tier Name Label
                           </label>
                           <input
@@ -2564,7 +2344,7 @@ export default function Sellers() {
                             value={limitTierName}
                             onChange={(e) => setLimitTierName(e.target.value)}
                             placeholder="e.g. Tier 1 - Standard ($500 Max)"
-                            style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+                            className="spf-input"
                           />
                         </div>
                       </div>

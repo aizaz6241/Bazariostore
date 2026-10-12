@@ -1,51 +1,126 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, fmtDate, money } from '../api.js';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
+import { api, fmtDay } from '../api.js';
 import Ic from '../components/Icons.jsx';
 
-export default function Referrals() {
-  const [masterRefCode, setMasterRefCode] = useState('');
-  const [masterUsageCount, setMasterUsageCount] = useState(0);
-  const [referralCodes, setReferralCodes] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [savingMasterRef, setSavingMasterRef] = useState(false);
-  const [copiedCode, setCopiedCode] = useState('');
+// Chart colours: categorical slots in fixed order for the sign-up sources, reserved status colours
+// (always shown with a text label) for where the sellers are now.
+const SERIES = { withCode: '#2a78d6', unknownCode: '#eb6834', direct: '#1baf7a' };
+const STATUS = { approved: '#0ca30c', pending: '#fab219', rejected: '#d03b3b', other: '#94a3b8' };
 
-  // Create Custom Affiliate Code Modal
-  const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [createForm, setCreateForm] = useState({
-    code: '',
-    description: '',
-    commissionRate: '',
-    bonusAmount: '',
-    status: 'active',
-  });
-  const [creating, setCreating] = useState(false);
-  const [createErr, setCreateErr] = useState('');
+const EMPTY_FORM = { code: '', description: '', commissionRate: '', bonusAmount: '', status: 'active' };
+const EMPTY_BULK = { prefix: '', count: 10, description: '', commissionRate: '', bonusAmount: '', status: 'active' };
+const CODE_RE = /^[A-Z0-9][A-Z0-9_-]{2,31}$/;
+const cleanCode = (v) => String(v || '').replace(/\s+/g, '').toUpperCase();
+const pct = (a, b) => (b > 0 ? Math.round((a / b) * 100) : 0);
+const shortWeek = (iso) => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+function inviteUrl(code) {
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://bazario.com';
+  return `${origin}/seller/login?affiliate=${encodeURIComponent(code)}`;
+}
+
+// legend text stays in ink colour; the dot beside it carries the series colour
+const legendText = (value) => <span style={{ color: '#475569', fontWeight: 600 }}>{value}</span>;
+
+function ChartTooltip({ active, payload, label, labelFormatter }) {
+  if (!active || !payload?.length) return null;
+  const total = payload.reduce((t, p) => t + (Number(p.value) || 0), 0);
+  return (
+    <div className="aff-tip">
+      <b>{labelFormatter ? labelFormatter(label) : label}</b>
+      {payload.map((p) => (
+        <div key={p.dataKey} className="aff-tip-row">
+          <i style={{ background: p.color }} />
+          <span>{p.name}</span>
+          <strong>{p.value}</strong>
+        </div>
+      ))}
+      {payload.length > 1 && (
+        <div className="aff-tip-row aff-tip-total">
+          <span>Total</span>
+          <strong>{total}</strong>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Kpi({ icon, label, value, sub, tone = 'blue' }) {
+  return (
+    <div className={`aff-kpi tone-${tone}`}>
+      <span className="aff-kpi-ic"><Ic name={icon} size={20} /></span>
+      <div>
+        <small>{label}</small>
+        <b>{value}</b>
+        {sub && <span className="aff-kpi-sub">{sub}</span>}
+      </div>
+    </div>
+  );
+}
+
+// Approved / pending / rejected split of one code, as a thin stacked bar
+function UsageBar({ approved = 0, pending = 0, rejected = 0, total = 0 }) {
+  const other = Math.max(0, total - approved - pending - rejected);
+  if (!total) return <span className="aff-usage-zero">No sellers yet</span>;
+  const seg = (n, color, name) => (n > 0 ? <i key={name} style={{ flexGrow: n, background: color }} title={`${name}: ${n}`} /> : null);
+  return (
+    <div className="aff-usage">
+      <div className="aff-usage-top">
+        <b>{total}</b>
+        <small>
+          {approved} approved · {pending} pending{rejected ? ` · ${rejected} rejected` : ''}
+        </small>
+      </div>
+      <div className="aff-usage-bar">
+        {seg(approved, STATUS.approved, 'Approved')}
+        {seg(pending, STATUS.pending, 'Pending')}
+        {seg(rejected, STATUS.rejected, 'Rejected')}
+        {seg(other, STATUS.other, 'Suspended / other')}
+      </div>
+    </div>
+  );
+}
+
+export default function Referrals() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState('');
+  const [toast, setToast] = useState(null);
+
+  const [masterInput, setMasterInput] = useState('');
+  const [savingMaster, setSavingMaster] = useState(false);
+  const [copied, setCopied] = useState('');
+
+  const [q, setQ] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('usage');
+
+  const [formModal, setFormModal] = useState(null); // { mode: 'create' | 'edit', id? }
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [formErr, setFormErr] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulk, setBulk] = useState(EMPTY_BULK);
+  const [bulkErr, setBulkErr] = useState('');
+  const [bulkResult, setBulkResult] = useState(null);
+
+  const notify = (msg, type = 'ok') => {
+    setToast({ msg, type, id: Date.now() });
+    setTimeout(() => setToast((t) => (t && Date.now() - t.id >= 3000 ? null : t)), 3200);
+  };
 
   const loadData = () => {
     setLoading(true);
     api('/sellers/affiliates')
       .then((res) => {
-        const master = res?.masterAffiliateCode || res?.masterReferralCode || '';
-        if (master) setMasterRefCode(master);
-        setMasterUsageCount(res?.masterUsageCount || 0);
-        const list = res?.affiliateCodes || res?.referralCodes || [];
-        setReferralCodes(Array.isArray(list) ? list : []);
+        setData(res);
+        setMasterInput(res?.masterAffiliateCode || res?.masterReferralCode || '');
+        setLoadErr('');
       })
-      .catch((e) => {
-        console.error('Error loading affiliates:', e);
-        // Fallback in case of network issue
-        api('/sellers/referrals')
-          .then((res) => {
-            const master = res?.masterAffiliateCode || res?.masterReferralCode || '';
-            if (master) setMasterRefCode(master);
-            setMasterUsageCount(res?.masterUsageCount || 0);
-            const list = res?.affiliateCodes || res?.referralCodes || [];
-            setReferralCodes(Array.isArray(list) ? list : []);
-          })
-          .catch((err2) => console.error(err2));
-      })
+      .catch((e) => setLoadErr(e.message || 'Could not load affiliate codes'))
       .finally(() => setLoading(false));
   };
 
@@ -53,340 +128,395 @@ export default function Referrals() {
     loadData();
   }, []);
 
-  const handleSaveMasterReferral = async (e) => {
+  const masterCode = data?.masterAffiliateCode || data?.masterReferralCode || '';
+  const codes = useMemo(() => data?.affiliateCodes || data?.referralCodes || [], [data]);
+  const ms = data?.masterStats || {};
+  const totals = data?.totals || { sellers: 0, viaCodes: 0, unknown: 0, activeCodes: 0, inactiveCodes: 0 };
+  const approvedViaCodes = (ms.approved || 0) + codes.reduce((t, c) => t + (c.approvedCount || 0), 0);
+  const pendingViaCodes = (ms.pending || 0) + codes.reduce((t, c) => t + (c.pendingCount || 0), 0);
+
+  const trend = useMemo(() => (data?.trend || []).map((w) => ({ ...w, label: shortWeek(w.week) })), [data]);
+  const trendTotal = trend.reduce((t, w) => t + w.withCode + w.unknownCode + w.direct, 0);
+  const trendHasUnknown = trend.some((w) => w.unknownCode > 0);
+
+  const topCodes = useMemo(() => {
+    const rows = [
+      { code: masterCode, approved: ms.approved || 0, pending: ms.pending || 0, rejected: ms.rejected || 0, total: data?.masterUsageCount || 0 },
+      ...codes.map((c) => ({ code: c.code, approved: c.approvedCount || 0, pending: c.pendingCount || 0, rejected: c.rejectedCount || 0, total: c.usageCount || 0 })),
+    ]
+      .filter((r) => r.code && r.total > 0)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 8);
+    return rows.map((r) => ({ ...r, other: Math.max(0, r.total - r.approved - r.pending - r.rejected) }));
+  }, [codes, masterCode, ms, data]);
+
+  const visibleCodes = useMemo(() => {
+    const term = q.trim().toUpperCase();
+    const list = codes.filter(
+      (c) =>
+        (statusFilter === 'all' || c.status === statusFilter) &&
+        (!term || c.code.includes(term) || (c.description || '').toUpperCase().includes(term))
+    );
+    const by = {
+      usage: (a, b) => (b.usageCount || 0) - (a.usageCount || 0),
+      newest: (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+      code: (a, b) => a.code.localeCompare(b.code),
+    }[sortBy];
+    return [...list].sort(by);
+  }, [codes, q, statusFilter, sortBy]);
+
+  const copyText = (text, id, what = 'Link') => {
+    const done = () => {
+      setCopied(id);
+      notify(`${what} copied`);
+      setTimeout(() => setCopied((c) => (c === id ? '' : c)), 2000);
+    };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done, () => notify('Copy failed — please copy by hand', 'err'));
+    else notify('Copy is not available in this browser', 'err');
+  };
+
+  const saveMaster = async (e) => {
     e.preventDefault();
-    setSavingMasterRef(true);
+    const code = cleanCode(masterInput);
+    if (!CODE_RE.test(code)) return notify('Master code: 3-32 letters, numbers, "-" or "_"', 'err');
+    if (code === masterCode) return notify('This is already the master code');
+    if (!window.confirm(`Change the master code from ${masterCode} to ${code}?\n\nNew sellers will need the new code. ${masterCode} is kept as an inactive code so its sellers stay tracked.`)) return;
+    setSavingMaster(true);
     try {
-      const res = await api('/sellers/master-affiliate', {
-        method: 'POST',
-        body: { code: masterRefCode.trim().toUpperCase() },
-      });
-      const updated = res.masterAffiliateCode || res.masterReferralCode;
-      if (updated) setMasterRefCode(updated);
-      alert('✅ Master Affiliate Code updated successfully!');
+      await api('/sellers/master-affiliate', { method: 'POST', body: { code } });
+      notify(`Master code is now ${code}`);
       loadData();
     } catch (err) {
-      alert('Error updating affiliate code: ' + err.message);
+      notify(err.message, 'err');
     } finally {
-      setSavingMasterRef(false);
+      setSavingMaster(false);
     }
   };
 
-  const handleCreateReferralSubmit = async (e) => {
-    e.preventDefault();
-    setCreating(true);
-    setCreateErr('');
-    try {
-      await api('/sellers/affiliates', {
-        method: 'POST',
-        body: createForm,
-      });
-      alert(`🎉 Affiliate code "${createForm.code.toUpperCase()}" created successfully!`);
-      setCreateModalOpen(false);
-      setCreateForm({
-        code: '',
-        description: '',
-        commissionRate: '',
-        bonusAmount: '',
-        status: 'active',
-      });
-      loadData();
-    } catch (err) {
-      setCreateErr(err.message);
-    } finally {
-      setCreating(false);
-    }
+  const openCreate = (prefill = '') => {
+    setForm({ ...EMPTY_FORM, code: prefill });
+    setFormErr('');
+    setFormModal({ mode: 'create' });
   };
-
-  const handleToggleStatus = async (id) => {
-    try {
-      await api(`/sellers/affiliates/${id}/toggle`, { method: 'PATCH' });
-      loadData();
-    } catch (err) {
-      alert('Error toggling status: ' + err.message);
-    }
-  };
-
-  const handleDeleteReferral = async (id, code) => {
-    if (!window.confirm(`Are you sure you want to delete affiliate code "${code}"?`)) return;
-    try {
-      await api(`/sellers/affiliates/${id}`, { method: 'DELETE' });
-      loadData();
-    } catch (err) {
-      alert('Error deleting code: ' + err.message);
-    }
-  };
-
-  const copyToClipboard = (text, identifier) => {
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://bazario.com';
-    const url = `${origin}/seller/login?affiliate=${encodeURIComponent(text)}&ref=${encodeURIComponent(text)}`;
-
-    navigator.clipboard.writeText(url).then(() => {
-      setCopiedCode(identifier || text);
-      setTimeout(() => setCopiedCode(''), 2200);
+  const openEdit = (c) => {
+    setForm({
+      code: c.code,
+      description: c.description || '',
+      commissionRate: c.commissionRate ?? '',
+      bonusAmount: c.bonusAmount || '',
+      status: c.status,
     });
+    setFormErr('');
+    setFormModal({ mode: 'edit', id: c._id });
   };
 
-  const totalRegisteredViaReferrals = masterUsageCount + referralCodes.reduce((acc, r) => acc + (r.usageCount || 0), 0);
+  const submitForm = async (e) => {
+    e.preventDefault();
+    const code = cleanCode(form.code);
+    if (formModal.mode === 'create') {
+      if (!CODE_RE.test(code)) return setFormErr('Code must be 3-32 characters: letters, numbers, "-" or "_".');
+      if (code === masterCode || codes.some((c) => c.code === code)) return setFormErr(`"${code}" already exists.`);
+    }
+    setSaving(true);
+    setFormErr('');
+    try {
+      if (formModal.mode === 'create') {
+        await api('/sellers/affiliates', { method: 'POST', body: { ...form, code } });
+        notify(`Code ${code} created`);
+      } else {
+        const { description, commissionRate, bonusAmount, status } = form;
+        await api(`/sellers/affiliates/${formModal.id}`, { method: 'PATCH', body: { description, commissionRate, bonusAmount, status } });
+        notify(`Code ${code} updated`);
+      }
+      setFormModal(null);
+      loadData();
+    } catch (err) {
+      setFormErr(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitBulk = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setBulkErr('');
+    try {
+      const res = await api('/sellers/affiliates/bulk', { method: 'POST', body: bulk });
+      setBulkResult(res.codes || []);
+      notify(res.message || 'Codes generated');
+      loadData();
+    } catch (err) {
+      setBulkErr(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleStatus = async (c) => {
+    try {
+      const res = await api(`/sellers/affiliates/${c._id}/toggle`, { method: 'PATCH' });
+      notify(res.message || 'Status changed');
+      loadData();
+    } catch (err) {
+      notify(err.message, 'err');
+    }
+  };
+
+  const remove = async (c) => {
+    const used = c.usageCount || 0;
+    const warn = used
+      ? `${used} seller(s) joined with "${c.code}". Deleting it makes their code "unknown" in reports.\n\nTip: set it Inactive instead to stop new sign-ups.\n\nDelete anyway?`
+      : `Delete affiliate code "${c.code}"?`;
+    if (!window.confirm(warn)) return;
+    try {
+      await api(`/sellers/affiliates/${c._id}`, { method: 'DELETE' });
+      notify(`Code ${c.code} deleted`);
+      loadData();
+    } catch (err) {
+      notify(err.message, 'err');
+    }
+  };
+
+  if (loadErr && !data) {
+    return (
+      <div className="aff-page">
+        <div className="aff-error">
+          <Ic name="alert" size={18} /> {loadErr}
+          <button type="button" onClick={loadData}>Try again</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="admin-sellers-page">
-      <div className="admin-header-row">
+    <div className="aff-page">
+      {/* ─── Header ─── */}
+      <div className="aff-head">
         <div>
-          <h2>🔑 Platform Affiliate Codes &amp; Merchant Onboarding Invites</h2>
-          <p className="muted">
-            Create custom affiliate invite codes for marketing campaigns, agency partners, and onboarding discounts. Sellers can register with any active affiliate code.
-          </p>
+          <span className="aff-eyebrow"><Ic name="tag" size={13} /> Seller acquisition</span>
+          <h1>Affiliate Codes</h1>
+          <p>Invite sellers with tracked codes. A seller can only register with the master code or an <b>active</b> custom code — wrong or switched-off codes are refused.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => { setCreateErr(''); setCreateModalOpen(true); }}
-          className="btn-primary"
-        >
-          <Ic name="plus" size={16} /> + Create New Affiliate Code
-        </button>
-      </div>
-
-      {/* Summary KPI Bar */}
-      <div className="admin-sellers-stats-bar" style={{ marginBottom: 20 }}>
-        <div className="stat-box" style={{ borderLeft: '4px solid #2563eb' }}>
-          <span className="lbl">Master Affiliate Code</span>
-          <b className="val" style={{ color: '#2563eb', fontSize: 18 }}>{masterRefCode || 'REF-BAZARIO-2026'}</b>
-        </div>
-        <div className="stat-box" style={{ borderLeft: '4px solid #16a34a' }}>
-          <span className="lbl">Active Custom Codes</span>
-          <b className="val" style={{ color: '#16a34a' }}>{referralCodes.filter((r) => r.status === 'active').length}</b>
-        </div>
-        <div className="stat-box" style={{ borderLeft: '4px solid #d97706' }}>
-          <span className="lbl">Total Merchants Onboarded</span>
-          <b className="val" style={{ color: '#d97706' }}>{totalRegisteredViaReferrals} Merchants</b>
-        </div>
-        <div className="stat-box" style={{ borderLeft: '4px solid #0f172a' }}>
-          <span className="lbl">Total Campaign Codes</span>
-          <b className="val">{referralCodes.length + 1}</b>
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20, marginBottom: 24 }}>
-        {/* Master Affiliate Card */}
-        <div className="admin-card">
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h3 style={{ margin: 0, fontSize: 16 }}>👑 Global Master Affiliate Code</h3>
-              <span className="badge-pill" style={{ background: '#eff6ff', color: '#1d4ed8', fontWeight: 800 }}>Default Global</span>
-            </div>
-            <p style={{ margin: '3px 0 0', fontSize: 12, color: '#64748b' }}>
-              Used by standard applicant registrations and self-service onboarding links.
-            </p>
-          </div>
-
-          <form onSubmit={handleSaveMasterReferral} style={{ padding: '18px 20px' }}>
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 6, color: '#1e293b' }}>
-                Master Affiliate Code:
-              </label>
-              <input
-                type="text"
-                value={masterRefCode}
-                onChange={(e) => setMasterRefCode(e.target.value.toUpperCase())}
-                placeholder="e.g. BAZARIO2026"
-                style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1.5px solid #cbd5e1', fontSize: 15, fontWeight: 800, letterSpacing: 1 }}
-                required
-              />
-            </div>
-
-            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '12px 14px', marginBottom: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <b style={{ color: '#166534', fontSize: 12.5 }}>🔗 Master Applicant Link:</b>
-                <span style={{ fontSize: 11.5, color: '#15803d', fontWeight: 700 }}>
-                  👥 {masterUsageCount} Merchant(s) Joined
-                </span>
-              </div>
-              <p style={{ margin: '2px 0 8px', fontSize: 11.5, color: '#15803d', wordBreak: 'break-all', fontFamily: 'monospace' }}>
-                {typeof window !== 'undefined'
-                  ? `${window.location.origin}/seller/login?affiliate=${encodeURIComponent(masterRefCode || 'BAZARIO')}`
-                  : `https://bazario.com/seller/login?affiliate=${masterRefCode}`}
-              </p>
-              <button
-                type="button"
-                onClick={() => copyToClipboard(masterRefCode, 'master')}
-                style={{ padding: '4px 10px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
-              >
-                {copiedCode === 'master' ? '✅ Copied to Clipboard!' : '📋 Copy Master Link'}
-              </button>
-            </div>
-
-            <button
-              type="submit"
-              className="btn-primary"
-              disabled={savingMasterRef}
-              style={{ width: '100%' }}
-            >
-              {savingMasterRef ? 'Saving...' : '💾 Save Master Affiliate Code'}
-            </button>
-          </form>
-        </div>
-
-        {/* Quick Instructions & Policy Card */}
-        <div className="admin-card" style={{ background: '#fdfcfe' }}>
-          <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0' }}>
-            <h3 style={{ margin: 0, fontSize: 16 }}>💡 Affiliate Program Mechanics</h3>
-            <p style={{ margin: '3px 0 0', fontSize: 12, color: '#64748b' }}>
-              How merchant onboarding affiliate codes work in Bazario:
-            </p>
-          </div>
-          <div style={{ padding: '18px 20px', fontSize: 13, color: '#334155', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <span style={{ fontSize: 18 }}>1️⃣</span>
-              <div>
-                <b>Multi-Channel Campaigns:</b>
-                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>
-                  Create dedicated affiliate codes for specific marketing channels, influencers, or partner networks (e.g. <code>SUMMER2026</code>, <code>AGENCY-ALPHA</code>).
-                </p>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <span style={{ fontSize: 18 }}>2️⃣</span>
-              <div>
-                <b>Seamless Merchant Registration:</b>
-                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>
-                  Applicants entering through an affiliate link automatically have the code attached to their onboarding application.
-                </p>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <span style={{ fontSize: 18 }}>3️⃣</span>
-              <div>
-                <b>Approval &amp; Tracking:</b>
-                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>
-                  When approving a seller in the <b>New Applications</b> desk, the assigned affiliate code is locked in their security deposit ledger and merchant profile.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Custom Affiliate Codes Table */}
-      <div className="admin-card">
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: 16 }}>🏷️ Campaign &amp; Partner Affiliate Codes</h3>
-            <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#64748b' }}>
-              Manage custom affiliate codes, copy invite links, and review live onboarding registration metrics.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => { setCreateErr(''); setCreateModalOpen(true); }}
-            className="btn-primary"
-            style={{ padding: '6px 12px', fontSize: 12.5 }}
-          >
-            <Ic name="plus" size={14} /> + New Affiliate Code
+        <div className="aff-head-actions">
+          <button type="button" className="aff-btn ghost" onClick={() => { setBulk(EMPTY_BULK); setBulkErr(''); setBulkResult(null); setBulkOpen(true); }}>
+            <Ic name="layers" size={16} /> Bulk generate
+          </button>
+          <button type="button" className="aff-btn primary" onClick={() => openCreate()}>
+            <Ic name="plus" size={16} /> New code
           </button>
         </div>
+      </div>
+
+      {/* ─── KPIs ─── */}
+      <div className="aff-kpis">
+        <Kpi icon="users" tone="blue" label="Sellers via codes" value={loading && !data ? '…' : totals.viaCodes} sub={`${pct(totals.viaCodes, totals.sellers)}% of ${totals.sellers} sellers`} />
+        <Kpi icon="checkCircle" tone="green" label="Approved from codes" value={loading && !data ? '…' : approvedViaCodes} sub={`${pct(approvedViaCodes, totals.viaCodes)}% approval · ${pendingViaCodes} waiting`} />
+        <Kpi icon="tag" tone="violet" label="Active codes" value={loading && !data ? '…' : totals.activeCodes} sub={`${totals.inactiveCodes} inactive · incl. master`} />
+        <Kpi
+          icon="alert"
+          tone={totals.unknown ? 'orange' : 'slate'}
+          label="Unknown-code sign-ups"
+          value={loading && !data ? '…' : totals.unknown}
+          sub={totals.unknown ? 'Typos / deleted — see below' : 'All codes check out'}
+        />
+      </div>
+
+      {/* ─── Charts ─── */}
+      <div className="aff-charts">
+        <section className="aff-card">
+          <header className="aff-card-head">
+            <div>
+              <h3><Ic name="chart" size={16} /> Seller sign-ups per week</h3>
+              <p>Last 12 weeks · {trendTotal} registrations by source</p>
+            </div>
+          </header>
+          <div className="aff-chart-box">
+            {trendTotal === 0 ? (
+              <div className="aff-empty-chart">No seller registrations in the last 12 weeks.</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={trend} margin={{ top: 8, right: 8, left: -18, bottom: 0 }} barCategoryGap="22%">
+                  <CartesianGrid vertical={false} stroke="#eef1f5" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#e2e8f0' }} tickLine={false} interval="preserveStartEnd" />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                  <Tooltip cursor={{ fill: 'rgba(15,23,42,0.04)' }} content={<ChartTooltip labelFormatter={(l) => `Week of ${l}`} />} />
+                  <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, paddingTop: 6 }} formatter={legendText} />
+                  <Bar dataKey="withCode" name="Valid code" stackId="s" fill={SERIES.withCode} stroke="#fff" strokeWidth={1} />
+                  {trendHasUnknown && <Bar dataKey="unknownCode" name="Unknown code" stackId="s" fill={SERIES.unknownCode} stroke="#fff" strokeWidth={1} />}
+                  <Bar dataKey="direct" name="No code" stackId="s" fill={SERIES.direct} stroke="#fff" strokeWidth={1} radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </section>
+
+        <section className="aff-card">
+          <header className="aff-card-head">
+            <div>
+              <h3><Ic name="trend" size={16} /> Top codes by sellers</h3>
+              <p>Where each code's sellers are now</p>
+            </div>
+          </header>
+          <div className="aff-chart-box">
+            {topCodes.length === 0 ? (
+              <div className="aff-empty-chart">No seller has used a code yet. Share an invite link to get started.</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={Math.max(180, topCodes.length * 34 + 60)}>
+                <BarChart data={topCodes} layout="vertical" margin={{ top: 4, right: 12, left: 4, bottom: 0 }} barCategoryGap="28%">
+                  <CartesianGrid horizontal={false} stroke="#eef1f5" />
+                  <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="code" width={120} tick={{ fontSize: 11, fill: '#334155', fontWeight: 700 }} axisLine={false} tickLine={false} />
+                  <Tooltip cursor={{ fill: 'rgba(15,23,42,0.04)' }} content={<ChartTooltip />} />
+                  <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12, paddingTop: 6 }} formatter={legendText} />
+                  <Bar dataKey="approved" name="Approved" stackId="u" fill={STATUS.approved} stroke="#fff" strokeWidth={1} />
+                  <Bar dataKey="pending" name="Pending" stackId="u" fill={STATUS.pending} stroke="#fff" strokeWidth={1} />
+                  <Bar dataKey="rejected" name="Rejected" stackId="u" fill={STATUS.rejected} stroke="#fff" strokeWidth={1} />
+                  <Bar dataKey="other" name="Suspended / other" stackId="u" fill={STATUS.other} stroke="#fff" strokeWidth={1} radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </section>
+      </div>
+
+      {/* ─── Master code + unknown codes ─── */}
+      <div className="aff-split">
+        <section className="aff-card aff-master">
+          <header className="aff-card-head">
+            <div>
+              <h3><Ic name="shield" size={16} /> Master code</h3>
+              <p>Always valid. Used by the default invite link.</p>
+            </div>
+            <span className="aff-pill blue">Default</span>
+          </header>
+          <form onSubmit={saveMaster} className="aff-master-form">
+            <input value={masterInput} onChange={(e) => setMasterInput(cleanCode(e.target.value))} maxLength={32} aria-label="Master affiliate code" />
+            <button type="submit" className="aff-btn primary" disabled={savingMaster || cleanCode(masterInput) === masterCode}>
+              {savingMaster ? 'Saving…' : 'Save'}
+            </button>
+          </form>
+          <div className="aff-linkbox">
+            <code>{inviteUrl(masterCode || 'CODE')}</code>
+            <button type="button" className="aff-icon-btn" onClick={() => copyText(inviteUrl(masterCode), 'master')} title="Copy invite link">
+              <Ic name={copied === 'master' ? 'check' : 'copy'} size={15} />
+            </button>
+          </div>
+          <UsageBar approved={ms.approved} pending={ms.pending} rejected={ms.rejected} total={data?.masterUsageCount || 0} />
+        </section>
+
+        <section className={`aff-card ${data?.unknownCodes?.length ? 'aff-warn' : ''}`}>
+          <header className="aff-card-head">
+            <div>
+              <h3><Ic name="alert" size={16} /> Codes that match nothing</h3>
+              <p>Saved before codes were checked (typos), or their code was deleted.</p>
+            </div>
+          </header>
+          {!data?.unknownCodes?.length ? (
+            <div className="aff-allgood"><Ic name="checkCircle" size={18} /> Every seller's code matches a real affiliate code.</div>
+          ) : (
+            <ul className="aff-unknown">
+              {data.unknownCodes.slice(0, 8).map((u) => (
+                <li key={u.code}>
+                  <span className="aff-code-chip warn">{u.code}</span>
+                  <small>{u.count} seller{u.count === 1 ? '' : 's'}{u.lastUsedAt ? ` · last ${fmtDay(u.lastUsedAt)}` : ''}</small>
+                  {CODE_RE.test(u.code) && (
+                    <button type="button" className="aff-link-btn" onClick={() => openCreate(u.code)}>Create this code</button>
+                  )}
+                </li>
+              ))}
+              <li className="aff-unknown-hint">
+                Or fix the code on the seller in <Link to="/admin/sellers">Sellers &amp; Vendors</Link>. New approvals with an unknown code are blocked.
+              </li>
+            </ul>
+          )}
+        </section>
+      </div>
+
+      {/* ─── Codes table ─── */}
+      <section className="aff-card aff-table-card">
+        <header className="aff-card-head aff-toolbar">
+          <div>
+            <h3><Ic name="list" size={16} /> Custom codes</h3>
+            <p>{codes.length} code{codes.length === 1 ? '' : 's'} · click a status to switch it</p>
+          </div>
+          <div className="aff-filters">
+            <label className="aff-search">
+              <Ic name="search" size={15} />
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search code or campaign" />
+            </label>
+            <div className="aff-seg" role="tablist" aria-label="Filter by status">
+              {['all', 'active', 'inactive'].map((s) => (
+                <button key={s} type="button" role="tab" aria-selected={statusFilter === s} className={statusFilter === s ? 'on' : ''} onClick={() => setStatusFilter(s)}>
+                  {s[0].toUpperCase() + s.slice(1)}
+                </button>
+              ))}
+            </div>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} aria-label="Sort codes">
+              <option value="usage">Most sellers</option>
+              <option value="newest">Newest</option>
+              <option value="code">A → Z</option>
+            </select>
+          </div>
+        </header>
 
         <div className="admin-table-wrap">
-          <table className="admin-table">
+          <table className="aff-table">
             <thead>
               <tr>
-                <th>Affiliate Code</th>
-                <th>Description / Purpose</th>
-                <th>Commission / Bonus Rate</th>
-                <th>Merchants Joined</th>
+                <th>Code</th>
+                <th>Campaign</th>
+                <th>Terms</th>
+                <th style={{ minWidth: 190 }}>Sellers</th>
+                <th>Last sign-up</th>
                 <th>Status</th>
-                <th>Created At</th>
-                <th>Actions</th>
+                <th aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
-              {loading && (
-                <tr>
-                  <td colSpan="7" className="text-center py-8 muted">Loading affiliate codes...</td>
-                </tr>
+              {loading && !data && (
+                <tr><td colSpan="7" className="aff-td-empty">Loading affiliate codes…</td></tr>
               )}
-              {!loading && referralCodes.length === 0 && (
+              {data && visibleCodes.length === 0 && (
                 <tr>
-                  <td colSpan="7" className="text-center py-8 muted">
-                    No custom affiliate codes created yet. Click "+ Create New Affiliate Code" above to add one.
+                  <td colSpan="7" className="aff-td-empty">
+                    {codes.length === 0 ? (
+                      <>No custom codes yet. <button type="button" className="aff-link-btn" onClick={() => openCreate()}>Create your first code</button></>
+                    ) : 'No code matches this search.'}
                   </td>
                 </tr>
               )}
-              {referralCodes.map((rc) => (
-                <tr key={rc._id}>
+              {visibleCodes.map((c) => (
+                <tr key={c._id} className={c.status !== 'active' ? 'is-off' : ''}>
                   <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 13, fontWeight: 900, background: '#eff6ff', color: '#1d4ed8', padding: '4px 10px', borderRadius: 6, letterSpacing: 0.5, border: '1px solid #bfdbfe' }}>
-                        🔑 {rc.code}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => copyToClipboard(rc.code, rc._id)}
-                        style={{ padding: '3px 8px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: 4, fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
-                        title="Copy Onboarding Link"
-                      >
-                        {copiedCode === rc._id ? '✅ Copied!' : '📋 Copy Link'}
+                    <div className="aff-code-cell">
+                      <span className="aff-code-chip">{c.code}</span>
+                      <button type="button" className="aff-icon-btn" onClick={() => copyText(inviteUrl(c.code), c._id)} title="Copy invite link">
+                        <Ic name={copied === c._id ? 'check' : 'link'} size={14} />
                       </button>
                     </div>
                   </td>
                   <td>
-                    <span>{rc.description || 'General Partner Code'}</span>
-                    <small className="muted block">By: {rc.createdBy || 'Admin'}</small>
+                    <span className="aff-desc">{c.description || <em>No description</em>}</span>
+                    <small className="aff-muted">by {c.createdBy || 'Admin'} · {fmtDay(c.createdAt)}</small>
                   </td>
                   <td>
-                    {rc.commissionRate !== null && rc.commissionRate !== undefined ? (
-                      <span className="fee-badge">{rc.commissionRate}% Commission</span>
-                    ) : (
-                      <span className="muted-sm">Standard Rate</span>
-                    )}
-                    {rc.bonusAmount > 0 && (
-                      <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 700, display: 'block', marginTop: 2 }}>
-                        +${rc.bonusAmount} Welcome Credit
-                      </span>
-                    )}
+                    {c.commissionRate !== null && c.commissionRate !== undefined ? <span className="aff-pill violet">{c.commissionRate}% commission</span> : <span className="aff-muted">Standard rate</span>}
+                    {c.bonusAmount > 0 && <span className="aff-pill green">+${c.bonusAmount} bonus</span>}
                   </td>
                   <td>
-                    <b style={{ color: '#0f172a', fontSize: 14 }}>{rc.usageCount || 0}</b>
-                    <small className="muted block">Registered Sellers</small>
+                    <UsageBar approved={c.approvedCount} pending={c.pendingCount} rejected={c.rejectedCount} total={c.usageCount} />
                   </td>
+                  <td><span className="aff-muted">{c.lastUsedAt ? fmtDay(c.lastUsedAt) : '—'}</span></td>
                   <td>
-                    <button
-                      type="button"
-                      onClick={() => handleToggleStatus(rc._id)}
-                      style={{
-                        padding: '3px 8px',
-                        borderRadius: 12,
-                        fontSize: 11,
-                        fontWeight: 800,
-                        border: 'none',
-                        cursor: 'pointer',
-                        background: rc.status === 'active' ? '#dcfce7' : '#fee2e2',
-                        color: rc.status === 'active' ? '#15803d' : '#b91c1c',
-                      }}
-                      title="Click to toggle status"
-                    >
-                      {rc.status === 'active' ? '● Active' : '○ Inactive'}
+                    <button type="button" className={`aff-status ${c.status}`} onClick={() => toggleStatus(c)} title="Click to switch">
+                      <i /> {c.status === 'active' ? 'Active' : 'Inactive'}
                     </button>
                   </td>
                   <td>
-                    <small>{fmtDate(rc.createdAt)}</small>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button
-                        type="button"
-                        onClick={() => copyToClipboard(rc.code, rc._id)}
-                        style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}
-                      >
-                        🔗 Link
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteReferral(rc._id, rc.code)}
-                        style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}
-                      >
-                        🗑️ Delete
-                      </button>
+                    <div className="aff-row-actions">
+                      <button type="button" className="aff-icon-btn" onClick={() => openEdit(c)} title="Edit"><Ic name="edit" size={15} /></button>
+                      <button type="button" className="aff-icon-btn danger" onClick={() => remove(c)} title="Delete"><Ic name="trash" size={15} /></button>
                     </div>
                   </td>
                 </tr>
@@ -394,106 +524,138 @@ export default function Referrals() {
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
-      {/* Create Custom Affiliate Code Modal */}
-      {createModalOpen && (
-        <div className="admin-modal-overlay" onClick={() => setCreateModalOpen(false)}>
-          <div className="admin-modal-box" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-top">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 22 }}>🔑</span>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 16 }}>Create New Affiliate Code</h3>
-                  <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>Configure custom onboarding affiliate code for merchants</p>
-                </div>
+      {/* ─── Create / edit modal ─── */}
+      {formModal && (
+        <div className="admin-modal-overlay" onClick={() => setFormModal(null)}>
+          <div className="aff-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+            <header>
+              <div>
+                <h3>{formModal.mode === 'create' ? 'New affiliate code' : `Edit ${form.code}`}</h3>
+                <p>{formModal.mode === 'create' ? 'Sellers can register with it as soon as it is active.' : 'The code itself cannot be renamed: sellers already linked to it keep their link.'}</p>
               </div>
-              <button onClick={() => setCreateModalOpen(false)} className="btn-close-modal">✕</button>
-            </div>
-
-            {createErr && <div className="modal-err-banner">{createErr}</div>}
-
-            <form onSubmit={handleCreateReferralSubmit} style={{ padding: '18px 22px' }}>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
-                  Affiliate Code *:
-                </label>
+              <button type="button" className="aff-icon-btn" onClick={() => setFormModal(null)} aria-label="Close"><Ic name="x" size={16} /></button>
+            </header>
+            <form onSubmit={submitForm}>
+              {formErr && <div className="aff-form-err">{formErr}</div>}
+              <label className="aff-field">
+                <span>Code *</span>
                 <input
-                  type="text"
-                  value={createForm.code}
-                  onChange={(e) => setCreateForm({ ...createForm, code: e.target.value.toUpperCase() })}
-                  placeholder="e.g. VIP2026, PARTNER-NYC"
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: 6, border: '1.5px solid #cbd5e1', fontSize: 14, fontWeight: 800, letterSpacing: 0.5 }}
+                  value={form.code}
+                  onChange={(e) => setForm({ ...form, code: cleanCode(e.target.value) })}
+                  placeholder="e.g. PARTNER-NYC"
+                  maxLength={32}
+                  disabled={formModal.mode === 'edit'}
+                  className="aff-mono"
                   required
+                  autoFocus
                 />
-                <small className="muted-sm">Applicants can register using this code to link to your affiliate campaign.</small>
-              </div>
-
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
-                  Description / Campaign Name:
+                <small>3-32 characters · letters, numbers, "-" and "_"</small>
+              </label>
+              <label className="aff-field">
+                <span>Campaign / description</span>
+                <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="e.g. Instagram influencer — Sara" maxLength={200} />
+              </label>
+              <div className="aff-field-row">
+                <label className="aff-field">
+                  <span>Commission %</span>
+                  <input type="number" min="0" max="100" step="0.1" value={form.commissionRate} onChange={(e) => setForm({ ...form, commissionRate: e.target.value })} placeholder="Standard" />
+                  <small>Pre-fills the approve form</small>
                 </label>
-                <input
-                  type="text"
-                  value={createForm.description}
-                  onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
-                  placeholder="e.g. Spring Merchant Growth Program"
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-                <div>
-                  <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
-                    Custom Commission (% - Optional):
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={createForm.commissionRate}
-                    onChange={(e) => setCreateForm({ ...createForm, commissionRate: e.target.value })}
-                    placeholder="e.g. 8 (Default 10%)"
-                    style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
-                    Welcome Bonus Credit ($ - Optional):
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={createForm.bonusAmount}
-                    onChange={(e) => setCreateForm({ ...createForm, bonusAmount: e.target.value })}
-                    placeholder="e.g. 25"
-                    style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ marginBottom: 18 }}>
-                <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
-                  Initial Status:
+                <label className="aff-field">
+                  <span>Welcome bonus $</span>
+                  <input type="number" min="0" step="1" value={form.bonusAmount} onChange={(e) => setForm({ ...form, bonusAmount: e.target.value })} placeholder="0" />
+                  <small>For your records</small>
                 </label>
-                <select
-                  value={createForm.status}
-                  onChange={(e) => setCreateForm({ ...createForm, status: e.target.value })}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
-                >
-                  <option value="active">Active (Usable immediately)</option>
-                  <option value="inactive">Inactive (Disabled)</option>
+              </div>
+              <label className="aff-field">
+                <span>Status</span>
+                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                  <option value="active">Active — sellers can use it</option>
+                  <option value="inactive">Inactive — refused at registration</option>
                 </select>
-              </div>
-
-              <div className="modal-bottom-actions">
-                <button type="button" onClick={() => setCreateModalOpen(false)} className="btn-cancel">Cancel</button>
-                <button type="submit" className="btn-primary" disabled={creating}>
-                  {creating ? 'Creating...' : '🔑 Create Affiliate Code'}
-                </button>
-              </div>
+              </label>
+              <footer>
+                <button type="button" className="aff-btn ghost" onClick={() => setFormModal(null)}>Cancel</button>
+                <button type="submit" className="aff-btn primary" disabled={saving}>{saving ? 'Saving…' : formModal.mode === 'create' ? 'Create code' : 'Save changes'}</button>
+              </footer>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* ─── Bulk generate modal ─── */}
+      {bulkOpen && (
+        <div className="admin-modal-overlay" onClick={() => setBulkOpen(false)}>
+          <div className="aff-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+            <header>
+              <div>
+                <h3>Bulk generate codes</h3>
+                <p>Unique random codes like <code>{(cleanCode(bulk.prefix) || 'PREFIX')}-K7QX2M</code>, one per partner or agent.</p>
+              </div>
+              <button type="button" className="aff-icon-btn" onClick={() => setBulkOpen(false)} aria-label="Close"><Ic name="x" size={16} /></button>
+            </header>
+            {bulkResult ? (
+              <div className="aff-bulk-result">
+                <p><b>{bulkResult.length}</b> codes created{bulk.status === 'inactive' ? ' as inactive' : ' and ready to use'}.</p>
+                <div className="aff-bulk-list">
+                  {bulkResult.map((c) => <span key={c} className="aff-code-chip">{c}</span>)}
+                </div>
+                <footer>
+                  <button type="button" className="aff-btn ghost" onClick={() => copyText(bulkResult.join('\n'), 'bulk', 'Codes')}>
+                    <Ic name="copy" size={15} /> Copy codes
+                  </button>
+                  <button type="button" className="aff-btn ghost" onClick={() => copyText(bulkResult.map(inviteUrl).join('\n'), 'bulk-links', 'Links')}>
+                    <Ic name="link" size={15} /> Copy links
+                  </button>
+                  <button type="button" className="aff-btn primary" onClick={() => setBulkOpen(false)}>Done</button>
+                </footer>
+              </div>
+            ) : (
+              <form onSubmit={submitBulk}>
+                {bulkErr && <div className="aff-form-err">{bulkErr}</div>}
+                <div className="aff-field-row">
+                  <label className="aff-field">
+                    <span>Prefix</span>
+                    <input value={bulk.prefix} onChange={(e) => setBulk({ ...bulk, prefix: cleanCode(e.target.value) })} placeholder="e.g. AGENT" maxLength={16} className="aff-mono" />
+                  </label>
+                  <label className="aff-field">
+                    <span>How many *</span>
+                    <input type="number" min="1" max="50" value={bulk.count} onChange={(e) => setBulk({ ...bulk, count: e.target.value })} required />
+                    <small>1 to 50</small>
+                  </label>
+                </div>
+                <label className="aff-field">
+                  <span>Campaign / description</span>
+                  <input value={bulk.description} onChange={(e) => setBulk({ ...bulk, description: e.target.value })} placeholder="e.g. Field agents — Mumbai" maxLength={200} />
+                </label>
+                <div className="aff-field-row">
+                  <label className="aff-field">
+                    <span>Commission %</span>
+                    <input type="number" min="0" max="100" step="0.1" value={bulk.commissionRate} onChange={(e) => setBulk({ ...bulk, commissionRate: e.target.value })} placeholder="Standard" />
+                  </label>
+                  <label className="aff-field">
+                    <span>Status</span>
+                    <select value={bulk.status} onChange={(e) => setBulk({ ...bulk, status: e.target.value })}>
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </label>
+                </div>
+                <footer>
+                  <button type="button" className="aff-btn ghost" onClick={() => setBulkOpen(false)}>Cancel</button>
+                  <button type="submit" className="aff-btn primary" disabled={saving}>{saving ? 'Generating…' : `Generate ${Number(bulk.count) || 0} codes`}</button>
+                </footer>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className={`aff-toast ${toast.type}`} role="status">
+          <Ic name={toast.type === 'err' ? 'alert' : 'checkCircle'} size={16} /> {toast.msg}
         </div>
       )}
     </div>
