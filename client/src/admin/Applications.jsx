@@ -108,6 +108,17 @@ export default function Applications() {
   }, [approveSellerId, affCodes]);
   const findAffCode = (code) => (affCodes || []).find((c) => c.code === String(code || '').replace(/\s+/g, '').toUpperCase());
 
+  // A first approval takes the commission of the code the seller joined with (e.g. a 5% partner
+  // code). It used to open with the default 10%, and the code's rate only came in when the admin
+  // retyped the code. Not done once the admin has typed a commission, nor for an approved store.
+  useEffect(() => {
+    if (!affCodes || !approveModal || approveModal.mode === 'edit' || approveModal.commissionTouched) return;
+    const known = findAffCode(approveModal.referralCode);
+    if (!known || known.commissionRate === null || known.commissionRate === undefined) return;
+    if (Number(approveModal.commissionRate) === Number(known.commissionRate)) return;
+    setApproveModal((prev) => (prev && prev.seller?._id === approveModal.seller?._id && !prev.commissionTouched ? { ...prev, commissionRate: known.commissionRate } : prev));
+  }, [affCodes, approveModal?.seller?._id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!approveSellerId) return;
     let cancelled = false;
@@ -726,7 +737,7 @@ export default function Applications() {
                 </div>
                 <div className="ins-field">
                   <label>Commission rate (%)</label>
-                  <input className="ins-input" type="number" min="0" max="100" value={am.commissionRate} onChange={(e) => setApproveModal({ ...am, commissionRate: e.target.value })} required />
+                  <input className="ins-input" type="number" min="0" max="100" value={am.commissionRate} onChange={(e) => setApproveModal({ ...am, commissionRate: e.target.value, commissionTouched: true })} required />
                 </div>
               </div>
 

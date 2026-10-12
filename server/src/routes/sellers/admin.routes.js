@@ -999,12 +999,18 @@ router.post(['/master-affiliate', '/master-referral'], authAdmin('sellers'), asy
     const cleanCode = normalizeCode(req.body?.code);
     const formatErr = codeFormatError(cleanCode);
     if (formatErr) return res.status(400).json({ message: formatErr });
-    if (await ReferralCode.exists({ code: cleanCode })) {
+    const existing = await ReferralCode.findOne({ code: cleanCode }).lean();
+    // a FORMER master code (kept as an inactive record when it was replaced) may become the master
+    // again; any other custom code keeps its own settings and cannot be turned into the master
+    const isFormerMaster = existing && existing.description === 'Former master affiliate code';
+    if (existing && !isFormerMaster) {
       return res.status(400).json({ message: `"${cleanCode}" is already a custom affiliate code. Pick a different master code.` });
     }
     const previous = await getMasterCode();
     await setSetting('master_affiliate_code', cleanCode);
     await setSetting('master_referral_code', cleanCode);
+    // it is the master now, not a custom code (its sellers count under the master again)
+    if (isFormerMaster) await ReferralCode.deleteOne({ _id: existing._id });
     // The old master code stays known (switched off): sellers who joined with it keep counting
     // under it and can still be approved, but nobody new can register with it.
     if (previous && previous !== cleanCode) {
@@ -1245,6 +1251,18 @@ router.delete(['/affiliates/:id', '/referrals/:id'], authAdmin('sellers'), async
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Affiliate code not found' });
     const rc = await ReferralCode.findById(req.params.id);
     if (!rc) return res.status(404).json({ message: 'Affiliate code not found' });
+
+    // A code sellers joined with stays: deleting it made their code "unknown", and waiting
+    // applications with it could no longer be approved ("code does not exist") without losing
+    // which partner brought them. Switching it off stops new sign-ups and keeps the history.
+    const used = (await usageByCode(Seller)).get(normalizeCode(rc.code));
+    if (used && used.total > 0) {
+      return res.status(400).json({
+        code: 'CODE_IN_USE',
+        usedBy: used.total,
+        message: `"${rc.code}" was used by ${used.total} seller(s), so it cannot be deleted. Set it to Inactive instead: no new sign-ups, history kept.`,
+      });
+    }
 
     await ReferralCode.findByIdAndDelete(req.params.id);
     audit(req, 'delete', 'referral_code', req.params.id, `Deleted affiliate code: ${rc.code}`);
