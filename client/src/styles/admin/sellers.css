@@ -2338,47 +2338,84 @@ button.scard-chip:hover { filter: brightness(0.96); }
 .scard-btn-icon.danger:hover { background: #fef2f2; border-color: #fecaca; }
 
 @media (max-width: 768px) {
+  /* Many sellers: two compact cards per row on phones */
   .admin-sellers-cards-grid.scards-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     gap: 10px !important;
   }
   .scard {
-    padding: 12px;
-    gap: 10px;
+    padding: 12px 10px 10px;
+    gap: 8px;
     border-radius: 14px;
   }
+  .scard:hover { transform: none; }
   .scard-head {
-    flex-wrap: wrap;
     gap: 8px;
+    padding-right: 12px;
   }
   .scard-avatar {
-    flex-basis: 34px;
-    height: 34px;
+    flex-basis: 32px;
+    height: 32px;
     font-size: 14px;
+    border-radius: 9px;
+  }
+  .scard-name { font-size: 12.5px; gap: 3px; }
+  .scard-name svg { flex-shrink: 0; }
+  .scard-owner { font-size: 10.5px; }
+  /* status becomes a coloured dot in the corner (the top strip carries it too) */
+  .scard-status {
+    position: absolute;
+    top: 12px;
+    right: 10px;
+    width: 8px;
+    height: 8px;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 0;
+  }
+  .scard-status-active { background: #16a34a; }
+  .scard-status-frozen { background: #2563eb; }
+  .scard-status-suspended { background: #dc2626; }
+  .scard-chips { gap: 4px; }
+  .scard-chip { font-size: 10px; padding: 2px 7px; }
+  .scard-chip-swap { display: none; }
+  .scard-metrics {
+    grid-template-columns: 1fr;
     border-radius: 10px;
   }
-  .scard-name { font-size: 13px; }
-  .scard-owner { font-size: 11px; }
-  .scard-status { order: 3; font-size: 10px; padding: 2px 7px; }
-  .scard-chip { font-size: 10px; padding: 2px 7px; }
-  .scard-metrics { grid-template-columns: 1fr; }
-  .scard-metric { padding: 6px 9px; flex-direction: row; justify-content: space-between; align-items: baseline; gap: 6px; }
-  .scard-metric .lbl { font-size: 9.5px; letter-spacing: 0; }
-  .scard-metric .val { font-size: 12px; }
-  .scard-locked { font-size: 11px; padding: 6px 9px; }
-  .scard-contact { display: none; }
-  .scard-actions { flex-wrap: wrap; padding-top: 10px; }
-  .scard-btn-primary { flex: 1 0 100%; padding: 8px; font-size: 12px; }
-  .scard-btn-icon { flex: 1; height: 32px; }
-}
-
-@media (max-width: 400px) {
-  .admin-sellers-cards-grid.scards-grid {
-    grid-template-columns: 1fr !important;
+  .scard-metric {
+    padding: 5px 8px;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 6px;
   }
-  .scard-metrics { grid-template-columns: 1fr 1fr; }
-  .scard-metric { flex-direction: column; align-items: flex-start; }
-  .scard-contact { display: flex; }
+  .scard-metric .lbl { font-size: 9.5px; letter-spacing: 0; white-space: nowrap; }
+  .scard-metric .val { font-size: 12px; }
+  .scard-locked { font-size: 10.5px; padding: 5px 8px; border-radius: 8px; }
+  .scard-locked span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .scard-health-row { margin-bottom: 4px; }
+  .scard-health-row .lbl { font-size: 10px; }
+  .scard-health-val { font-size: 10.5px; }
+  .scard-health-track { height: 4px; }
+  .scard-contact { display: none; }
+  .scard-actions {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+    padding-top: 8px;
+  }
+  .scard-btn-primary {
+    grid-column: 1 / -1;
+    padding: 8px;
+    font-size: 12px;
+    border-radius: 9px;
+  }
+  .scard-btn-icon {
+    height: 30px;
+    border-radius: 8px;
+    font-size: 12px;
+  }
 }
 
 /* ─── 12. SELLER PROFILE MODAL V2 ─── */
@@ -2819,4 +2856,11 @@ button.scard-chip:hover { filter: brightness(0.96); }
     top: 0;
     z-index: 2;
   }
+}
+
+.scard .lbl-short { display: none; }
+
+@media (max-width: 768px) {
+  .scard .lbl-long { display: none; }
+  .scard .lbl-short { display: inline; }
 }

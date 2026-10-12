@@ -797,15 +797,24 @@ export default function Sellers() {
                     <b className="val val-green">{money(s.wallet?.balance || 0)}</b>
                   </div>
                   <div className="scard-metric">
-                    <span className="lbl">Lifetime sales</span>
+                    <span className="lbl">
+                      <span className="lbl-long">Lifetime sales</span>
+                      <span className="lbl-short">Sales</span>
+                    </span>
                     <b className="val">{money(s.lifetimeSales || 0)}</b>
                   </div>
                   <div className="scard-metric">
-                    <span className="lbl">Pending orders</span>
+                    <span className="lbl">
+                      <span className="lbl-long">Pending orders</span>
+                      <span className="lbl-short">Pending</span>
+                    </span>
                     <b className={`val ${pending > 0 ? 'val-orange' : ''}`}>{pending}</b>
                   </div>
                   <div className="scard-metric">
-                    <span className="lbl">Products · Fee</span>
+                    <span className="lbl">
+                      <span className="lbl-long">Products · Fee</span>
+                      <span className="lbl-short">Items · Fee</span>
+                    </span>
                     <b className="val">
                       {s.productCount || 0} · <span className="val-blue">{s.commissionRate || 10}%</span>
                     </b>
@@ -814,7 +823,7 @@ export default function Sellers() {
 
                 {locked > 0 && (
                   <div className="scard-locked">
-                    <span>🔒 Locked for orders</span>
+                    <span>🔒 <span className="lbl-long">Locked for orders</span><span className="lbl-short">Locked</span></span>
                     <b>{money(locked)}</b>
                   </div>
                 )}
