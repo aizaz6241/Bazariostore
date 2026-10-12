@@ -1242,6 +1242,31 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
       }
     }
 
+    // ── Never twice ──
+    // The admin screen sends one id per confirmed entry. If the answer is slow and the admin
+    // presses again (or the browser retries), the same id is found and nothing is added again.
+    const requestId = typeof req.body?.requestId === 'string' && /^[\w-]{8,80}$/.test(req.body.requestId) ? req.body.requestId : '';
+    const opId = requestId ? `adjust:${seller._id}:${requestId}` : '';
+    // A NEW entry identical to one saved minutes ago (same store, type and amount) is most likely
+    // the same payment entered again after a timeout: it needs a second, explicit confirmation.
+    if (!req.body?.allowDuplicate) {
+      const recent = await Withdrawal.findOne({
+        seller: seller._id,
+        isManualAdjustment: true,
+        type: type === 'credit' ? 'deposit' : 'withdrawal',
+        amount: amt,
+        createdAt: { $gte: new Date(Date.now() - 10 * 60 * 1000) },
+        ...(requestId ? { clientRequestId: { $ne: requestId } } : {}),
+      }).sort({ createdAt: -1 }).lean();
+      if (recent) {
+        const mins = Math.max(1, Math.round((Date.now() - new Date(recent.createdAt).getTime()) / 60000));
+        return res.status(409).json({
+          duplicate: true,
+          message: `An identical ${type} of $${amt} for ${seller.storeName} was already saved ${mins} min ago by ${recent.processedBy || 'an admin'}. If this is a NEW, separate payment, press confirm once more.`,
+        });
+      }
+    }
+
     let parsedUsdt = 0;
     if (usdtAmount !== undefined && usdtAmount !== null && usdtAmount !== '') {
       const numUsdt = Number(usdtAmount);
@@ -1256,15 +1281,25 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
     // moment can be overwritten, and a debit only goes through while the balance covers it.
     let moved;
     if (type === 'credit') {
-      moved = await walletApply(seller._id, { balance: amt, totalDeposited: amt, ...(parsedHelping > 0 ? { totalHelpingAmount: parsedHelping } : {}) });
+      moved = await walletApply(seller._id, { balance: amt, totalDeposited: amt, ...(parsedHelping > 0 ? { totalHelpingAmount: parsedHelping } : {}) }, { opId });
     } else {
-      moved = await walletApply(seller._id, { balance: -amt, totalWithdrawn: amt }, { requireBalance: amt });
+      moved = await walletApply(seller._id, { balance: -amt, totalWithdrawn: amt }, { requireBalance: amt, opId });
       if (!moved) {
         const now = await walletNow(seller._id);
         return res.status(400).json({ message: `Insufficient balance to debit. Available: $${now?.wallet?.balance || 0}` });
       }
     }
     if (!moved) return res.status(404).json({ message: 'Seller not found' });
+    if (moved.already) {
+      // this exact entry was applied before (a retry): report it, change nothing
+      const earlier = await Withdrawal.findOne({ seller: seller._id, clientRequestId: requestId }).lean();
+      return res.json({
+        alreadyDone: true,
+        message: `Already done: this ${type} of $${amt} for ${seller.storeName} was saved before. Nothing was added again.`,
+        wallet: moved.wallet,
+        record: earlier,
+      });
+    }
     // a plain copy for the messages below (nothing here is saved again)
     seller = { _id: seller._id, storeName: seller.storeName, ownerName: seller.ownerName, email: seller.email, wallet: moved.wallet };
 
@@ -1287,8 +1322,19 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
       processedAt: new Date(),
       processedBy: req.admin.name || 'Super Admin',
       processedById: req.admin.id ? String(req.admin.id) : '',
+      clientRequestId: requestId,
     });
 
+    // The money is saved: answer the admin NOW. The chat notice, notifications and logs below
+    // used to run first, and on a busy server the answer came after the 30 s limit — the screen
+    // said "Request timed out" although the money had been added.
+    res.json({
+      message: `Successfully ${type === 'credit' ? 'credited' : 'debited'} $${amt} to ${seller.storeName}'s wallet`,
+      wallet: seller.wallet,
+      record: rec,
+    });
+
+    try {
     // Auto send chat notification to seller
     try {
       let conv = await Conversation.findOne({ seller: seller._id });
@@ -1391,14 +1437,12 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
         },
       });
     }
-
-    res.json({
-      message: `Successfully ${type === 'credit' ? 'credited' : 'debited'} $${amt} to ${seller.storeName}'s wallet`,
-      wallet: seller.wallet,
-      record: rec,
-    });
+    } catch (afterErr) {
+      // the wallet change and its record are saved; a failed notice must not hide that
+      console.error('Direct wallet adjust follow-up error:', afterErr.message);
+    }
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    if (!res.headersSent) res.status(500).json({ message: err.message });
   }
 });
 

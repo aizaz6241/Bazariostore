@@ -36,6 +36,9 @@ const withdrawalSchema = new mongoose.Schema(
     // Actual amount credited/debited by admin (if different from requested amount)
     approvedAmount: { type: Number, default: null },
     isManualAdjustment: { type: Boolean, default: false },
+    // id the admin screen sends with one direct credit / debit: the same id is never applied twice
+    // (a retry after "Request timed out" used to add the money a second time)
+    clientRequestId: { type: String, default: '', index: true },
     // Payment method (for withdrawal)
     method: { type: String, enum: ['upi', 'bank', 'paytm', 'gpay', 'phonepe', 'usdt', 'other', ''], default: '' },
     // UPI & Mobile Wallet details

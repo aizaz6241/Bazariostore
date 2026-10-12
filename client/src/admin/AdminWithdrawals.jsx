@@ -116,6 +116,14 @@ export default function AdminWithdrawals() {
   const [adjusting, setAdjusting] = useState(false);
   const [adjustMsg, setAdjustMsg] = useState('');
   const [adjustErr, setAdjustErr] = useState('');
+  // One id per entry, sent with it: submitting the SAME entry again (after a timeout) never adds the
+  // money twice. A changed seller / type / amount is a new entry with a new id.
+  const adjustReqId = useRef('');
+  const [adjustAllowDup, setAdjustAllowDup] = useState(false);
+  useEffect(() => {
+    adjustReqId.current = '';
+    setAdjustAllowDup(false);
+  }, [adjustForm.sellerId, adjustForm.type, adjustForm.amount]);
 
   // ─── 3-STEP LIMIT UPGRADE MODALS STATE ───
   // Modal 1: Quote / Send Offer (Step 1)
@@ -439,6 +447,9 @@ export default function AdminWithdrawals() {
     if (!adjustForm.sellerId) return setAdjustErr('Please select a seller');
     if (!amt || amt <= 0) return setAdjustErr('Please enter a valid amount greater than 0');
 
+    if (!adjustReqId.current) {
+      adjustReqId.current = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+    }
     setAdjusting(true);
     try {
       const isCredit = adjustForm.type === 'credit';
@@ -462,8 +473,13 @@ export default function AdminWithdrawals() {
           usdtAmount: usdtVal,
           reason: adjustForm.reason,
           reference: adjustForm.reference,
+          requestId: adjustReqId.current,
+          allowDuplicate: adjustAllowDup,
         },
+        timeout: 90000,
       });
+      adjustReqId.current = '';
+      setAdjustAllowDup(false);
       setAdjustMsg(`✅ ${res.message || 'Wallet adjusted successfully!'}`);
       setAdjustForm((f) => ({ ...f, amount: '', helpingAmount: '', binanceRate: '', inrAmount: '', reason: '', reference: '' }));
       load();
@@ -472,7 +488,14 @@ export default function AdminWithdrawals() {
         setAdjustMsg('');
       }, 1800);
     } catch (err) {
-      setAdjustErr(err.message);
+      if (err.timedOut) {
+        setAdjustErr('The server did not answer in time. The amount may already be saved — submit again to check: it will NOT be added twice.');
+      } else if (err.status === 409 && err.data?.duplicate) {
+        setAdjustAllowDup(true);
+        setAdjustErr(`⚠️ ${err.message}`);
+      } else {
+        setAdjustErr(err.message);
+      }
     } finally {
       setAdjusting(false);
     }

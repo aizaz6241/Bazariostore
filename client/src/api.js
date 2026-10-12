@@ -27,7 +27,11 @@ async function request(path, opts = {}, token) {
     });
   } catch (netErr) {
     if (netErr.name === 'AbortError') {
-      throw new Error('Request timed out. Please check your network connection and try again.');
+      const err = new Error('Request timed out. Please check your network connection and try again.');
+      // the server may still have done the work (only the answer was late): screens that save
+      // money check this and say so instead of inviting a blind second try
+      err.timedOut = true;
+      throw err;
     }
     throw new Error('Unable to connect to backend server. Please check your internet connection.');
   } finally {
