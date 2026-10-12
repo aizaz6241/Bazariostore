@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { jwtSecret } from './secrets.js';
 
 /**
  * The copy of a seller's password that an admin can look up (to tell a seller who forgot it).
@@ -18,8 +19,18 @@ import crypto from 'crypto';
 
 function key() {
   const raw = (process.env.SELLER_PASSWORD_KEY || '').trim();
-  if (raw.length < 16) return null;
-  return crypto.createHash('sha256').update(`bazario-seller-password:${raw}`).digest();
+  if (raw.length >= 16) return crypto.createHash('sha256').update(`bazario-seller-password:${raw}`).digest();
+  // No key of its own set: the server's private login secret is used to make one, so the copy is
+  // never kept as plain text in the database (or in its backups). If that secret changes, only
+  // "show password" stops working for older copies until the seller's next login.
+  let secret = '';
+  try {
+    secret = jwtSecret();
+  } catch {
+    return null;
+  }
+  if (!secret) return null;
+  return crypto.createHash('sha256').update(`bazario-seller-password-from-login-secret:${secret}`).digest();
 }
 
 export function encryptionOn() {

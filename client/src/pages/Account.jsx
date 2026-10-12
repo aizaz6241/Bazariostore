@@ -55,7 +55,9 @@ export default function Account() {
   const changePw = async (e) => {
     e.preventDefault();
     try {
-      await uapi('/user/me/password', { method: 'PUT', body: pw });
+      const d = await uapi('/user/me/password', { method: 'PUT', body: pw });
+      // the old login ends with the password change; keep this browser signed in with the new one
+      if (d?.token) localStorage.setItem('ng_user_token', d.token);
       setPw({ current: '', next: '' });
       flash(true, 'Password changed');
     } catch (err) {

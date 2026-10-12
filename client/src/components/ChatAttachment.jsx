@@ -1,7 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import Ic from './Icons.jsx';
-import { resolveMediaUrl, downloadAttachment } from '../api.js';
+import { resolveMediaUrl, downloadAttachment, getApiBase } from '../api.js';
+
+// Only files stored by this app are shown INSIDE the page. Any other link (for example a fake
+// "please log in again" page sent in a chat) is offered as a link that opens in a new tab.
+function isOwnFile(url) {
+  try {
+    const u = new URL(url, window.location.href);
+    if (u.protocol === 'blob:') return true;
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+    if (u.origin === window.location.origin) return true;
+    const api = getApiBase();
+    if (api && u.origin === new URL(api, window.location.href).origin) return true;
+    const h = u.hostname.toLowerCase();
+    return h === 'utfs.io' || h.endsWith('.ufs.sh') || h === 'uploadthing.com' || h.endsWith('.uploadthing.com');
+  } catch {
+    return false;
+  }
+}
 
 function formatBytes(bytes) {
   if (!bytes) return '';
@@ -158,11 +175,18 @@ export default function ChatAttachment({ msg, url: directUrl, type: directType, 
               </div>
 
               <div className="pdf-modal-body">
-                <iframe
-                  src={`${fullUrl}#toolbar=1&navpanes=0`}
-                  title={filename}
-                  className="pdf-iframe"
-                />
+                {isOwnFile(fullUrl) ? (
+                  <iframe
+                    src={`${fullUrl}#toolbar=1&navpanes=0`}
+                    title={filename}
+                    className="pdf-iframe"
+                  />
+                ) : (
+                  <div style={{ padding: 24, textAlign: 'center' }}>
+                    This link is not a file uploaded to this store, so it is not opened here. Use
+                    &quot;New Tab&quot; only if you trust the sender.
+                  </div>
+                )}
               </div>
 
               <div className="pdf-modal-footer">

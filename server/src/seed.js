@@ -2,6 +2,7 @@ import './_script-guard.js';
 import 'dotenv/config';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import Product from './models/Product.js';
 import Category from './models/Category.js';
 import Admin from './models/Admin.js';
@@ -28,7 +29,10 @@ export async function runSeed() {
   console.log('⚡ Safe Syncing Bazario Multi-Vendor Marketplace database (NO DATA DELETED)...');
 
   // 1. Ensure Admins (Only admin@bazario.com & abdullah@bazario.com)
-  const adminPass = await bcrypt.hash('Admin@Bazario2026!', 10);
+  // No password is written in the code (this repository is public). NEW admin accounts get
+  // ADMIN_PASSWORD, or a random one printed once below. Existing accounts are never changed.
+  const adminPlain = (process.env.ADMIN_PASSWORD || '').trim() || crypto.randomBytes(12).toString('base64url');
+  const adminPass = await bcrypt.hash(adminPlain, 10);
   const adminsList = [
     {
       name: 'Super Admin (Owner)',
@@ -53,12 +57,14 @@ export async function runSeed() {
   ];
 
   for (const adm of adminsList) {
-    await Admin.updateOne({ email: adm.email }, { $setOnInsert: adm }, { upsert: true });
+    const r = await Admin.updateOne({ email: adm.email }, { $setOnInsert: adm }, { upsert: true });
+    if (r.upsertedCount && !process.env.ADMIN_PASSWORD) console.log(`🔑 New admin ${adm.email} — password (shown once): ${adminPlain}`);
   }
   console.log(`✅ Ensured admins (admin@bazario.com & abdullah@bazario.com)`);
 
   // 2. Demo Sellers / Vendors
-  const sellerPass = await bcrypt.hash('seller123', 10);
+  const sellerPlain = (process.env.SEED_SELLER_PASSWORD || '').trim() || crypto.randomBytes(12).toString('base64url');
+  const sellerPass = await bcrypt.hash(sellerPlain, 10);
   const sellersList = [
     {
       ownerName: 'Alex Rivera',
@@ -207,7 +213,10 @@ export async function runSeed() {
   ];
 
   for (const s of sellersList) {
-    await Seller.updateOne({ email: s.email }, { $set: s }, { upsert: true });
+    // the password is set only when the demo account is first made (never reset on a later run)
+    const { passwordHash, ...rest } = s;
+    const r = await Seller.updateOne({ email: s.email }, { $set: rest, $setOnInsert: { passwordHash } }, { upsert: true });
+    if (r.upsertedCount && !process.env.SEED_SELLER_PASSWORD) console.log(`🔑 New demo seller ${s.email} — password (shown once): ${sellerPlain}`);
   }
   console.log(`✅ Ensured demo sellers (demoseller1@bazario.com through demoseller6@bazario.com)`);
 

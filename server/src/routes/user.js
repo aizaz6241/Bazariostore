@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import Order from '../models/Order.js';
-import { authUser } from '../middleware/auth.js';
+import { authUser, forgetAuthCache } from '../middleware/auth.js';
 import { notify } from '../utils/notify.js';
 import { comparePassword, cleanEmail } from '../utils/password.js';
 import { sendVerificationOtpEmail, sendPasswordResetEmail, sendWelcomeEmail } from '../services/email.service.js';
@@ -18,6 +18,7 @@ const MAX_OTP_TRIES = 5;
 const RESET_VALID_MS = 20 * 60 * 1000;
 const signupLimit = limit({ name: 'user-signup', max: 10, windowMs: 60 * 60 * 1000 });
 const recoveryLimit = limit({ name: 'user-recovery', max: 6, windowMs: 15 * 60 * 1000 });
+const verifyLimit = limit({ name: 'user-verify-otp', max: 30, windowMs: 15 * 60 * 1000 });
 
 const router = Router();
 
@@ -47,10 +48,14 @@ router.post('/send-otp', signupLimit, async (req, res) => {
       return res.status(400).json({ message: 'A valid email address is required' });
     }
 
+    const sent = { ok: true, message: `Verification code sent to ${email}. Valid for 10 minutes.` };
     const otp = generateOtp();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
 
     let user = await User.findOne({ email });
+    // A verified account signs in with its password. A code is only for finishing a registration:
+    // before, a code sent to ANY account could be guessed to log in to it.
+    if (user?.isEmailVerified) return res.json(sent);
     if (!user) {
       // Create user placeholder with isEmailVerified: false
       user = new User({
@@ -66,7 +71,7 @@ router.post('/send-otp', signupLimit, async (req, res) => {
 
     await sendVerificationOtpEmail({ to: email, name: user.name || name, otp, role: 'customer' });
 
-    res.json({ ok: true, message: `Verification code sent to ${email}. Valid for 10 minutes.` });
+    res.json(sent);
   } catch (err) {
     console.error('[send-otp-error]', err);
     res.status(500).json({ message: 'Failed to send verification code. ' + err.message });
@@ -74,36 +79,54 @@ router.post('/send-otp', signupLimit, async (req, res) => {
 });
 
 // POST /api/user/verify-otp (Verify customer OTP)
-router.post('/verify-otp', async (req, res) => {
+router.post('/verify-otp', verifyLimit, async (req, res) => {
   try {
-    const email = cleanEmail(req.body?.email);
-    const code = String(req.body?.otp || req.body?.code || '').trim();
+    const email = cleanEmail(asText(req.body?.email, 200));
+    const code = (asText(req.body?.otp, 12) || asText(req.body?.code, 12)).trim();
     if (!email || !code) {
       return res.status(400).json({ message: 'Email and 6-digit verification code are required' });
     }
 
-    const user = await User.findOne({ email });
-    if (!user || !user.emailOtp?.code) {
-      return res.status(400).json({ message: 'No pending verification code found. Please request a new code.' });
-    }
-
-    if (new Date() > new Date(user.emailOtp.expiresAt)) {
-      return res.status(400).json({ message: 'Verification code has expired. Please request a new one.' });
-    }
-
-    if (user.emailOtp.attempts >= 5) {
+    // One try is used up BEFORE the code is compared, in a single database step. Checking the
+    // count first and saving it afterwards let many guesses sent at the same moment all pass.
+    // Only an account still waiting for verification can be verified (and logged in) this way.
+    const now = new Date();
+    const user = await User.findOneAndUpdate(
+      {
+        email,
+        isEmailVerified: { $ne: true },
+        'emailOtp.code': { $type: 'string' },
+        'emailOtp.expiresAt': { $gt: now },
+        $or: [{ 'emailOtp.attempts': { $lt: MAX_OTP_TRIES } }, { 'emailOtp.attempts': { $exists: false } }],
+      },
+      { $inc: { 'emailOtp.attempts': 1 } },
+      { new: true }
+    );
+    if (!user) {
+      const found = await User.findOne({ email }).select('isEmailVerified emailOtp').lean();
+      if (found?.isEmailVerified) return res.status(400).json({ message: 'This email is already verified. Please sign in with your password.' });
+      if (!found?.emailOtp?.code) return res.status(400).json({ message: 'No pending verification code found. Please request a new code.' });
+      if (new Date(found.emailOtp.expiresAt) <= now) return res.status(400).json({ message: 'Verification code has expired. Please request a new one.' });
       return res.status(400).json({ message: 'Too many invalid attempts. Please request a new verification code.' });
     }
 
-    if (user.emailOtp.code !== code) {
-      user.emailOtp.attempts = (user.emailOtp.attempts || 0) + 1;
-      await user.save();
+    const a = Buffer.from(String(user.emailOtp.code));
+    const b = Buffer.from(code);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
       return res.status(400).json({ message: 'Invalid verification code. Please check your email.' });
     }
 
-    // Mark as verified
+    // Mark as verified. Details given at a repeated registration are applied only now, by the
+    // person who really owns the mailbox.
     user.isEmailVerified = true;
     user.emailOtp = undefined;
+    if (user.pendingSignup?.passwordHash) {
+      user.passwordHash = user.pendingSignup.passwordHash;
+      if (user.pendingSignup.name) user.name = user.pendingSignup.name;
+      user.phone = user.pendingSignup.phone || user.phone || '';
+      user.pwdAt = new Date();
+    }
+    user.pendingSignup = undefined;
     await user.save();
 
     // Send Welcome Email
@@ -146,9 +169,9 @@ router.post('/register', signupLimit, async (req, res) => {
 
     let user = existing;
     if (user) {
-      user.name = name.trim();
-      user.phone = (phone || '').trim();
-      user.passwordHash = passwordHash;
+      // Not verified yet: the new password / name only take effect once the code from the mailbox
+      // is entered (before, registering again with someone's email replaced their password).
+      user.pendingSignup = { passwordHash, name: name.trim(), phone: (phone || '').trim() };
       user.emailOtp = { code: otp, expiresAt, attempts: 0 };
     } else {
       user = new User({
@@ -277,29 +300,42 @@ router.post('/reset', recoveryLimit, async (req, res) => {
     if (token.length >= 32) {
       user = await User.findOne({ resetToken: token, resetExpires: { $gt: now } });
     } else if (/^\d{6}$/.test(otp) && email) {
-      const candidate = await User.findOne({ email });
-      const saved = candidate?.resetOtp;
-      if (!candidate || !saved?.code || !saved.expiresAt || new Date(saved.expiresAt) <= now) return invalid();
-      if ((saved.attempts || 0) >= MAX_OTP_TRIES) {
-        await User.updateOne({ _id: candidate._id }, { $unset: { resetOtp: 1, resetToken: 1, resetExpires: 1 } });
-        return res.status(400).json({ message: 'Too many wrong codes. Please request a new recovery code.' });
-      }
-      const a = Buffer.from(String(saved.code));
-      const b = Buffer.from(otp);
-      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-        await User.updateOne({ _id: candidate._id }, { $inc: { 'resetOtp.attempts': 1 } });
+      // the try is counted before the code is compared, in one database step (see verify-otp)
+      const candidate = await User.findOneAndUpdate(
+        {
+          email,
+          'resetOtp.code': { $type: 'string' },
+          'resetOtp.expiresAt': { $gt: now },
+          $or: [{ 'resetOtp.attempts': { $lt: MAX_OTP_TRIES } }, { 'resetOtp.attempts': { $exists: false } }],
+        },
+        { $inc: { 'resetOtp.attempts': 1 } },
+        { new: true }
+      );
+      if (!candidate) {
+        const found = await User.findOne({ email }).select('resetOtp').lean();
+        if (found?.resetOtp?.code && (found.resetOtp.attempts || 0) >= MAX_OTP_TRIES) {
+          await User.updateOne({ _id: found._id }, { $unset: { resetOtp: 1, resetToken: 1, resetExpires: 1 } });
+          return res.status(400).json({ message: 'Too many wrong codes. Please request a new recovery code.' });
+        }
         return invalid();
       }
+      const a = Buffer.from(String(candidate.resetOtp.code));
+      const b = Buffer.from(otp);
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return invalid();
       user = candidate;
     }
 
     if (!user) return invalid();
 
     user.passwordHash = await bcrypt.hash(password, 10);
+    user.pwdAt = new Date(); // logins made with the old password stop working
+    user.isEmailVerified = true; // the code / link from the mailbox proves the email is theirs
+    user.pendingSignup = undefined;
     user.resetToken = undefined;
     user.resetExpires = undefined;
     user.resetOtp = undefined;
     await user.save();
+    forgetAuthCache('user', user._id);
 
     res.json({
       ok: true,
@@ -338,8 +374,11 @@ router.put('/me/password', authUser, async (req, res) => {
   if (!(await bcrypt.compare(current || '', user.passwordHash))) return res.status(400).json({ message: 'Current password ghalat hai' });
   if ((next || '').length < 6) return res.status(400).json({ message: 'Naya password kam az kam 6 characters ka hona chahiye' });
   user.passwordHash = await bcrypt.hash(next, 10);
+  user.pwdAt = new Date(); // every other login of this account (another phone, a stolen token) ends
   await user.save();
-  res.json({ ok: true });
+  forgetAuthCache('user', user._id);
+  // a fresh login for this browser, so the customer stays signed in here
+  res.json({ ok: true, token: signUser(user) });
 });
 
 // --- addresses ---
@@ -376,9 +415,12 @@ router.delete('/me/addresses/:addrId', authUser, async (req, res) => {
 router.get('/me/orders', authUser, async (req, res) => {
   const user = await User.findById(req.user.id);
   if (!user) return res.status(404).json({ message: 'Account not found' });
-  const orders = await Order.find({
-    $or: [{ user: req.user.id }, { 'contact.email': user.email }],
-  })
+  // Guest orders placed with this email are shown only once the email is verified. Logging in does
+  // not need a verified email, so before, anyone could register someone else's address and read
+  // that person's orders (name, address, phone).
+  const match = [{ user: req.user.id }];
+  if (user.isEmailVerified) match.push({ 'contact.email': user.email });
+  const orders = await Order.find({ $or: match })
     .sort({ createdAt: -1 })
     .limit(50);
   res.json(orders.map(publicOrder));

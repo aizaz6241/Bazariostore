@@ -35,13 +35,27 @@ router.get('/products', authSeller, async (req, res) => {
   }
 });
 
+/** A price a customer could be charged must be a real, non-negative number (a negative price
+ *  lowered the total of a whole order that also held other stores' products). */
+function priceProblem(data) {
+  const bad = (v) => v !== undefined && v !== null && v !== '' && !(Number.isFinite(Number(v)) && Number(v) >= 0);
+  if (bad(data.price) || bad(data.oldPrice) || bad(data.compareAtPrice)) return 'Please enter a valid price (0 or more).';
+  if (Array.isArray(data.sizes) && data.sizes.some((s) => s && bad(s.price))) return 'Please enter a valid price (0 or more) for every size.';
+  return '';
+}
+
 // POST /api/sellers/products
 router.post('/products', authSeller, async (req, res) => {
   try {
     const seller = await Seller.findById(req.seller.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
-    const data = req.body;
+    // Fields only the platform sets: the shop's own figures (rating, reviews, sales), the link to a
+    // Central Treasury master product (that has its own "add from Treasury" route) and record ids.
+    const data = { ...(req.body || {}) };
+    for (const f of ['_id', '__v', 'createdAt', 'updatedAt', 'treasuryProduct', 'rating', 'numReviews', 'sold', 'reservedStock']) delete data[f];
+    const badPrice = priceProblem(data);
+    if (badPrice) return res.status(400).json({ message: badPrice });
     let baseSlug = slugify(data.name || 'product');
     let slug = baseSlug;
     let counter = 1;
@@ -93,7 +107,9 @@ router.put('/products/:id', authSeller, async (req, res) => {
     if (!product) return res.status(404).json({ message: 'Product not found or access denied' });
 
     const data = req.body || {};
-    
+    const badPrice = priceProblem(data);
+    if (badPrice) return res.status(400).json({ message: badPrice });
+
     // Explicit whitelist of user-editable product fields
     if (data.name !== undefined) product.name = String(data.name).trim();
     if (data.description !== undefined) product.description = String(data.description);

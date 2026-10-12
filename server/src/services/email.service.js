@@ -28,6 +28,11 @@ const DEFAULT_FROM = process.env.EMAIL_FROM || (process.env.EMAIL_USER ? `"Bazar
 /**
  * Base Email Wrapper with Responsive Styling & Professional Branding
  */
+// Names and store names are typed by visitors: written into an email as plain text, never as
+// HTML (otherwise a "name" could put a fake link or button into an email sent from this store).
+const esc = (v) =>
+  String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
 function getEmailLayout({ title, preheader, bodyContent }) {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -94,7 +99,7 @@ export async function sendVerificationOtpEmail({ to, name = 'User', otp, role = 
     const roleLabel = role === 'seller' ? 'Seller Merchant Hub' : 'Customer Account';
     const bodyContent = `
       <h2 class="email-heading">Verify Your Email Address 🔐</h2>
-      <p>Hello <b>${name}</b>,</p>
+      <p>Hello <b>${esc(name)}</b>,</p>
       <p>Thank you for signing up on Bazario ${roleLabel}. To complete your email verification, please enter the one-time verification code (OTP) below:</p>
       
       <div class="otp-card">
@@ -143,8 +148,8 @@ export async function sendPasswordResetEmail({ to, name = 'User', resetUrl, otp,
     const roleLabel = role === 'seller' ? 'Merchant Store' : role === 'admin' ? 'Super Admin' : 'Customer Account';
     const bodyContent = `
       <h2 class="email-heading">Password Reset Request 🔑</h2>
-      <p>Hello <b>${name}</b>,</p>
-      <p>We received a request to reset the password for your Bazario ${roleLabel} (<code>${to}</code>).</p>
+      <p>Hello <b>${esc(name)}</b>,</p>
+      <p>We received a request to reset the password for your Bazario ${roleLabel} (<code>${esc(to)}</code>).</p>
       
       <p style="margin-bottom: 6px;">You can reset your password directly using the secure link below:</p>
       
@@ -198,7 +203,7 @@ export async function sendWelcomeEmail({ to, name = 'User', role = 'Customer' })
     const isSeller = role === 'seller';
     const bodyContent = `
       <h2 class="email-heading">Welcome to Bazario! 🎉</h2>
-      <p>Hello <b>${name}</b>,</p>
+      <p>Hello <b>${esc(name)}</b>,</p>
       <p>Your email has been successfully verified! We are excited to have you on the Bazario platform.</p>
       
       ${isSeller ? `
@@ -242,8 +247,8 @@ export async function sendSellerApprovalEmail({ to, name, storeName }) {
   try {
     const bodyContent = `
       <h2 class="email-heading" style="color: #16a34a;">Congratulations! Your Merchant Store is Approved 🚀</h2>
-      <p>Hello <b>${name}</b>,</p>
-      <p>Great news! Your merchant store <b>"${storeName}"</b> has been reviewed and officially approved by the Platform Super Admin.</p>
+      <p>Hello <b>${esc(name)}</b>,</p>
+      <p>Great news! Your merchant store <b>"${esc(storeName)}"</b> has been reviewed and officially approved by the Platform Super Admin.</p>
       
       <div style="background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 8px; padding: 16px; margin: 18px 0;">
         <b style="color: #166534; display: block; margin-bottom: 6px;">✨ What's Next?</b>
@@ -260,7 +265,7 @@ export async function sendSellerApprovalEmail({ to, name, storeName }) {
     `;
 
     const html = getEmailLayout({
-      title: `Merchant Store Approved: ${storeName}`,
+      title: `Merchant Store Approved: ${esc(storeName)}`,
       preheader: `Your seller application has been approved. Start selling now!`,
       bodyContent,
     });

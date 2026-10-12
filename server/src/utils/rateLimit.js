@@ -21,13 +21,34 @@ setInterval(() => {
  * real visitor address into these headers (and overwrites anything the visitor sent), so they
  * are used first.
  */
+//
+// A header is only believed when the host in front of the app really writes it. A visitor can
+// send any header themselves, so on a host that does NOT overwrite it, a made-up address in it
+// would give every request a fresh limit (unlimited password guessing).
+//   - CLIENT_IP_HEADER (optional): name of the one header your proxy sets, e.g. "cf-connecting-ip"
+//   - Vercel: sets x-real-ip itself (anything the visitor sent is replaced)
+//   - Render: sits behind Cloudflare, which always overwrites cf-connecting-ip
+//   - anywhere else: Express's own req.ip (TRUST_PROXY_HOPS decides how many proxies are trusted)
+const IP_RX = /^[0-9a-fA-F:.]{3,45}$/;
+const goodIp = (v) => (typeof v === 'string' && IP_RX.test(v.trim()) ? v.trim() : '');
+
 export function clientIp(req) {
-  const fromProxy = req.headers?.['cf-connecting-ip'] || req.headers?.['true-client-ip'];
-  if (typeof fromProxy === 'string' && /^[0-9a-fA-F:.]{3,45}$/.test(fromProxy.trim())) return fromProxy.trim();
-  // several proxies in a row and no such header: the first address in the chain is the visitor
-  const chain = String(req.headers?.['x-forwarded-for'] || '').split(',').map((x) => x.trim()).filter(Boolean);
-  if (chain.length > 1 && /^[0-9a-fA-F:.]{3,45}$/.test(chain[0])) return chain[0];
-  return String(req.ip || req.headers?.['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'unknown');
+  const h = req.headers || {};
+  const custom = String(process.env.CLIENT_IP_HEADER || '').trim().toLowerCase();
+  if (custom) {
+    const v = goodIp(String(h[custom] || '').split(',')[0]);
+    if (v) return v;
+  } else if (process.env.VERCEL) {
+    const v = goodIp(h['x-real-ip']) || goodIp(String(h['x-vercel-forwarded-for'] || '').split(',')[0]);
+    if (v) return v;
+  } else if (process.env.RENDER) {
+    const v = goodIp(h['cf-connecting-ip']);
+    if (v) return v;
+    // several proxies in a row and no such header: the first address in the chain is the visitor
+    const chain = String(h['x-forwarded-for'] || '').split(',').map((x) => x.trim()).filter(Boolean);
+    if (chain.length > 1 && goodIp(chain[0])) return chain[0];
+  }
+  return String(req.ip || req.socket?.remoteAddress || 'unknown');
 }
 
 function hit(key, windowMs) {

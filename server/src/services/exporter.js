@@ -7,7 +7,9 @@ export async function sendReport(res, { title, columns, rows, format = 'json' })
 
   if (format === 'csv') {
     const esc = (v) => {
-      const s = v == null ? '' : String(v);
+      let s = v == null ? '' : String(v);
+      // a cell starting with = + - @ would run as a formula in Excel (names and notes are typed by customers)
+      if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = `'${s}`;
       return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     };
     const csv = [columns.map((c) => esc(c.label)).join(',')]
