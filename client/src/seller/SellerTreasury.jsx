@@ -4,6 +4,7 @@ import { sapi, money } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 import '../styles/seller/treasury.css';
+import useLiveReload from '../useLiveReload.js';
 
 export default function SellerTreasury() {
   const { formatMoney } = useCurrency();
@@ -28,8 +29,8 @@ export default function SellerTreasury() {
     setTimeout(() => setToastMessage(''), 4000);
   };
 
-  const loadTreasury = () => {
-    setLoading(true);
+  const loadTreasury = (opts) => {
+    if (opts?.silent !== true) setLoading(true);
     let url = '/sellers/treasury?';
     const params = new URLSearchParams();
     if (selectedCat) params.append('category', selectedCat);
@@ -52,6 +53,9 @@ export default function SellerTreasury() {
   useEffect(() => {
     loadTreasury();
   }, [selectedCat, sort]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // the platform changed central stock or paused / resumed a product: refresh without a spinner
+  useLiveReload(['products:changed'], () => loadTreasury({ silent: true }), 1500);
 
   // Reset pagination window whenever filters or sort change
   useEffect(() => {

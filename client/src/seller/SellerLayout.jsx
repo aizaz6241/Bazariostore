@@ -135,6 +135,9 @@ export default function SellerLayout() {
     };
 
     const onWalletUpdate = (wData) => {
+      // a notification also arrives as 'wallet:update' (title, body...): not wallet figures, so it
+      // is not mixed into the wallet (the 'notify' handler already refreshes the seller)
+      if (wData?.notification) return;
       setSeller((prev) => {
         if (!prev) return prev;
         const updated = { ...prev, wallet: { ...(prev.wallet || {}), ...wData } };
@@ -195,7 +198,9 @@ export default function SellerLayout() {
 
     socket.on('message:new', onMessage);
     socket.on('message:delete', onMessageDeleted);
-    socket.on('seller:notification', onNotify);
+    // the server sends a seller's notifications as 'notify' (this listened to 'seller:notification',
+    // which is never sent, so sellers never saw a notification pop up)
+    socket.on('notify', onNotify);
     socket.on('wallet:update', onWalletUpdate);
     socket.on('seller:health_update', onHealthUpdate);
     socket.on('seller:status_update', onStatusUpdate);
@@ -207,7 +212,7 @@ export default function SellerLayout() {
     return () => {
       socket.off('message:new', onMessage);
       socket.off('message:delete', onMessageDeleted);
-      socket.off('seller:notification', onNotify);
+      socket.off('notify', onNotify);
       socket.off('wallet:update', onWalletUpdate);
       socket.off('seller:health_update', onHealthUpdate);
       socket.off('seller:status_update', onStatusUpdate);

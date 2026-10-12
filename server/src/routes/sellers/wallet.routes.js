@@ -13,6 +13,7 @@ import { applyDecisionToWallet, requestFieldsFor, finishStuckWalletRequests } fr
 import { asText } from '../../middleware/sanitize.js';
 import { adminRoom } from '../../utils/permissions.js';
 import { blockWhenFrozen } from './helpers.js';
+import { announceToAdmins } from '../../utils/realtime.js';
 
 const router = express.Router();
 
@@ -448,7 +449,7 @@ router.post('/wallet/withdraw', authSellerOrAdmin, blockWhenFrozen('withdrawing'
 });
 
 // POST /api/sellers/wallet/limit-increase-request (Seller applies for a higher withdrawal tier)
-router.post('/wallet/limit-increase-request', authSellerOrAdmin, blockWhenFrozen('requesting a higher withdrawal limit'), async (req, res) => {
+router.post('/wallet/limit-increase-request', authSellerOrAdmin, blockWhenFrozen('requesting a higher withdrawal limit'), announceToAdmins('finance', 'limit:new', (req) => ({ sellerId: String(req.seller?.id || req.seller?._id || '') })), async (req, res) => {
   try {
     const seller = await getSellerFromReq(req);
     if (!seller) return res.status(404).json({ message: 'Seller not found. Please log in again.' });
@@ -578,7 +579,7 @@ router.post('/wallet/limit-increase-request', authSellerOrAdmin, blockWhenFrozen
 });
 
 // POST /api/sellers/wallet/limit-offer-response (Seller accepts or declines Admin's upgrade terms quote)
-router.post('/wallet/limit-offer-response', authSellerOrAdmin, blockWhenFrozen('changing your withdrawal limit'), async (req, res) => {
+router.post('/wallet/limit-offer-response', authSellerOrAdmin, blockWhenFrozen('changing your withdrawal limit'), announceToAdmins('finance', 'limit:update', (req) => ({ sellerId: String(req.seller?.id || req.seller?._id || '') })), async (req, res) => {
   try {
     const { action } = req.body || {}; // 'accept' | 'decline'
     if (!['accept', 'decline'].includes(action)) {
@@ -1516,7 +1517,7 @@ router.get('/limit-requests/all', authAdmin('finance'), async (req, res) => {
 });
 
 // POST /api/sellers/:id/limit-offer (Step 1: Admin quotes proposed terms to seller - $0 deducted)
-router.post('/:id/limit-offer', authAdmin('finance'), async (req, res) => {
+router.post('/:id/limit-offer', authAdmin('finance'), announceToAdmins('finance', 'limit:update'), async (req, res) => {
   try {
     const { offeredLimit, offeredNextCount, offeredFee, offeredTierName, adminNote } = req.body;
     const seller = await Seller.findById(req.params.id);
@@ -1618,7 +1619,7 @@ router.post('/:id/limit-offer', authAdmin('finance'), async (req, res) => {
 });
 
 // POST /api/sellers/:id/limit-finalize (Step 3: Admin clicks "Finalize & Activate Limit Increase" - Fee Deducted & Limit Activated)
-router.post('/:id/limit-finalize', authAdmin('finance'), async (req, res) => {
+router.post('/:id/limit-finalize', authAdmin('finance'), announceToAdmins('finance', 'limit:update'), async (req, res) => {
   // set once the request is claimed; undone if something fails before the new limit is written
   let releaseClaim = null;
   let activated = false;
@@ -1781,7 +1782,7 @@ router.post('/:id/limit-finalize', authAdmin('finance'), async (req, res) => {
 });
 
 // POST /api/sellers/:id/limit-increase-decision (Admin direct reject/decline)
-router.post('/:id/limit-increase-decision', authAdmin('finance'), async (req, res) => {
+router.post('/:id/limit-increase-decision', authAdmin('finance'), announceToAdmins('finance', 'limit:update'), async (req, res) => {
   try {
     const { action = 'reject', adminNote } = req.body;
     const seller = await Seller.findById(req.params.id);

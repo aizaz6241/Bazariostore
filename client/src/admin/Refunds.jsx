@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, money, fmtDate } from '../api.js';
 import { Modal, ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
+import useLiveReload from '../useLiveReload.js';
 
 const RSTATUS = { requested: 'Requested', approved: 'Approved', rejected: 'Rejected', refunded: 'Refunded' };
 const PILL = { requested: 'st-pending', approved: 'st-confirmed', rejected: 'st-cancelled', refunded: 'st-delivered' };
@@ -19,6 +20,8 @@ export default function Refunds() {
       .catch((e) => setError(e.message));
   };
   useEffect(load, [status]); // eslint-disable-line react-hooks/exhaustive-deps
+  // a customer's new refund request, or another admin's decision, shows here by itself
+  useLiveReload(['refunds:changed'], load);
 
   const act = async (r, newStatus) => {
     try {

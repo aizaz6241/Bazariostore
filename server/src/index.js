@@ -67,6 +67,7 @@ import { processAutoProgressOrders } from './services/orderProgressionService.js
 import { finishStuckWalletRequests } from './utils/walletRequests.js';
 import { encryptStoredPasswords, encryptionOn } from './utils/sellerPassword.js';
 import { PERMISSIONS, adminRoom, hasPermission } from './utils/permissions.js';
+import { setRealtimeIo } from './utils/realtime.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -315,6 +316,7 @@ app.use(finalErrorHandler);
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: (origin, cb) => cb(null, originAllowed(origin)) } });
 app.set('io', io);
+setRealtimeIo(io);
 
 /**
  * Open admin connections follow the account as it is NOW. Live events (new orders with customer

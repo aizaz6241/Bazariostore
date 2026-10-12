@@ -5,6 +5,7 @@ import { api, fmtDate } from '../api.js';
 import { ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
+import useLiveReload from '../useLiveReload.js';
 import {
   Hero, MetaChip, Kpi, KpiGrid, Card, ChartGrid, Seg, Badge, Avatar, RankList, SplitBar, ChartTip,
   Toolbar, SearchBox, Empty, Meter, SERIES, STATUS, GRID, AXIS, legendText, pctOf, delta,
@@ -166,8 +167,8 @@ export default function Applications() {
     setKycDocModal({ seller: s, docType, docUrl, title: getDocTitle(docType) });
   };
 
-  const loadSellers = () => {
-    setLoading(true);
+  const loadSellers = (opts) => {
+    if (opts?.silent !== true) setLoading(true);
     setError('');
     api('/sellers')
       .then((data) => setSellers(Array.isArray(data) ? data : data.sellers || []))
@@ -178,6 +179,9 @@ export default function Applications() {
   useEffect(() => {
     loadSellers();
   }, []);
+
+  // a new registration, or a decision by another admin, shows here by itself
+  useLiveReload(['sellers:changed', 'seller:new_registration', 'seller:deleted'], () => loadSellers({ silent: true }));
 
   const handleToggleTest = async (sellerId) => {
     try {

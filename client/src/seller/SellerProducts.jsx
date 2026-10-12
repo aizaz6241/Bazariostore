@@ -4,6 +4,7 @@ import { sapi } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 import { getLiveStoreVisitors, getProductLiveViewers } from '../utils/liveMetrics.js';
+import useLiveReload from '../useLiveReload.js';
 
 export default function SellerProducts() {
   const { seller } = useOutletContext() || {};
@@ -49,13 +50,16 @@ export default function SellerProducts() {
   const [modalErr, setModalErr] = useState('');
   const fileInputRef = useRef(null);
 
-  const loadProducts = () => {
-    setLoading(true);
+  const loadProducts = (opts) => {
+    if (opts?.silent !== true) setLoading(true);
     sapi('/sellers/products')
       .then((data) => setProducts(data || []))
       .catch((e) => console.error(e))
       .finally(() => setLoading(false));
   };
+
+  // stock sold through orders, or a Treasury product paused / changed by the platform, shows by itself
+  useLiveReload(['products:changed', 'order:new', 'order:update'], () => loadProducts({ silent: true }), 1500);
 
   useEffect(() => {
     loadProducts();

@@ -19,6 +19,7 @@ import { slugify, calculateHealthStatus } from './helpers.js';
 import { adminRoom } from '../../utils/permissions.js';
 import { asText } from '../../middleware/sanitize.js';
 import { normalizeCode, codeFormatError, getMasterCode, resolveAffiliateCode, usageByCode } from '../../utils/affiliateCodes.js';
+import { announceToAdmins } from '../../utils/realtime.js';
 
 const router = express.Router();
 
@@ -549,7 +550,7 @@ router.get('/:id/kyc', authAdmin('sellers'), async (req, res, next) => {
 });
 
 // POST /api/sellers (Admin creates a new seller credentials)
-router.post('/', authAdmin('sellers'), async (req, res) => {
+router.post('/', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:changed'), async (req, res) => {
   try {
     const { storeName, ownerName, email, password, phone, commissionRate, city, isTestAccount, accountType, isPreviousStoreSeller } = req.body;
     if (!storeName || !ownerName || !email || !password) {
@@ -666,7 +667,7 @@ router.post('/:id/reset-password', authAdmin('sellers'), async (req, res) => {
 });
 
 // POST /api/sellers/:id/freeze (Admin freezes/suspends or unfreezes seller account with reason)
-router.post('/:id/freeze', authAdmin('sellers'), async (req, res) => {
+router.post('/:id/freeze', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:changed'), async (req, res) => {
   try {
     const { status = 'frozen' } = req.body || {};
     const reason = String(req.body?.reason || '').trim().slice(0, 1000);
@@ -779,7 +780,7 @@ router.post('/:id/freeze', authAdmin('sellers'), async (req, res) => {
 });
 
 // POST /api/sellers/:id/warn (Admin issues or clears an official warning announcement banner)
-router.post('/:id/warn', authAdmin('sellers'), async (req, res) => {
+router.post('/:id/warn', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:changed'), async (req, res) => {
   try {
     const { active: activeRaw = true, level: levelRaw = 'warning' } = req.body || {};
     const active = activeRaw === true || activeRaw === 'true';
@@ -876,7 +877,7 @@ router.post('/:id/warn', authAdmin('sellers'), async (req, res) => {
 });
 
 // POST /api/sellers/:id/health (Admin adjusts Seller Account Health score 0-100)
-router.post('/:id/health', authAdmin('sellers'), async (req, res) => {
+router.post('/:id/health', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:changed'), async (req, res) => {
   try {
     const { score, notifySeller = true } = req.body || {};
     const reason = String(req.body?.reason || 'Manual score adjustment by Administrator').slice(0, 500);
@@ -1383,7 +1384,7 @@ router.get('/:id', authAdmin('sellers'), async (req, res, next) => {
 });
 
 // PUT /api/sellers/:id (Admin updates seller: commission, status, security deposit, password reset)
-router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
+router.put('/:id', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:changed'), async (req, res, next) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return next();
@@ -1527,7 +1528,7 @@ router.put('/:id', authAdmin('sellers'), async (req, res, next) => {
 });
 
 // POST /api/sellers/:id/withdrawal-limit (Admin updates withdrawal limits and banking tier)
-router.post('/:id/withdrawal-limit', authAdmin('finance'), async (req, res) => {
+router.post('/:id/withdrawal-limit', authAdmin('finance'), announceToAdmins('sellers', 'sellers:changed'), async (req, res) => {
   try {
     const { maxAmount, minAmount, requiredWithdrawalsForIncrease, successfulWithdrawalCount, upgradeFee, currentTierName } = req.body || {};
     // every number must really be a number (a typo used to end in a 500 "server error")
@@ -1591,7 +1592,7 @@ router.post('/:id/withdrawal-limit', authAdmin('finance'), async (req, res) => {
   }
 });
 // POST /api/sellers/:id/approve (Admin approves a pending seller registration)
-router.post('/:id/approve', authAdmin('sellers'), oneDecisionAtATime, async (req, res) => {
+router.post('/:id/approve', authAdmin('sellers'), oneDecisionAtATime, announceToAdmins('sellers', 'sellers:changed'), async (req, res) => {
   try {
     const { securityDepositPaid, securityDepositAmount, referralCode, assignedReferralCode, commissionRate, note, isTestAccount, accountType, isPreviousStoreSeller, assignedMemberId } = req.body || {};
     if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Seller not found' });
@@ -1895,7 +1896,7 @@ router.post('/:id/approve', authAdmin('sellers'), oneDecisionAtATime, async (req
 });
 
 // POST /api/sellers/:id/reject (Admin rejects a pending seller registration)
-router.post('/:id/reject', authAdmin('sellers'), oneDecisionAtATime, async (req, res) => {
+router.post('/:id/reject', authAdmin('sellers'), oneDecisionAtATime, announceToAdmins('sellers', 'sellers:changed'), async (req, res) => {
   try {
     const { reason, isTestAccount, accountType } = req.body || {};
     if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Seller not found' });
@@ -1934,7 +1935,7 @@ router.post('/:id/reject', authAdmin('sellers'), oneDecisionAtATime, async (req,
 });
 
 // PATCH /api/sellers/:id/toggle-test (Quick toggle Test Account vs Client Account)
-router.patch('/:id/toggle-test', authAdmin('sellers'), async (req, res) => {
+router.patch('/:id/toggle-test', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:changed'), async (req, res) => {
   try {
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
@@ -1977,7 +1978,7 @@ router.patch('/:id/toggle-test', authAdmin('sellers'), async (req, res) => {
 });
 
 // PATCH /api/sellers/:id/toggle-previous-store (Quick toggle Previous Store Seller)
-router.patch('/:id/toggle-previous-store', authAdmin('sellers'), async (req, res) => {
+router.patch('/:id/toggle-previous-store', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:changed'), async (req, res) => {
   try {
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
@@ -2206,7 +2207,7 @@ router.delete('/:id/targets/:targetId', authAdmin('sellers'), async (req, res) =
 });
 
 // DELETE /api/sellers/:id (Admin deletes a seller)
-router.delete('/:id', authAdmin('sellers'), async (req, res, next) => {
+router.delete('/:id', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:changed'), async (req, res, next) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return next();

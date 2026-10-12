@@ -7,7 +7,8 @@ import { authAdmin } from '../middleware/auth.js';
 import { audit } from '../utils/audit.js';
 import { escapeRegex } from '../utils/sanitize.js';
 import { deleteKeys, removedKeys } from '../services/uploads.js';
-import { setTreasuryStock, adjustTreasuryStock } from '../utils/stockSync.js';
+import { setTreasuryStock, adjustTreasuryStock, announceTreasuryChange } from '../utils/stockSync.js';
+import { toSellers } from '../utils/realtime.js';
 
 const router = Router();
 
@@ -24,6 +25,7 @@ router.param('id', (req, res, next, id) => (isId(id) ? next() : res.status(404).
  * switching the master on again brings back exactly those). Switched on: they come back.
  */
 async function syncListingsActive(product) {
+  announceTreasuryChange(product._id); // their screens refresh (paused / back on sale)
   if (product.active) {
     await Product.updateMany({ treasuryProduct: product._id, pausedByTreasury: true }, { $set: { active: true, pausedByTreasury: false } });
   } else {
@@ -286,6 +288,7 @@ router.put('/:id', authAdmin('products'), async (req, res) => {
         },
       }
     );
+    announceTreasuryChange(product._id); // listing details changed: their screens refresh
 
     if (product.active !== wasActive) await syncListingsActive(product);
 
@@ -370,6 +373,8 @@ router.delete('/:id', authAdmin('products'), async (req, res) => {
     // Clean up images
     await deleteKeys((product.images || []).map((i) => i.key));
 
+    // the sellers listing it are told (their listing goes off sale below)
+    const listingSellers = await Product.distinct('seller', { treasuryProduct: product._id });
     // Seller listings are taken off sale. They used to become standalone products that each kept
     // a full copy of the master stock: 100 units in Treasury and 5 sellers became 500 for sale.
     // (Open orders of these listings still finish normally.)
@@ -380,6 +385,7 @@ router.delete('/:id', authAdmin('products'), async (req, res) => {
 
     await product.deleteOne();
     await audit(req, 'treasury_product_deleted', 'treasury_product', req.params.id, { name: product.name });
+    toSellers(listingSellers, 'products:changed', { treasuryProduct: String(req.params.id) });
 
     res.json({ ok: true, message: 'Treasury product deleted successfully' });
   } catch (err) {

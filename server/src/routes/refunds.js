@@ -7,6 +7,7 @@ import { releaseSellerOrderCancelled, undoTargetProgressForOrder } from './selle
 import { authAdmin } from '../middleware/auth.js';
 import { audit } from '../utils/audit.js';
 import { notify } from '../utils/notify.js';
+import { announceToAdmins } from '../utils/realtime.js';
 
 const router = Router();
 
@@ -40,7 +41,7 @@ router.get('/:id', authAdmin('refunds'), async (req, res) => {
 });
 
 // POST /api/refunds — admin creates a refund for an order
-router.post('/', authAdmin('refunds'), async (req, res) => {
+router.post('/', authAdmin('refunds'), announceToAdmins('refunds', 'refunds:changed', (req) => ({ refundId: req.params?.id || '' })), async (req, res) => {
   const { orderId, amount, reason } = req.body || {};
   const order = await Order.findById(orderId);
   if (!order) return res.status(404).json({ message: 'Order not found' });
@@ -62,7 +63,7 @@ router.post('/', authAdmin('refunds'), async (req, res) => {
 });
 
 // PATCH /api/refunds/:id/status { status: approved|rejected|refunded, note }
-router.patch('/:id/status', authAdmin('refunds'), async (req, res) => {
+router.patch('/:id/status', authAdmin('refunds'), announceToAdmins('refunds', 'refunds:changed', (req) => ({ refundId: req.params?.id || '' })), async (req, res) => {
   const { status, note } = req.body || {};
   if (!['approved', 'rejected', 'refunded'].includes(status)) return res.status(400).json({ message: 'Invalid status' });
   const refund = await Refund.findById(req.params.id);

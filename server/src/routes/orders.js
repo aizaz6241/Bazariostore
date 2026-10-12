@@ -23,6 +23,7 @@ import mongoose from 'mongoose';
 import crypto from 'crypto';
 import { publicOrder } from '../utils/publicOrder.js';
 import { adminRoom } from '../utils/permissions.js';
+import { announceToAdmins } from '../utils/realtime.js';
 
 const router = Router();
 
@@ -315,7 +316,7 @@ router.get('/track', trackLimit, async (req, res) => {
 });
 
 // POST /api/orders/:id/refund-request — logged-in customer requests refund
-router.post('/:id/refund-request', authUser, async (req, res) => {
+router.post('/:id/refund-request', authUser, announceToAdmins('refunds', 'refunds:changed', (req) => ({ orderId: req.params?.id || '' })), async (req, res) => {
   const order = await Order.findById(req.params.id);
   if (!order || String(order.user) !== String(req.user.id)) return res.status(404).json({ message: 'Order not found' });
   if (order.refundId) return res.status(400).json({ message: 'Is order ki refund request pehle se mojood hai' });
