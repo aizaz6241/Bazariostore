@@ -33,6 +33,15 @@ const userSchema = new mongoose.Schema(
     },
     resetToken: String,
     resetExpires: Date,
+    // Details from a repeated registration of a not-yet-verified email: applied only when the code
+    // from the mailbox is entered.
+    pendingSignup: {
+      passwordHash: String,
+      name: String,
+      phone: String,
+    },
+    // When the password was last changed: logins made before this moment stop working.
+    pwdAt: { type: Date, default: null },
     active: { type: Boolean, default: true },
   },
   { timestamps: true }

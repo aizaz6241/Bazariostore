@@ -15,6 +15,31 @@ import { adminRoom } from '../../utils/permissions.js';
 
 const router = express.Router();
 
+/**
+ * One deposit / withdrawal request per store at a time. The "already pending?" check and the
+ * saving of the new request are separate steps, so several requests sent at the same moment
+ * all passed the check (more than one pending payout, each up to the tier limit).
+ */
+const inFlight = new Set();
+function oneRequestAtATime(kind) {
+  return (req, res, next) => {
+    const who = String((req.admin ? req.body?.sellerId || req.query?.sellerId : req.seller?.id || req.seller?._id) || '');
+    const key = `${kind}:${who}`;
+    if (inFlight.has(key)) return res.status(429).json({ message: 'Your previous request is still being processed. Please wait a moment.' });
+    inFlight.add(key);
+    let done = false;
+    const release = () => {
+      if (!done) {
+        done = true;
+        inFlight.delete(key);
+      }
+    };
+    res.on('finish', release);
+    res.on('close', release);
+    next();
+  };
+}
+
 // Helper: securely find seller from authenticated token payload or verified admin request
 async function getSellerFromReq(req) {
   // If caller is an Admin, allow targeting specific seller via params / body / query
@@ -189,7 +214,7 @@ router.get('/wallet', authSellerOrAdmin, async (req, res) => {
 });
 
 // POST /api/sellers/wallet/deposit
-router.post('/wallet/deposit', authSellerOrAdmin, async (req, res) => {
+router.post('/wallet/deposit', authSellerOrAdmin, oneRequestAtATime('deposit'), async (req, res) => {
   try {
     const seller = await getSellerFromReq(req);
     if (!seller) return res.status(404).json({ message: 'Seller not found. Please log in again.' });
@@ -262,7 +287,7 @@ router.post('/wallet/deposit', authSellerOrAdmin, async (req, res) => {
 });
 
 // POST /api/sellers/wallet/withdraw — seller requests withdrawal from wallet
-router.post('/wallet/withdraw', authSellerOrAdmin, async (req, res) => {
+router.post('/wallet/withdraw', authSellerOrAdmin, oneRequestAtATime('withdraw'), async (req, res) => {
   try {
     const seller = await getSellerFromReq(req);
     if (!seller) return res.status(404).json({ message: 'Seller not found. Please log in again.' });
@@ -367,6 +392,15 @@ router.post('/wallet/withdraw', authSellerOrAdmin, async (req, res) => {
         $inc: { 'wallet.balance': amt, 'wallet.pendingWithdrawal': -amt },
       }).catch(() => {});
       throw createErr;
+    }
+
+    // Another copy of the server may have taken a request for this store at the same moment:
+    // only the oldest pending one stays, this one is undone and the money goes back.
+    const pendingNow = await Withdrawal.find({ seller: seller._id, type: 'withdrawal', status: 'pending' }).sort({ createdAt: 1, _id: 1 }).select('_id').lean();
+    if (pendingNow.length > 1 && String(pendingNow[0]._id) !== String(reqDoc._id)) {
+      await Withdrawal.deleteOne({ _id: reqDoc._id, status: 'pending' });
+      await Seller.findByIdAndUpdate(seller._id, { $inc: { 'wallet.balance': amt, 'wallet.pendingWithdrawal': -amt } });
+      return res.status(400).json({ message: 'Aapki ek withdrawal request already pending hai.' });
     }
 
     // Auto-send chat notification

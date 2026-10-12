@@ -213,27 +213,53 @@ export function authSellerOrAdmin(req, res, next) {
   return sellerOrAdmin(req, res, next, { missing: 'Authorization required', wrongType: 'Unauthorized' });
 }
 
-// Customer auth (required)
-export function authUser(req, res, next) {
-  const token = bearer(req);
-  if (!token) return res.status(401).json({ message: 'Please login first' });
+async function loadUserAccount(id) {
+  if (!isId(id)) return null;
+  return cached('user', id, async () => {
+    const u = await mongoose.connection.collection('users').findOne({ _id: oid(id) }, { projection: { active: 1, pwdAt: 1 } });
+    if (!u) return null;
+    return { id: String(u._id), active: u.active !== false, pwdAt: u.pwdAt || null };
+  });
+}
+
+/**
+ * Is this customer login still good? A deleted or switched-off account, or a login made before
+ * the password was changed, is not. If the database cannot be asked right now the token alone
+ * decides (exactly as before), so a short database hiccup never signs customers out.
+ */
+async function customerLoginOk(payload) {
   try {
-    const payload = jwt.verify(token, jwtSecret());
-    if (payload.t !== 'user') return res.status(401).json({ message: 'Please login first' });
-    req.user = payload;
-    next();
+    const account = await loadUserAccount(payload.id);
+    if (!account || !account.active) return false;
+    return !olderThanPassword(payload, account.pwdAt);
   } catch {
-    return res.status(401).json({ message: 'Session expired, please login again' });
+    return true;
   }
 }
 
+// Customer auth (required)
+export async function authUser(req, res, next) {
+  const token = bearer(req);
+  if (!token) return res.status(401).json({ message: 'Please login first' });
+  let payload;
+  try {
+    payload = jwt.verify(token, jwtSecret());
+  } catch {
+    return res.status(401).json({ message: 'Session expired, please login again' });
+  }
+  if (payload.t !== 'user') return res.status(401).json({ message: 'Please login first' });
+  if (!(await customerLoginOk(payload))) return res.status(401).json({ message: 'Session expired, please login again' });
+  req.user = payload;
+  next();
+}
+
 // Customer auth (optional — attaches req.user if a valid token is present)
-export function softUser(req, res, next) {
+export async function softUser(req, res, next) {
   const token = bearer(req);
   if (token) {
     try {
       const payload = jwt.verify(token, jwtSecret());
-      if (payload.t === 'user') req.user = payload;
+      if (payload.t === 'user' && (await customerLoginOk(payload))) req.user = payload;
     } catch {
       /* ignore */
     }

@@ -7,7 +7,7 @@ import { authAdmin, authSeller, authSellerOrAdmin } from '../middleware/auth.js'
 import { notify } from '../utils/notify.js';
 import { sendPush } from '../utils/push.js';
 import { audit } from '../utils/audit.js';
-import { deleteAttachmentFiles, attachmentLocation } from '../services/uploads.js';
+import { deleteAttachmentFiles, attachmentLocation, isStoredUpload } from '../services/uploads.js';
 import { asText } from '../middleware/sanitize.js';
 import { limit } from '../utils/rateLimit.js';
 import { adminRoom } from '../utils/permissions.js';
@@ -181,7 +181,11 @@ router.get('/seller/thread', authSeller, async (req, res) => {
 router.post('/seller/send', authSeller, async (req, res) => {
   try {
     const sellerId = req.seller.id;
-    const { text, attachment, attachmentType, attachmentName, attachmentSize, replyTo } = req.body;
+    const { attachmentType, attachmentName, attachmentSize, replyTo } = req.body;
+    const text = asText(req.body?.text, 20000);
+    // a seller's attachment must be a file uploaded here (an admin acting here is trusted as before)
+    const sentAttachment = asText(req.body?.attachment, 2000) || null;
+    const attachment = req.admin || isStoredUpload(sentAttachment) ? sentAttachment : null;
     const cleanText = (text || '').trim();
     if (!cleanText && !attachment) return res.status(400).json({ message: 'Message or attachment is required' });
 
@@ -1130,7 +1134,8 @@ router.post('/guest/send', guestSendLimit, async (req, res) => {
     const name = asText(req.body?.name, 80).trim();
     const email = asText(req.body?.email, 120).trim();
     const phone = asText(req.body?.phone, 40).trim();
-    const attachment = asText(req.body?.attachment, 2000) || null;
+    const rawAttachment = asText(req.body?.attachment, 2000);
+    const attachment = isStoredUpload(rawAttachment) ? rawAttachment : null;
     const attachmentType = ['image', 'pdf'].includes(req.body?.attachmentType) ? req.body.attachmentType : null;
     const attachmentName = asText(req.body?.attachmentName, 200);
     const attachmentSize = Number(req.body?.attachmentSize) > 0 ? Number(req.body.attachmentSize) : 0;

@@ -86,6 +86,19 @@ export function attachmentLocation(url) {
 }
 
 /**
+ * Is this a file stored by this app (UploadThing, or /uploads on this server)? Chat attachments
+ * from guests, customers and sellers must be: any other link (a look-alike login page, a tracking
+ * address) would otherwise open inside the admin's chat as if it were a document.
+ */
+export function isStoredUpload(url) {
+  if (!url || typeof url !== 'string') return false;
+  const raw = url.trim();
+  if (/^\/(?:api\/)?uploads\/[A-Za-z0-9._-]+$/.test(raw)) return true;
+  if (!/^https:\/\//i.test(raw)) return false;
+  return attachmentLocation(raw)?.kind === 'uploadthing';
+}
+
+/**
  * Delete the files behind a list of chat attachment URLs so the storage space is really freed.
  * Never throws: a chat must still clear even if the storage service is having a bad moment.
  * @returns {{ requested: number, deleted: number, failed: number, error: string }}

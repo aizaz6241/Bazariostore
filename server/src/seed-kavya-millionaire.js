@@ -6,6 +6,7 @@ try {
 
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 const MONGO_URI =
   process.env.MONGO_URI ||
@@ -39,7 +40,9 @@ async function seed() {
   });
 
   let sellerId;
-  const passwordPlain = 'KavyaPatel@2026';
+  // No password is written in the code (this repository is public). A NEW demo account gets
+  // KAVYA_PASSWORD, or a random one that is printed once; an existing account keeps its password.
+  const passwordPlain = (process.env.KAVYA_PASSWORD || '').trim() || crypto.randomBytes(12).toString('base64url');
   const passwordHash = await bcrypt.hash(passwordPlain, 10);
 
   if (existingKavya) {
@@ -53,7 +56,6 @@ async function seed() {
           storeName: 'Kavya Heritage & Couture',
           ownerName: 'Kavya Patel',
           email: 'kavya.patel@bazario.com',
-          passwordHash,
           phone: '+91 98204 77123',
           storeSlug: 'kavya-heritage-couture',
           logo: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
@@ -273,6 +275,7 @@ async function seed() {
     };
 
     await db.collection('sellers').insertOne(newSeller);
+    if (!process.env.KAVYA_PASSWORD) console.log(`🔑 New demo seller kavya.patel@bazario.com — password (shown once): ${passwordPlain}`);
     console.log(`✅ Created new Seller: ${newSeller.storeName} (${newSeller.ownerName}, ID: ${sellerId})`);
   }
 

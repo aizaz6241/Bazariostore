@@ -30,6 +30,7 @@ import { verifySocketToken } from './middleware/auth.js';
 import { attachPortalRealtime } from './realtime/portalRealtime.js';
 import { sanitizeRequest, asText } from './middleware/sanitize.js';
 import { limit } from './utils/rateLimit.js';
+import { isStoredUpload } from './services/uploads.js';
 
 import productRoutes from './routes/products.js';
 import categoryRoutes from './routes/categories.js';
@@ -413,7 +414,8 @@ io.on('connection', (socket) => {
     try {
       const { sellerId, attachment: rawAttachment } = payload || {};
       const clean = asText(payload?.text, 4000).trim().slice(0, 2000);
-      const attachment = asText(rawAttachment, 2000) || null;
+      const sentAttachment = asText(rawAttachment, 2000);
+      const attachment = socket.data?.isAdmin || isStoredUpload(sentAttachment) ? sentAttachment || null : null;
       if (!sellerId || !mongoose.Types.ObjectId.isValid(String(sellerId)) || (!clean && !attachment)) return;
       if (tooFast()) return cb?.({ error: 'You are sending messages too fast. Please wait a moment.' });
 
@@ -494,7 +496,8 @@ io.on('connection', (socket) => {
       // Whoever writes on this channel is a customer. The browser cannot choose to be "admin".
       const sender = 'customer';
       const clean = asText(payload?.text, 4000).trim().slice(0, 2000);
-      const attachment = asText(payload?.attachment, 2000) || null;
+      const sentAttachment = asText(payload?.attachment, 2000);
+      const attachment = isStoredUpload(sentAttachment) ? sentAttachment : null;
       const name = asText(payload?.name, 80).trim();
       const email = asText(payload?.email, 120).trim();
       const phone = asText(payload?.phone, 40).trim();

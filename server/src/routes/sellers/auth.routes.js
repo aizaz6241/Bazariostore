@@ -291,10 +291,10 @@ router.post('/login', async (req, res) => {
     const blocked = loginGuard.check(req, email);
     if (blocked.blocked) return res.status(429).json({ message: blocked.message });
 
+    // One known second address of the demo store. Before, ANY email containing "kavya" and "patel"
+    // opened that account, so each made-up address got its own wrong-password allowance.
     const searchEmails = [email];
-    if (email.includes('kavya') && email.includes('patel')) {
-      searchEmails.push('kavya.patel@bazario.com');
-    }
+    if (email === 'kavya.patel@gmail.com') searchEmails.push('kavya.patel@bazario.com');
 
     const seller = await Seller.findOne({
       $or: searchEmails.flatMap((e) => [
@@ -358,6 +358,22 @@ router.get('/me', authSeller, async (req, res) => {
   }
 });
 
+// The payout details as plain, sorted text, leaving out empty / switched-off values (so the same
+// details saved again compare equal)
+function payoutFingerprint(seller) {
+  const plain = (v) => {
+    if (v && typeof v.toObject === 'function') v = v.toObject();
+    if (Array.isArray(v)) return v.map(plain);
+    if (v && typeof v === 'object' && !(v instanceof Date)) {
+      const out = {};
+      for (const k of Object.keys(v).sort()) if (k !== '_id' && v[k] !== '' && v[k] != null && v[k] !== false) out[k] = plain(v[k]);
+      return out;
+    }
+    return v;
+  };
+  return JSON.stringify([plain(seller.bankDetails || {}), plain(seller.withdrawalMethods || {})]);
+}
+
 // PUT /api/sellers/me
 router.put('/me', authSeller, async (req, res) => {
   try {
@@ -365,6 +381,16 @@ router.put('/me', authSeller, async (req, res) => {
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
     const { storeName, ownerName, phone, description, address, bankDetails, withdrawalMethods, logo, banner } = req.body;
+    if (storeName && typeof storeName === 'string' && storeName.trim().toLowerCase() !== String(seller.storeName || '').trim().toLowerCase()) {
+      // Older products and orders are matched to their store partly by the store NAME, so taking
+      // the exact name of another store would hand that store's items (and payouts) to this one.
+      const taken = await Seller.findOne({
+        _id: { $ne: seller._id },
+        storeName: { $regex: `^${storeName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
+      }).select('_id').lean();
+      if (taken) return res.status(400).json({ message: 'Another store already uses this name. Please choose a different store name.' });
+    }
+    const payoutBefore = payoutFingerprint(seller);
     if (storeName) seller.storeName = storeName;
     if (ownerName) seller.ownerName = ownerName;
     if (phone !== undefined) seller.phone = phone;
@@ -391,6 +417,21 @@ router.put('/me', authSeller, async (req, res) => {
     }
 
     await seller.save();
+
+    // Where payouts are sent is the first thing someone changes after taking over an account:
+    // the admins are told every time it changes, so a stranger's account number is noticed.
+    // compared as saved in the database (the same details saved again are not a change)
+    const savedNow = await Seller.findById(seller._id).select('bankDetails withdrawalMethods').lean();
+    if (savedNow && payoutFingerprint(savedNow) !== payoutBefore) {
+      notify(req.app, {
+        recipientType: 'admin',
+        type: 'security',
+        title: '🔐 Seller changed payout details',
+        body: `${seller.storeName} (${seller.email}) changed their bank / UPI / wallet payout details. Check before approving the next withdrawal.`,
+        link: '/admin/sellers',
+      });
+    }
+
     const safeSeller = seller.toObject();
     delete safeSeller.passwordHash;
     res.json(safeSeller);

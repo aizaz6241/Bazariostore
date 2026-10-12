@@ -65,5 +65,6 @@ npm run seed
 
 1. **Atlas password rotate karein** (Database Access → Edit → new password) aur nayi URI Render + local `.env` dono mein update karein — purana password chat mein share hua tha.
 2. **UploadThing token bhi regenerate** kar lein (uploadthing.com dashboard) — same wajah.
-3. **Admin password change karein** — `admin123` sirf development ke liye tha. Render env var + seed ke baad Admin panel → Staff se bhi manage kar sakte hain.
+3. **Admin password change karein** — seed ab koi fixed password nahi rakhta: naye admin ko `ADMIN_PASSWORD` (ya ek random password jo seed ek dafa print karta hai) milta hai. Purane seed wale admin / demo seller accounts ka password Admin panel → Staff / Sellers se zaroor badlein.
+5. **Yeh env vars server par set rakhein:** `JWT_SECRET` (lamba random), `SELLER_PASSWORD_KEY` (16+ characters), `CORS_ORIGINS` (apne store / admin domains, comma se alag). Render ke ilawa kisi aur host par jo proxy visitor ka IP header likhta hai, uska naam `CLIENT_IP_HEADER` mein dein.
 4. Local PC ki **clock sync karein** (Settings → Time & Language → Sync now) phir local `.env` se `&tlsAllowInvalidCertificates=true` hata dein.

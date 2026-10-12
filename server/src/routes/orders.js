@@ -277,7 +277,11 @@ router.get('/track', trackLimit, async (req, res) => {
     if (!order || !samePhone(order)) {
       return res.status(404).json({ message: 'No order found with that order number and phone' });
     }
-    return res.json(publicOrder(order));
+    // The tracking page needs the delivery address, not the customer's email: it is left out, as
+    // only a phone number (which others may know) is asked for here.
+    const out = publicOrder(order);
+    if (out.contact) out.contact = { ...out.contact, email: undefined };
+    return res.json(out);
   }
 
   // phone-only: orders linked to this phone. Looked up by the number itself (any spacing or
@@ -286,7 +290,8 @@ router.get('/track', trackLimit, async (req, res) => {
   const candidates = await Order.find({ 'contact.phone': { $regex: loose } })
     .select('orderNumber createdAt status total items.qty items.name contact.phone')
     .sort({ createdAt: -1 })
-    .limit(300);
+    .limit(300)
+    .maxTimeMS(5000);
   const mine = candidates.filter(samePhone).slice(0, 25);
   res.json({
     orders: mine.map((o) => ({

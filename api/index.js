@@ -8,7 +8,7 @@ export default async function handler(req, res) {
     if (!res.headersSent) {
       return res.status(503).json({
         ok: false,
-        message: `Database Connection Failed: ${err.message}. Please check MongoDB Atlas username/password in Vercel Environment Variables.`,
+        message: 'The store is temporarily unavailable. Please try again in a moment.',
       });
     }
   }

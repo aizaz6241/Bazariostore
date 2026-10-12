@@ -72,7 +72,7 @@ router.get('/slug/:slug', async (req, res) => {
   const product = await Product.findOne({ slug: req.params.slug, active: true })
     .select('-costs') // what the product costs to buy / pack is not for visitors
     .populate('category', 'name slug')
-    .populate('seller', 'storeName storeSlug rating numReviews verified logo description address')
+    .populate('seller', 'storeName storeSlug rating numReviews verified logo description address.city address.state address.country')
     .lean();
   if (!product) return res.status(404).json({ message: 'Product not found' });
 
