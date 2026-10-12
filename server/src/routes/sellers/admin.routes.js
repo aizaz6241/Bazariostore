@@ -118,6 +118,234 @@ router.get('/team/members', authAdmin('sellers'), async (req, res) => {
   }
 });
 
+// GET /api/sellers/analytics/overview?scope=client|all&days=30
+// Numbers for the charts on top of the admin Sellers page: wallet totals, pending orders (real
+// money still in flight), wallet movements per day, sales trend and the top stores.
+// scope=client (default) leaves out test accounts and previous-store sellers, so the totals are real money.
+const OPEN_ORDER_EXCLUDE = ['delivered', 'cancelled', 'refunded'];
+const WALLET_MOVE_TYPES = ['deposit', 'withdrawal', 'order_processing_lock', 'order_delivered_release', 'order_cancelled_release', 'adjustment'];
+
+router.get('/analytics/overview', authAdmin('sellers'), async (req, res) => {
+  try {
+    const scope = req.query.scope === 'all' ? 'all' : 'client';
+    const days = Math.min(90, Math.max(7, parseInt(req.query.days, 10) || 30));
+    const now = new Date();
+    const since = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (days - 1)));
+
+    const sellerFilter = { status: { $ne: 'pending_approval' } };
+    if (scope === 'client') {
+      sellerFilter.isTestAccount = { $ne: true };
+      sellerFilter.isPreviousStoreSeller = { $ne: true };
+    }
+
+    const sellers = await Seller.find(sellerFilter).select('storeName status wallet accountHealth warning createdAt').lean();
+    const sellerIds = sellers.map((s) => s._id);
+    const inScope = new Map(sellers.map((s) => [String(s._id), s]));
+
+    const [orders, moves] = await Promise.all([
+      Order.find({
+        $or: [{ createdAt: { $gte: since } }, { status: { $nin: OPEN_ORDER_EXCLUDE } }],
+        $and: [{ $or: [{ seller: { $in: sellerIds } }, { 'items.seller': { $in: sellerIds } }] }],
+      })
+        .select('status seller createdAt items.seller items.price items.qty items.lockedAmount items.processingLocked items.profitAmount')
+        .lean(),
+      Withdrawal.find({
+        seller: { $in: sellerIds },
+        type: { $in: WALLET_MOVE_TYPES },
+        $or: [{ createdAt: { $gte: since } }, { processedAt: { $gte: since } }, { status: { $in: ['pending', 'processing'] } }],
+      })
+        .select('type status amount approvedAmount createdAt processedAt seller')
+        .lean(),
+    ]);
+
+    // ── Day buckets for the trend charts
+    const dayKey = (d) => new Date(d).toISOString().slice(0, 10);
+    const dayList = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(since.getTime() + i * 86400000);
+      dayList.push({ key: dayKey(d), label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }) });
+    }
+    const salesByDay = new Map(dayList.map((d) => [d.key, { label: d.label, sales: 0, orders: 0 }]));
+    const movesByDay = new Map(
+      dayList.map((d) => [d.key, { label: d.label, deposits: 0, withdrawals: 0, locked: 0, released: 0, refunded: 0, adjustments: 0 }])
+    );
+
+    // ── Orders: pending value per status, age buckets, per-store numbers
+    const round = (n) => Math.round((Number(n) || 0) * 100) / 100;
+    const pendingByStatus = new Map();
+    const aging = [
+      { label: '< 24h', maxH: 24, count: 0, amount: 0 },
+      { label: '1–3 days', maxH: 72, count: 0, amount: 0 },
+      { label: '3–7 days', maxH: 168, count: 0, amount: 0 },
+      { label: '7+ days', maxH: Infinity, count: 0, amount: 0 },
+    ];
+    const perStore = new Map();
+    const storeStat = (id) => {
+      let st = perStore.get(id);
+      if (!st) {
+        st = { sales: 0, orders: 0, pendingAmount: 0, pendingOrders: 0 };
+        perStore.set(id, st);
+      }
+      return st;
+    };
+    const pending = { orders: 0, amount: 0, locked: 0, expectedProfit: 0 };
+
+    orders.forEach((ord) => {
+      const ordSeller = ord.seller ? String(ord.seller) : '';
+      const st = (ord.status || '').toLowerCase();
+      const isOpen = !OPEN_ORDER_EXCLUDE.includes(st);
+      const inWindow = new Date(ord.createdAt) >= since;
+      const ageH = (now - new Date(ord.createdAt)) / 3600000;
+
+      // value of this order that belongs to each in-scope store
+      const shares = new Map();
+      (ord.items || []).forEach((it) => {
+        const sid = it.seller ? String(it.seller) : ordSeller;
+        if (!inScope.has(sid)) return;
+        const sh = shares.get(sid) || { value: 0, locked: 0, profit: 0 };
+        sh.value += (it.price || 0) * (it.qty || 1);
+        if (it.processingLocked) {
+          sh.locked += it.lockedAmount || 0;
+          sh.profit += it.profitAmount || 0;
+        }
+        shares.set(sid, sh);
+      });
+      if (!shares.size) return;
+
+      let orderValue = 0;
+      shares.forEach((sh, sid) => {
+        orderValue += sh.value;
+        const ss = storeStat(sid);
+        if (inWindow && st !== 'cancelled' && st !== 'refunded') {
+          ss.sales += sh.value;
+          ss.orders += 1;
+        }
+        if (isOpen) {
+          ss.pendingAmount += sh.value;
+          ss.pendingOrders += 1;
+          pending.locked += sh.locked;
+          pending.expectedProfit += sh.profit;
+        }
+      });
+
+      if (inWindow && st !== 'cancelled' && st !== 'refunded') {
+        const day = salesByDay.get(dayKey(ord.createdAt));
+        if (day) {
+          day.sales += orderValue;
+          day.orders += 1;
+        }
+      }
+
+      if (isOpen) {
+        pending.orders += 1;
+        pending.amount += orderValue;
+        const ps = pendingByStatus.get(st) || { status: st, count: 0, amount: 0 };
+        ps.count += 1;
+        ps.amount += orderValue;
+        pendingByStatus.set(st, ps);
+        const bucket = aging.find((b) => ageH < b.maxH);
+        bucket.count += 1;
+        bucket.amount += orderValue;
+      }
+    });
+
+    // ── Wallet movements: settled lines per day, open requests separately
+    const requests = { deposits: { count: 0, amount: 0 }, withdrawals: { count: 0, amount: 0 } };
+    const totalsInWindow = { deposits: 0, withdrawals: 0, locked: 0, released: 0, refunded: 0, adjustments: 0 };
+    const moveField = {
+      deposit: 'deposits',
+      withdrawal: 'withdrawals',
+      order_processing_lock: 'locked',
+      order_delivered_release: 'released',
+      order_cancelled_release: 'refunded',
+      adjustment: 'adjustments',
+    };
+    moves.forEach((m) => {
+      const amt = m.approvedAmount !== null && m.approvedAmount !== undefined ? Number(m.approvedAmount) || 0 : Number(m.amount) || 0;
+      if (m.status === 'pending' || m.status === 'processing') {
+        if (m.type === 'deposit') {
+          requests.deposits.count += 1;
+          requests.deposits.amount += amt;
+        } else if (m.type === 'withdrawal') {
+          requests.withdrawals.count += 1;
+          requests.withdrawals.amount += amt;
+        }
+        return;
+      }
+      if (!['approved', 'completed'].includes(m.status)) return;
+      const when = m.processedAt || m.createdAt;
+      if (new Date(when) < since) return;
+      const field = moveField[m.type];
+      const day = movesByDay.get(dayKey(when));
+      if (day) day[field] += amt;
+      totalsInWindow[field] += amt;
+    });
+
+    // ── Wallet totals and seller mix
+    const wallet = { balance: 0, processingFund: 0, totalEarned: 0, totalProfitEarned: 0, totalDeposited: 0, totalWithdrawn: 0, securityDeposit: 0 };
+    const health = { healthy: 0, watch: 0, atRisk: 0, critical: 0 };
+    const status = { active: 0, frozen: 0, suspended: 0, warned: 0 };
+    sellers.forEach((s) => {
+      Object.keys(wallet).forEach((k) => {
+        wallet[k] += Number(s.wallet?.[k]) || 0;
+      });
+      const score = s.accountHealth?.score ?? 100;
+      if (score >= 80) health.healthy += 1;
+      else if (score >= 31) health.watch += 1;
+      else if (score > 20) health.atRisk += 1;
+      else health.critical += 1;
+      if (status[s.status] !== undefined) status[s.status] += 1;
+      if (s.warning?.active) status.warned += 1;
+    });
+
+    const storeRows = sellers.map((s) => {
+      const st = perStore.get(String(s._id)) || { sales: 0, orders: 0, pendingAmount: 0, pendingOrders: 0 };
+      return {
+        _id: s._id,
+        storeName: s.storeName || 'Store',
+        sales: round(st.sales),
+        orders: st.orders,
+        pendingAmount: round(st.pendingAmount),
+        pendingOrders: st.pendingOrders,
+        balance: round(s.wallet?.balance),
+        processingFund: round(s.wallet?.processingFund),
+      };
+    });
+    const top = (key) =>
+      [...storeRows]
+        .filter((r) => r[key] > 0)
+        .sort((a, b) => b[key] - a[key])
+        .slice(0, 8);
+
+    const roundObj = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, round(v)]));
+
+    res.json({
+      scope,
+      days,
+      sellerCount: sellers.length,
+      newSellers: sellers.filter((s) => new Date(s.createdAt) >= since).length,
+      wallet: roundObj(wallet),
+      pending: roundObj(pending),
+      pendingByStatus: [...pendingByStatus.values()].map((p) => ({ ...p, amount: round(p.amount) })).sort((a, b) => b.amount - a.amount),
+      aging: aging.map(({ label, count, amount }) => ({ label, count, amount: round(amount) })),
+      requests: {
+        deposits: { ...requests.deposits, amount: round(requests.deposits.amount) },
+        withdrawals: { ...requests.withdrawals, amount: round(requests.withdrawals.amount) },
+      },
+      moveTotals: roundObj(totalsInWindow),
+      movesTrend: [...movesByDay.values()].map((d) => ({ ...roundObj({ ...d, label: 0 }), label: d.label })),
+      salesTrend: [...salesByDay.values()].map((d) => ({ label: d.label, sales: round(d.sales), orders: d.orders })),
+      health,
+      status,
+      topBySales: top('sales'),
+      topByPending: top('pendingAmount'),
+      topByBalance: top('balance'),
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // GET /api/sellers (Admin list all sellers)
 router.get('/', authAdmin('sellers'), async (req, res) => {
   try {
