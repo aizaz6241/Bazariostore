@@ -2022,7 +2022,10 @@ router.patch('/:id/toggle-previous-store', authAdmin('sellers'), async (req, res
 router.post('/:id/targets', authAdmin('sellers'), async (req, res) => {
   try {
     const { title, targetOrders, targetOrderCount, bonusAmount, durationDays, adminNote, description } = req.body || {};
-    const finalOrderCount = Math.floor(Number(targetOrders || targetOrderCount || 0));
+    const rawOrders = Number(targetOrders || targetOrderCount || 0);
+    // whole orders only (8.5 used to become 8 without a word)
+    if (!Number.isInteger(rawOrders)) return res.status(400).json({ message: 'Target orders must be a whole number (e.g. 8 or 10)' });
+    const finalOrderCount = rawOrders;
     const finalBonus = Math.round(Number(bonusAmount || 0) * 100) / 100;
     const days = durationDays === null || durationDays === undefined || durationDays === '' ? 0 : Number(durationDays);
 
@@ -2034,6 +2037,12 @@ router.post('/:id/targets', authAdmin('sellers'), async (req, res) => {
     }
     if (!Number.isFinite(finalBonus) || finalBonus <= 0) {
       return res.status(400).json({ message: 'Bonus amount must be more than 0' });
+    }
+    // the title must not promise another number of orders than the goal (a seller was sent
+    // "Process 10 Orders Milestone" with the goal "Deliver 8 Orders")
+    const namedOrders = [...String(title || '').matchAll(/(\d+)\s*(?:delivered\s+)?orders?\b/gi)].map((m) => Number(m[1]));
+    if (namedOrders.length && !namedOrders.includes(finalOrderCount)) {
+      return res.status(400).json({ message: `The title mentions ${namedOrders.join(', ')} orders but the goal is ${finalOrderCount} delivered orders. Make them match.` });
     }
     if (!Number.isFinite(days) || days < 0) {
       return res.status(400).json({ message: 'Duration must be a positive number of days (or empty for no expiry)' });

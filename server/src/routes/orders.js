@@ -13,7 +13,7 @@ import { initiatePayment, getPaymentConfig, paymentMethodUsable } from '../servi
 import { audit } from '../utils/audit.js';
 import { notify } from '../utils/notify.js';
 import { lockSellerOrderFund, releaseSellerOrderDelivered, releaseSellerOrderCancelled } from './sellers.js';
-import { handleStatusUpdate } from './sellers/orders.routes.js';
+import { handleStatusUpdate, undoTargetProgressForOrder } from './sellers/orders.routes.js';
 import { adjustTreasuryStock } from '../utils/stockSync.js';
 import { scheduleNextOrderStep } from '../services/orderProgressionService.js';
 import { restockOrder, settleDeliveredStock, reinstateOrderStock, checkStockForReinstate } from '../utils/orderStock.js';
@@ -719,6 +719,8 @@ const orderStatusHandler = async (req, res) => {
   }
   order.statusHistory.push({ status, note: note || '', by });
   await order.save();
+  // a refunded (delivered) order no longer counts toward the seller's running targets
+  if (status === 'refunded' && prev !== 'refunded') await undoTargetProgressForOrder(req.app, order);
   await audit(req, 'order_updated', 'order', order._id, { orderNumber: order.orderNumber, from: prev, to: status, note: note || '' });
 
   // Re-populate order before broadcasting

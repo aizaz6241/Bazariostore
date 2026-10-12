@@ -3,7 +3,7 @@ import Refund, { REFUND_STATUSES } from '../models/Refund.js';
 import Order from '../models/Order.js';
 import Expense from '../models/Expense.js';
 import { restockOrder } from './orders.js';
-import { releaseSellerOrderCancelled } from './sellers/orders.routes.js';
+import { releaseSellerOrderCancelled, undoTargetProgressForOrder } from './sellers/orders.routes.js';
 import { authAdmin } from '../middleware/auth.js';
 import { audit } from '../utils/audit.js';
 import { notify } from '../utils/notify.js';
@@ -90,6 +90,8 @@ router.patch('/:id/status', authAdmin('refunds'), async (req, res) => {
       }
       await restockOrder(order, 'refund_restock', req.admin.name);
       await order.save();
+      // a refunded (delivered) order no longer counts toward the seller's running targets
+      await undoTargetProgressForOrder(req.app, order);
     }
     await Expense.create({ type: 'refund', amount: refund.amount, note: `Refund ${refund.orderNumber}`, createdBy: req.admin.name });
     notify(req.app, { type: 'refund', title: 'Refund payment returned', body: `${refund.orderNumber} — $${refund.amount}`, link: '/admin/refunds' });

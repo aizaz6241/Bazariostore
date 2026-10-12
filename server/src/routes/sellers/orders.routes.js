@@ -199,36 +199,29 @@ async function advanceSellerTargets(app, sellerId) {
 
   let touched = false;
   const nowTime = Date.now();
-  for (let i = 0; i < seller.targets.length; i += 1) {
-    const target = seller.targets[i];
+  // Every step finds the target by its id (positional "$"), never by its place in the list: an
+  // admin adding or removing a target at the same moment shifts the places, and the delivery was
+  // then silently not counted.
+  const thisTarget = (target) => ({ _id: seller._id, targets: { $elemMatch: { _id: target._id, status: 'active' } } });
+  for (const target of seller.targets) {
     if (target.status !== 'active') continue;
 
     // past its deadline: the target closes as "expired" and this delivery no longer counts for it
     if (target.expiresAt && new Date(target.expiresAt).getTime() < nowTime) {
-      const closed = await Seller.updateOne(
-        { _id: seller._id, [`targets.${i}._id`]: target._id, [`targets.${i}.status`]: 'active' },
-        { $set: { [`targets.${i}.status`]: 'expired' } }
-      );
+      const closed = await Seller.updateOne(thisTarget(target), { $set: { 'targets.$.status': 'expired' } });
       if (closed.modifiedCount) touched = true;
       continue;
     }
 
     // count this delivery (in the database, so two deliveries at once are both counted)
-    const after = await Seller.findOneAndUpdate(
-      { _id: seller._id, [`targets.${i}._id`]: target._id, [`targets.${i}.status`]: 'active' },
-      { $inc: { [`targets.${i}.currentOrders`]: 1 } },
-      { new: true, projection: { targets: 1 } }
-    ).lean();
+    const after = await Seller.findOneAndUpdate(thisTarget(target), { $inc: { 'targets.$.currentOrders': 1 } }, { new: true, projection: { targets: 1 } }).lean();
     if (!after) continue;
     touched = true;
-    const now = after.targets[i];
-    if ((now.currentOrders || 0) < (now.targetOrders || 0)) continue;
+    const now = (after.targets || []).find((t) => String(t._id) === String(target._id));
+    if (!now || (now.currentOrders || 0) < (now.targetOrders || 0)) continue;
 
     // reached: only the request that flips it to "completed" pays the bonus
-    const done = await Seller.updateOne(
-      { _id: seller._id, [`targets.${i}._id`]: target._id, [`targets.${i}.status`]: 'active' },
-      { $set: { [`targets.${i}.status`]: 'completed', [`targets.${i}.completedAt`]: new Date() } }
-    );
+    const done = await Seller.updateOne(thisTarget(target), { $set: { 'targets.$.status': 'completed', 'targets.$.completedAt': new Date() } });
     if (!done.modifiedCount) continue;
 
     const bonusAmt = Number(target.bonusAmount) || 0;
@@ -300,6 +293,40 @@ async function advanceSellerTargets(app, sellerId) {
   if (touched) {
     const latest = await Seller.findById(sellerId).select('targets').lean();
     app?.get('io')?.to(`seller:${sellerId}`).emit('seller:targets_update', { targets: latest?.targets || [] });
+  }
+}
+
+/**
+ * A delivered order was refunded: it no longer counts toward the seller's RUNNING targets (those
+ * that were already open when it was delivered). A bonus already paid for a completed target
+ * stays paid. Once per order (marked on the order), whatever path the refund takes.
+ */
+export async function undoTargetProgressForOrder(app, order) {
+  if (!order?._id) return;
+  const claimed = await Order.updateOne({ _id: order._id, targetProgressUndone: { $ne: true } }, { $set: { targetProgressUndone: true } });
+  if (!claimed.modifiedCount) return;
+  const fresh = await Order.findById(order._id).select('items.seller items.payoutSettled items.settledAt').lean();
+  const deliveredAt = new Map();
+  for (const it of fresh?.items || []) {
+    if (!it.payoutSettled || !it.seller) continue;
+    const sid = String(it.seller);
+    const t = it.settledAt ? new Date(it.settledAt) : new Date();
+    if (!deliveredAt.has(sid) || t > deliveredAt.get(sid)) deliveredAt.set(sid, t);
+  }
+  for (const [sid, at] of deliveredAt) {
+    try {
+      const r = await Seller.updateOne(
+        { _id: sid },
+        { $inc: { 'targets.$[t].currentOrders': -1 } },
+        { arrayFilters: [{ 't.status': 'active', 't.createdAt': { $lte: at }, 't.currentOrders': { $gt: 0 } }] }
+      );
+      if (r.modifiedCount) {
+        const latest = await Seller.findById(sid).select('targets').lean();
+        app?.get('io')?.to(`seller:${sid}`).emit('seller:targets_update', { targets: latest?.targets || [] });
+      }
+    } catch (e) {
+      console.error('[targets] could not take back the progress of a refunded order:', e.message);
+    }
   }
 }
 

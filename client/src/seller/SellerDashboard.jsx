@@ -487,7 +487,8 @@ export default function SellerDashboard() {
                       }}
                     />
                   </div>
-                  {isCompleted && tgt.bonusCredited && (
+                  {/* the bonus is paid in the same step that marks the target completed */}
+                  {tgt.status === 'completed' && (
                     <small style={{ display: 'block', marginTop: 6, color: '#166534', fontWeight: 700, fontSize: 11 }}>
                       ✅ Bonus {formatMoney(tgt.bonusAmount)} credited directly to Merchant Wallet!
                     </small>
