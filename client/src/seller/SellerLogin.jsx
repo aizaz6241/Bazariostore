@@ -195,6 +195,37 @@ export default function SellerLogin() {
     setEmailNotice(answer ? { code: answer.code, message: answer.message, application: answer.application } : null);
   };
 
+  // ─── Affiliate code: checked live while it is typed (optional, but a given code must exist) ───
+  const [affCheck, setAffCheck] = useState({ state: 'idle', message: '' }); // idle | checking | valid | invalid | error
+  const checkAffiliate = async (raw) => {
+    const code = String(raw || '').replace(/\s+/g, '').toUpperCase();
+    if (!code) return { state: 'idle', message: '' };
+    try {
+      const res = await api(`/sellers/affiliate/validate?code=${encodeURIComponent(code)}`, { timeout: 15000 });
+      return res?.valid ? { state: 'valid', message: res.message || 'Valid affiliate code' } : { state: 'invalid', message: res?.message || 'This affiliate code does not exist.' };
+    } catch {
+      return { state: 'error', message: 'Could not check the code right now. It will be checked when you submit.' };
+    }
+  };
+  useEffect(() => {
+    if (mode !== 'register') return undefined;
+    const code = regForm.referralCode;
+    if (!String(code || '').trim()) {
+      setAffCheck({ state: 'idle', message: '' });
+      return undefined;
+    }
+    setAffCheck({ state: 'checking', message: '' });
+    let alive = true;
+    const t = setTimeout(async () => {
+      const r = await checkAffiliate(code);
+      if (alive) setAffCheck(r);
+    }, 450);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [regForm.referralCode, mode]);
+
   const handleRegister = async (e) => {
     e.preventDefault();
     setErr('');
@@ -208,6 +239,14 @@ export default function SellerLogin() {
     if (JSON.stringify(regForm).length > 4.6 * 1024 * 1024) {
       setErr('The documents are too large together. Please upload smaller photos (or photos instead of PDFs).');
       return;
+    }
+    if (String(regForm.referralCode || '').trim()) {
+      const aff = affCheck.state === 'valid' || affCheck.state === 'invalid' ? affCheck : await checkAffiliate(regForm.referralCode);
+      setAffCheck(aff);
+      if (aff.state === 'invalid') {
+        setErr(aff.message + ' (You can also leave the affiliate code empty.)');
+        return;
+      }
     }
     setLoading(true);
     // Already an account / application for this email: say so, do not upload the documents again
@@ -261,6 +300,9 @@ export default function SellerLogin() {
         setErr(
           'The connection was too slow to get the answer. Your registration may already have been received: wait one minute, then try to Sign In with this email. If it says "pending admin approval", it worked — no need to register again.'
         );
+      } else if (e.code === 'INVALID_AFFILIATE_CODE') {
+        setAffCheck({ state: 'invalid', message: msg });
+        setErr(msg);
       } else if (e.code === 'APPLICATION_REJECTED' || e.code === 'ALREADY_REGISTERED' || /already exists/i.test(msg)) {
         setErr(msg);
       } else {
@@ -729,9 +771,29 @@ export default function SellerLogin() {
                 <input
                   type="text"
                   value={regForm.referralCode}
-                  onChange={(e) => setRegForm({ ...regForm, referralCode: e.target.value.toUpperCase() })}
+                  onChange={(e) => setRegForm({ ...regForm, referralCode: e.target.value.replace(/\s+/g, '').toUpperCase() })}
                   placeholder="e.g. BAZARIO2026"
+                  maxLength={32}
+                  aria-invalid={affCheck.state === 'invalid'}
+                  style={{
+                    borderColor: affCheck.state === 'valid' ? '#16a34a' : affCheck.state === 'invalid' ? '#dc2626' : undefined,
+                    boxShadow: affCheck.state === 'valid' ? '0 0 0 3px rgba(22,163,74,.12)' : affCheck.state === 'invalid' ? '0 0 0 3px rgba(220,38,38,.12)' : undefined,
+                  }}
                 />
+                {affCheck.state !== 'idle' && (
+                  <small
+                    role="status"
+                    style={{
+                      display: 'block',
+                      marginTop: 4,
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      color: affCheck.state === 'valid' ? '#15803d' : affCheck.state === 'invalid' ? '#b91c1c' : '#64748b',
+                    }}
+                  >
+                    {affCheck.state === 'checking' ? 'Checking code…' : affCheck.state === 'valid' ? '✓ ' + affCheck.message : affCheck.state === 'invalid' ? '✕ ' + affCheck.message : affCheck.message}
+                  </small>
+                )}
               </div>
             </div>
 
