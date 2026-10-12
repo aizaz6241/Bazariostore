@@ -26,7 +26,7 @@ import cors from 'cors';
 import compression from 'compression';
 import mongoose from 'mongoose';
 import { Server } from 'socket.io';
-import { verifySocketToken } from './middleware/auth.js';
+import { verifySocketToken, loadAdminAccount } from './middleware/auth.js';
 import { attachPortalRealtime } from './realtime/portalRealtime.js';
 import { sanitizeRequest, asText } from './middleware/sanitize.js';
 import { limit } from './utils/rateLimit.js';
@@ -315,6 +315,48 @@ app.use(finalErrorHandler);
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: (origin, cb) => cb(null, originAllowed(origin)) } });
 app.set('io', io);
+
+/**
+ * Open admin connections follow the account as it is NOW. Live events (new orders with customer
+ * details, seller chats, payout requests with bank / UPI details) go to rooms an admin joins at
+ * login. A switched-off or deleted account, or one whose permissions were reduced, used to stay in
+ * those rooms until its tab reloaded, still watching the data. This takes such a connection out
+ * of the rooms it no longer may be in (all of them for a closed account), at once after a change
+ * on the Staff screen and every minute for changes approved on the team portal.
+ */
+async function resyncAdminSockets(onlyAdminId = null) {
+  for (const socket of io.of('/').sockets.values()) {
+    const id = socket.data?.adminId;
+    if (!socket.data?.isAdmin || !id) continue;
+    if (onlyAdminId && String(id) !== String(onlyAdminId)) continue;
+    let account;
+    try {
+      account = await loadAdminAccount(id);
+    } catch {
+      continue; // database hiccup: checked again on the next round
+    }
+    const leave = (test) => {
+      for (const r of [...socket.rooms]) if (r !== socket.id && test(r)) socket.leave(r);
+    };
+    if (!account || !account.active) {
+      leave((r) => r === 'admins' || r.startsWith('admins:') || r === `admin:${id}`);
+      socket.data.isAdmin = false;
+      socket.data.adminPerms = [];
+      delete socket.data.adminId;
+      socket.emit('admin:session_ended', { message: 'This admin account is no longer active.' });
+      continue;
+    }
+    const perms = account.permissions || [];
+    const allowed = new Set(perms.map((p) => adminRoom(p)));
+    leave((r) => r.startsWith('admins:') && !allowed.has(r));
+    for (const r of allowed) if (!socket.rooms.has(r)) socket.join(r);
+    socket.data.adminPerms = perms;
+  }
+}
+app.set('resyncAdminSockets', resyncAdminSockets);
+setInterval(() => {
+  resyncAdminSockets().catch((e) => console.error('[admin-sockets] resync failed:', e.message));
+}, 60 * 1000).unref?.();
 
 // Team portal (Vercel) pages connect here for instant chat and live numbers. Separate namespace
 // (`/portal`): nothing of the store chat below is shared with it.
