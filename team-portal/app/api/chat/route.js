@@ -191,7 +191,7 @@ export async function POST(req) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
 
-    const { chatType, targetMemberId, messageType: askedType, text, mediaUrl, audioDuration, uploadId, replyToId, replyThumb } = await req.json();
+    const { chatType, targetMemberId, messageType: askedType, text, mediaUrl, audioDuration, uploadId, replyToId, replyThumb, voiceEffect } = await req.json();
     // Only ordinary messages can be sent from the chat box. "System" messages (bonus announcements
     // and the like) are written by the server itself, never by whoever is typing.
     const messageType = ['text', 'image', 'voice'].includes(askedType) ? askedType : 'text';
@@ -303,6 +303,7 @@ export async function POST(req) {
       mediaMime: voice ? voice.mime : '',
       mediaSize: voice ? voice.size : 0,
       audioDuration: audioDuration || 0,
+      voiceEffect: messageType === 'voice' && voiceEffect === 'hacker' ? 'hacker' : '',
       replyTo,
       readBy: [session._id],
     });
@@ -320,7 +321,7 @@ export async function POST(req) {
         messageType === 'image'
           ? (text ? `📷 ${text.trim().slice(0, 80)}` : '📷 Photo')
           : messageType === 'voice'
-          ? `🎤 Voice message${audioDuration ? ` (${Math.floor(audioDuration / 60)}:${String(Math.round(audioDuration % 60)).padStart(2, '0')})` : ''}`
+          ? `${voiceEffect === 'hacker' ? '🎭' : '🎤'} Voice message${audioDuration ? ` (${Math.floor(audioDuration / 60)}:${String(Math.round(audioDuration % 60)).padStart(2, '0')})` : ''}`
           : (text ? text.trim().slice(0, 160) : 'New message');
 
       let pushing = null;

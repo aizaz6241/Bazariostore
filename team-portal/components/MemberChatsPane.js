@@ -529,7 +529,10 @@ function ChatReader({ conversationId, title, onClose }) {
                   </>
                 ) : m.messageType === 'voice' ? (
                   m.mediaLink || media[m._id] ? (
-                    <AudioPlayer src={m.mediaLink || media[m._id]} duration={m.audioDuration} />
+                    <>
+                      <AudioPlayer src={m.mediaLink || media[m._id]} duration={m.audioDuration} />
+                      {m.voiceEffect === 'hacker' && <p className="text-[10px] font-bold text-violet-700 mt-1">🎭 Voice changed</p>}
+                    </>
                   ) : (
                     <p className="text-xs text-slate-400">🎤 Loading voice note…</p>
                   )

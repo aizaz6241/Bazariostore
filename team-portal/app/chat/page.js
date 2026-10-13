@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { useNotifications } from '@/components/NotificationManager';
 import VoiceRecorder from '@/components/VoiceRecorder';
+import { primeVoiceAudio, VOICE_EFFECT_HACKER } from '@/lib/voiceMask';
 import AudioPlayer from '@/components/AudioPlayer';
 import { readCache, writeCache, dropCache } from '@/lib/clientCache';
 import { useRealtime, useRealtimeEvent } from '@/components/RealtimeProvider';
@@ -16,6 +17,7 @@ import { getSavedMedia, saveMedia, dropSavedMedia } from '@/lib/mediaCache';
 import {
   Send,
   Mic,
+  VenetianMask,
   Image as ImageIcon,
   Users,
   Shield,
@@ -368,6 +370,20 @@ function ChatPageInner() {
     if (!inputText && composerRef.current) composerRef.current.style.height = 'auto';
   }, [inputText]);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  // Hacker voice on / off for the next voice notes (remembered on this phone only)
+  const [voiceMask, setVoiceMask] = useState(false);
+  useEffect(() => {
+    try {
+      setVoiceMask(localStorage.getItem('portal_voice_mask') === '1');
+    } catch (e) {}
+  }, []);
+  const toggleVoiceMask = () =>
+    setVoiceMask((on) => {
+      try {
+        localStorage.setItem('portal_voice_mask', on ? '0' : '1');
+      } catch (e) {}
+      return !on;
+    });
   const [loadingMessages, setLoadingMessages] = useState(true);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [pendingImagePreview, setPendingImagePreview] = useState(null); // { file, previewUrl, caption: '' }
@@ -1575,6 +1591,7 @@ function ChatPageInner() {
       text: payload.text || '',
       mediaUrl: payload.mediaUrl || payload.localUrl || '',
       audioDuration: payload.audioDuration || 0,
+      voiceEffect: payload.voiceEffect || '',
       replyTo: payload.replyPreview || null,
       readBy: [],
       createdAt: new Date().toISOString(),
@@ -1774,7 +1791,7 @@ function ChatPageInner() {
     reportTyping('');
   };
 
-  const handleSendVoice = (blob, durationSec, localUrl) => {
+  const handleSendVoice = (blob, durationSec, localUrl, voiceEffect = '') => {
     setIsRecordingVoice(false);
     if (!blob || blob.size === 0) return;
     if (blob.size > VOICE_MAX_BYTES) {
@@ -1786,6 +1803,7 @@ function ChatPageInner() {
       blob,
       localUrl, // played from the device while it is being sent
       audioDuration: durationSec,
+      ...(voiceEffect ? { voiceEffect } : {}),
       ...takeReply(),
     });
   };
@@ -3176,6 +3194,11 @@ function ChatPageInner() {
                                   isOutgoing={isMe}
                                 />
                               )}
+                              {msg.messageType === 'voice' && msg.voiceEffect === 'hacker' && (
+                                <span className={`inline-flex items-center gap-1 mt-1 text-[10px] font-bold ${isMe ? 'opacity-80' : 'text-violet-700'}`}>
+                                  <VenetianMask className="w-3 h-3" /> Voice changed
+                                </span>
+                              )}
 
                               {/* Image Attachment */}
                               {msg.messageType === 'image' && !msg.mediaUrl && (
@@ -3410,6 +3433,7 @@ function ChatPageInner() {
             <VoiceRecorder
               onSendAudio={handleSendVoice}
               onCancel={() => setIsRecordingVoice(false)}
+              effect={voiceMask ? VOICE_EFFECT_HACKER : ''}
             />
           ) : (
             <form onSubmit={handleTextSubmit} className="flex items-center space-x-2">
@@ -3442,15 +3466,36 @@ function ChatPageInner() {
 
               {/* Voice Button (hidden in Materials Group) */}
               {activeChat.type !== 'materials' && (
-                <button
-                  type="button"
-                  onClick={() => setIsRecordingVoice(true)}
-                  disabled={uploadingImage}
-                  className="p-2.5 rounded-2xl text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 transition active:scale-95 shrink-0 disabled:opacity-50"
-                  title="Record Voice Note"
-                >
-                  <Mic className="w-5 h-5" />
-                </button>
+                <div className="relative shrink-0 flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // iPhone only starts the voice changer's sound engine from a tap
+                      if (voiceMask) primeVoiceAudio();
+                      setIsRecordingVoice(true);
+                    }}
+                    disabled={uploadingImage}
+                    className={`p-2.5 rounded-2xl transition active:scale-95 disabled:opacity-50 ${
+                      voiceMask ? 'bg-slate-900 text-white hover:bg-slate-800' : 'text-slate-500 hover:text-emerald-600 hover:bg-emerald-50'
+                    }`}
+                    title={voiceMask ? 'Record with hacker voice' : 'Record Voice Note'}
+                  >
+                    <Mic className="w-5 h-5" />
+                  </button>
+                  {/* hacker voice switch: a small badge on the mic */}
+                  <button
+                    type="button"
+                    onClick={toggleVoiceMask}
+                    aria-pressed={voiceMask}
+                    title={voiceMask ? 'Hacker voice is ON — tap to use your real voice' : 'Use hacker voice (your real voice is never sent)'}
+                    aria-label="Hacker voice"
+                    className={`absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center ring-2 ring-white transition ${
+                      voiceMask ? 'bg-violet-600 text-white' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
+                    }`}
+                  >
+                    <VenetianMask className="w-3 h-3" />
+                  </button>
+                </div>
               )}
 
               {/* Text Input */}

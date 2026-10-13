@@ -92,6 +92,11 @@ const chatMessageSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // 'hacker' = recorded with the voice changer (the real voice was never recorded or sent)
+    voiceEffect: {
+      type: String,
+      default: '',
+    },
     // Edit & Delete Tracking (WhatsApp Style)
     isEdited: {
       type: Boolean,
