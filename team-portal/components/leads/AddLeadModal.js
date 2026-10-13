@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Modal, Field, Button, Banner, inputClass, api } from '@/components/ui/kit';
 import { SOURCES } from './meta';
 
-const empty = { phone: '', name: '', country: '', source: '', sourceDetail: '', memberId: '', waNumberId: '', status: 'new', notes: '' };
+const empty = { phone: '', name: '', age: '', occupation: '', location: '', country: '', source: '', sourceDetail: '', memberId: '', waNumberId: '', status: 'new', notes: '', handover: false };
 
 /**
  * Add one lead. A member's lead is his own; an admin can give it to a member or keep it in the
@@ -45,7 +45,9 @@ export default function AddLeadModal({ open, onClose, onSaved, isAdmin, members 
     setError('');
     setDup(null);
     try {
-      const r = await api('/api/leads', { method: 'POST', body: { ...form, memberId: form.memberId || null, waNumberId: form.waNumberId || null } });
+      const body = { ...form, memberId: form.memberId || null, waNumberId: form.waNumberId || null };
+      if (form.handover) body.phone = '';
+      const r = await api('/api/leads', { method: 'POST', body });
       onSaved?.(r);
       onClose();
     } catch (err) {
@@ -56,41 +58,69 @@ export default function AddLeadModal({ open, onClose, onSaved, isAdmin, members 
     }
   };
 
-  const blocked = dup || pre;
+  const blocked = form.handover ? null : dup || pre;
+  const canSave = form.handover ? !!form.memberId && !!(form.name.trim() || form.notes.trim() || form.sourceDetail.trim()) : !!form.phone.trim();
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       title={isAdmin ? 'Add a lead' : 'Add a lead you found'}
-      subtitle={isAdmin ? 'Give it to a member now, or keep it in the pool and give it later.' : 'It is reserved for you as soon as you save it. Nobody else can take it.'}
+      subtitle={isAdmin ? 'Give it to a member (or yourself) now, or keep it in the pool and give it later. Only the number is required.' : 'It is reserved for you as soon as you save it. Nobody else can take it.'}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={save} loading={busy} disabled={!form.phone.trim() || !!blocked}>
-            Save lead
+          <Button onClick={save} loading={busy} disabled={!canSave || !!blocked}>
+            {form.handover ? 'Save handover' : 'Save lead'}
           </Button>
         </>
       }
     >
       <form onSubmit={save} className="space-y-4">
-        <Field label="WhatsApp / phone number *" hint="With country code. Spaces, + and dashes are fine.">
-          <input
-            autoFocus
-            value={form.phone}
-            onChange={(e) => {
-              set('phone')(e);
-              setPre(null);
-              setDup(null);
-            }}
-            onBlur={precheck}
-            inputMode="tel"
-            placeholder="+91 98765 43210"
-            className={inputClass}
-          />
-        </Field>
+        {isAdmin && (
+          <label
+            className={`flex items-start gap-3 p-3.5 rounded-2xl border cursor-pointer transition-colors ${
+              form.handover ? 'border-violet-300 bg-violet-50' : 'border-slate-200 hover:border-slate-300'
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={form.handover}
+              onChange={(e) => {
+                setForm((f) => ({ ...f, handover: e.target.checked }));
+                setPre(null);
+                setDup(null);
+              }}
+              className="w-4 h-4 mt-0.5 accent-violet-700"
+            />
+            <span className="text-sm">
+              <span className="font-semibold text-slate-900 block">I gave the seller a member’s number</span>
+              <span className="text-[12px] text-slate-500">
+                You don’t have his number yet. He will message the member, and the member adds his number and details here.
+              </span>
+            </span>
+          </label>
+        )}
+
+        {!form.handover && (
+          <Field label="WhatsApp / phone number *" hint="With country code. Spaces, + and dashes are fine.">
+            <input
+              autoFocus
+              value={form.phone}
+              onChange={(e) => {
+                set('phone')(e);
+                setPre(null);
+                setDup(null);
+              }}
+              onBlur={precheck}
+              inputMode="tel"
+              placeholder="+91 98765 43210"
+              className={inputClass}
+            />
+          </Field>
+        )}
 
         {blocked && (
           <Banner tone={blocked.mine ? 'info' : 'danger'} title={blocked.mine ? 'Already your lead' : isAdmin ? 'Already taken' : 'Taken — do not contact'}>
@@ -104,8 +134,17 @@ export default function AddLeadModal({ open, onClose, onSaved, isAdmin, members 
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Seller name">
+          <Field label={form.handover ? 'Seller name *' : 'Seller name'}>
             <input value={form.name} onChange={set('name')} placeholder="e.g. Rahul Sharma" className={inputClass} />
+          </Field>
+          <Field label="Age">
+            <input value={form.age} onChange={set('age')} inputMode="numeric" placeholder="Optional" className={inputClass} />
+          </Field>
+          <Field label="Profession">
+            <input value={form.occupation} onChange={set('occupation')} placeholder="e.g. Boutique owner" className={inputClass} />
+          </Field>
+          <Field label="Location">
+            <input value={form.location} onChange={set('location')} placeholder="City, area" className={inputClass} />
           </Field>
           <Field label="Country">
             <input value={form.country} onChange={set('country')} placeholder="IN, PK, UK…" className={inputClass} />
@@ -124,9 +163,12 @@ export default function AddLeadModal({ open, onClose, onSaved, isAdmin, members 
             <input value={form.sourceDetail} onChange={set('sourceDetail')} placeholder="Optional" className={inputClass} />
           </Field>
           {isAdmin ? (
-            <Field label="Give to" hint="Leave empty to keep it in the pool.">
+            <Field
+              label={form.handover ? 'Whose number did you give? *' : 'Give to'}
+              hint={form.handover ? 'This member will be asked to add the seller’s number.' : 'Leave empty to keep it in the pool. You can also choose yourself.'}
+            >
               <select value={form.memberId} onChange={set('memberId')} className={inputClass}>
-                <option value="">Not given yet (pool)</option>
+                <option value="">{form.handover ? 'Choose the member…' : 'Not given yet (pool)'}</option>
                 {members.map((m) => (
                   <option key={m._id} value={m._id}>
                     {m.name}
@@ -157,7 +199,13 @@ export default function AddLeadModal({ open, onClose, onSaved, isAdmin, members 
           </Field>
         </div>
         <Field label="Notes">
-          <textarea value={form.notes} onChange={set('notes')} rows={2} placeholder="Anything useful about this seller" className={`${inputClass} resize-none`} />
+          <textarea
+            value={form.notes}
+            onChange={set('notes')}
+            rows={2}
+            placeholder={form.handover ? 'e.g. Found in “Ladies Boutique Delhi” group, will message today' : 'Anything useful about this seller'}
+            className={`${inputClass} resize-none`}
+          />
         </Field>
         {error && <Banner tone="danger">{error}</Banner>}
         <button type="submit" className="hidden" />

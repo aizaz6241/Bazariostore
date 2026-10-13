@@ -77,14 +77,16 @@ export default function LeadDrawer({ leadId, onClose, onChanged, isAdmin, member
     <Drawer
       open={open}
       onClose={onClose}
-      title={lead ? lead.name || lead.phone : 'Lead'}
-      subtitle={lead ? (lead.name ? lead.phone : sourceName(lead.source)) : error || 'Loading…'}
+      title={lead ? lead.name || lead.phone || 'Unnamed seller' : 'Lead'}
+      subtitle={lead ? [lead.name ? lead.phone : '', lead.occupation, lead.location].filter(Boolean).join(' · ') || sourceName(lead.source) : error || 'Loading…'}
       headerExtra={
         lead && (
           <div className="flex flex-wrap items-center gap-2">
             <Pill color={STATUS[lead.status]?.color}>{statusLabel(lead)}</Pill>
             {lead.stale && <Pill color="#dc2626">No update for 14+ days</Pill>}
             {lead.origin === 'member' && <Pill color="#7c3aed">Found by member</Pill>}
+            {lead.handover && <Pill color="#7c3aed">Handover</Pill>}
+            {lead.needsDetails && <Pill color="#eda100">Number needed</Pill>}
             {wa && (
               <a
                 href={wa}
@@ -118,6 +120,22 @@ export default function LeadDrawer({ leadId, onClose, onChanged, isAdmin, member
 
       {lead && (
         <>
+          {lead.needsDetails && (
+            <Banner tone="warning" title={isAdmin ? 'Waiting for the seller’s number' : 'Complete this seller’s profile'}>
+              {isAdmin
+                ? `This seller was given ${lead.memberName || 'the member'}’s number. ${lead.memberName || 'The member'} adds his number and details when he messages.`
+                : 'An admin gave this seller your number. When he messages you, add his WhatsApp number and whatever you learn about him.'}
+            </Banner>
+          )}
+
+          <SellerProfile
+            key={lead._id + (lead.needsDetails ? '-open' : '')}
+            lead={lead}
+            isAdmin={isAdmin}
+            busy={busy === 'profile'}
+            onSave={(fields) => act('profile', { action: 'edit', ...fields })}
+          />
+
           {/* progress */}
           <section>
             <p className="text-xs font-bold text-slate-700 mb-3">Progress</p>
@@ -261,7 +279,6 @@ export default function LeadDrawer({ leadId, onClose, onChanged, isAdmin, member
             </Field>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm pt-1">
               <Info label="Source" value={`${sourceName(lead.source)}${lead.sourceDetail ? ` · ${lead.sourceDetail}` : ''}`} />
-              <Info label="Country" value={lead.country || '—'} />
               <Info label={lead.memberId ? 'Given on' : 'Added on'} value={fmtDate(lead.assignedAt || lead.createdAt)} />
               <Info label="Last update" value={timeAgo(lead.lastActivityAt)} />
               {isAdmin && <Info label="Added by" value={lead.addedByName || '—'} />}
@@ -314,4 +331,97 @@ function Info({ label, value }) {
       <dd className="text-slate-900 font-semibold truncate">{value}</dd>
     </div>
   );
+}
+
+/** Who the seller is: name, number, age, profession, location. All optional except the number. */
+function SellerProfile({ lead, isAdmin, busy, onSave }) {
+  const [editing, setEditing] = useState(lead.needsDetails);
+  const [f, setF] = useState(() => ({
+    name: lead.name || '',
+    phone: lead.phone || '',
+    age: lead.age || '',
+    occupation: lead.occupation || '',
+    location: lead.location || '',
+    country: lead.country || '',
+  }));
+  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const phoneLocked = !!lead.phone && !isAdmin; // a member adds the number once; admins correct it
+  const filled = lead.profileFilled || 0;
+
+  const save = async () => {
+    const body = { name: f.name, age: f.age, occupation: f.occupation, location: f.location, country: f.country };
+    if (!phoneLocked && f.phone !== (lead.phone || '')) body.phone = f.phone;
+    if (await onSave(body)) setEditing(false);
+  };
+
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs font-bold text-slate-700">Seller profile</p>
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1.5 text-[11px] text-slate-500" title={`${filled} of 5 filled`}>
+            <span className="flex gap-0.5">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <span key={i} className={`w-2.5 h-1.5 rounded-full ${i < filled ? 'bg-emerald-500' : 'bg-slate-200'}`} />
+              ))}
+            </span>
+            {filled}/5
+          </span>
+          {!editing && lead.status !== 'converted' && (
+            <button type="button" onClick={() => setEditing(true)} className="text-xs font-semibold text-slate-600 hover:text-slate-900">
+              Edit
+            </button>
+          )}
+        </div>
+      </div>
+
+      {editing ? (
+        <div className="space-y-3 p-4 rounded-2xl border border-slate-200 bg-slate-50/60">
+          <Field label="WhatsApp / phone number" hint={phoneLocked ? 'Already set. Ask an admin if it is wrong.' : 'With country code. It is checked so no other member has this seller.'}>
+            <input value={f.phone} onChange={set('phone')} disabled={phoneLocked} inputMode="tel" placeholder="+91 98765 43210" className={inputClass} autoFocus={lead.needsDetails} />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Name">
+              <input value={f.name} onChange={set('name')} className={inputClass} />
+            </Field>
+            <Field label="Age">
+              <input value={f.age} onChange={set('age')} inputMode="numeric" className={inputClass} />
+            </Field>
+            <Field label="Profession">
+              <input value={f.occupation} onChange={set('occupation')} placeholder="e.g. Boutique owner" className={inputClass} />
+            </Field>
+            <Field label="Location">
+              <input value={f.location} onChange={set('location')} placeholder="City, area" className={inputClass} />
+            </Field>
+            <Field label="Country">
+              <input value={f.country} onChange={set('country')} placeholder="IN, PK…" className={inputClass} />
+            </Field>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button size="sm" loading={busy} onClick={save}>
+              Save profile
+            </Button>
+            {!lead.needsDetails && (
+              <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+                Cancel
+              </Button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+          <Info label="Name" value={lead.name || <Missing />} />
+          <Info label="Number" value={lead.phone ? <span className="tabular-nums">{lead.phone}</span> : <Missing />} />
+          <Info label="Age" value={lead.age || <Missing />} />
+          <Info label="Profession" value={lead.occupation || <Missing />} />
+          <Info label="Location" value={lead.location || <Missing />} />
+          <Info label="Country" value={lead.country || <Missing />} />
+        </dl>
+      )}
+    </section>
+  );
+}
+
+function Missing() {
+  return <span className="text-slate-300 font-normal">Not added</span>;
 }

@@ -81,12 +81,19 @@ export default function LeadsAnalytics({ isAdmin, members = [], onFilter }) {
       </div>
 
       {/* warnings worth acting on */}
-      {isAdmin && (k.ownerMismatch > 0 || k.stale > 0) && (
-        <div className="grid sm:grid-cols-2 gap-3">
+      {isAdmin && (k.ownerMismatch > 0 || k.stale > 0 || k.incomplete > 0) && (
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {k.stale > 0 && (
             <button type="button" onClick={() => onFilter?.('stale')} className="text-left">
               <Banner tone="warning" title={`${fmtInt(k.stale)} lead${k.stale === 1 ? '' : 's'} with no update for 14+ days`}>
                 Ask the member, or give them to someone else. Tap to see them.
+              </Banner>
+            </button>
+          )}
+          {k.incomplete > 0 && (
+            <button type="button" onClick={() => onFilter?.('incomplete')} className="text-left">
+              <Banner tone="info" title={`${fmtInt(k.incomplete)} handover${k.incomplete === 1 ? '' : 's'} still without the seller’s number`}>
+                Members have not added these sellers’ numbers yet. Tap to see them.
               </Banner>
             </button>
           )}

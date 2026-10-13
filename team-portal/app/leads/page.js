@@ -107,6 +107,7 @@ export default function LeadsPage() {
     ...(isAdmin ? [{ key: 'unassigned', label: 'In pool' }] : []),
     ...STATUS_ORDER.map((s) => ({ key: s, label: s === 'new' ? 'Not contacted' : STATUS[s].label, tone: STATUS[s].color })),
     { key: 'stale', label: 'Stale 14d+', tone: '#dc2626' },
+    { key: 'incomplete', label: 'Number needed', tone: '#7c3aed' },
   ];
 
   if (!user) return null;
@@ -128,6 +129,16 @@ export default function LeadsPage() {
           </>
         }
       />
+
+      {counts.incomplete > 0 && status !== 'incomplete' && (
+        <button type="button" onClick={() => { setTab('list'); setStatus('incomplete'); }} className="w-full text-left">
+          <Banner tone="warning" title={isAdmin ? `${fmtInt(counts.incomplete)} handover${counts.incomplete === 1 ? '' : 's'} waiting for the seller’s number` : `${fmtInt(counts.incomplete)} seller${counts.incomplete === 1 ? '' : 's'} need${counts.incomplete === 1 ? 's' : ''} your details`}>
+            {isAdmin
+              ? 'You gave these sellers a member’s number. The member still has to add the seller’s number and details. Tap to see them.'
+              : 'An admin gave these sellers your number. When they message you, add their number, name, age, profession and location. Tap to see them.'}
+          </Banner>
+        </button>
+      )}
 
       <CheckNumber isAdmin={isAdmin} onAdd={openAdd} onOpenLead={setOpenLeadId} />
 
@@ -276,7 +287,7 @@ export default function LeadsPage() {
                         <td className="pl-5 py-3" onClick={(e) => e.stopPropagation()}>
                           <input
                             type="checkbox"
-                            aria-label={`Select ${l.name || l.phone}`}
+                            aria-label={`Select ${l.name || l.phone || 'lead'}`}
                             disabled={l.status === 'converted'}
                             checked={selected.has(l._id)}
                             onChange={() => toggle(l._id)}
@@ -285,10 +296,14 @@ export default function LeadsPage() {
                         </td>
                       )}
                       <td className={`py-3 ${isAdmin ? 'px-3' : 'px-5'}`}>
-                        <p className="font-semibold text-slate-900 truncate max-w-[260px]">{l.name || l.phone}</p>
-                        <p className="text-[11px] text-slate-500 tabular-nums">
-                          {l.name ? l.phone : ''}
-                          {l.country ? `${l.name ? ' · ' : ''}${l.country}` : ''}
+                        <p className="font-semibold text-slate-900 truncate max-w-[280px]">{l.name || l.phone || 'Unnamed seller'}</p>
+                        <p className="text-[11px] text-slate-500 truncate max-w-[280px]">
+                          {l.needsDetails ? (
+                            <span className="text-violet-700 font-semibold">Number needed · handover</span>
+                          ) : (
+                            <span className="tabular-nums">{l.name ? l.phone : ''}</span>
+                          )}
+                          {[l.occupation, l.location || l.country].filter(Boolean).map((x) => ` · ${x}`).join('')}
                         </p>
                       </td>
                       <td className="px-3 py-3">
@@ -335,7 +350,7 @@ export default function LeadsPage() {
                       <label className="pl-4 pr-1 flex items-center">
                         <input
                           type="checkbox"
-                          aria-label={`Select ${l.name || l.phone}`}
+                          aria-label={`Select ${l.name || l.phone || 'lead'}`}
                           disabled={l.status === 'converted'}
                           checked={selected.has(l._id)}
                           onChange={() => toggle(l._id)}
@@ -346,10 +361,10 @@ export default function LeadsPage() {
                     <button type="button" onClick={() => setOpenLeadId(l._id)} className="flex-1 min-w-0 text-left px-4 py-3.5 active:bg-slate-50">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="font-semibold text-slate-900 truncate">{l.name || l.phone}</p>
+                          <p className="font-semibold text-slate-900 truncate">{l.name || l.phone || 'Unnamed seller'}</p>
                           <p className="text-[11px] text-slate-500 truncate tabular-nums">
-                            {l.name ? `${l.phone} · ` : ''}
-                            {sourceName(l.source)}
+                            {l.needsDetails ? <span className="text-violet-700 font-semibold">Number needed · </span> : l.name ? `${l.phone} · ` : ''}
+                            {l.location || sourceName(l.source)}
                             {isAdmin ? ` · ${l.memberName || 'Pool'}` : ''}
                           </p>
                         </div>
@@ -409,6 +424,9 @@ export default function LeadsPage() {
         toast={toast}
         onChanged={(lead, removedId) => {
           if (removedId) return load();
+          const before = leads.find((x) => x._id === lead._id);
+          // a handover that just got its number changes the counts on top: read the list again
+          if (before && before.needsDetails !== lead.needsDetails) return load();
           setData((d) => (d ? { ...d, leads: d.leads.map((x) => (x._id === lead._id ? { ...x, ...lead } : x)) } : d));
         }}
       />

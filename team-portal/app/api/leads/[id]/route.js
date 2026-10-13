@@ -3,7 +3,8 @@ import Lead, { LOST_REASONS } from '@/lib/models/Lead';
 import Member from '@/lib/models/Member';
 import WaNumber from '@/lib/models/WaNumber';
 import { ok, fail, clean, sid, isOid } from '@/lib/utils/routeHelpers';
-import { leadView, historyPush, STATUS_LABEL } from '@/lib/utils/leads';
+import { leadView, historyPush, STATUS_LABEL, duplicateNotice, recordDuplicateAttempt, findStoreByPhone, ensureLeadIndexes } from '@/lib/utils/leads';
+import { phoneKey, phoneDisplay } from '@/lib/utils/phone';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +34,8 @@ export async function GET(req, { params }) {
  *   status   { status: contacted|interested|not_converted|new, lostReason? }  (member: own leads)
  *            admin may also set "converted" by hand (store registered with another number)
  *   note     { text }
- *   edit     { name, country, source, sourceDetail }
+ *   edit     { name, age, occupation, location, country, source, sourceDetail, phone }
+ *            phone: a member can add it once (handover); only an admin can change it later
  *   number   { waNumberId }   the company WhatsApp number used for this lead
  *   assign   { memberId | null }   admins only; a converted lead stays with its store owner
  */
@@ -44,6 +46,7 @@ export async function PATCH(req, { params }) {
     const isAdmin = session.role === 'admin';
     const lead = await load(session, params.id);
     if (!lead) return fail('Lead not found', 404);
+    await ensureLeadIndexes();
 
     const body = await req.json();
     const now = new Date();
@@ -90,11 +93,74 @@ export async function PATCH(req, { params }) {
       }
 
       case 'edit': {
-        if (body.name !== undefined) set.name = clean(body.name, 120);
-        if (body.country !== undefined) set.country = clean(body.country, 30).toUpperCase();
-        if (body.source !== undefined) set.source = clean(body.source, 30).toLowerCase();
-        if (body.sourceDetail !== undefined) set.sourceDetail = clean(body.sourceDetail, 160);
-        line = { type: 'edited', text: 'Details updated' };
+        const changed = [];
+        const put = (field, value, label) => {
+          if (value === undefined) return;
+          if (String(lead[field] || '') === value) return;
+          set[field] = value;
+          changed.push(label);
+        };
+        put('name', body.name !== undefined ? clean(body.name, 120) : undefined, 'name');
+        put('age', body.age !== undefined ? clean(body.age, 20) : undefined, 'age');
+        put('occupation', body.occupation !== undefined ? clean(body.occupation, 80) : undefined, 'profession');
+        put('location', body.location !== undefined ? clean(body.location, 120) : undefined, 'location');
+        put('country', body.country !== undefined ? clean(body.country, 30).toUpperCase() : undefined, 'country');
+        put('source', body.source !== undefined ? clean(body.source, 30).toLowerCase() : undefined, 'source');
+        put('sourceDetail', body.sourceDetail !== undefined ? clean(body.sourceDetail, 160) : undefined, 'group / page');
+
+        // The phone: a member adds it once (a handover waiting for it); after that only an admin
+        // can correct it, so nobody can move a lead onto another seller's number.
+        let unsetPhone = false;
+        if (body.phone !== undefined && phoneKey(body.phone) !== (lead.phoneKey || '')) {
+          const key = phoneKey(body.phone);
+          if (lead.phoneKey && !isAdmin) return fail('The phone number is already set. Ask an admin if it is wrong.', 403);
+          if (lead.sellerId) return fail('This lead is linked to a registered store; its phone cannot be changed.');
+          if (!key) {
+            // only an admin may empty the phone again, and only on a handover (a wrong number typed)
+            if (!(isAdmin && lead.handover && !String(body.phone).trim())) return fail('Type a valid phone number (at least 7 digits).');
+            unsetPhone = true;
+          } else {
+            const other = await Lead.findOne({ phoneKey: key, _id: { $ne: lead._id } }).lean();
+            if (other) {
+              await recordDuplicateAttempt(other, session);
+              return fail(
+                isAdmin
+                  ? `This number is already another lead${other.memberName ? ` (with ${other.memberName})` : ''}. Open that lead instead.`
+                  : 'This number is already with another team member. Please do not continue with this seller and tell an admin.',
+                409,
+                { duplicate: duplicateNotice(other, session) }
+              );
+            }
+            const store = await findStoreByPhone(key);
+            if (store && !isAdmin) return fail('This number already has a store on Bazario. Please tell an admin.', 409);
+            set.phone = phoneDisplay(body.phone);
+            set.phoneKey = key;
+          }
+          changed.push(unsetPhone ? 'phone removed' : lead.phoneKey ? `phone → ${set.phone}` : `phone added (${set.phone})`);
+        }
+        if (!changed.length) break;
+        if (unsetPhone) {
+          const saved = await Lead.findByIdAndUpdate(
+            lead._id,
+            { $set: { ...set, phone: '' }, $unset: { phoneKey: 1 }, ...historyPush({ ...by, type: 'edited', text: `Changed ${changed.join(', ')}` }) },
+            { new: true }
+          ).lean();
+          return ok({ message: 'Saved.', lead: leadView(saved, session, { withHistory: true }) });
+        }
+        line = { type: 'edited', text: lead.handover && !lead.phoneKey && set.phoneKey ? `${session.name} completed the seller's profile: ${changed.join(', ')}` : `Changed ${changed.join(', ')}` };
+        message = set.phoneKey && !lead.phoneKey ? 'Number added. This seller is now reserved for this lead.' : 'Details saved.';
+        if (set.phoneKey && !lead.phoneKey && lead.handover && !isAdmin) {
+          import('@/lib/utils/push')
+            .then(({ sendPushToRole }) =>
+              sendPushToRole('admin', {
+                title: '✅ Handover completed',
+                body: `${session.name} added the number of ${set.name || lead.name || 'the seller'} you sent to him.`,
+                url: '/leads',
+                type: 'leads',
+              })
+            )
+            .catch(() => {});
+        }
         break;
       }
 

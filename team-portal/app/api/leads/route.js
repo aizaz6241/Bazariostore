@@ -12,6 +12,7 @@ import {
   recordDuplicateAttempt,
   findStoreByPhone,
   historyPush,
+  ensureLeadIndexes,
   STALE_DAYS,
 } from '@/lib/utils/leads';
 
@@ -21,7 +22,8 @@ const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
  * GET /api/leads?status=&memberId=&q=&origin=&page=&limit=
- *   status: all | unassigned | stale | new | contacted | interested | converted | not_converted
+ *   status: all | unassigned | stale | incomplete | new | contacted | interested | converted | not_converted
+ *   (incomplete = a handover still waiting for the seller's number)
  *   A member only ever gets his own leads; the admins get everybody's.
  */
 export async function GET(req) {
@@ -30,6 +32,7 @@ export async function GET(req) {
     if (!session) return fail('Unauthorized', 401);
     const isAdmin = session.role === 'admin';
 
+    await ensureLeadIndexes();
     await reconcileLeadConversions();
 
     const sp = new URL(req.url).searchParams;
@@ -48,7 +51,12 @@ export async function GET(req) {
     const filter = { ...scope };
     if (q) {
       const digits = q.replace(/\D+/g, '');
-      const or = [{ name: { $regex: escapeRe(q), $options: 'i' } }, { storeName: { $regex: escapeRe(q), $options: 'i' } }];
+      const or = [
+        { name: { $regex: escapeRe(q), $options: 'i' } },
+        { storeName: { $regex: escapeRe(q), $options: 'i' } },
+        { location: { $regex: escapeRe(q), $options: 'i' } },
+        { occupation: { $regex: escapeRe(q), $options: 'i' } },
+      ];
       if (digits.length >= 7) or.unshift({ phoneKey: phoneKey(digits) });
       else if (digits.length >= 3) or.push({ phoneKey: { $regex: escapeRe(digits) } });
       filter.$or = or;
@@ -56,13 +64,14 @@ export async function GET(req) {
     const staleBefore = new Date(Date.now() - STALE_DAYS * 86400000);
     if (LEAD_STATUSES.includes(status)) filter.status = status;
     else if (status === 'unassigned' && isAdmin) filter.memberId = null;
+    else if (status === 'incomplete') filter.phoneKey = { $exists: false };
     else if (status === 'stale') {
       filter.status = { $in: ['new', 'contacted', 'interested'] };
       filter.lastActivityAt = { $lt: staleBefore };
       if (!filter.memberId) filter.memberId = { $ne: null };
     }
 
-    const [rows, total, statusCounts, staleCount, unassignedCount] = await Promise.all([
+    const [rows, total, statusCounts, staleCount, unassignedCount, incompleteCount] = await Promise.all([
       Lead.find(filter)
         .select('-history')
         .sort({ lastActivityAt: -1 })
@@ -73,6 +82,7 @@ export async function GET(req) {
       Lead.aggregate([{ $match: scope }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
       Lead.countDocuments({ ...scope, memberId: scope.memberId === undefined ? { $ne: null } : scope.memberId, status: { $in: ['new', 'contacted', 'interested'] }, lastActivityAt: { $lt: staleBefore } }),
       isAdmin && scope.memberId === undefined ? Lead.countDocuments({ ...scope, memberId: null }) : Promise.resolve(0),
+      Lead.countDocuments({ ...scope, phoneKey: { $exists: false } }),
     ]);
 
     const counts = Object.fromEntries(LEAD_STATUSES.map((s) => [s, 0]));
@@ -80,6 +90,7 @@ export async function GET(req) {
     counts.all = Object.values(counts).reduce((s, x) => s + x, 0);
     counts.stale = staleCount;
     counts.unassigned = unassignedCount;
+    counts.incomplete = incompleteCount;
 
     let members = [];
     let numbers = [];
@@ -122,19 +133,33 @@ export async function POST(req) {
     if (!session) return fail('Unauthorized', 401);
     const isAdmin = session.role === 'admin';
 
+    await ensureLeadIndexes();
     const rl = checkRateLimit(`lead-add:${sid(session._id)}`, isAdmin ? 600 : 120, 60 * 60 * 1000);
     if (!rl.allowed) return fail('Too many leads added in the last hour. Please wait a little.', 429);
 
     const body = await req.json();
     const key = phoneKey(body.phone);
-    if (!key) return fail('Type the seller’s WhatsApp / phone number (at least 7 digits).');
+    // Handover (admins only): the seller was given a member's number, so his own number is not
+    // known yet. The lead is made with what is known; the member fills in the phone later.
+    const handover = isAdmin && !key && Boolean(body.handover);
+    if (!key && !handover) {
+      return fail(
+        isAdmin
+          ? 'Type the seller’s WhatsApp / phone number, or tick “I gave him a member’s number” if you do not have it.'
+          : 'Type the seller’s WhatsApp / phone number (at least 7 digits).'
+      );
+    }
+    if (handover && !isOid(body.memberId)) return fail('Choose the member whose number you gave to the seller.');
+    if (handover && !clean(body.name, 120) && !clean(body.notes, 1000) && !clean(body.sourceDetail, 160)) {
+      return fail('Write at least the seller’s name or a note, so the member knows who will message him.');
+    }
 
-    const existing = await Lead.findOne({ phoneKey: key }).lean();
+    const existing = key ? await Lead.findOne({ phoneKey: key }).lean() : null;
     if (existing) {
       await recordDuplicateAttempt(existing, session);
       return fail('This number is already a lead.', 409, { duplicate: duplicateNotice(existing, session) });
     }
-    const store = await findStoreByPhone(key);
+    const store = key ? await findStoreByPhone(key) : null;
     if (store) {
       return fail('This seller already has a store on Bazario.', 409, {
         duplicate: {
@@ -162,14 +187,30 @@ export async function POST(req) {
 
     const now = new Date();
     const status = !isAdmin && ['contacted', 'interested'].includes(body.status) ? body.status : 'new';
-    const lines = [{ at: now, type: 'created', by: session._id, byName: session.name, text: isAdmin ? 'Lead added by admin' : `${session.name} added this lead (found it himself)` }];
+    const lines = [
+      {
+        at: now,
+        type: 'created',
+        by: session._id,
+        byName: session.name,
+        text: handover
+          ? `Handover: ${session.name} gave this seller ${member?.name || 'a member'}’s number`
+          : isAdmin
+          ? 'Lead added by admin'
+          : `${session.name} added this lead (found it himself)`,
+      },
+    ];
     if (member && isAdmin) lines.push({ at: now, type: 'assigned', by: session._id, byName: session.name, text: `Given to ${member.name}` });
 
     try {
       const lead = await Lead.create({
         name: clean(body.name, 120),
-        phone: phoneDisplay(body.phone),
-        phoneKey: key,
+        phone: key ? phoneDisplay(body.phone) : '',
+        ...(key ? { phoneKey: key } : {}),
+        age: clean(body.age, 20),
+        occupation: clean(body.occupation, 80),
+        location: clean(body.location, 120),
+        handover,
         country: clean(body.country, 30).toUpperCase(),
         source: clean(body.source || (isAdmin ? 'other' : 'self'), 30).toLowerCase(),
         sourceDetail: clean(body.sourceDetail, 160),
@@ -193,11 +234,21 @@ export async function POST(req) {
       if (member && isAdmin) {
         import('@/lib/utils/push')
           .then(({ sendPushToUser }) =>
-            sendPushToUser(member._id, { title: '🎯 New lead for you', body: `${lead.name || lead.phone} has been given to you.`, url: '/leads', type: 'leads' })
+            sendPushToUser(
+              member._id,
+              handover
+                ? {
+                    title: '📲 A seller will message you',
+                    body: `${session.name} gave your number to ${lead.name || 'a seller'}. When he messages you, add his number and details in Leads.`,
+                    url: '/leads',
+                    type: 'leads',
+                  }
+                : { title: '🎯 New lead for you', body: `${lead.name || lead.phone} has been given to you.`, url: '/leads', type: 'leads' }
+            )
           )
           .catch(() => {});
       }
-      return ok({ message: member && isAdmin ? `Lead added and given to ${member.name}.` : 'Lead added.', lead: leadView(lead.toObject(), session) }, 201);
+      return ok({ message: handover ? `Handover saved. ${member.name} will be asked to add the seller’s number and details.` : member && isAdmin ? `Lead added and given to ${member.name}.` : 'Lead added.', lead: leadView(lead.toObject(), session) }, 201);
     } catch (e) {
       if (e?.code === 11000) {
         // two people added the same number at the same moment: the first one keeps it

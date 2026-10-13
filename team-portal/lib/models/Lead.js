@@ -28,8 +28,15 @@ export const LOST_REASONS = ['no_response', 'not_interested', 'fake', 'other_pla
 const leadSchema = new mongoose.Schema(
   {
     name: { type: String, default: '', trim: true },
-    phone: { type: String, required: true, trim: true },
-    phoneKey: { type: String, required: true, unique: true },
+    // The phone can be missing on a "handover": an admin found the seller and gave him a member's
+    // number; the seller messages the member, and the member then fills in the phone + details.
+    phone: { type: String, default: '', trim: true },
+    phoneKey: { type: String, unique: true, sparse: true }, // left out (not '') while there is no phone
+    // seller profile (all optional): helps the member know who he is talking to
+    age: { type: String, default: '', trim: true },
+    occupation: { type: String, default: '', trim: true },
+    location: { type: String, default: '', trim: true },
+    handover: { type: Boolean, default: false }, // admin gave the seller a member's number
     country: { type: String, default: '', trim: true },
     source: { type: String, default: 'other', trim: true }, // facebook | instagram | tiktok | whatsapp | google | referral | other
     sourceDetail: { type: String, default: '', trim: true }, // e.g. the group / page name

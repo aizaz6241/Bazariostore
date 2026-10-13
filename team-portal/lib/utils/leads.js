@@ -17,6 +17,28 @@ export const STATUS_LABEL = {
   not_converted: 'Not converted',
 };
 
+/**
+ * The phone index must skip leads without a number (handovers). A first version of this screen
+ * made it without that option; if that one is in the database it is rebuilt once (only the index
+ * is rebuilt, no lead is touched).
+ */
+export async function ensureLeadIndexes() {
+  if (global.__leadIndexesOk) return;
+  try {
+    await connectDB();
+    const col = mongoose.connection.db.collection('portalleads');
+    const list = await col.indexes().catch(() => []);
+    const idx = list.find((i) => i.key && i.key.phoneKey === 1 && Object.keys(i.key).length === 1);
+    if (idx && !idx.sparse) {
+      await col.dropIndex(idx.name);
+      await col.createIndex({ phoneKey: 1 }, { unique: true, sparse: true });
+    }
+    global.__leadIndexesOk = true;
+  } catch (e) {
+    console.error('[leads] index check failed:', e.message);
+  }
+}
+
 /** push one history line and keep the list short */
 export const historyPush = (entry) => ({ $push: { history: { $each: [{ at: new Date(), ...entry }], $slice: -HISTORY_KEEP } } });
 
@@ -190,7 +212,13 @@ export function leadView(l, viewer, { withHistory = false } = {}) {
   const out = {
     _id: sid(l._id),
     name: l.name,
-    phone: l.phone,
+    phone: l.phone || '',
+    age: l.age || '',
+    occupation: l.occupation || '',
+    location: l.location || '',
+    handover: !!l.handover,
+    needsDetails: !l.phoneKey, // a handover still waiting for the seller's number
+    profileFilled: [l.name, l.phoneKey, l.age, l.occupation, l.location].filter(Boolean).length, // out of 5
     country: l.country,
     source: l.source,
     sourceDetail: l.sourceDetail,
