@@ -1,20 +1,70 @@
-import { useEffect, useState, useRef } from 'react';
-import { api, fmtDay, compressImage, dropClearedMessages, addChatMessage, syncLatestMessages } from '../api.js';
+import { Fragment, useEffect, useState, useRef } from 'react';
+import { api, compressImage, dropClearedMessages, addChatMessage, syncLatestMessages } from '../api.js';
 import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
 import ChatMessageBubble from '../components/ChatMessageBubble.jsx';
 import AiRewriteBox from '../components/AiRewriteBox.jsx';
 import ClearChatModal from './ClearChatModal.jsx';
 import VoiceRecordButton from '../components/VoiceRecordButton.jsx';
+import { Toggle } from './ui.jsx';
 
-const ROLE_LABELS = {
-  super_admin: '👑 Super Admin',
-  admin: '🛡️ Admin',
-  manager: '📊 Manager',
-  support: '💬 Support Staff',
-  order_manager: '📦 Order Manager',
-  inventory: '🏷️ Inventory',
+const ROLE_NAMES = {
+  super_admin: 'Super Admin',
+  admin: 'Admin',
+  manager: 'Manager',
+  support: 'Support',
+  order_manager: 'Order Manager',
+  inventory: 'Inventory',
 };
+
+// [background, text] per role, and a few soft tones for store avatars
+const ROLE_TONES = {
+  super_admin: ['#ece9fb', '#4b3bb3'],
+  admin: ['#e8f1fc', '#1d5fae'],
+  manager: ['#e4f6ef', '#0f7a55'],
+  support: ['#fdf3dc', '#97690a'],
+  order_manager: ['#fbe9f0', '#a83a66'],
+  inventory: ['#eef1f5', '#475569'],
+};
+const AVATAR_TONES = [
+  ['#e8f1fc', '#1d5fae'],
+  ['#fdeee6', '#b4471b'],
+  ['#e4f6ef', '#0f7a55'],
+  ['#fdf3dc', '#97690a'],
+  ['#fbe9f0', '#a83a66'],
+  ['#ece9fb', '#4b3bb3'],
+];
+function toneFor(key = '') {
+  let h = 0;
+  for (const ch of String(key)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return AVATAR_TONES[h % AVATAR_TONES.length];
+}
+
+const isGuestConv = (c) => Boolean(c?.isGuest || c?.type === 'guest');
+const convTitle = (c) => c.storeName || c.seller?.storeName || (isGuestConv(c) ? 'Guest visitor' : 'Unknown store');
+
+const dayKey = (d) => {
+  const x = new Date(d);
+  return `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`;
+};
+function dayLabel(d) {
+  const x = new Date(d);
+  const today = new Date();
+  const yest = new Date(Date.now() - 864e5);
+  if (dayKey(x) === dayKey(today)) return 'Today';
+  if (dayKey(x) === dayKey(yest)) return 'Yesterday';
+  return x.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short', ...(x.getFullYear() !== today.getFullYear() ? { year: 'numeric' } : {}) });
+}
+// Short time for the conversation list: 14:05 · Yesterday · Mon · 3 Oct
+function listTime(d) {
+  if (!d) return '';
+  const x = new Date(d);
+  const now = new Date();
+  if (dayKey(x) === dayKey(now)) return x.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (dayKey(x) === dayKey(new Date(Date.now() - 864e5))) return 'Yesterday';
+  if (now - x < 6 * 864e5) return x.toLocaleDateString('en-US', { weekday: 'short' });
+  return x.toLocaleDateString('en-US', { day: 'numeric', month: 'short', ...(x.getFullYear() !== now.getFullYear() ? { year: '2-digit' } : {}) });
+}
 
 export default function ChatInbox() {
   // Current Logged-in Admin
@@ -667,158 +717,193 @@ export default function ChatInbox() {
 
   const hasSelection = activeTab === 'sellers' ? !!selectedSellerId : !!selectedTeamId;
 
+  // Textarea grows with what is typed (up to ~6 lines), and shrinks back after sending
+  useEffect(() => {
+    const el = textInputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [text, hasSelection]);
+
+  const openCount = sellerConvos.filter((c) => c.status !== 'resolved').length;
+  const merchantCount = sellerConvos.filter((c) => !isGuestConv(c)).length;
+  const guestCount = sellerConvos.length - merchantCount;
+  const autoState = autoReply.awayMode ? 'away' : autoReply.enabled ? 'on' : 'off';
+
+  const threadName =
+    activeTab === 'sellers'
+      ? selectedSellerConv
+        ? convTitle(selectedSellerConv)
+        : ''
+      : currentTeamMember?.name || '';
+
+  // Messages with a date line whenever the day changes
+  const renderMessages = (isMine) =>
+    messages.map((m, idx) => {
+      const prev = messages[idx - 1];
+      const newDay = !prev || dayKey(prev.createdAt) !== dayKey(m.createdAt);
+      return (
+        <Fragment key={m._id}>
+          {newDay && m.createdAt && (
+            <div className="scd-day">
+              <span>{dayLabel(m.createdAt)}</span>
+            </div>
+          )}
+          <ChatMessageBubble
+            msg={m}
+            isMe={isMine(m)}
+            myRole="admin"
+            onReply={handleStartReply}
+            onEdit={handleStartEdit}
+            onDelete={handleDeleteMessage}
+          />
+        </Fragment>
+      );
+    });
+
+  const historyControls = (
+    <>
+      {hasMore && (
+        <div className="scd-earlier">
+          <button type="button" onClick={handleLoadEarlier} disabled={loadingEarlier}>
+            {loadingEarlier ? (
+              <>
+                <span className="scd-spinner" /> Loading earlier messages…
+              </>
+            ) : (
+              <>
+                <Ic name="chevDown" size={14} style={{ transform: 'rotate(180deg)' }} /> Load earlier messages
+              </>
+            )}
+          </button>
+        </div>
+      )}
+      {!hasMore && messages.length >= 50 && <div className="scd-history-start">Beginning of conversation</div>}
+    </>
+  );
+
   return (
-    <div className={`admin-chat-layout ${hasSelection ? 'mobile-thread-view' : 'mobile-list-view'}`}>
-      {/* SIDEBAR */}
-      <div className="admin-chat-sidebar">
-        <div className="admin-chat-sidebar-head">
-          {/* Segmented Tab Switcher */}
-          <div className="admin-chat-tabs">
+    <div className={`scd admin-chat-layout ${hasSelection ? 'mobile-thread-view' : 'mobile-list-view'}`}>
+      {/* ───────────── SIDEBAR ───────────── */}
+      <aside className="scd-side">
+        <div className="scd-side-head">
+          <div className="scd-side-title">
+            <div>
+              <h2>Support Desk</h2>
+              <small>
+                {activeTab === 'sellers'
+                  ? `${openCount} open · ${totalSellerUnread} unread`
+                  : `${teamMembers.length} team member${teamMembers.length === 1 ? '' : 's'}`}
+              </small>
+            </div>
             <button
               type="button"
-              className={`admin-chat-tab-btn ${activeTab === 'sellers' ? 'active' : ''}`}
+              className={`scd-auto scd-auto-${autoState}`}
+              onClick={() => setAutoReplyModal(true)}
+              title="Auto-reply settings"
+            >
+              <i className="scd-auto-dot" />
+              <span>{autoState === 'away' ? 'Away mode' : autoState === 'on' ? 'Auto-reply on' : 'Auto-reply off'}</span>
+              <Ic name="gear" size={13} />
+            </button>
+          </div>
+
+          <div className="scd-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'sellers'}
+              className={activeTab === 'sellers' ? 'on' : ''}
               onClick={() => {
                 setActiveTab('sellers');
                 setQ('');
               }}
             >
-              <span>🏬 Inquiries</span>
-              {totalSellerUnread > 0 && <span className="tab-badge">{totalSellerUnread}</span>}
+              <Ic name="headset" size={15} />
+              <span>Inquiries</span>
+              {totalSellerUnread > 0 && <span className="scd-count">{totalSellerUnread}</span>}
             </button>
             <button
               type="button"
-              className={`admin-chat-tab-btn ${activeTab === 'team' ? 'active' : ''}`}
+              role="tab"
+              aria-selected={activeTab === 'team'}
+              className={activeTab === 'team' ? 'on' : ''}
               onClick={() => {
                 setActiveTab('team');
                 setQ('');
               }}
             >
-              <span>👥 Team &amp; Admins</span>
-              {totalTeamUnread > 0 && <span className="tab-badge">{totalTeamUnread}</span>}
+              <Ic name="users" size={15} />
+              <span>Team</span>
+              {totalTeamUnread > 0 && <span className="scd-count">{totalTeamUnread}</span>}
             </button>
           </div>
 
-          {/* Auto-Reply Status Pill & Settings Trigger */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '8px 0', padding: '0 4px' }}>
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: '#64748b' }}>Support Automation:</span>
-            <button
-              type="button"
-              onClick={() => setAutoReplyModal(true)}
-              style={{
-                background: autoReply.awayMode ? '#fef3c7' : autoReply.enabled ? '#ecfdf5' : '#f1f5f9',
-                color: autoReply.awayMode ? '#92400e' : autoReply.enabled ? '#065f46' : '#64748b',
-                border: `1px solid ${autoReply.awayMode ? '#fde68a' : autoReply.enabled ? '#a7f3d0' : '#cbd5e1'}`,
-                borderRadius: 14,
-                padding: '3px 10px',
-                fontSize: 11.5,
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-              }}
-            >
-              <span>{autoReply.awayMode ? '🌙 Away Mode:' : '🤖 Auto-Reply:'}</span>
-              <b>{autoReply.awayMode ? 'ACTIVE' : autoReply.enabled ? 'ON' : 'OFF'}</b>
-              <span>⚙️</span>
-            </button>
-          </div>
-
-          {/* Guest vs Seller sub-filters */}
-          {activeTab === 'sellers' && (
-            <div style={{ display: 'flex', gap: 6, marginBottom: 8, padding: '0 4px' }}>
-              <button
-                type="button"
-                onClick={() => setSellerFilter('all')}
-                style={{
-                  flex: 1,
-                  padding: '4px 8px',
-                  borderRadius: 6,
-                  border: 'none',
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  background: sellerFilter === 'all' ? '#0f172a' : '#f1f5f9',
-                  color: sellerFilter === 'all' ? '#fff' : '#64748b',
-                }}
-              >
-                All ({sellerConvos.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setSellerFilter('sellers')}
-                style={{
-                  flex: 1,
-                  padding: '4px 8px',
-                  borderRadius: 6,
-                  border: 'none',
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  background: sellerFilter === 'sellers' ? '#0f172a' : '#f1f5f9',
-                  color: sellerFilter === 'sellers' ? '#fff' : '#64748b',
-                }}
-              >
-                Merchants ({sellerConvos.filter((c) => !c.isGuest && c.type !== 'guest').length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setSellerFilter('guests')}
-                style={{
-                  flex: 1,
-                  padding: '4px 8px',
-                  borderRadius: 6,
-                  border: 'none',
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  background: sellerFilter === 'guests' ? '#0284c7' : '#f1f5f9',
-                  color: sellerFilter === 'guests' ? '#fff' : '#64748b',
-                }}
-              >
-                Guests ({sellerConvos.filter((c) => c.isGuest || c.type === 'guest').length})
-              </button>
-            </div>
-          )}
-
-          {/* Search Box */}
-          <div className="admin-search-box search-field-sm">
+          <div className="scd-search">
             <Ic name="search" size={15} />
             <input
               type="text"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder={activeTab === 'sellers' ? 'Search store or subject...' : 'Search team members or role...'}
+              placeholder={activeTab === 'sellers' ? 'Search store or subject…' : 'Search name, email or role…'}
             />
             {q && (
-              <button type="button" onClick={() => setQ('')} className="btn-clear-search">
-                ✕
+              <button type="button" onClick={() => setQ('')} className="scd-search-clear" aria-label="Clear search">
+                <Ic name="x" size={13} />
               </button>
             )}
           </div>
+
+          {activeTab === 'sellers' && (
+            <div className="scd-filters">
+              {[
+                ['all', 'All', sellerConvos.length],
+                ['sellers', 'Merchants', merchantCount],
+                ['guests', 'Guests', guestCount],
+              ].map(([key, label, n]) => (
+                <button key={key} type="button" className={sellerFilter === key ? 'on' : ''} onClick={() => setSellerFilter(key)}>
+                  {label} <span>{n}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* CONVERSATION LIST */}
-        <div className="admin-convos-list">
-          {loading && <div className="p-4 text-center muted">Loading conversations...</div>}
+        <div className="scd-list">
+          {loading &&
+            [0, 1, 2, 3].map((i) => (
+              <div key={i} className="scd-skel">
+                <i />
+                <div>
+                  <span />
+                  <span />
+                </div>
+              </div>
+            ))}
 
-          {/* 1. SELLER SUPPORT INBOX */}
+          {/* Seller / guest inquiries */}
           {activeTab === 'sellers' && (
             <>
               {!loading && filteredSellerConvos.length === 0 && (
-                <div className="p-6 text-center muted">No conversations found matching filter.</div>
+                <div className="scd-list-empty">
+                  <Ic name="chat" size={22} />
+                  <p>{q ? 'No conversation matches your search.' : 'No conversations here yet.'}</p>
+                </div>
               )}
               {filteredSellerConvos.map((c) => {
                 const isSelected = c._id === selectedSellerId;
                 const unreadCount = c.unreadForAdmin || 0;
                 const hasUnread = unreadCount > 0;
-                const isGuestConvo = c.isGuest || c.type === 'guest';
-                const storeTitle = c.storeName || c.seller?.storeName || (isGuestConvo ? 'Guest Visitor' : 'Unknown Store');
+                const guest = isGuestConv(c);
+                const title = convTitle(c);
+                const tone = toneFor(title);
+                const fromUs = c.lastSender === 'admin' || c.lastSender === 'staff';
 
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={c._id}
-                    className={`admin-convo-item ${isSelected ? 'selected' : ''} ${hasUnread ? 'has-unread' : ''}`}
+                    className={`scd-item ${isSelected ? 'on' : ''} ${hasUnread ? 'unread' : ''}`}
                     onClick={() => {
                       setSelectedSellerId(c._id);
                       if (hasUnread) {
@@ -829,62 +914,56 @@ export default function ChatInbox() {
                       }
                     }}
                   >
-                    <div className="convo-avatar" style={{ background: isGuestConvo ? '#e0f2fe' : '#fef3c7', color: isGuestConvo ? '#0369a1' : '#b45309' }}>
-                      <span>{isGuestConvo ? '👤' : (storeTitle[0] || 'S').toUpperCase()}</span>
-                      {hasUnread && <span className="avatar-unread-dot" />}
-                    </div>
-                    <div className="convo-body">
-                      <div className="convo-top">
-                        <div className="convo-title-box">
-                          <b className="convo-name">{storeTitle}</b>
-                          {isGuestConvo ? (
-                            <span style={{ fontSize: 10.5, fontWeight: 800, background: '#e0f2fe', color: '#0369a1', padding: '1px 6px', borderRadius: 4 }}>
-                              GUEST
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: 10.5, fontWeight: 800, background: '#fef3c7', color: '#b45309', padding: '1px 6px', borderRadius: 4 }}>
-                              SELLER
-                            </span>
-                          )}
-                          {hasUnread && (
-                            <span className="seller-unread-pill-label" title={`${unreadCount} unread message(s)`}>
-                              {unreadCount} NEW
-                            </span>
-                          )}
-                        </div>
-                        <small className="convo-time">{c.lastAt ? fmtDay(c.lastAt) : ''}</small>
-                      </div>
-                      <div className="convo-sub">
-                        <span className={`convo-last-msg ${hasUnread ? 'convo-last-msg-bold' : ''}`}>
+                    <span className={`scd-avatar ${guest ? 'guest' : ''}`} style={guest ? undefined : { background: tone[0], color: tone[1] }}>
+                      {guest ? <Ic name="user" size={18} /> : (title[0] || 'S').toUpperCase()}
+                    </span>
+                    <span className="scd-item-body">
+                      <span className="scd-item-top">
+                        <b>{title}</b>
+                        <time>{listTime(c.lastAt)}</time>
+                      </span>
+                      <span className="scd-item-mid">
+                        <span className="scd-item-msg">
+                          {fromUs && <em>You: </em>}
                           {c.lastMessage || 'No messages yet'}
                         </span>
-                        {hasUnread && (
-                          <span className="convo-unread-bubble-count">{unreadCount}</span>
+                        {hasUnread && <span className="scd-unread" title={`${unreadCount} unread`}>{unreadCount}</span>}
+                      </span>
+                      <span className="scd-item-tags">
+                        <span className={`scd-tag ${guest ? 'guest' : 'seller'}`}>{guest ? 'Guest' : 'Seller'}</span>
+                        {c.status === 'resolved' && (
+                          <span className="scd-tag resolved">
+                            <Ic name="check" size={10} /> Resolved
+                          </span>
                         )}
-                      </div>
-                    </div>
-                  </div>
+                      </span>
+                    </span>
+                  </button>
                 );
               })}
             </>
           )}
 
-          {/* 2. TEAM & SUPER ADMIN INBOX */}
+          {/* Team & admins */}
           {activeTab === 'team' && (
             <>
               {!loading && filteredTeamMembers.length === 0 && (
-                <div className="p-6 text-center muted">No team members found.</div>
+                <div className="scd-list-empty">
+                  <Ic name="users" size={22} />
+                  <p>No team members found.</p>
+                </div>
               )}
               {filteredTeamMembers.map((t) => {
                 const isSelected = t._id === selectedTeamId;
                 const unreadCount = t.unreadCount || 0;
                 const hasUnread = unreadCount > 0;
-                const isSuper = t.role === 'super_admin';
+                const tone = ROLE_TONES[t.role] || ROLE_TONES.inventory;
 
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={t._id}
-                    className={`admin-convo-item ${isSelected ? 'selected' : ''} ${hasUnread ? 'has-unread' : ''}`}
+                    className={`scd-item ${isSelected ? 'on' : ''} ${hasUnread ? 'unread' : ''}`}
                     onClick={() => {
                       setSelectedTeamId(t._id);
                       if (hasUnread) {
@@ -895,302 +974,180 @@ export default function ChatInbox() {
                       }
                     }}
                   >
-                    <div className={`convo-avatar ${isSuper ? 'admin-avatar-super' : 'admin-avatar-team'}`}>
-                      <span>{(t.name?.[0] || 'A').toUpperCase()}</span>
-                      {hasUnread && <span className="avatar-unread-dot" />}
-                    </div>
-                    <div className="convo-body">
-                      <div className="convo-top">
-                        <div className="convo-title-box">
-                          <b className="convo-name">{t.name}</b>
-                          <span className={`admin-role-badge-sm role-${t.role}`}>
-                            {ROLE_LABELS[t.role] || t.role}
-                          </span>
-                        </div>
-                        <small className="convo-time">{t.lastAt ? fmtDay(t.lastAt) : ''}</small>
-                      </div>
-                      <div className="convo-sub">
-                        <span className={`convo-last-msg ${hasUnread ? 'convo-last-msg-bold' : ''}`}>
-                          {t.lastMessage || 'Click to start conversation'}
+                    <span className="scd-avatar" style={{ background: tone[0], color: tone[1] }}>
+                      {(t.name?.[0] || 'A').toUpperCase()}
+                    </span>
+                    <span className="scd-item-body">
+                      <span className="scd-item-top">
+                        <b>{t.name}</b>
+                        <time>{listTime(t.lastAt)}</time>
+                      </span>
+                      <span className="scd-item-mid">
+                        <span className="scd-item-msg">{t.lastMessage || 'Start a conversation'}</span>
+                        {hasUnread && <span className="scd-unread">{unreadCount}</span>}
+                      </span>
+                      <span className="scd-item-tags">
+                        <span className="scd-tag role" style={{ background: tone[0], color: tone[1] }}>
+                          {ROLE_NAMES[t.role] || t.role}
                         </span>
-                        {hasUnread && (
-                          <span className="seller-unread-pill-label">{unreadCount} NEW</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+                      </span>
+                    </span>
+                  </button>
                 );
               })}
             </>
           )}
         </div>
-      </div>
+      </aside>
 
-      {/* CHAT THREAD AREA */}
-      <div className="admin-chat-thread">
-        {/* 1. SELLER SUPPORT THREAD */}
-        {activeTab === 'sellers' && selectedSellerConv && (
-          <>
-            <div className="admin-thread-head">
-              <div className="ath-left">
-                <button
-                  type="button"
-                  className="mobile-back-btn"
-                  onClick={() => setSelectedSellerId(null)}
-                  title="Back to seller list"
-                >
+      {/* ───────────── THREAD ───────────── */}
+      <section className="scd-thread">
+        {/* Seller / guest conversation */}
+        {activeTab === 'sellers' && selectedSellerConv && (() => {
+          const guest = isGuestConv(selectedSellerConv);
+          const resolved = selectedSellerConv.status === 'resolved';
+          const tone = toneFor(threadName);
+          return (
+            <>
+              <header className="scd-thread-head">
+                <button type="button" className="scd-back" onClick={() => setSelectedSellerId(null)} aria-label="Back to conversations">
                   <Ic name="arrowLeft" size={18} />
                 </button>
-                <div className="ath-info">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <b className="ath-name">{selectedSellerConv.storeName || selectedSellerConv.seller?.storeName || (selectedSellerConv.isGuest ? 'Guest Support' : 'Support Thread')}</b>
-                    {selectedSellerConv.isGuest || selectedSellerConv.type === 'guest' ? (
-                      <span style={{ fontSize: 11, fontWeight: 800, background: '#e0f2fe', color: '#0369a1', padding: '2px 8px', borderRadius: 4 }}>
-                        👤 Guest Inquiry (Pre-Login)
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#166534', padding: '2px 8px', borderRadius: 4 }}>
-                        🏪 Registered Merchant
-                      </span>
-                    )}
+                <span className={`scd-avatar lg ${guest ? 'guest' : ''}`} style={guest ? undefined : { background: tone[0], color: tone[1] }}>
+                  {guest ? <Ic name="user" size={19} /> : (threadName[0] || 'S').toUpperCase()}
+                </span>
+                <div className="scd-thread-info">
+                  <div className="scd-thread-name">
+                    <b>{threadName}</b>
+                    <span className={`scd-status ${resolved ? 'resolved' : 'open'}`}>{resolved ? 'Resolved' : 'Open'}</span>
                   </div>
-                  <div className="ath-meta">
-                    <span>{selectedSellerConv.isGuest ? `Guest ID: ${selectedSellerConv.guestId || 'Unregistered'}` : `Owner: ${selectedSellerConv.sellerName || selectedSellerConv.seller?.ownerName || 'Merchant'}`}</span>
-                    <span>•</span>
-                    <span>{selectedSellerConv.sellerEmail || selectedSellerConv.seller?.email || 'Live Channel'}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="ath-actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => setClearChat('seller')}
-                  title="Delete messages and their pictures / files for good"
-                  style={{
-                    padding: '7px 12px',
-                    borderRadius: 8,
-                    border: '1px solid #fecaca',
-                    background: '#fff',
-                    color: '#b91c1c',
-                    fontWeight: 700,
-                    fontSize: 12.5,
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  🧹 Clear chat
-                </button>
-                <button
-                  type="button"
-                  className={`btn-status-toggle ${selectedSellerConv.status === 'resolved' ? 'status-resolved' : 'status-open'}`}
-                  onClick={handleToggleResolve}
-                >
-                  {selectedSellerConv.status === 'resolved' ? '✅ Resolved (Reopen)' : 'Mark as Resolved'}
-                </button>
-              </div>
-            </div>
-
-            <div
-              ref={threadMessagesRef}
-              onScroll={handleThreadScroll}
-              className="admin-thread-messages"
-            >
-              {hasMore && (
-                <div style={{ textAlign: 'center', padding: '12px 0 16px' }}>
-                  <button
-                    type="button"
-                    onClick={handleLoadEarlier}
-                    disabled={loadingEarlier}
-                    style={{
-                      padding: '7px 18px',
-                      fontSize: 12.5,
-                      fontWeight: 700,
-                      borderRadius: 20,
-                      border: '1px solid #cbd5e1',
-                      background: '#f8fafc',
-                      color: '#1e293b',
-                      cursor: loadingEarlier ? 'not-allowed' : 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-                    }}
-                  >
-                    {loadingEarlier ? (
-                      <span>⏳ Loading earlier messages...</span>
-                    ) : (
-                      <>
-                        <span>⬆️</span>
-                        <span>Load earlier messages (Purani chat dekhein)</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              )}
-              {!hasMore && messages.length >= 50 && (
-                <div style={{ textAlign: 'center', padding: '8px 0 14px', fontSize: 11.5, color: '#94a3b8' }}>
-                  📜 Beginning of conversation history
-                </div>
-              )}
-
-              {messages.map((m) => {
-                const isAdmin = m.sender === 'admin' || m.sender === 'staff';
-                return (
-                  <ChatMessageBubble
-                    key={m._id}
-                    msg={m}
-                    isMe={isAdmin}
-                    myRole="admin"
-                    onReply={handleStartReply}
-                    onEdit={handleStartEdit}
-                    onDelete={handleDeleteMessage}
-                  />
-                );
-              })}
-              <div ref={scrollRef} />
-            </div>
-          </>
-        )}
-
-        {/* 2. TEAM & SUPER ADMIN DIRECT THREAD */}
-        {activeTab === 'team' && currentTeamMember && (
-          <>
-            <div className="admin-thread-head">
-              <div className="ath-left">
-                <button
-                  type="button"
-                  className="mobile-back-btn"
-                  onClick={() => setSelectedTeamId(null)}
-                  title="Back to team list"
-                >
-                  <Ic name="arrowLeft" size={18} />
-                </button>
-                <div className="ath-info">
-                  <div className="flex items-center gap-2">
-                    <b className="ath-name">{currentTeamMember.name}</b>
-                    <span className={`admin-role-badge-sm role-${currentTeamMember.role}`}>
-                      {ROLE_LABELS[currentTeamMember.role] || currentTeamMember.role}
+                  <small>
+                    <span className={`scd-tag ${guest ? 'guest' : 'seller'}`}>{guest ? 'Guest · pre-login' : 'Registered merchant'}</span>
+                    <span className="scd-meta-text">
+                      {guest
+                        ? `Guest ID: ${selectedSellerConv.guestId || 'Unregistered'}`
+                        : `${selectedSellerConv.sellerName || selectedSellerConv.seller?.ownerName || 'Merchant'} · ${selectedSellerConv.sellerEmail || selectedSellerConv.seller?.email || 'Live channel'}`}
                     </span>
-                  </div>
-                  <div className="ath-meta">
-                    <span>{currentTeamMember.email}</span>
-                    {currentTeamMember.phone && (
-                      <>
-                        <span>•</span>
-                        <span>{currentTeamMember.phone}</span>
-                      </>
-                    )}
-                    <span>•</span>
-                    <span style={{ color: '#16a34a', fontWeight: 600 }}>● Internal Team Channel</span>
-                  </div>
+                  </small>
                 </div>
-              </div>
-              <div className="ath-actions">
-                <button
-                  type="button"
-                  onClick={() => setClearChat('team')}
-                  title="Delete messages and their pictures / files for good"
-                  style={{
-                    padding: '7px 12px',
-                    borderRadius: 8,
-                    border: '1px solid #fecaca',
-                    background: '#fff',
-                    color: '#b91c1c',
-                    fontWeight: 700,
-                    fontSize: 12.5,
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  🧹 Clear chat
-                </button>
-              </div>
-            </div>
-
-            <div
-              ref={threadMessagesRef}
-              onScroll={handleThreadScroll}
-              className="admin-thread-messages"
-            >
-              {hasMore && (
-                <div style={{ textAlign: 'center', padding: '12px 0 16px' }}>
+                <div className="scd-thread-actions">
                   <button
                     type="button"
-                    onClick={handleLoadEarlier}
-                    disabled={loadingEarlier}
-                    style={{
-                      padding: '7px 18px',
-                      fontSize: 12.5,
-                      fontWeight: 700,
-                      borderRadius: 20,
-                      border: '1px solid #cbd5e1',
-                      background: '#f8fafc',
-                      color: '#1e293b',
-                      cursor: loadingEarlier ? 'not-allowed' : 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-                    }}
+                    className={`scd-btn ${resolved ? '' : 'primary'}`}
+                    onClick={handleToggleResolve}
+                    title={resolved ? 'Reopen this conversation' : 'Mark this conversation as resolved'}
                   >
-                    {loadingEarlier ? (
-                      <span>⏳ Loading earlier messages...</span>
-                    ) : (
-                      <>
-                        <span>⬆️</span>
-                        <span>Load earlier messages (Purani chat dekhein)</span>
-                      </>
-                    )}
+                    <Ic name={resolved ? 'refresh' : 'checkCircle'} size={15} />
+                    <span>{resolved ? 'Reopen' : 'Mark resolved'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="scd-btn danger icon"
+                    onClick={() => setClearChat('seller')}
+                    title="Clear chat — delete messages and their pictures / files for good"
+                    aria-label="Clear chat"
+                  >
+                    <Ic name="trash" size={15} />
+                    <span>Clear</span>
                   </button>
                 </div>
-              )}
-              {!hasMore && messages.length >= 50 && (
-                <div style={{ textAlign: 'center', padding: '8px 0 14px', fontSize: 11.5, color: '#94a3b8' }}>
-                  📜 Beginning of conversation history
+              </header>
+
+              <div ref={threadMessagesRef} onScroll={handleThreadScroll} className="scd-messages">
+                {historyControls}
+                {renderMessages((m) => m.sender === 'admin' || m.sender === 'staff')}
+                <div ref={scrollRef} />
+              </div>
+            </>
+          );
+        })()}
+
+        {/* Team member conversation */}
+        {activeTab === 'team' && currentTeamMember && (() => {
+          const tone = ROLE_TONES[currentTeamMember.role] || ROLE_TONES.inventory;
+          return (
+            <>
+              <header className="scd-thread-head">
+                <button type="button" className="scd-back" onClick={() => setSelectedTeamId(null)} aria-label="Back to team list">
+                  <Ic name="arrowLeft" size={18} />
+                </button>
+                <span className="scd-avatar lg" style={{ background: tone[0], color: tone[1] }}>
+                  {(currentTeamMember.name?.[0] || 'A').toUpperCase()}
+                </span>
+                <div className="scd-thread-info">
+                  <div className="scd-thread-name">
+                    <b>{currentTeamMember.name}</b>
+                    <span className="scd-status internal">Internal</span>
+                  </div>
+                  <small>
+                    <span className="scd-tag role" style={{ background: tone[0], color: tone[1] }}>
+                      {ROLE_NAMES[currentTeamMember.role] || currentTeamMember.role}
+                    </span>
+                    <span className="scd-meta-text">
+                      {currentTeamMember.email}
+                      {currentTeamMember.phone ? ` · ${currentTeamMember.phone}` : ''}
+                    </span>
+                  </small>
                 </div>
-              )}
+                <div className="scd-thread-actions">
+                  <button
+                    type="button"
+                    className="scd-btn danger icon"
+                    onClick={() => setClearChat('team')}
+                    title="Clear chat — delete messages and their pictures / files for good"
+                    aria-label="Clear chat"
+                  >
+                    <Ic name="trash" size={15} />
+                    <span>Clear</span>
+                  </button>
+                </div>
+              </header>
 
-              {messages.map((m) => {
-                const isMe = String(m.senderAdmin) === String(me?.id) || (m.sender === 'admin' && !m.senderAdmin && m.senderName === me?.name);
-                return (
-                  <ChatMessageBubble
-                    key={m._id}
-                    msg={m}
-                    isMe={isMe}
-                    myRole="admin"
-                    onReply={handleStartReply}
-                    onEdit={handleStartEdit}
-                    onDelete={handleDeleteMessage}
-                  />
-                );
-              })}
-              <div ref={scrollRef} />
-            </div>
-          </>
-        )}
+              <div ref={threadMessagesRef} onScroll={handleThreadScroll} className="scd-messages">
+                {historyControls}
+                {renderMessages((m) => String(m.senderAdmin) === String(me?.id) || (m.sender === 'admin' && !m.senderAdmin && m.senderName === me?.name))}
+                <div ref={scrollRef} />
+              </div>
+            </>
+          );
+        })()}
 
-        {/* EMPTY STATE */}
+        {/* Nothing open */}
         {!hasSelection && (
-          <div className="admin-chat-empty">
-            <div className="empty-icon">
-              <Ic name={activeTab === 'sellers' ? 'chat' : 'user'} size={40} />
+          <div className="scd-empty">
+            <div className="scd-empty-icon">
+              <Ic name={activeTab === 'sellers' ? 'chat' : 'users'} size={30} />
             </div>
-            <h3>{activeTab === 'sellers' ? 'Select an Inquiry' : 'Select a Team Member or Super Admin'}</h3>
+            <h3>{activeTab === 'sellers' ? 'Pick a conversation' : 'Message your team'}</h3>
             <p>
               {activeTab === 'sellers'
-                ? 'Select a registered merchant or guest visitor to review inquiries and provide real-time vendor assistance.'
-                : 'Select an administrator, super admin, or staff member to begin direct internal team messaging.'}
+                ? 'Choose a merchant or guest on the left to read their messages and reply in real time.'
+                : 'Choose an admin or staff member on the left to start a private internal chat.'}
             </p>
+            {activeTab === 'sellers' && (
+              <div className="scd-empty-stats">
+                <div>
+                  <b>{openCount}</b>
+                  <small>Open</small>
+                </div>
+                <div>
+                  <b>{totalSellerUnread}</b>
+                  <small>Unread</small>
+                </div>
+                <div>
+                  <b>{guestCount}</b>
+                  <small>Guests</small>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {/* SHARED INPUT & REPLY FORM (WITH MULTILINE AUTO-EXPANDING TEXTAREA) */}
+        {/* Composer (shared by both kinds of chat) */}
         {hasSelection && (
-          <>
-            {/* WhatsApp Replying Preview */}
+          <div className="scd-composer-wrap">
             {replyingTo && (
-              <div className="chat-replying-bar">
+              <div className="chat-replying-bar scd-replying">
                 <div className="crb-left">
                   <div className="crb-indicator"></div>
                   <div className="crb-info">
@@ -1208,26 +1165,31 @@ export default function ChatInbox() {
               </div>
             )}
 
-            {/* File Upload Preview */}
             {file && (
-              <div className="chat-attachment-preview-bar admin-preview-bar">
+              <div className="chat-attachment-preview-bar admin-preview-bar scd-preview">
                 <div className="preview-file-box">
                   {filePreview ? (
                     <img src={filePreview} alt="Upload preview" className="preview-thumb" />
                   ) : (
-                    <div className="preview-pdf-icon"><Ic name="fileText" size={24} /><span>PDF</span></div>
+                    <div className="preview-pdf-icon">
+                      <Ic name="fileText" size={24} />
+                      <span>PDF</span>
+                    </div>
                   )}
                   <div className="preview-file-details">
                     <b className="preview-file-name">{file.name}</b>
-                    <small className="muted-sm">{(file.size / 1024).toFixed(1)} KB • {file.type.startsWith('image/') ? 'Image' : 'PDF'}</small>
+                    <small className="muted-sm">
+                      {(file.size / 1024).toFixed(1)} KB • {file.type.startsWith('image/') ? 'Image' : 'PDF'}
+                    </small>
                   </div>
                 </div>
-                <button type="button" className="btn-remove-preview" onClick={removeFile} title="Remove"><Ic name="x" size={16} /></button>
+                <button type="button" className="btn-remove-preview" onClick={removeFile} title="Remove">
+                  <Ic name="x" size={16} />
+                </button>
               </div>
             )}
 
-            {/* Input Bar with Multiline Auto-Expanding Textarea (4-5 lines visible) */}
-            <form onSubmit={handleSend} className="admin-reply-bar" style={{ alignItems: 'flex-end' }}>
+            <form onSubmit={handleSend} className="scd-composer">
               <input
                 type="file"
                 ref={fileInputRef}
@@ -1235,147 +1197,132 @@ export default function ChatInbox() {
                 accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
                 style={{ display: 'none' }}
               />
-              <button
-                type="button"
-                className="chat-attach-btn"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={sending}
-                title="Attach photo or PDF document"
-                style={{ marginBottom: 8 }}
-              >
-                <Ic name="paperclip" size={20} stroke={2} />
-              </button>
-              <div style={{ marginBottom: 8 }}>
-                <VoiceRecordButton
-                  onTranscribed={(spokenText) => {
-                    setText((prev) => (prev ? `${prev.trim()} ${spokenText}` : spokenText));
-                    textInputRef.current?.focus();
+              <div className="scd-composer-box">
+                <textarea
+                  ref={textInputRef}
+                  rows={1}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend(e);
+                    }
                   }}
-                  disabled={sending || uploading}
-                />
-              </div>
-              <textarea
-                ref={textInputRef}
-                rows={3}
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend(e);
+                  placeholder={
+                    file
+                      ? 'Add a caption…'
+                      : replyingTo
+                      ? `Reply to ${replyingTo.senderName || 'message'}…`
+                      : `Message ${threadName || (activeTab === 'sellers' ? 'merchant' : 'admin')}…`
                   }
-                }}
-                placeholder={
-                  file
-                    ? 'Add a caption...'
-                    : replyingTo
-                    ? `Reply to ${replyingTo.senderName || 'message'}... (Enter to send, Shift+Enter for new line)`
-                    : activeTab === 'sellers'
-                    ? `Message ${selectedSellerConv?.seller?.storeName || selectedSellerConv?.storeName || 'Merchant'}... (Enter to send, Shift+Enter for new line)`
-                    : `Message ${currentTeamMember?.name || 'Admin'}... (Enter to send, Shift+Enter for new line)`
-                }
-                disabled={sending}
-                style={{
-                  flex: 1,
-                  padding: '10px 14px',
-                  borderRadius: 8,
-                  border: '1px solid #cbd5e1',
-                  resize: 'vertical',
-                  minHeight: 65,
-                  maxHeight: 160,
-                  fontFamily: 'inherit',
-                  fontSize: 13.5,
-                  lineHeight: 1.45,
-                }}
-              />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 4 }}>
-                <AiRewriteBox
-                  text={text}
-                  onApply={(rewritten) => {
-                    setText(rewritten);
-                    textInputRef.current?.focus();
-                  }}
-                  onApplyAndSend={(rewritten) => {
-                    handleSend(null, rewritten);
-                  }}
-                  disabled={sending || uploading}
+                  disabled={sending}
                 />
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  disabled={sending || (!text.trim() && !file)}
-                  style={{ height: 42, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                >
-                  {sending ? (uploading ? 'Uploading...' : 'Sending...') : <><Ic name="send" size={16} /> Send</>}
-                </button>
+                <div className="scd-composer-bar">
+                  <div className="scd-composer-tools">
+                    <button
+                      type="button"
+                      className="scd-tool"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={sending}
+                      title="Attach a photo or PDF (max 15 MB)"
+                      aria-label="Attach file"
+                    >
+                      <Ic name="paperclip" size={18} />
+                    </button>
+                    <VoiceRecordButton
+                      onTranscribed={(spokenText) => {
+                        setText((prev) => (prev ? `${prev.trim()} ${spokenText}` : spokenText));
+                        textInputRef.current?.focus();
+                      }}
+                      disabled={sending || uploading}
+                    />
+                    <AiRewriteBox
+                      text={text}
+                      onApply={(rewritten) => {
+                        setText(rewritten);
+                        textInputRef.current?.focus();
+                      }}
+                      onApplyAndSend={(rewritten) => {
+                        handleSend(null, rewritten);
+                      }}
+                      disabled={sending || uploading}
+                    />
+                    <span className="scd-hint">
+                      <kbd>Enter</kbd> to send · <kbd>Shift</kbd> + <kbd>Enter</kbd> new line
+                    </span>
+                  </div>
+                  <button type="submit" className="scd-send" disabled={sending || (!text.trim() && !file)}>
+                    {sending ? (
+                      <>
+                        <span className="scd-spinner light" />
+                        <span>{uploading ? 'Uploading…' : 'Sending…'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Ic name="send" size={16} />
+                        <span>Send</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </form>
-          </>
+          </div>
         )}
-      </div>
+      </section>
 
-      {/* AUTO-REPLY SETTINGS MODAL */}
+      {/* AUTO-REPLY SETTINGS */}
       {autoReplyModal && (
         <div className="admin-modal-overlay" onClick={() => setAutoReplyModal(false)}>
-          <div className="admin-modal-box" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-top">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 24 }}>🤖</span>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 16 }}>Live Support Auto-Reply Settings</h3>
-                  <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>
-                    Automatically reply to sellers &amp; guests when admin support is away
-                  </p>
-                </div>
+          <div className="admin-modal-box scd-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="scd-modal-head">
+              <span className="scd-modal-icon">
+                <Ic name="sparkle" size={18} />
+              </span>
+              <div>
+                <h3>Auto-reply</h3>
+                <p>Answer sellers and guests automatically while the desk is away.</p>
               </div>
-              <button onClick={() => setAutoReplyModal(false)} className="btn-close-modal">✕</button>
+              <button type="button" onClick={() => setAutoReplyModal(false)} className="scd-modal-close" aria-label="Close">
+                <Ic name="x" size={16} />
+              </button>
             </div>
 
-            <form onSubmit={handleSaveAutoReply} style={{ padding: '18px 22px' }}>
-              <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '12px 16px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+            <form onSubmit={handleSaveAutoReply} className="scd-modal-body">
+              <div className="scd-setting">
                 <div>
-                  <b style={{ fontSize: 13.5, display: 'block', color: '#0f172a' }}>Enable Automatic Response</b>
-                  <small style={{ color: '#64748b', fontSize: 12 }}>Send instant automated response on incoming inquiries</small>
+                  <b>Automatic response</b>
+                  <small>Send the message below as soon as a new inquiry arrives.</small>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={autoReply.enabled}
-                  onChange={(e) => setAutoReply({ ...autoReply, enabled: e.target.checked })}
-                  style={{ width: 20, height: 20, cursor: 'pointer' }}
-                />
+                <Toggle on={autoReply.enabled} onChange={() => setAutoReply({ ...autoReply, enabled: !autoReply.enabled })} />
               </div>
 
-              <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fffbeb', padding: '12px 16px', borderRadius: 8, border: '1px solid #fef3c7' }}>
+              <div className="scd-setting">
                 <div>
-                  <b style={{ fontSize: 13.5, color: '#92400e', display: 'block' }}>🌙 Away / Offline Mode</b>
-                  <small style={{ color: '#b45309', fontSize: 12 }}>Auto-reply when admin support is unavailable or off-duty</small>
+                  <b>Away / offline mode</b>
+                  <small>Reply automatically while support is unavailable or off duty.</small>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={autoReply.awayMode}
-                  onChange={(e) => setAutoReply({ ...autoReply, awayMode: e.target.checked })}
-                  style={{ width: 20, height: 20, cursor: 'pointer' }}
-                />
+                <Toggle on={autoReply.awayMode} onChange={() => setAutoReply({ ...autoReply, awayMode: !autoReply.awayMode })} />
               </div>
 
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 6 }}>
-                  Auto-Reply Message Text:
-                </label>
+              <label className="scd-field">
+                <span>Message</span>
                 <textarea
                   rows={4}
                   value={autoReply.message}
                   onChange={(e) => setAutoReply({ ...autoReply, message: e.target.value })}
-                  placeholder="Type auto-reply message..."
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1.5px solid #cbd5e1', fontSize: 13, fontFamily: 'inherit' }}
+                  placeholder="Type the auto-reply message…"
                   required
                 />
-              </div>
+              </label>
 
-              <div className="modal-bottom-actions">
-                <button type="button" onClick={() => setAutoReplyModal(false)} className="btn-cancel">Cancel</button>
-                <button type="submit" className="btn-primary" disabled={savingAutoReply}>
-                  {savingAutoReply ? 'Saving...' : '💾 Save Auto-Reply Settings'}
+              <div className="scd-modal-actions">
+                <button type="button" onClick={() => setAutoReplyModal(false)} className="scd-btn">
+                  Cancel
+                </button>
+                <button type="submit" className="scd-btn primary" disabled={savingAutoReply}>
+                  {savingAutoReply ? 'Saving…' : 'Save settings'}
                 </button>
               </div>
             </form>
@@ -1407,40 +1354,34 @@ export default function ChatInbox() {
         />
       )}
 
-      {/* MESSAGE EDIT MODAL */}
+      {/* EDIT MESSAGE */}
       {editModal && (
         <div className="admin-modal-overlay" onClick={() => setEditModal(null)}>
-          <div className="admin-modal-box" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-top">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 20 }}>✏️</span>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 16 }}>Edit Message</h3>
-                  <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>Modify message content</p>
-                </div>
+          <div className="admin-modal-box scd-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="scd-modal-head">
+              <span className="scd-modal-icon">
+                <Ic name="edit" size={18} />
+              </span>
+              <div>
+                <h3>Edit message</h3>
+                <p>The change is shown to the other person straight away.</p>
               </div>
-              <button onClick={() => setEditModal(null)} className="btn-close-modal">✕</button>
+              <button type="button" onClick={() => setEditModal(null)} className="scd-modal-close" aria-label="Close">
+                <Ic name="x" size={16} />
+              </button>
             </div>
 
-            <form onSubmit={handleSaveEdit} style={{ padding: '18px 22px' }}>
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 6 }}>
-                  Message Content:
-                </label>
-                <textarea
-                  rows={4}
-                  value={editModal.text}
-                  onChange={(e) => setEditModal({ ...editModal, text: e.target.value })}
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, fontFamily: 'inherit' }}
-                  required
-                  autoFocus
-                />
-              </div>
-
-              <div className="modal-bottom-actions">
-                <button type="button" onClick={() => setEditModal(null)} className="btn-cancel">Cancel</button>
-                <button type="submit" className="btn-primary" disabled={savingEdit || !editModal.text.trim()}>
-                  {savingEdit ? 'Saving...' : '💾 Update Message'}
+            <form onSubmit={handleSaveEdit} className="scd-modal-body">
+              <label className="scd-field">
+                <span>Message</span>
+                <textarea rows={4} value={editModal.text} onChange={(e) => setEditModal({ ...editModal, text: e.target.value })} required autoFocus />
+              </label>
+              <div className="scd-modal-actions">
+                <button type="button" onClick={() => setEditModal(null)} className="scd-btn">
+                  Cancel
+                </button>
+                <button type="submit" className="scd-btn primary" disabled={savingEdit || !editModal.text.trim()}>
+                  {savingEdit ? 'Saving…' : 'Update message'}
                 </button>
               </div>
             </form>
