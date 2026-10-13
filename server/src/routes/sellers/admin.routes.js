@@ -60,6 +60,50 @@ const portalMembersCol = () => mongoose.connection.db.collection('portalmembers'
 const portalAssignmentsCol = () => mongoose.connection.db.collection('portalsellerassignments');
 const toObjectId = (v) => (v && mongoose.Types.ObjectId.isValid(String(v)) ? new mongoose.Types.ObjectId(String(v)) : null);
 
+// ─── Team portal leads (portalleads) ───
+// A lead is a possible seller given to ONE member. When the store registers with the same phone
+// number, the approval screen suggests that member as the owner, and approving it marks the lead
+// "converted" (same last-10-digits comparison as the team portal: lib/utils/phone.js).
+const portalLeadsCol = () => mongoose.connection.db.collection('portalleads');
+const leadPhoneKey = (v) => {
+  const d = String(v || '').replace(/\D+/g, '');
+  if (d.length < 7) return '';
+  return d.length > 10 ? d.slice(-10) : d;
+};
+async function leadForPhone(phone) {
+  const key = leadPhoneKey(phone);
+  if (!key) return null;
+  return portalLeadsCol()
+    .findOne({ phoneKey: key }, { projection: { memberId: 1, memberName: 1, assignedAt: 1, createdAt: 1, status: 1, name: 1, sellerId: 1 } })
+    .catch(() => null);
+}
+async function markLeadConverted(seller, ownerMember) {
+  try {
+    const lead = await leadForPhone(seller.phone);
+    if (!lead || (lead.sellerId && String(lead.sellerId) !== String(seller._id))) return;
+    const now = new Date();
+    const set = { ownerId: ownerMember._id, ownerName: ownerMember.name || '', lastActivityAt: now };
+    const lines = [{ at: now, type: 'owner', byName: 'Store approval', text: `Store assigned to ${ownerMember.name || 'a member'}` }];
+    if (!lead.sellerId) {
+      Object.assign(set, {
+        sellerId: seller._id,
+        storeName: seller.storeName || '',
+        status: 'converted',
+        statusAt: now,
+        convertedAt: seller.createdAt || now,
+        convertedBy: 'approval',
+        everContacted: true,
+        everInterested: true,
+        lostReason: '',
+      });
+      lines.unshift({ at: now, type: 'converted', byName: 'Store approval', text: `Registered store “${seller.storeName || 'store'}” (phone matched)` });
+    }
+    await portalLeadsCol().updateOne({ _id: lead._id }, { $set: set, $push: { history: { $each: lines, $slice: -80 } } });
+  } catch (e) {
+    console.error('Lead conversion update failed:', e.message);
+  }
+}
+
 // ─── Two-person rule for the seller type ───
 // "Test" takes every deposit and withdrawal of a seller out of the finance count, and
 // "previous store" changes who pays its withdrawals. On a seller that is already approved, such a
@@ -138,13 +182,27 @@ router.get('/team/members', authAdmin('sellers'), async (req, res) => {
       .sort((a, b) => (a.role === b.role ? a.name.localeCompare(b.name) : a.role === 'partner' ? -1 : 1));
 
     let assignedMemberId = '';
+    let leadHint = null;
     const sellerOid = toObjectId(req.query.sellerId);
     if (sellerOid) {
       const current = await portalAssignmentsCol().findOne({ sellerId: sellerOid, status: 'active' });
       if (current && members.some((m) => m._id === String(current.memberId))) assignedMemberId = String(current.memberId);
+
+      // the team portal lead with this store's phone number: whose seller it is
+      const seller = await Seller.findById(sellerOid).select('phone').lean();
+      const lead = seller ? await leadForPhone(seller.phone) : null;
+      if (lead && lead.memberId && members.some((m) => m._id === String(lead.memberId))) {
+        leadHint = {
+          memberId: String(lead.memberId),
+          memberName: lead.memberName || '',
+          since: lead.assignedAt || lead.createdAt || null,
+          status: lead.status || '',
+        };
+        if (!assignedMemberId) assignedMemberId = leadHint.memberId; // pre-selected; the admin still confirms
+      }
     }
 
-    res.json({ members, assignedMemberId });
+    res.json({ members, assignedMemberId, leadHint });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -1748,6 +1806,7 @@ router.post('/:id/approve', authAdmin('sellers'), oneDecisionAtATime, announceTo
           __v: 0,
         });
         await Seller.collection.updateOne({ _id: seller._id }, { $set: { commissionLabel: deal } });
+        await markLeadConverted(seller, ownerMember);
         audit(req, 'update', 'seller', seller._id, `Assigned ${seller.storeName} to ${ownerMember.name}`);
         await finLog(req, {
           action: 'seller.assigned',

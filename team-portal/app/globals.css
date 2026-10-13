@@ -39,3 +39,37 @@ body {
 .animate-pulse-slow {
   animation: pulseSlow 3s ease-in-out infinite;
 }
+
+/* Bottom sheet ("More" on phones): slides up from the bottom edge */
+@keyframes sheetUp {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-sheet-up {
+  animation: sheetUp 180ms ease-out;
+}
+
+/* Room for the iPhone home bar under the bottom navigation */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Detail panel: slides up on phones, in from the right on bigger screens */
+@keyframes drawerIn {
+  from { transform: translateX(32px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.animate-drawer {
+  animation: sheetUp 180ms ease-out;
+}
+@media (min-width: 640px) {
+  .animate-drawer {
+    animation: drawerIn 200ms ease-out;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-drawer,
+  .animate-sheet-up {
+    animation: none;
+  }
+}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from './AuthProvider';
@@ -26,8 +26,10 @@ import {
   Volume2,
   VolumeX,
   UserPlus,
+  ChevronDown,
 } from 'lucide-react';
 import { useNotifications } from './NotificationManager';
+import { buildNav, isActivePath } from './navConfig';
 import NotificationBell from './NotificationBell';
 
 export default function AppNavbar() {
@@ -46,6 +48,24 @@ export default function AppNavbar() {
 
   // Wallet Statement Modal State
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
+
+  // Desktop dropdown (Team / Money / Insights) that is open right now
+  const [openGroup, setOpenGroup] = useState(null);
+  const groupsRef = useRef(null);
+  useEffect(() => setOpenGroup(null), [pathname]);
+  useEffect(() => {
+    if (!openGroup) return undefined;
+    const onDown = (e) => {
+      if (groupsRef.current && !groupsRef.current.contains(e.target)) setOpenGroup(null);
+    };
+    const onKey = (e) => e.key === 'Escape' && setOpenGroup(null);
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [openGroup]);
 
   if (pathname === '/login') return null;
 
@@ -71,20 +91,7 @@ export default function AppNavbar() {
 
   const isAdmin = user.role === 'admin';
 
-  const navLinks = [
-    { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { href: '/chat', label: 'Chats', icon: MessageSquare },
-    { href: '/sellers', label: 'Sellers', icon: Users },
-    { href: '/models', label: 'Models', icon: ImageIcon },
-    { href: '/rewards', label: 'Rewards', icon: Award },
-    { href: '/wallet', label: 'Wallet', icon: Wallet },
-    { href: '/analytics', label: 'Analytics', icon: BarChart3 },
-    ...(isAdmin ? [{ href: '/members', label: 'Members', icon: UserCheck }] : []),
-    // "My Members": ONLY a member who has brought at least one member sees it (it is his own
-    // referral commission). Partners never bring members: they see who brought whom on Members.
-    ...(!isAdmin && user?.hasReferrals ? [{ href: '/my-members', label: 'My Members', icon: UserPlus }] : []),
-    ...(isAdmin ? [{ href: '/finance', label: 'Finance', icon: Landmark }] : []),
-  ];
+  const { primary: navLinks, groups: navGroups } = buildNav(user);
 
   const handlePasswordSubmit = async (e) => {
     e?.preventDefault();
@@ -162,11 +169,11 @@ export default function AppNavbar() {
             </span>
           </div>
 
-          {/* Desktop Navigation Links */}
-          <nav className="hidden lg:flex items-center space-x-0.5 xl:space-x-1 2xl:space-x-2">
+          {/* Desktop Navigation: the everyday pages as links, the rest in a dropdown per topic */}
+          <nav ref={groupsRef} className="hidden lg:flex items-center space-x-0.5 xl:space-x-1 2xl:space-x-2">
             {navLinks.map((item) => {
               const Icon = item.icon;
-              const isActive = pathname === item.href;
+              const isActive = isActivePath(pathname, item.href);
               return (
                 <Link
                   key={item.href}
@@ -186,6 +193,57 @@ export default function AppNavbar() {
                     </span>
                   )}
                 </Link>
+              );
+            })}
+            {navGroups.map((group) => {
+              const GroupIcon = group.icon;
+              const activeChild = group.items.find((it) => isActivePath(pathname, it.href));
+              const open = openGroup === group.key;
+              return (
+                <div key={group.key} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setOpenGroup(open ? null : group.key)}
+                    aria-expanded={open}
+                    aria-haspopup="menu"
+                    className={`flex items-center space-x-1 xl:space-x-1.5 px-2 xl:px-3 py-2 rounded-lg text-[13px] xl:text-sm font-medium whitespace-nowrap transition-all ${
+                      activeChild
+                        ? 'bg-slate-900 text-white shadow-sm'
+                        : open
+                        ? 'bg-slate-100 text-slate-900'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                  >
+                    <GroupIcon className="w-4 h-4 hidden 2xl:block" />
+                    {/* on the page of one of its items, the button says which one */}
+                    <span>{activeChild ? activeChild.label : group.label}</span>
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+                  </button>
+                  {open && (
+                    <div
+                      role="menu"
+                      className="absolute right-0 mt-2 w-56 bg-white rounded-2xl border border-slate-200 shadow-xl p-1.5 z-50"
+                    >
+                      {group.items.map((it) => {
+                        const ItIcon = it.icon;
+                        const active = isActivePath(pathname, it.href);
+                        return (
+                          <Link
+                            key={it.href}
+                            href={it.href}
+                            role="menuitem"
+                            className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors ${
+                              active ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
+                            }`}
+                          >
+                            <ItIcon className="w-4 h-4" />
+                            <span>{it.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               );
             })}
           </nav>

@@ -92,6 +92,7 @@ export default function Applications() {
 
   // Team members / partners a seller can belong to (finance is divided by this owner)
   const [teamMembers, setTeamMembers] = useState([]);
+  const [leadHint, setLeadHint] = useState(null); // team portal lead with this store's phone
   const [teamLoading, setTeamLoading] = useState(false);
   const approveSellerId = approveModal?.seller?._id || '';
 
@@ -123,11 +124,13 @@ export default function Applications() {
   useEffect(() => {
     if (!approveSellerId) return;
     let cancelled = false;
+    setLeadHint(null);
     setTeamLoading(true);
     api(`/sellers/team/members?sellerId=${approveSellerId}`)
       .then((res) => {
         if (cancelled) return;
         setTeamMembers(res.members || []);
+        setLeadHint(res.leadHint || null);
         // Pre-select the current owner, unless the admin already picked someone
         setApproveModal((prev) =>
           prev && prev.seller?._id === approveSellerId && !prev.assignedMemberId ? { ...prev, assignedMemberId: res.assignedMemberId || '' } : prev
@@ -697,6 +700,14 @@ export default function Applications() {
                   ))}
                 </select>
                 <small>Who this store belongs to. Its deposits and withdrawals are divided for this person, so a client store must have one.</small>
+                {leadHint && (
+                  <small style={{ display: 'block', marginTop: 6, color: am.assignedMemberId === leadHint.memberId ? '#15803d' : '#b45309', fontWeight: 600 }}>
+                    {am.assignedMemberId === leadHint.memberId ? '✓ ' : '⚠ '}
+                    This seller was {leadHint.memberName || 'a member'}'s lead
+                    {leadHint.since ? ` (given ${new Date(leadHint.since).toLocaleDateString()})` : ''} in the team portal
+                    {am.assignedMemberId === leadHint.memberId ? ', so he is pre-selected.' : '. You chose someone else — please double-check.'}
+                  </small>
+                )}
               </div>
 
               <div className="ins-switch-row">
