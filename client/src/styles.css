@@ -11,3 +11,17 @@
 @import './styles/chat.css';
 @import './styles/responsive.css';
 @import './styles/responsive-fixes.css';
+
+/* ── Home: About Bazario (SEO intro) ───────────────────────── */
+.home-about { padding-top: 8px; }
+.home-about h2 { font-size: 22px; font-weight: 800; color: var(--ink); margin: 0 0 10px; }
+.home-about-lead { color: var(--ink-secondary); font-size: 15px; line-height: 1.65; max-width: 860px; margin: 0 0 20px; }
+.home-about-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.home-about-grid > div { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+.home-about-grid h3 { font-size: 15px; font-weight: 700; color: var(--ink); margin: 0 0 6px; }
+.home-about-grid p { color: var(--muted); font-size: 14px; line-height: 1.6; margin: 0; }
+.home-about-grid a { color: var(--brand-dark); font-weight: 600; }
+@media (max-width: 760px) {
+  .home-about h2 { font-size: 18px; }
+  .home-about-grid { grid-template-columns: 1fr; }
+}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useSeo, breadcrumbLd } from '../seo.js';
 import { api } from '../api.js';
 import { useContent } from '../content.jsx';
 import ProductCard from '../components/ProductCard.jsx';
@@ -84,6 +85,31 @@ export default function Shop() {
     : category
     ? catName
     : 'All Marketplace Products';
+
+  // search results and sorted/filtered views are thin duplicates: keep them out of the index
+  const seoPath = category ? `/shop?category=${encodeURIComponent(category)}` : '/shop';
+  useSeo(
+    {
+      title: q
+        ? `Search: ${q}`
+        : seller && sellerName
+        ? `${sellerName} — Verified Store`
+        : category
+        ? `Buy ${catName} Online — Best Prices`
+        : 'Shop All Products Online — Global Marketplace',
+      description: category
+        ? `Shop ${catName} online on Bazario marketplace: compare verified sellers, get the best prices, express delivery, secure checkout and 14-day easy returns.`
+        : 'Browse thousands of products across mobiles, laptops, fashion, beauty, home and more on Bazario — the multi-vendor marketplace with verified sellers and express delivery.',
+      path: seoPath,
+      noindex: Boolean(q || seller || label || sort),
+      jsonLd: breadcrumbLd([
+        { name: 'Home', path: '/' },
+        { name: 'Shop', path: '/shop' },
+        ...(category ? [{ name: catName, path: seoPath }] : []),
+      ]),
+    },
+    [category, catName, q, seller, sellerName, label, sort]
+  );
 
   return (
     <>

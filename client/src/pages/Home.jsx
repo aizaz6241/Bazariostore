@@ -5,6 +5,7 @@ import { useContent } from '../content.jsx';
 import Ic from '../components/Icons.jsx';
 import ProductCard from '../components/ProductCard.jsx';
 import { SectionTitle } from '../components/Bits.jsx';
+import { useSeo, DEFAULT_TITLE, DEFAULT_DESCRIPTION } from '../seo.js';
 
 const FALLBACK_SLIDE = {
   a: 'Mega Electronics &',
@@ -90,6 +91,8 @@ export default function Home() {
   useEffect(() => {
     api('/products?limit=8').then(setFeatured).catch(() => {});
   }, []);
+
+  useSeo({ title: DEFAULT_TITLE, description: DEFAULT_DESCRIPTION, path: '/' });
 
   const sec = content.sections || {};
   const promo = content.promoRow || {};
@@ -232,6 +235,41 @@ export default function Home() {
           </div>
           <img src={promo.right?.img || 'https://images.unsplash.com/photo-1695048133142-1a20484d2569?w=500&auto=format&fit=crop&q=80'} alt="" />
         </Link>
+      </section>
+
+      {/* About Bazario — plain-text intro so search engines (and new visitors) learn what the site is */}
+      <section className="section container home-about" aria-labelledby="home-about-title">
+        <h2 id="home-about-title">Bazario — Online Marketplace &amp; Dropshipping Platform</h2>
+        <p className="home-about-lead">
+          Bazario is a global multi-vendor marketplace. Shoppers buy from verified sellers with express delivery,
+          secure checkout and 14-day easy returns. Sellers open a store in minutes and start dropshipping — no
+          warehouse, no upfront stock and no inventory to manage.
+        </p>
+        <div className="home-about-grid">
+          <div>
+            <h3>Shop with confidence</h3>
+            <p>
+              Thousands of products across <Link to="/shop?category=mobiles">mobiles</Link>,{' '}
+              <Link to="/shop?category=laptops">laptops</Link>, <Link to="/shop?category=fashion">fashion</Link>,{' '}
+              <Link to="/shop?category=beauty">beauty</Link>, <Link to="/shop?category=home">home</Link> and more —
+              every store is verified and every order is tracked.
+            </p>
+          </div>
+          <div>
+            <h3>Sell without inventory</h3>
+            <p>
+              Pick products from the Bazario central catalog, set your price and start selling. Orders, delivery and
+              payouts run through the platform, so you focus on your customers instead of stock.
+            </p>
+          </div>
+          <div>
+            <h3>Grow your own brand</h3>
+            <p>
+              Get a storefront, live chat with buyers, analytics and a seller wallet.{' '}
+              <Link to="/seller/login?mode=register">Open your Bazario store</Link> for free today.
+            </p>
+          </div>
+        </div>
       </section>
     </>
   );

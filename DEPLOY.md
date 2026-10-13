@@ -68,3 +68,20 @@ npm run seed
 3. **Admin password change karein** — seed ab koi fixed password nahi rakhta: naye admin ko `ADMIN_PASSWORD` (ya ek random password jo seed ek dafa print karta hai) milta hai. Purane seed wale admin / demo seller accounts ka password Admin panel → Staff / Sellers se zaroor badlein.
 5. **Yeh env vars server par set rakhein:** `JWT_SECRET` (lamba random), `SELLER_PASSWORD_KEY` (16+ characters), `CORS_ORIGINS` (apne store / admin domains, comma se alag). Render ke ilawa kisi aur host par jo proxy visitor ka IP header likhta hai, uska naam `CLIENT_IP_HEADER` mein dein.
 4. Local PC ki **clock sync karein** (Settings → Time & Language → Sync now) phir local `.env` se `&tlsAllowInvalidCertificates=true` hata dein.
+
+## SEO (Google ranking)
+
+`npm run build` ab khud SEO files banata hai (`client/scripts/seo-build.mjs`):
+- `sitemap.xml` — home, shop, har category aur har active product (images ke saath)
+- `product/<slug>/index.html` — har product page pehle se render: title, description, canonical, Open Graph, Product schema
+- `robots.txt` (`client/public/`) — admin / seller portal / cart / checkout index nahi honge
+
+Vercel env vars (optional):
+
+| Variable | Kab |
+|---|---|
+| `SITE_URL` | Custom domain lagane par (e.g. `https://bazario.ae`) — default `https://bazariomarketplace.vercel.app` |
+| `GOOGLE_SITE_VERIFICATION` | Google Search Console ka "HTML tag" content code |
+| `BING_SITE_VERIFICATION` | Bing Webmaster Tools ka `msvalidate.01` code |
+
+Naye products sitemap mein agle deploy par aate hain — products add karne ke baad ek redeploy karein (ya Vercel Deploy Hook).

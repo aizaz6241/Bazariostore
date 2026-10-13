@@ -1,0 +1,19 @@
+# Bazario — https://bazariomarketplace.vercel.app
+User-agent: *
+Allow: /
+Allow: /seller/login
+Disallow: /admin
+Disallow: /seller$
+Disallow: /seller/
+Disallow: /sellers
+Disallow: /account
+Disallow: /cart
+Disallow: /checkout
+Disallow: /order-success
+Disallow: /reset-password
+Disallow: /forgot-password
+Disallow: /shop?q=
+Disallow: /shop?*&q=
+Disallow: /*sort=
+
+Sitemap: https://bazariomarketplace.vercel.app/sitemap.xml

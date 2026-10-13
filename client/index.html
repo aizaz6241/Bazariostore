@@ -3,9 +3,63 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Bazario — Premier Global Multi-Vendor Marketplace</title>
-    <meta name="description" content="Shop millions of products from verified global sellers. Express delivery, secure checkout, and 14-day easy returns." />
-    
+    <title>Bazario Marketplace — Shop Online &amp; Start Dropshipping Without Inventory</title>
+    <meta name="description" content="Bazario is a global multi-vendor marketplace and dropshipping platform. Shop thousands of products from verified sellers with express delivery, secure checkout and 14-day returns — or open your own store and sell without holding inventory." />
+    <meta name="keywords" content="Bazario, Bazario marketplace, Bazario store, online marketplace, multi-vendor marketplace, dropshipping, dropshipping platform, sell online without inventory, online shopping" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+    <meta name="application-name" content="Bazario" />
+    <link rel="canonical" href="https://bazariomarketplace.vercel.app/" />
+
+    <!-- Open Graph / social previews -->
+    <meta property="og:site_name" content="Bazario" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:title" content="Bazario Marketplace — Shop Online &amp; Start Dropshipping Without Inventory" />
+    <meta property="og:description" content="Shop thousands of products from verified sellers, or open your own Bazario store and sell without holding inventory." />
+    <meta property="og:url" content="https://bazariomarketplace.vercel.app/" />
+    <meta property="og:image" content="https://bazariomarketplace.vercel.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Bazario — online marketplace and dropshipping platform" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Bazario Marketplace — Shop Online &amp; Start Dropshipping Without Inventory" />
+    <meta name="twitter:description" content="Shop thousands of products from verified sellers, or open your own Bazario store and sell without holding inventory." />
+    <meta name="twitter:image" content="https://bazariomarketplace.vercel.app/og-image.png" />
+
+    <!-- Site-wide structured data: tells Google the site name is "Bazario" -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://bazariomarketplace.vercel.app/#website",
+            "url": "https://bazariomarketplace.vercel.app/",
+            "name": "Bazario",
+            "alternateName": ["Bazario Marketplace", "Bazario Store", "Bazario Global Marketplace"],
+            "description": "Global multi-vendor marketplace and dropshipping platform.",
+            "inLanguage": "en",
+            "publisher": { "@id": "https://bazariomarketplace.vercel.app/#organization" },
+            "potentialAction": {
+              "@type": "SearchAction",
+              "target": { "@type": "EntryPoint", "urlTemplate": "https://bazariomarketplace.vercel.app/shop?q={search_term_string}" },
+              "query-input": "required name=search_term_string"
+            }
+          },
+          {
+            "@type": "OnlineStore",
+            "@id": "https://bazariomarketplace.vercel.app/#organization",
+            "name": "Bazario",
+            "alternateName": "Bazario Marketplace",
+            "url": "https://bazariomarketplace.vercel.app/",
+            "logo": { "@type": "ImageObject", "url": "https://bazariomarketplace.vercel.app/icon-512.png", "width": 512, "height": 512 },
+            "image": "https://bazariomarketplace.vercel.app/og-image.png",
+            "description": "Bazario is a global multi-vendor marketplace where shoppers buy from verified sellers and sellers start dropshipping without holding inventory."
+          }
+        ]
+      }
+    </script>
+
     <!-- PWA Web App Manifest -->
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#2563eb" />
@@ -14,7 +68,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Bazario" />
-    <link rel="apple-touch-icon" href="/icon-192.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
     <!-- Windows Phone / Tile Icons -->
     <meta name="msapplication-TileImage" content="/icon-192.svg" />
@@ -22,12 +76,18 @@
 
     <!-- Standard Favicon -->
     <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><!--seo-body--></div>
+    <noscript>
+      <h1>Bazario — Online Marketplace &amp; Dropshipping Platform</h1>
+      <p>Shop thousands of products from verified sellers with express delivery, secure checkout and 14-day easy returns, or open your own Bazario store and sell without holding inventory. Please enable JavaScript to use the store.</p>
+      <p><a href="/shop">Shop all products</a> · <a href="/seller/login?mode=register">Sell on Bazario</a> · <a href="/track-order">Track an order</a></p>
+    </noscript>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

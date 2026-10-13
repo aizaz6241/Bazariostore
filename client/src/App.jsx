@@ -1,5 +1,6 @@
-import { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense, useEffect } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { applySeo } from './seo.js';
 import StoreLayout from './components/StoreLayout.jsx';
 import Home from './pages/Home.jsx';
 import Shop from './pages/Shop.jsx';
@@ -62,9 +63,41 @@ function PortalBoundary({ children }) {
   );
 }
 
+// Head tags for routes whose page component doesn't set its own (Home, Shop and ProductPage do).
+// Private screens and the portals are kept out of search results.
+const ROUTE_SEO = [
+  ['/cart', { title: 'Your Cart', noindex: true }],
+  ['/checkout', { title: 'Checkout', noindex: true }],
+  ['/order-success', { title: 'Order Placed', noindex: true }],
+  ['/account', { title: 'My Account', noindex: true }],
+  ['/login', { title: 'Sign In', noindex: true }],
+  ['/register', { title: 'Create Account', noindex: true }],
+  ['/forgot-password', { title: 'Forgot Password', noindex: true }],
+  ['/reset-password', { title: 'Reset Password', noindex: true }],
+  ['/track-order', { title: 'Track Your Order', description: 'Track your Bazario order in real time — enter your order number to see dispatch, shipping and delivery status.' }],
+  ['/seller/login', {
+    title: 'Sell on Bazario — Start Dropshipping Without Inventory',
+    description: 'Open your free Bazario store and start dropshipping: pick products from the central catalog, set your price and sell worldwide — no warehouse, no upfront stock.',
+  }],
+  ['/page/', { title: 'Bazario Policies' }],
+  ['/seller', { title: 'Seller Central', noindex: true }],
+  ['/sellers', { title: 'Seller Central', noindex: true }],
+  ['/admin', { title: 'Admin', noindex: true }],
+];
+
+function RouteSeo() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    const hit = ROUTE_SEO.find(([prefix]) => pathname === prefix || pathname.startsWith(prefix.endsWith('/') ? prefix : `${prefix}/`));
+    if (hit) applySeo({ path: pathname, ...hit[1] });
+  }, [pathname]);
+  return null;
+}
+
 export default function App() {
   return (
     <>
+      <RouteSeo />
       <InstallAppBanner />
       <Routes>
         {/* ─── Customer Storefront ─────────────────────────────── */}

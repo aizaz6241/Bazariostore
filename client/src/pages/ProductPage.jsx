@@ -7,6 +7,7 @@ import Ic from '../components/Icons.jsx';
 import Stars from '../components/Stars.jsx';
 import ProductCard from '../components/ProductCard.jsx';
 import { Breadcrumb, TrustStrip } from '../components/Bits.jsx';
+import { useSeo, productLd, breadcrumbLd } from '../seo.js';
 
 const TABS = ['DESCRIPTION', 'HOW TO USE', 'INGREDIENTS', 'SPECIFICATIONS', 'REVIEWS', 'SHIPPING & RETURNS'];
 
@@ -49,6 +50,32 @@ export default function ProductPage() {
       .catch(() => setNotFound(true));
     api(`/products/related/${slug}`).then(setRelated).catch(() => {});
   }, [slug]);
+
+  useSeo(
+    p && p.slug === slug
+      ? {
+          title: `${p.name}${p.brand && !p.name.toLowerCase().includes(p.brand.toLowerCase()) ? ` — ${p.brand}` : ''}`,
+          description:
+            p.shortDescription ||
+            p.description ||
+            `Buy ${p.name} online on Bazario for $${Number(p.price || 0).toFixed(2)}${p.seller?.storeName || p.sellerName ? ` from verified seller ${p.seller?.storeName || p.sellerName}` : ''}. Express delivery, secure checkout and 14-day easy returns.`,
+          path: `/product/${p.slug}`,
+          image: p.images?.[0]?.url || p.image,
+          type: 'product',
+          jsonLd: [
+            productLd(p),
+            breadcrumbLd([
+              { name: 'Home', path: '/' },
+              ...(p.category?.slug ? [{ name: p.category.name, path: `/shop?category=${p.category.slug}` }] : []),
+              { name: p.name, path: `/product/${p.slug}` },
+            ]),
+          ],
+        }
+      : notFound
+      ? { title: 'Product not found', noindex: true }
+      : null,
+    [p, slug, notFound]
+  );
 
   if (notFound)
     return (
