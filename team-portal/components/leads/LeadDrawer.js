@@ -69,6 +69,8 @@ export default function LeadDrawer({ leadId, onClose, onChanged, isAdmin, member
   };
 
   const open = !!leadId;
+  // only the numbers the lead's member really holds (a member's list is already only his own)
+  const leadNumbers = !lead?.memberId ? [] : isAdmin ? numbers.filter((n) => (n.holders || []).includes(lead.memberId)) : numbers;
   const locked = lead?.status === 'converted' && (lead?.sellerId || !isAdmin);
   const stepIndex = lead ? STEPS.indexOf(lead.status) : -1;
   const wa = lead && waLink(lead.phone);
@@ -261,15 +263,29 @@ export default function LeadDrawer({ leadId, onClose, onChanged, isAdmin, member
                 </select>
               </Field>
             )}
-            <Field label="Company WhatsApp number used">
+            <Field
+              label="Company WhatsApp number used"
+              hint={
+                !lead.memberId
+                  ? 'Give the lead to a member first.'
+                  : !leadNumbers.length
+                  ? isAdmin
+                    ? `No company number is linked to ${lead.memberName || 'this member'} (WhatsApp Numbers page).`
+                    : 'No company number is linked to you yet.'
+                  : undefined
+              }
+            >
               <select
                 value={lead.waNumberId || ''}
-                disabled={busy === 'number' || (!numbers.length && !lead.waNumberId)}
+                disabled={busy === 'number' || (!leadNumbers.length && !lead.waNumberId)}
                 onChange={(e) => act('number', { action: 'number', waNumberId: e.target.value || null })}
                 className={inputClass}
               >
                 <option value="">—</option>
-                {numbers.map((n) => (
+                {lead.waNumberId && !leadNumbers.some((n) => n._id === lead.waNumberId) && (
+                  <option value={lead.waNumberId}>{numbers.find((n) => n._id === lead.waNumberId)?.number || 'Current number'} (no longer linked)</option>
+                )}
+                {leadNumbers.map((n) => (
                   <option key={n._id} value={n._id}>
                     {n.label ? `${n.label} · ` : ''}
                     {n.number}

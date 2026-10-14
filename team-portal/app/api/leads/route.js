@@ -97,10 +97,11 @@ export async function GET(req) {
     if (isAdmin) {
       const [ms, ns] = await Promise.all([
         Member.find({ active: true }).select('name role').sort({ role: 1, name: 1 }).lean(),
-        WaNumber.find({ status: 'active' }).select('number label country').sort({ country: 1, label: 1 }).lean(),
+        WaNumber.find({ status: 'active' }).select('number label country holders.memberId').sort({ country: 1, label: 1 }).lean(),
       ]);
       members = ms.map((m) => ({ _id: sid(m._id), name: m.name, role: m.role }));
-      numbers = ns.map((n) => ({ _id: sid(n._id), number: n.number, label: n.label, country: n.country }));
+      // who holds each number: a lead can only use a number its member really has
+      numbers = ns.map((n) => ({ _id: sid(n._id), number: n.number, label: n.label, country: n.country, holders: (n.holders || []).map((h) => sid(h.memberId)) }));
     } else {
       const ns = await WaNumber.find({ 'holders.memberId': session._id, status: 'active' }).select('number label country').lean();
       numbers = ns.map((n) => ({ _id: sid(n._id), number: n.number, label: n.label, country: n.country }));
@@ -179,10 +180,12 @@ export async function POST(req) {
       if (!member || !member.active) return fail('Choose an active member (or leave it unassigned).');
     }
 
+    // the company number must be one the lead's member really holds
     let waNumberId = null;
-    if (isOid(body.waNumberId)) {
-      const n = await WaNumber.findOne({ _id: body.waNumberId, status: 'active', ...(isAdmin ? {} : { 'holders.memberId': session._id }) }).select('_id').lean();
-      if (n) waNumberId = n._id;
+    if (isOid(body.waNumberId) && member) {
+      const n = await WaNumber.findOne({ _id: body.waNumberId, status: 'active', 'holders.memberId': member._id }).select('_id').lean();
+      if (!n) return fail(isAdmin ? `That WhatsApp number is not linked to ${member.name}. Choose one of his numbers.` : 'You can only choose a number that is linked to you.');
+      waNumberId = n._id;
     }
 
     const now = new Date();

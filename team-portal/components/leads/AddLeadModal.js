@@ -59,6 +59,19 @@ export default function AddLeadModal({ open, onClose, onSaved, isAdmin, members 
   };
 
   const blocked = form.handover ? null : dup || pre;
+  // only the numbers the chosen member really holds (a member: his own numbers)
+  const memberNumbers = isAdmin ? (form.memberId ? numbers.filter((n) => (n.holders || []).includes(form.memberId)) : []) : numbers;
+  const chosenName = members.find((m) => m._id === form.memberId)?.name;
+  const numberHint = isAdmin
+    ? !form.memberId
+      ? 'Choose the member first: only his numbers are shown.'
+      : !memberNumbers.length
+      ? `No company number is linked to ${chosenName || 'this member'} yet (WhatsApp Numbers page).`
+      : `Numbers linked to ${chosenName}.`
+    : !numbers.length
+    ? 'No company number is linked to you yet.'
+    : undefined;
+
   const canSave = form.handover ? !!form.memberId && !!(form.name.trim() || form.notes.trim() || form.sourceDetail.trim()) : !!form.phone.trim();
 
   return (
@@ -167,7 +180,19 @@ export default function AddLeadModal({ open, onClose, onSaved, isAdmin, members 
               label={form.handover ? 'Whose number did you give? *' : 'Give to'}
               hint={form.handover ? 'This member will be asked to add the seller’s number.' : 'Leave empty to keep it in the pool. You can also choose yourself.'}
             >
-              <select value={form.memberId} onChange={set('memberId')} className={inputClass}>
+              <select
+                value={form.memberId}
+                onChange={(e) => {
+                  const memberId = e.target.value;
+                  setForm((f) => ({
+                    ...f,
+                    memberId,
+                    // a number of the previous member is cleared
+                    waNumberId: numbers.some((n) => n._id === f.waNumberId && (n.holders || []).includes(memberId)) ? f.waNumberId : '',
+                  }));
+                }}
+                className={inputClass}
+              >
                 <option value="">{form.handover ? 'Choose the member…' : 'Not given yet (pool)'}</option>
                 {members.map((m) => (
                   <option key={m._id} value={m._id}>
@@ -186,10 +211,10 @@ export default function AddLeadModal({ open, onClose, onSaved, isAdmin, members 
               </select>
             </Field>
           )}
-          <Field label="Company WhatsApp number used" hint={!isAdmin && !numbers.length ? 'No company number is linked to you yet.' : undefined}>
-            <select value={form.waNumberId} onChange={set('waNumberId')} className={inputClass} disabled={!numbers.length}>
+          <Field label="Company WhatsApp number used" hint={numberHint}>
+            <select value={form.waNumberId} onChange={set('waNumberId')} className={inputClass} disabled={!memberNumbers.length}>
               <option value="">—</option>
-              {numbers.map((n) => (
+              {memberNumbers.map((n) => (
                 <option key={n._id} value={n._id}>
                   {n.label ? `${n.label} · ` : ''}
                   {n.number}

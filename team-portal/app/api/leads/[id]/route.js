@@ -171,10 +171,12 @@ export async function PATCH(req, { params }) {
           break;
         }
         if (!isOid(body.waNumberId)) return fail('Choose a number.');
-        const n = await WaNumber.findOne({ _id: body.waNumberId, status: 'active', ...(isAdmin ? {} : { 'holders.memberId': session._id }) })
+        if (!lead.memberId) return fail('Give this lead to a member first, then choose one of his numbers.');
+        // only a number the lead's member really holds
+        const n = await WaNumber.findOne({ _id: body.waNumberId, status: 'active', 'holders.memberId': lead.memberId })
           .select('number label')
           .lean();
-        if (!n) return fail(isAdmin ? 'That number is not active.' : 'You can only choose a number that is linked to you.');
+        if (!n) return fail(isAdmin ? `That WhatsApp number is not linked to ${lead.memberName || 'this member'}.` : 'You can only choose a number that is linked to you.');
         set.waNumberId = n._id;
         line = { type: 'number', text: `Talking from ${n.label ? `${n.label} (${n.number})` : n.number}` };
         break;
