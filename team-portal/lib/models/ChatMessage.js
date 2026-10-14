@@ -92,6 +92,11 @@ const chatMessageSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    // a "meeting started" card in the team chat points at its meeting (see lib/models/Call.js)
+    callId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+    },
     // 'hacker' = recorded with the voice changer (the real voice was never recorded or sent)
     voiceEffect: {
       type: String,

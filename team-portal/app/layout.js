@@ -5,6 +5,8 @@ import { RealtimeProvider } from '@/components/RealtimeProvider';
 import { NotificationProvider } from '@/components/NotificationManager';
 import AppNavbar from '@/components/AppNavbar';
 import MobileBottomNav from '@/components/MobileBottomNav';
+import { CallProvider } from '@/components/CallProvider';
+import LiveCallBanner from '@/components/LiveCallBanner';
 
 export const metadata = {
   title: 'Bazario Operations CRM | Team, Clients & Rewards',
@@ -48,11 +50,14 @@ export default function RootLayout({ children }) {
           <RealtimeProvider>
           <NotificationProvider>
             <LiveProvider>
-              <AppNavbar />
-              <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
-                <AuthGate>{children}</AuthGate>
-              </main>
-              <MobileBottomNav />
+              <CallProvider>
+                <AppNavbar />
+                <LiveCallBanner />
+                <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+                  <AuthGate>{children}</AuthGate>
+                </main>
+                <MobileBottomNav />
+              </CallProvider>
             </LiveProvider>
           </NotificationProvider>
           </RealtimeProvider>

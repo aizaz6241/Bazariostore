@@ -73,3 +73,24 @@ body {
     animation: none;
   }
 }
+
+/* ── Team meetings (LiveKit) ── */
+.lk-prejoin input#username,
+.lk-prejoin .lk-form-control[name='username'] {
+  display: none; /* the name always comes from the portal account */
+}
+.bz-audio-call .lk-prejoin .lk-button-group-container > .lk-button-group:nth-child(2) {
+  display: none; /* voice call: no camera */
+}
+.bz-start-audio {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+}
+html [data-lk-theme='default'] {
+  --lk-accent-bg: #16a34a;
+  --lk-accent2: #15803d;
+  --lk-accent-fg: #fff;
+}

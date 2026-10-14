@@ -6,6 +6,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { useNotifications } from '@/components/NotificationManager';
 import VoiceRecorder from '@/components/VoiceRecorder';
 import { primeVoiceAudio, VOICE_EFFECT_HACKER } from '@/lib/voiceMask';
+import { CallHeaderButtons, CallCard } from '@/components/CallChatBits';
 import AudioPlayer from '@/components/AudioPlayer';
 import { readCache, writeCache, dropCache } from '@/lib/clientCache';
 import { useRealtime, useRealtimeEvent } from '@/components/RealtimeProvider';
@@ -2810,6 +2811,8 @@ function ChatPageInner() {
 
           {/* Right Header Controls: Clear chat (admin) + Jump to Date */}
           <div className="relative flex items-center space-x-2">
+            {/* team meeting: Join while live; admins start a voice / video meeting */}
+            {activeChat.type === 'group' && <CallHeaderButtons isAdmin={isAdmin} />}
             {/* member <-> member: report messages to the admins, block */}
             {memberPair && gate?.state !== 'loading' && (
               <>
@@ -3011,6 +3014,8 @@ function ChatPageInner() {
                         {formatMessageTime(msg.createdAt)}
                       </div>
                     </div>
+                  ) : isSystemAlert && msg.callId ? (
+                    <CallCard msg={msg} time={formatMessageTime(msg.createdAt)} />
                   ) : isSystemAlert ? (
                     <div className="mx-auto max-w-md bg-blue-50 border border-blue-200 text-blue-900 p-3 rounded-2xl text-xs text-center my-2">
                       <p className="font-medium whitespace-pre-wrap">{msg.text}</p>
