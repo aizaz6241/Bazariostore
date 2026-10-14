@@ -55,7 +55,7 @@ const chatMessageSchema = new mongoose.Schema(
     },
     messageType: {
       type: String,
-      enum: ['text', 'voice', 'image', 'system_bonus', 'system_alert'],
+      enum: ['text', 'voice', 'image', 'file', 'system_bonus', 'system_alert'],
       default: 'text',
     },
     text: {
@@ -91,6 +91,11 @@ const chatMessageSchema = new mongoose.Schema(
     audioDuration: {
       type: Number,
       default: 0,
+    },
+    // a document (PDF) sent in the chat: the name it had on the sender's phone / computer
+    fileName: {
+      type: String,
+      default: '',
     },
     // a "meeting started" card in the team chat points at its meeting (see lib/models/Call.js)
     callId: {

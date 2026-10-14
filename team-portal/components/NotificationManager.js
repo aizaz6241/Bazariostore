@@ -421,6 +421,8 @@ export function NotificationProvider({ children }) {
       ? 'Message deleted'
       : m.messageType === 'image'
       ? `📷 ${m.text ? String(m.text).slice(0, 80) : 'Photo'}`
+      : m.messageType === 'file'
+      ? `📄 ${m.fileName || 'PDF'}`
       : m.messageType === 'voice'
       ? '🎤 Voice message'
       : String(m.text || '').slice(0, 160);

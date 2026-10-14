@@ -7,6 +7,7 @@ import { useNotifications } from '@/components/NotificationManager';
 import VoiceRecorder from '@/components/VoiceRecorder';
 import { primeVoiceAudio, VOICE_EFFECT_HACKER } from '@/lib/voiceMask';
 import { CallHeaderButtons, CallCard } from '@/components/CallChatBits';
+import ChatFile, { isPdfFile, PDF_MAX_BYTES, fileSizeText } from '@/components/ChatFile';
 import AudioPlayer from '@/components/AudioPlayer';
 import { readCache, writeCache, dropCache } from '@/lib/clientCache';
 import { useRealtime, useRealtimeEvent } from '@/components/RealtimeProvider';
@@ -18,6 +19,8 @@ import { getSavedMedia, saveMedia, dropSavedMedia } from '@/lib/mediaCache';
 import {
   Send,
   Mic,
+  FileText,
+  Paperclip,
   VenetianMask,
   Image as ImageIcon,
   Users,
@@ -116,6 +119,7 @@ const quoteLine = (q) => {
   if (q.deleted || q.isDeleted) return 'This message was deleted';
   if (q.messageType === 'voice') return `🎤 Voice message${q.audioDuration ? ` ${durationOf(q.audioDuration)}` : ''}`;
   if (q.messageType === 'image') return q.text ? `📷 ${q.text}` : '📷 Photo';
+  if (q.messageType === 'file') return `📄 ${q.text || 'PDF'}`;
   return q.text || '';
 };
 // A tiny copy of a picture for the reply box (about 80 px), made on the phone
@@ -740,6 +744,7 @@ function ChatPageInner() {
       conversationId,
       messageType: message.messageType,
       text: message.text,
+      fileName: message.fileName || '',
       createdAt: message.createdAt,
       senderId: message.senderId,
       senderName: message.senderName,
@@ -1593,6 +1598,8 @@ function ChatPageInner() {
       mediaUrl: payload.mediaUrl || payload.localUrl || '',
       audioDuration: payload.audioDuration || 0,
       voiceEffect: payload.voiceEffect || '',
+      fileName: payload.fileName || '',
+      mediaSize: payload.blob && payload.messageType === 'file' ? payload.blob.size : 0,
       replyTo: payload.replyPreview || null,
       readBy: [],
       createdAt: new Date().toISOString(),
@@ -1640,7 +1647,7 @@ function ChatPageInner() {
       };
 
       if (blob) {
-        if (blob.size <= VOICE_INLINE_MAX_BYTES) {
+        if (payload.messageType === 'voice' && blob.size <= VOICE_INLINE_MAX_BYTES) {
           body.mediaUrl = await blobToDataUrl(blob);
         } else {
           // A long voice note goes up in pieces. A piece that fails is tried again; what has
@@ -1655,7 +1662,7 @@ function ChatPageInner() {
             for (let attempt = 0; attempt < 3 && !done; attempt++) {
               if (attempt > 0) await wait(1200 * attempt);
               try {
-                const r = await fetch(`/api/chat/upload?uploadId=${up.id}&index=${i}`, {
+                const r = await fetch(`/api/chat/upload?uploadId=${up.id}&index=${i}${payload.messageType === 'file' ? '&kind=pdf' : ''}`, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/octet-stream', Authorization: `Bearer ${token}` },
                   body: piece,
@@ -1893,20 +1900,52 @@ function ChatPageInner() {
   const handleImageFileSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (fileInputRef.current) fileInputRef.current.value = '';
 
+    if (isPdfFile(file)) {
+      openPdfPreview(file);
+      return;
+    }
     if (!file.type.startsWith('image/')) {
-      alert('Please select a valid image file (JPG, PNG, WEBP, GIF)');
+      alert('Please choose a picture (JPG, PNG, WEBP, GIF) or a PDF file.');
       return;
     }
 
     openImagePreview(file);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // A PDF: same preview window as a picture (name, size, optional caption), then Send
+  const openPdfPreview = (file) => {
+    if (file.size > PDF_MAX_BYTES) {
+      alert(`This PDF is ${fileSizeText(file.size)}. The limit is 25 MB.`);
+      return;
+    }
+    if (file.size === 0) {
+      alert('This file is empty.');
+      return;
+    }
+    setPendingImagePreview({ pdf: true, file, previewUrl: '', caption: '' });
   };
 
   // Confirm and Send Image from Preview Modal ONLY
   const handleConfirmSendImage = async (e) => {
     e?.preventDefault();
     if (!pendingImagePreview) return;
+
+    if (pendingImagePreview.pdf) {
+      const f = pendingImagePreview.file;
+      setPendingImagePreview(null);
+      // shown at once with "sending…"; goes up in pieces, and "tap to resend" works like voice notes
+      handleSendMessage({
+        messageType: 'file',
+        blob: f,
+        fileName: f.name || 'document.pdf',
+        localUrl: URL.createObjectURL(f),
+        text: pendingImagePreview.caption.trim(),
+        ...takeReply(),
+      });
+      return;
+    }
 
     try {
       setUploadingImage(true);
@@ -2111,6 +2150,10 @@ function ChatPageInner() {
         const file = files[i];
         if (file.type?.startsWith('image/') || file.name?.match(/\.(png|jpe?g|webp|gif|bmp|svg)$/i)) {
           openImagePreview(file);
+          return;
+        }
+        if (isPdfFile(file)) {
+          openPdfPreview(file);
           return;
         }
       }
@@ -2319,6 +2362,8 @@ function ChatPageInner() {
                   ? `${groupMeta.lastMessage.senderName}: ${
                       groupMeta.lastMessage.isDeleted
                         ? '🚫 Message deleted'
+                        : groupMeta.lastMessage.messageType === 'file'
+                        ? `📄 ${groupMeta.lastMessage.fileName || 'PDF'}`
                         : groupMeta.lastMessage.messageType === 'voice'
                         ? '🎤 Voice note'
                         : groupMeta.lastMessage.messageType === 'image'
@@ -2585,7 +2630,9 @@ function ChatPageInner() {
                           }${
                             contact.lastMessage.isDeleted
                               ? '🚫 Message deleted'
-                              : contact.lastMessage.messageType === 'voice'
+                              : contact.lastMessage.messageType === 'file'
+                        ? `📄 ${contact.lastMessage.fileName || 'PDF'}`
+                        : contact.lastMessage.messageType === 'voice'
                               ? '🎤 Voice note'
                               : contact.lastMessage.messageType === 'image'
                               ? '📷 Photo'
@@ -3179,6 +3226,9 @@ function ChatPageInner() {
                                 </p>
                               )}
 
+                              {/* Document (PDF) */}
+                              {msg.messageType === 'file' && <ChatFile msg={msg} isMe={isMe} />}
+
                               {/* Voice Note Player */}
                               {msg.messageType === 'voice' && !msg.mediaUrl && (
                                 <div className="flex items-center space-x-2 text-xs opacity-80 py-1 min-w-[150px]">
@@ -3445,7 +3495,7 @@ function ChatPageInner() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,application/pdf,.pdf"
                 className="hidden"
                 onChange={handleImageFileSelect}
               />
@@ -3460,12 +3510,14 @@ function ChatPageInner() {
                     ? 'bg-purple-100/80 text-purple-700 hover:bg-purple-200/80 border border-purple-300'
                     : 'text-slate-500 hover:text-emerald-600 hover:bg-emerald-50'
                 }`}
-                title={activeChat.type === 'materials' ? 'Upload Photo / Material' : 'Attach Picture'}
+                title={activeChat.type === 'materials' ? 'Upload photo or PDF' : 'Send a picture or PDF'}
               >
                 {uploadingImage ? (
                   <Loader2 className="w-5 h-5 animate-spin text-purple-600" />
-                ) : (
+                ) : activeChat.type === 'materials' ? (
                   <ImageIcon className="w-5 h-5" />
+                ) : (
+                  <Paperclip className="w-5 h-5" />
                 )}
               </button>
 
@@ -3645,10 +3697,10 @@ function ChatPageInner() {
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center space-x-2.5">
                 <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
-                  <ImageIcon className="w-4 h-4" />
+                  {pendingImagePreview.pdf ? <FileText className="w-4 h-4" /> : <ImageIcon className="w-4 h-4" />}
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm sm:text-base leading-tight">Send Picture</h3>
+                  <h3 className="font-bold text-sm sm:text-base leading-tight">{pendingImagePreview.pdf ? 'Send PDF' : 'Send Picture'}</h3>
                   <p className="text-[11px] text-slate-400">
                     {activeChat.type === 'materials'
                       ? 'Posting to Materials Group (Admins)'
@@ -3669,7 +3721,18 @@ function ChatPageInner() {
               </button>
             </div>
 
-            {/* Image Preview Box */}
+            {/* Image Preview Box / the PDF that will be sent */}
+            {pendingImagePreview.pdf ? (
+              <div className="my-4 flex items-center gap-3 bg-black/40 rounded-2xl p-4 border border-slate-800">
+                <span className="w-12 h-12 rounded-2xl bg-red-500/15 text-red-400 flex items-center justify-center shrink-0">
+                  <FileText className="w-6 h-6" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold truncate">{pendingImagePreview.file?.name || 'document.pdf'}</p>
+                  <p className="text-[11px] text-slate-400">PDF · {fileSizeText(pendingImagePreview.file?.size)}</p>
+                </div>
+              </div>
+            ) : (
             <div className="my-4 flex-1 flex items-center justify-center bg-black/50 rounded-2xl p-2 overflow-hidden max-h-[52vh] border border-slate-800">
               <img
                 src={pendingImagePreview.previewUrl}
@@ -3677,6 +3740,7 @@ function ChatPageInner() {
                 className="max-h-full max-w-full object-contain rounded-xl shadow-lg"
               />
             </div>
+            )}
 
             {/* Caption Input & Action Buttons */}
             <form onSubmit={handleConfirmSendImage} className="space-y-3 pt-1">
@@ -3715,7 +3779,7 @@ function ChatPageInner() {
                   ) : (
                     <>
                       <Send className="w-4 h-4" />
-                      <span>Send Photo</span>
+                      <span>{pendingImagePreview.pdf ? 'Send PDF' : 'Send Photo'}</span>
                     </>
                   )}
                 </button>

@@ -4,7 +4,8 @@ import { saveVoicePiece, PIECE_BYTES } from '@/lib/utils/chatAudio';
 
 export const dynamic = 'force-dynamic';
 
-// POST /api/chat/upload?uploadId=...&index=N — one piece of a long voice note (raw bytes).
+// POST /api/chat/upload?uploadId=...&index=N[&kind=pdf] — one piece of a long voice note or of a
+// PDF document (raw bytes).
 // The message itself is sent afterwards through POST /api/chat with the same uploadId.
 export async function POST(req) {
   try {
@@ -14,12 +15,13 @@ export async function POST(req) {
     const { searchParams } = new URL(req.url);
     const uploadId = searchParams.get('uploadId') || '';
     const index = Number(searchParams.get('index'));
+    const kind = searchParams.get('kind') === 'pdf' ? 'pdf' : 'voice';
 
     const declared = Number(req.headers.get('content-length') || 0);
     if (declared > PIECE_BYTES + 1024) return NextResponse.json({ message: 'Piece is too large' }, { status: 413 });
     const bytes = Buffer.from(await req.arrayBuffer());
 
-    await saveVoicePiece({ userId: session._id, uploadId, index, bytes });
+    await saveVoicePiece({ userId: session._id, uploadId, index, bytes, kind });
     return NextResponse.json({ ok: true, index });
   } catch (err) {
     console.error('Voice note piece error:', err.message);

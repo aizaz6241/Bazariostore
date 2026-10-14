@@ -49,7 +49,7 @@ export async function GET(req) {
         conversationIds.map((conversationId) =>
           ChatMessage.findOne({ conversationId })
             .sort({ createdAt: -1 })
-            .select('conversationId messageType text createdAt senderId senderName isDeleted isEdited')
+            .select('conversationId messageType text fileName createdAt senderId senderName isDeleted isEdited')
             .lean()
         )
       ),

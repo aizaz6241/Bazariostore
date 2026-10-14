@@ -6,7 +6,7 @@ import { sendPushToUser, sendPushToAllExcept } from '@/lib/utils/push';
 import { storeChatPicture, deleteChatPictures } from '@/lib/utils/chatMedia';
 import { markChatNotificationRead } from '@/lib/utils/notifications';
 import mongoose from 'mongoose';
-import { finishVoiceUpload, voiceLinkOf, deleteVoiceOf } from '@/lib/utils/chatAudio';
+import { finishVoiceUpload, voiceLinkOf, deleteVoiceOf, fileLinkOf, safePdfName } from '@/lib/utils/chatAudio';
 import { canSendPersonal, idsOfConversation } from '@/lib/utils/chatAccess';
 
 export const dynamic = 'force-dynamic';
@@ -191,10 +191,10 @@ export async function POST(req) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
 
-    const { chatType, targetMemberId, messageType: askedType, text, mediaUrl, audioDuration, uploadId, replyToId, replyThumb, voiceEffect } = await req.json();
+    const { chatType, targetMemberId, messageType: askedType, text, mediaUrl, audioDuration, uploadId, replyToId, replyThumb, voiceEffect, fileName } = await req.json();
     // Only ordinary messages can be sent from the chat box. "System" messages (bonus announcements
     // and the like) are written by the server itself, never by whoever is typing.
-    const messageType = ['text', 'image', 'voice'].includes(askedType) ? askedType : 'text';
+    const messageType = ['text', 'image', 'voice', 'file'].includes(askedType) ? askedType : 'text';
 
     let conversationId = 'main_group';
     let target = null;
@@ -207,9 +207,9 @@ export async function POST(req) {
           { status: 403 }
         );
       }
-      if (messageType !== 'image') {
+      if (messageType !== 'image' && messageType !== 'file') {
         return NextResponse.json(
-          { message: 'Only pictures and materials can be posted in Materials Group.' },
+          { message: 'Only pictures, PDFs and materials can be posted in Materials Group.' },
           { status: 400 }
         );
       }
@@ -246,7 +246,7 @@ export async function POST(req) {
     let replyTo = null;
     if (replyToId && mongoose.Types.ObjectId.isValid(String(replyToId))) {
       const original = await ChatMessage.findOne({ _id: replyToId, conversationId })
-        .select('senderId senderName messageType text mediaLink audioDuration isDeleted')
+        .select('senderId senderName messageType text mediaLink audioDuration isDeleted fileName')
         .lean();
       if (original) {
         let thumb = '';
@@ -259,7 +259,7 @@ export async function POST(req) {
           senderId: original.senderId,
           senderName: original.senderName,
           messageType: original.messageType,
-          text: original.isDeleted ? '' : String(original.text || '').slice(0, REPLY_TEXT_MAX),
+          text: original.isDeleted ? '' : String((original.messageType === 'file' ? original.fileName : original.text) || '').slice(0, REPLY_TEXT_MAX),
           audioDuration: original.audioDuration || 0,
           thumb,
           deleted: !!original.isDeleted,
@@ -285,6 +285,16 @@ export async function POST(req) {
     } else if (messageType === 'voice' && (!mediaUrl || !String(mediaUrl).trim())) {
       return NextResponse.json({ message: 'The voice note is empty' }, { status: 400 });
     }
+    // A document (PDF): always sent in pieces like a long voice note, checked to really be a PDF
+    let doc = null;
+    if (messageType === 'file') {
+      if (!uploadId) return NextResponse.json({ message: 'The file did not arrive. Please send it again.' }, { status: 400 });
+      try {
+        doc = await finishVoiceUpload({ userId: session._id, uploadId, kind: 'pdf', fileName });
+      } catch (e) {
+        return NextResponse.json({ message: e.message || 'Could not send the file' }, { status: 400 });
+      }
+    }
     const newId = new mongoose.Types.ObjectId();
 
     const newMsg = await ChatMessage.create({
@@ -297,17 +307,19 @@ export async function POST(req) {
       targetMemberId: target,
       messageType: messageType || 'text',
       text: text ? text.trim() : '',
-      mediaUrl: storedPicture || voice ? '' : mediaUrl || '',
-      mediaLink: storedPicture ? storedPicture.url : voice ? voice.mediaLink || voiceLinkOf(newId) : '',
-      mediaKey: storedPicture ? storedPicture.key : voice ? voice.mediaKey : '',
-      mediaMime: voice ? voice.mime : '',
-      mediaSize: voice ? voice.size : 0,
+      mediaUrl: storedPicture || voice || doc ? '' : mediaUrl || '',
+      mediaLink: storedPicture ? storedPicture.url : voice ? voice.mediaLink || voiceLinkOf(newId) : doc ? doc.mediaLink || fileLinkOf(newId) : '',
+      mediaKey: storedPicture ? storedPicture.key : voice ? voice.mediaKey : doc ? doc.mediaKey : '',
+      mediaMime: voice ? voice.mime : doc ? doc.mime : '',
+      mediaSize: voice ? voice.size : doc ? doc.size : 0,
+      fileName: doc ? safePdfName(fileName) : '',
       audioDuration: audioDuration || 0,
       voiceEffect: messageType === 'voice' && voiceEffect === 'hacker' ? 'hacker' : '',
       replyTo,
       readBy: [session._id],
     });
     if (voice) await voice.attach(newMsg._id);
+    if (doc) await doc.attach(newMsg._id);
 
 
     // Push notification to the recipient(s). WhatsApp style: the chat's name as the title and
@@ -320,6 +332,8 @@ export async function POST(req) {
       const previewBody =
         messageType === 'image'
           ? (text ? `📷 ${text.trim().slice(0, 80)}` : '📷 Photo')
+          : messageType === 'file'
+          ? `📄 ${safePdfName(fileName)}${text ? ` · ${text.trim().slice(0, 60)}` : ''}`
           : messageType === 'voice'
           ? `${voiceEffect === 'hacker' ? '🎭' : '🎤'} Voice message${audioDuration ? ` (${Math.floor(audioDuration / 60)}:${String(Math.round(audioDuration % 60)).padStart(2, '0')})` : ''}`
           : (text ? text.trim().slice(0, 160) : 'New message');
@@ -426,7 +440,7 @@ export async function DELETE(req) {
     // pictures of this conversation that live on the file storage: removed there as well
     const stored = await ChatMessage.find({ conversationId, mediaKey: { $nin: ['', null] } }).select('mediaKey').lean();
     // long voice notes kept in the database: their pieces go as well
-    const voices = await ChatMessage.find({ conversationId, messageType: 'voice', mediaSize: { $gt: 0 } }).select('_id').lean();
+    const voices = await ChatMessage.find({ conversationId, messageType: { $in: ['voice', 'file'] }, mediaSize: { $gt: 0 } }).select('_id').lean();
 
     const result = await ChatMessage.deleteMany({ conversationId });
     await deleteChatPictures(stored.map((m) => m.mediaKey));

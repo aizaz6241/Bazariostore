@@ -111,8 +111,9 @@ export async function DELETE(req, { params }) {
     message.mediaLink = '';
     message.mediaKey = '';
     message.audioDuration = 0;
-    const hadLongVoice = message.messageType === 'voice' && message.mediaSize > 0;
+    const hadLongVoice = (message.messageType === 'voice' || message.messageType === 'file') && message.mediaSize > 0;
     message.mediaSize = 0;
+    message.fileName = '';
     await message.save();
     // a long voice note kept in the database: its pieces are removed
     if (hadLongVoice) await deleteVoiceOf([message._id]);

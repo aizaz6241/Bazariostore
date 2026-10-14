@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 
 /**
- * ONE PIECE OF A LONG VOICE NOTE.
+ * ONE PIECE OF A LONG VOICE NOTE OR A DOCUMENT (PDF).
  *
  * The hosting accepts only a few MB per request, so a long recording is sent in pieces. Each
  * piece is one document here. When the message is sent the pieces either move to the file
@@ -15,6 +15,7 @@ const chatUploadSchema = new mongoose.Schema(
     index: { type: Number, required: true },
     size: { type: Number, default: 0 },
     data: { type: Buffer, required: true },
+    kind: { type: String, default: 'voice' }, // 'voice' (long voice note) | 'pdf' (document)
     // the chat message these pieces belong to (null while the upload is still going on)
     messageId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
   },

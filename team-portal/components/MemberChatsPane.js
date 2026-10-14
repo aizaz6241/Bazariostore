@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import ChatFile from '@/components/ChatFile';
 import AudioPlayer from './AudioPlayer';
 import {
   ChevronLeft,
@@ -45,7 +46,7 @@ const STATUS_TEXT = {
   expired: 'Time over',
 };
 const preview = (m) =>
-  !m ? '' : m.isDeleted ? '🚫 Message deleted' : m.messageType === 'voice' ? '🎤 Voice note' : m.messageType === 'image' ? '📷 Photo' : m.text || '';
+  !m ? '' : m.isDeleted ? '🚫 Message deleted' : m.messageType === 'voice' ? '🎤 Voice note' : m.messageType === 'image' ? '📷 Photo' : m.messageType === 'file' ? `📄 ${m.fileName || 'PDF'}` : m.text || '';
 
 const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('portal_token')}` });
 
@@ -288,7 +289,7 @@ export default function MemberChatsPane({ visible, onBack, onCounts }) {
                       <span className="font-bold text-slate-800">{m.senderName}</span>
                       <span className="text-[10px] text-slate-400 ml-1.5">{when(m.sentAt)}</span>
                       <p className="text-slate-700 whitespace-pre-wrap break-words">
-                        {m.messageType === 'image' ? (m.mediaLink ? <img src={m.mediaLink} alt="" className="max-h-40 rounded-lg mt-1" /> : '📷 Photo') : m.messageType === 'voice' ? '🎤 Voice note (open the chat to listen)' : m.text}
+                        {m.messageType === 'image' ? (m.mediaLink ? <img src={m.mediaLink} alt="" className="max-h-40 rounded-lg mt-1" /> : '📷 Photo') : m.messageType === 'voice' ? '🎤 Voice note (open the chat to listen)' : m.messageType === 'file' ? `📄 ${m.fileName || 'PDF'}` : m.text}
                         {m.messageType === 'image' && m.text ? <span className="block">{m.text}</span> : null}
                       </p>
                     </div>
@@ -514,7 +515,7 @@ function ChatReader({ conversationId, title, onClose }) {
                   <div className="mt-1 mb-1 pl-2 border-l-2 border-emerald-500 text-[11px] text-slate-500 flex items-center gap-1">
                     <Reply className="w-3 h-3" />
                     <span className="truncate">
-                      {m.replyTo.senderName}: {m.replyTo.deleted ? 'This message was deleted' : m.replyTo.messageType === 'image' ? `📷 ${m.replyTo.text || 'Photo'}` : m.replyTo.messageType === 'voice' ? '🎤 Voice message' : m.replyTo.text}
+                      {m.replyTo.senderName}: {m.replyTo.deleted ? 'This message was deleted' : m.replyTo.messageType === 'image' ? `📷 ${m.replyTo.text || 'Photo'}` : m.replyTo.messageType === 'voice' ? '🎤 Voice message' : m.replyTo.messageType === 'file' ? `📄 ${m.replyTo.text || 'PDF'}` : m.replyTo.text}
                     </span>
                   </div>
                 )}
@@ -527,6 +528,8 @@ function ChatReader({ conversationId, title, onClose }) {
                     {m.mediaLink || media[m._id] ? <img src={m.mediaLink || media[m._id]} alt="" className="max-h-60 rounded-xl mt-1" /> : <p className="text-xs text-slate-400">📷 Loading photo…</p>}
                     {m.text && <p className="text-xs whitespace-pre-wrap break-words mt-1">{m.text}</p>}
                   </>
+                ) : m.messageType === 'file' ? (
+                  <ChatFile msg={{ ...m, mediaUrl: m.mediaLink }} isMe={false} />
                 ) : m.messageType === 'voice' ? (
                   m.mediaLink || media[m._id] ? (
                     <>

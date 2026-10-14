@@ -15,12 +15,26 @@ import { chatStorageOn, storeChatFile } from '@/lib/utils/chatMedia';
  */
 
 export const PIECE_BYTES = 2 * 1024 * 1024; // the browser cuts the recording at exactly this size
+export const MAX_PDF_BYTES = 25 * 1024 * 1024; // documents (PDF) sent in the chat
 export const MAX_VOICE_BYTES = 300 * 1024 * 1024; // about 20 hours at the recording quality used
 const MAX_PIECES = Math.ceil(MAX_VOICE_BYTES / PIECE_BYTES);
 const TO_STORAGE_MAX_BYTES = 40 * 1024 * 1024; // above this the recording stays in the database
 const ABANDONED_AFTER_MS = 24 * 60 * 60 * 1000;
 
 export const validUploadId = (id) => typeof id === 'string' && /^[a-f0-9]{24,64}$/.test(id);
+
+// A PDF starts with "%PDF-" (a few bytes of junk before it are allowed by the PDF rules)
+export function sniffPdf(b) {
+  if (!b || b.length < 8) return null;
+  const head = b.subarray(0, 1024).toString('latin1');
+  return head.includes('%PDF-') ? { mime: 'application/pdf', ext: 'pdf' } : null;
+}
+
+const KINDS = {
+  voice: { sniff: (b) => sniffAudio(b), max: MAX_VOICE_BYTES, what: 'voice recording', tooBig: 'This voice note is too long to send' },
+  pdf: { sniff: (b) => sniffPdf(b), max: MAX_PDF_BYTES, what: 'PDF file', tooBig: 'This PDF is larger than 25 MB' },
+};
+const kindOf = (k) => KINDS[k] || KINDS.voice;
 
 // What the bytes really are (never the type the browser claims)
 export function sniffAudio(b) {
@@ -35,15 +49,16 @@ export function sniffAudio(b) {
 const asBuffer = (v) => (Buffer.isBuffer(v) ? v : v?.buffer ? Buffer.from(v.buffer) : Buffer.from(v || []));
 
 /** One piece of a recording that is being sent. Sending the same piece again replaces it. */
-export async function saveVoicePiece({ userId, uploadId, index, bytes }) {
+export async function saveVoicePiece({ userId, uploadId, index, bytes, kind = 'voice' }) {
+  const K = kindOf(kind);
   if (!validUploadId(uploadId)) throw new Error('Upload not recognised');
-  if (!Number.isInteger(index) || index < 0 || index >= MAX_PIECES) throw new Error('This voice note is too long to send');
+  if (!Number.isInteger(index) || index < 0 || index >= Math.ceil(K.max / PIECE_BYTES)) throw new Error(K.tooBig);
   if (!bytes || bytes.length === 0) throw new Error('Empty piece');
   if (bytes.length > PIECE_BYTES) throw new Error('Piece is too large');
-  if (index === 0 && !sniffAudio(bytes)) throw new Error('This is not a voice recording');
+  if (index === 0 && !K.sniff(bytes)) throw new Error(`This is not a ${K.what}`);
 
-  // an upload id belongs to whoever started it
-  const other = await ChatUpload.findOne({ uploadId, userId: { $ne: userId } }).select('_id').lean();
+  // an upload id belongs to whoever started it, and to one kind of file
+  const other = await ChatUpload.findOne({ uploadId, $or: [{ userId: { $ne: userId } }, { kind: { $nin: kind === 'voice' ? ['voice', null] : [kind] } }] }).select('_id').lean();
   if (other) throw new Error('Upload not recognised');
 
   if (index === 0) {
@@ -53,7 +68,7 @@ export async function saveVoicePiece({ userId, uploadId, index, bytes }) {
 
   await ChatUpload.updateOne(
     { uploadId, index },
-    { $set: { userId, size: bytes.length, data: bytes, messageId: null } },
+    { $set: { userId, size: bytes.length, data: bytes, messageId: null, kind } },
     { upsert: true }
   );
 }
@@ -62,25 +77,30 @@ export async function saveVoicePiece({ userId, uploadId, index, bytes }) {
  * All pieces have arrived and the message is about to be created.
  * @returns {{ size, mime, mediaLink, mediaKey, attach(messageId), discard() }}
  */
-export async function finishVoiceUpload({ userId, uploadId }) {
+export async function finishVoiceUpload({ userId, uploadId, kind = 'voice', fileName = '' }) {
+  const K = kindOf(kind);
+  const label = kind === 'pdf' ? 'file' : 'voice note';
   if (!validUploadId(uploadId)) throw new Error('Upload not recognised');
-  const pieces = await ChatUpload.find({ uploadId, userId, messageId: null }).select('index size').sort({ index: 1 }).lean();
-  if (pieces.length === 0) throw new Error('The voice note did not arrive. Please send it again.');
+  const pieces = await ChatUpload.find({ uploadId, userId, messageId: null, ...(kind === 'voice' ? { kind: { $in: ['voice', null] } } : { kind }) })
+    .select('index size')
+    .sort({ index: 1 })
+    .lean();
+  if (pieces.length === 0) throw new Error(`The ${label} did not arrive. Please send it again.`);
 
   let size = 0;
   for (let i = 0; i < pieces.length; i++) {
     const p = pieces[i];
     const last = i === pieces.length - 1;
     if (p.index !== i || (!last && p.size !== PIECE_BYTES) || !(p.size > 0)) {
-      throw new Error('A part of the voice note is missing. Please send it again.');
+      throw new Error(`A part of the ${label} is missing. Please send it again.`);
     }
     size += p.size;
   }
-  if (size > MAX_VOICE_BYTES) throw new Error('This voice note is too long to send');
+  if (size > K.max) throw new Error(K.tooBig);
 
   const first = await ChatUpload.findOne({ uploadId, index: 0 }).select('data').lean();
-  const kind = sniffAudio(asBuffer(first?.data));
-  if (!kind) throw new Error('This is not a voice recording');
+  const type = K.sniff(asBuffer(first?.data));
+  if (!type) throw new Error(`This is not a ${K.what}`);
 
   // On the file storage when possible: the database stays small
   let stored = null;
@@ -88,16 +108,17 @@ export async function finishVoiceUpload({ userId, uploadId }) {
     try {
       const all = await ChatUpload.find({ uploadId, userId }).select('data').sort({ index: 1 }).lean();
       const bytes = Buffer.concat(all.map((p) => asBuffer(p.data)));
-      stored = await storeChatFile(bytes, `voice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${kind.ext}`, kind.mime, 40000);
+      const base = kind === 'pdf' ? safeFileBase(fileName) || 'document' : 'voice';
+      stored = await storeChatFile(bytes, `${base}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${type.ext}`, type.mime, 40000);
     } catch (e) {
-      console.error('[chat] long voice note stays in the database:', e.message);
+      console.error(`[chat] ${label} stays in the database:`, e.message);
       stored = null;
     }
   }
 
   return {
     size,
-    mime: kind.mime,
+    mime: type.mime,
     mediaLink: stored ? stored.url : '',
     mediaKey: stored ? stored.key : '',
     // call once the message exists
@@ -107,6 +128,21 @@ export async function finishVoiceUpload({ userId, uploadId }) {
     },
   };
 }
+
+/** A file name made safe to show and to store: no folders, no odd characters, ends in .pdf */
+export function safeFileBase(name) {
+  return String(name || '')
+    .split(/[\\/]/)
+    .pop()
+    .replace(/\.pdf$/i, '')
+    .replace(/[^\p{L}\p{N} ._()-]+/gu, '')
+    .trim()
+    .slice(0, 100);
+}
+export const safePdfName = (name) => `${safeFileBase(name) || 'document'}.pdf`;
+
+/** The link of a document kept in the database (the browser downloads it piece by piece) */
+export const fileLinkOf = (messageId) => `/api/chat/file/${String(messageId)}`;
 
 /** The link under which a recording kept in the database is played */
 export const voiceLinkOf = (messageId) => `/api/chat/audio/${String(messageId)}`;
