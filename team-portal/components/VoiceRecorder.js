@@ -2,7 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import { Mic, Square, Trash2, Send, Play, Pause, VenetianMask } from 'lucide-react';
-import { VOICE_EFFECT_HACKER, buildHackerVoice, primeVoiceAudio, voiceMaskSupported } from '@/lib/voiceMask';
+import { VOICE_EFFECT_HACKER, buildHackerVoice, primeVoiceAudio, releaseVoiceAudio, voiceMaskSupported } from '@/lib/voiceMask';
 
 // Speech does not need music quality: a small recording sends fast and a long one stays sendable
 const VOICE_BITS_PER_SECOND = 32000;
@@ -18,7 +18,7 @@ function recorderOptions() {
 }
 
 /**
- * @param effect '' (real voice) or 'hacker' (voice changed on the phone before anything is recorded:
+ * @param effect '' (real voice) or 'hacker' = Anonymous voice (changed on the phone before anything is recorded:
  *               only the changed sound is recorded and sent, see lib/voiceMask.js)
  */
 export default function VoiceRecorder({ onSendAudio, onCancel, effect = '' }) {
@@ -62,14 +62,14 @@ export default function VoiceRecorder({ onSendAudio, onCancel, effect = '' }) {
       }
       streamRef.current = stream;
 
-      // Hacker voice: the microphone goes through the voice changer and ONLY its output is
+      // Anonymous voice: the microphone goes through the voice changer and ONLY its output is
       // recorded. If this phone cannot do it, nothing is recorded (never the real voice instead).
       let recordStream = stream;
       if (masked) {
         const ctx = voiceMaskSupported() ? primeVoiceAudio() : null;
         if (!ctx) {
           stream.getTracks().forEach((t) => t.stop());
-          alert('The hacker voice does not work in this browser. Turn it off to send your real voice, or open the portal in an up-to-date browser.');
+          alert('Anonymous voice does not work in this browser. Turn it off to send your real voice, or open the portal in an up-to-date browser.');
           onCancel?.();
           return;
         }
@@ -77,7 +77,16 @@ export default function VoiceRecorder({ onSendAudio, onCancel, effect = '' }) {
           if (ctx.state !== 'running') await ctx.resume();
         } catch (e) {}
         const source = ctx.createMediaStreamSource(stream);
-        const fx = buildHackerVoice(ctx, source);
+        let fx;
+        try {
+          fx = await buildHackerVoice(ctx, source);
+        } catch (e) {
+          stream.getTracks().forEach((t) => t.stop());
+          releaseVoiceAudio();
+          alert('Anonymous voice could not start on this phone. Nothing was recorded.');
+          onCancel?.();
+          return;
+        }
         const dest = ctx.createMediaStreamDestination();
         try {
           dest.channelCount = 1;
@@ -153,6 +162,9 @@ export default function VoiceRecorder({ onSendAudio, onCancel, effect = '' }) {
       fx.output.disconnect();
       fx.dest.stream.getTracks().forEach((t) => t.stop());
     } catch (e) {}
+    // close the sound engine: on iPhone it otherwise keeps the phone in call mode and the
+    // preview plays (almost silently) from the earpiece
+    releaseVoiceAudio();
   };
 
   const stopRecording = () => {
@@ -207,8 +219,16 @@ export default function VoiceRecorder({ onSendAudio, onCancel, effect = '' }) {
       previewAudioRef.current.pause();
       setIsPlayingPreview(false);
     } else {
-      previewAudioRef.current.play();
       setIsPlayingPreview(true);
+      const playing = previewAudioRef.current.play();
+      if (playing && playing.catch) {
+        playing.catch(() => {
+          // the phone refused (e.g. the microphone was still closing): try once more a moment later
+          setTimeout(() => {
+            previewAudioRef.current?.play().catch(() => setIsPlayingPreview(false));
+          }, 300);
+        });
+      }
     }
   };
 
@@ -303,7 +323,7 @@ export default function VoiceRecorder({ onSendAudio, onCancel, effect = '' }) {
 function MaskChip() {
   return (
     <span className="inline-flex items-center gap-1 shrink-0 px-2 py-0.5 rounded-full bg-slate-900 text-white text-[10px] font-bold" title="Your real voice is not recorded">
-      <VenetianMask className="w-3 h-3" /> Hacker voice
+      <VenetianMask className="w-3 h-3" /> Anonymous
     </span>
   );
 }

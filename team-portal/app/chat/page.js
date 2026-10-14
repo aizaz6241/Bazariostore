@@ -370,7 +370,7 @@ function ChatPageInner() {
     if (!inputText && composerRef.current) composerRef.current.style.height = 'auto';
   }, [inputText]);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
-  // Hacker voice on / off for the next voice notes (remembered on this phone only)
+  // Anonymous voice on / off for the next voice notes (remembered on this phone only)
   const [voiceMask, setVoiceMask] = useState(false);
   useEffect(() => {
     try {
@@ -3196,7 +3196,7 @@ function ChatPageInner() {
                               )}
                               {msg.messageType === 'voice' && msg.voiceEffect === 'hacker' && (
                                 <span className={`inline-flex items-center gap-1 mt-1 text-[10px] font-bold ${isMe ? 'opacity-80' : 'text-violet-700'}`}>
-                                  <VenetianMask className="w-3 h-3" /> Voice changed
+                                  <VenetianMask className="w-3 h-3" /> Anonymous voice
                                 </span>
                               )}
 
@@ -3478,17 +3478,17 @@ function ChatPageInner() {
                     className={`p-2.5 rounded-2xl transition active:scale-95 disabled:opacity-50 ${
                       voiceMask ? 'bg-slate-900 text-white hover:bg-slate-800' : 'text-slate-500 hover:text-emerald-600 hover:bg-emerald-50'
                     }`}
-                    title={voiceMask ? 'Record with hacker voice' : 'Record Voice Note'}
+                    title={voiceMask ? 'Record with anonymous voice' : 'Record Voice Note'}
                   >
                     <Mic className="w-5 h-5" />
                   </button>
-                  {/* hacker voice switch: a small badge on the mic */}
+                  {/* anonymous voice switch: a small badge on the mic */}
                   <button
                     type="button"
                     onClick={toggleVoiceMask}
                     aria-pressed={voiceMask}
-                    title={voiceMask ? 'Hacker voice is ON — tap to use your real voice' : 'Use hacker voice (your real voice is never sent)'}
-                    aria-label="Hacker voice"
+                    title={voiceMask ? 'Anonymous voice is ON — tap to use your real voice' : 'Use anonymous voice (your real voice is never sent)'}
+                    aria-label="Anonymous voice"
                     className={`absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center ring-2 ring-white transition ${
                       voiceMask ? 'bg-violet-600 text-white' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'
                     }`}
