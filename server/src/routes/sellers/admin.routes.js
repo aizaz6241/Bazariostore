@@ -742,7 +742,7 @@ router.post('/:id/freeze', authAdmin('sellers'), announceToAdmins('sellers', 'se
       return res.status(400).json({ message: 'This store registration is not approved. Use New Applications to approve or reject it.' });
     }
 
-    const wasRestricted = seller.status !== 'active';
+    const wasSuspended = seller.status === 'suspended';
     seller.status = status;
     if (status === 'active') {
       // only the restriction is lifted: "verified" (documents checked) is not touched here.
@@ -758,8 +758,8 @@ router.post('/:id/freeze', authAdmin('sellers'), announceToAdmins('sellers', 'se
 
     await seller.save();
     forgetAuthCache('seller', seller._id); // a suspension applies to the next request at once
-    // back to active: the orders it could not confirm while restricted get a fresh deadline
-    if (status === 'active' && wasRestricted) await restartSellerDeadlines(seller._id);
+    // back to active after a suspension: the orders it could not confirm get a fresh deadline
+    if (status === 'active' && wasSuspended) await restartSellerDeadlines(seller._id);
 
     const isRestricted = status !== 'active';
     const statusLabel = status === 'frozen' ? 'FROZEN' : status === 'suspended' ? 'SUSPENDED' : 'UNFROZEN / ACTIVE';
@@ -1491,7 +1491,7 @@ router.put('/:id', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:ch
     if (phone !== undefined) seller.phone = phone;
     if (badCommission(commissionRate)) return res.status(400).json({ message: COMMISSION_MSG });
     if (commissionRate !== undefined && commissionRate !== null && commissionRate !== '') seller.commissionRate = Number(commissionRate);
-    const reactivating = status === 'active' && seller.status !== 'active';
+    const reactivating = status === 'active' && seller.status === 'suspended';
     if (status) seller.status = status;
     if (address) seller.address = { ...seller.address, ...address };
 

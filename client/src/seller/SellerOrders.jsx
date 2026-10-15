@@ -129,8 +129,8 @@ export default function SellerOrders() {
         <div className="seller-restricted-note">
           <span className="srn-icon">🔒</span>
           <div>
-            <b>Your store is frozen — you can view orders but cannot confirm or process them</b>
-            <p>Please contact support to resolve the freeze. Orders waiting for you get a fresh deadline once your store is active again.</p>
+            <b>Your store is frozen</b>
+            <p>You can still confirm your pending orders if your wallet has enough balance — please confirm them on time. Everything else stays paused until support lifts the freeze.</p>
           </div>
           <Link to="/seller/support" className="srn-btn">💬 Contact Support</Link>
         </div>
@@ -284,8 +284,7 @@ export default function SellerOrders() {
                             type="button"
                             onClick={() => handleQuickConfirm(ord)}
                             className="btn-quick-confirm"
-                            disabled={restricted || confirmingId === ord._id}
-                            title={restricted ? 'Your store is frozen: orders cannot be confirmed. Contact support.' : undefined}
+                            disabled={confirmingId === ord._id}
                           >
                             <Ic name="checkCircle" size={14} />
                             {confirmingId === ord._id ? 'Locking Fund...' : '⚡ Confirm Order'}
@@ -498,8 +497,7 @@ export default function SellerOrders() {
                   type="button"
                   onClick={() => handleQuickConfirm(selectedOrd)}
                   className="btn-quick-confirm"
-                  disabled={restricted || confirmingId === selectedOrd._id}
-                  title={restricted ? 'Your store is frozen: orders cannot be confirmed. Contact support.' : undefined}
+                  disabled={confirmingId === selectedOrd._id}
                   style={{ padding: '9px 18px', fontSize: 13 }}
                 >
                   <Ic name="checkCircle" size={15} />

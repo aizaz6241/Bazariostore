@@ -571,8 +571,8 @@ export default function SellerLayout() {
               </p>
               {seller.status === 'frozen' && (
                 <p className="banner-desc">
-                  While frozen you can view your dashboard, orders and wallet, but you cannot confirm or process orders,
-                  deposit, withdraw, or change products, coupons, shipping or store settings. Chat with support to resolve it.
+                  While frozen you can view your dashboard, orders and wallet and confirm pending orders (with enough wallet balance),
+                  but you cannot deposit, withdraw, or change products, coupons, shipping or store settings. Chat with support to resolve it.
                 </p>
               )}
               {seller.status === 'suspended' && (

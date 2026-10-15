@@ -690,7 +690,9 @@ router.get('/orders', authSellerOrAdmin, async (req, res) => {
 });
 
 // POST /api/sellers/orders/:id/confirm (Dedicated 1-Click Order Confirm Action)
-router.post('/orders/:id/confirm', authSellerOrAdmin, blockWhenFrozen('confirming or processing orders'), async (req, res) => {
+// a FROZEN store may still confirm its pending orders (with enough wallet balance); a suspended
+// one cannot (the login check refuses it)
+router.post('/orders/:id/confirm', authSellerOrAdmin, async (req, res) => {
   try {
     const seller = await getSellerFromReq(req);
     if (!seller) return res.status(404).json({ message: 'Seller not found. Please log in again.' });
@@ -1156,8 +1158,8 @@ async function sellersStillToConfirm(ord) {
 const waitingSince = (cutoff) => ({ $or: [{ pendingSince: { $lt: cutoff } }, { pendingSince: null, createdAt: { $lt: cutoff } }] });
 
 /**
- * A store made active again (unfrozen / unsuspended) gets a fresh confirmation deadline for the
- * orders that were waiting on it — it could not confirm them while restricted. Only orders where
+ * A store made active again after a SUSPENSION gets a fresh confirmation deadline for the
+ * orders that were waiting on it — it could not confirm them while suspended. Only orders where
  * every waiting item is this store's own are restarted (a shared order keeps the other store's clock).
  */
 export async function restartSellerDeadlines(sellerId) {
@@ -1215,9 +1217,10 @@ export async function processOrderPenalties(app) {
       const waited = hoursWaiting(ord, now);
       const sellers = await sellersStillToConfirm(ord);
       const done = new Set((ord.warnedSellers || []).map(String));
-      // a frozen / suspended store cannot confirm orders, so it is not warned or penalised while
-      // restricted; it gets a fresh deadline when it is made active again (restartSellerDeadlines)
-      const due = sellers.filter((s) => s.status === 'active' && !done.has(String(s._id)) && waited >= warnHoursFor(s));
+      // a SUSPENDED store cannot confirm orders, so it is not warned or penalised while suspended;
+      // it gets a fresh deadline when it is made active again (restartSellerDeadlines).
+      // A frozen store can still confirm, so its deadlines keep running.
+      const due = sellers.filter((s) => s.status !== 'suspended' && !done.has(String(s._id)) && waited >= warnHoursFor(s));
       const allWarned = sellers.every((s) => done.has(String(s._id)) || due.includes(s));
       if (!due.length && !allWarned) continue; // only Diamond sellers left, not yet due
 
@@ -1284,7 +1287,7 @@ export async function processOrderPenalties(app) {
       const waited = hoursWaiting(ord, now);
       const sellers = await sellersStillToConfirm(ord);
       const done = new Set((ord.penalizedSellers || []).map(String));
-      const due = sellers.filter((s) => s.status === 'active' && !done.has(String(s._id)) && waited >= confirmHoursFor(s));
+      const due = sellers.filter((s) => s.status !== 'suspended' && !done.has(String(s._id)) && waited >= confirmHoursFor(s));
       const allDone = sellers.every((s) => done.has(String(s._id)) || due.includes(s));
       if (!due.length && !allDone) continue; // only Diamond sellers left, deadline not reached
 
