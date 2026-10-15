@@ -1,11 +1,11 @@
 import Member from '@/lib/models/Member';
 import SellerAssignment from '@/lib/models/SellerAssignment';
 import RewardClaim from '@/lib/models/RewardClaim';
-import { Seller, Order, CLIENT_SELLER_FILTER } from '@/lib/models/SharedModels';
+import { Seller, CLIENT_SELLER_FILTER } from '@/lib/models/SharedModels';
+import { unconfirmedBySeller } from '@/lib/utils/sellerOrders';
 import { getWalletBalancesMap, EMPTY_WALLET } from '@/lib/utils/wallet';
 import { getLedgerStats, sellerBinance } from '@/lib/utils/ledgerStats';
 
-const OPEN_ORDER_STATUSES = ['pending', 'processing', 'unfulfilled'];
 const sid = (v) => (v ? String(v) : '');
 
 /**
@@ -46,16 +46,12 @@ export async function loadTeamStats(people) {
     Seller.find({ _id: { $in: sellerIds }, ...CLIENT_SELLER_FILTER })
       .select('storeName ownerName email phone status wallet accountHealth createdAt')
       .lean(),
-    sellerIds.length
-      ? Order.aggregate([
-          { $match: { seller: { $in: sellerIds }, status: { $in: OPEN_ORDER_STATUSES } } },
-          { $group: { _id: '$seller', n: { $sum: 1 } } },
-        ])
-      : [],
+    // orders waiting for the seller's confirmation (same count as the store and the Sellers page)
+    unconfirmedBySeller(sellerIds).catch(() => new Map()),
   ]);
 
   const sellerMap = new Map(sellers.map((s) => [sid(s._id), s]));
-  const ordersBySeller = new Map(orderAgg.map((o) => [sid(o._id), o.n]));
+  const ordersBySeller = new Map([...orderAgg.entries()].map(([k, v]) => [k, v.orders]));
   const bonusByMember = new Map(bonusAgg.map((b) => [sid(b._id), b.total]));
 
   const out = new Map();
@@ -83,4 +79,4 @@ export async function loadTeamStats(people) {
   return out;
 }
 
-export { OPEN_ORDER_STATUSES };
+

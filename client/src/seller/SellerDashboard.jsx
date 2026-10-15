@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import { sapi, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import SellerAppModal from '../components/SellerAppModal.jsx';
@@ -11,6 +11,9 @@ import { getLiveStoreVisitors, getProductLiveViewers } from '../utils/liveMetric
 
 export default function SellerDashboard() {
   const { formatMoney, currentCurrency } = useCurrency();
+  const { seller: me } = useOutletContext() || {};
+  const isDiamond = me?.tier === 'diamond';
+  const profitPct = isDiamond ? 35 : 20;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
@@ -75,6 +78,9 @@ export default function SellerDashboard() {
             {isVerified && (
               <VerifiedStoreBadge variant="pill" size={15} text="Verified Store" />
             )}
+            <Link to="/seller/diamond" className={isDiamond ? 'diamond-pill' : 'basic-pill'} style={{ fontSize: 12, padding: '4px 10px' }}>
+              {isDiamond ? '💎 DIAMOND STORE' : 'BASIC PLAN'}
+            </Link>
           </div>
           <p>
             Welcome back, <b className="sdw-store-name">{data?.seller?.storeName}</b>
@@ -92,6 +98,21 @@ export default function SellerDashboard() {
           </Link>
         </div>
       </div>
+
+      {/* ─── ACCOUNT PLAN: Basic stores see what Diamond gives ─── */}
+      {me && !isDiamond && me.status !== 'pending_approval' && (
+        <div className="sdm-upsell">
+          <span style={{ fontSize: 22 }}>💎</span>
+          <div>
+            {me?.tierRequest?.status === 'pending' ? (
+              <>Your <b>Diamond upgrade request</b> is with our support team — they will contact you in chat.</>
+            ) : (
+              <>Upgrade to <b>Diamond</b>: earn <b>35% profit</b> per order instead of 20%, get <b>72 hours</b> to confirm orders, remove products from My Store and fast 3–5 day delivery.</>
+            )}
+          </div>
+          <Link to="/seller/diamond" className="sdm-btn sdm-btn-diamond">See Diamond</Link>
+        </div>
+      )}
 
       {/* ─── OFFICIAL VERIFIED STORE STATUS BANNER ─── */}
       {isVerified && (
@@ -119,7 +140,7 @@ export default function SellerDashboard() {
                 </span>
               )}
               {(stats?.totalProfitEarned > 0 || data?.seller?.wallet?.totalProfitEarned > 0) && (
-                <span className="swh-profit-badge" title="Cumulative 20% order profits earned">
+                <span className="swh-profit-badge" title="Cumulative order profits earned">
                   +{formatMoney(stats?.totalProfitEarned || data?.seller?.wallet?.totalProfitEarned)} Profit Earned
                 </span>
               )}
@@ -356,12 +377,12 @@ export default function SellerDashboard() {
         {/* 20% Profit Earned */}
         <div className="seller-kpi-card profit-card">
           <div className="kpi-header">
-            <span className="kpi-title">20% Profit Margins Earned</span>
+            <span className="kpi-title">Order Profit Earned ({profitPct}%)</span>
             <span className="kpi-icon-wrap blue"><Ic name="sparkle" size={20} /></span>
           </div>
           <div className="kpi-value text-green">+{formatMoney(stats?.totalProfitEarned || data?.seller?.wallet?.totalProfitEarned)}</div>
           <div className="kpi-footer text-blue">
-            <span>Accumulated 20% order margins</span>
+            <span>{isDiamond ? '💎 Diamond: 35% on new orders' : 'Basic: 20% per order'}</span>
           </div>
         </div>
 

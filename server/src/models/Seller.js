@@ -87,6 +87,25 @@ const sellerSchema = new mongoose.Schema(
     accountType: { type: String, enum: ['client', 'test'], default: 'client' },
     // Previous Store Seller Flag (Amounts in wallet must NOT be converted to USDT / added to Admin USDT Wallet)
     isPreviousStoreSeller: { type: Boolean, default: false },
+    // Seller account tier (see utils/sellerTier.js): 'basic' (default) or 'diamond'.
+    // Diamond: 35% profit on orders placed from `tierSince` on, 72h to confirm an order, may remove
+    // products from My Store. Set only by an admin, after the one-time upgrade fee is paid.
+    tier: { type: String, enum: ['basic', 'diamond'], default: 'basic' },
+    tierSince: { type: Date, default: null },
+    // the seller's own "upgrade me" request (sent to support chat); cleared when an admin decides
+    tierRequest: {
+      status: { type: String, enum: ['none', 'pending'], default: 'none' },
+      requestedAt: { type: Date, default: null },
+    },
+    tierHistory: [
+      {
+        from: String,
+        to: String,
+        at: { type: Date, default: Date.now },
+        by: { type: String, default: '' },
+        note: { type: String, default: '' },
+      },
+    ],
     freezeReason: { type: String, default: '' },
     // Set when an admin rejects the registration (cleared on approval). Such a store gets no wallet money.
     registrationRejectedAt: Date,

@@ -10,7 +10,7 @@ const STATUS_TABS = [
   { key: 'confirmed', label: 'Confirmed (Locked)', icon: 'checkCircle' },
   { key: 'processing', label: 'Operations Processing', icon: 'box' },
   { key: 'shipped', label: 'Shipped / In Transit', icon: 'truck' },
-  { key: 'delivered', label: 'Delivered (+20% Settled)', icon: 'sparkle' },
+  { key: 'delivered', label: 'Delivered (+Profit Settled)', icon: 'sparkle' },
   { key: 'cancelled', label: 'Cancelled / Refunded', icon: 'x' },
 ];
 
@@ -19,7 +19,7 @@ const ORDER_STEPS = [
   { key: 'confirmed', label: 'Confirmed', desc: 'Funds locked in processing' },
   { key: 'processing', label: 'Processing & Packed', desc: 'Warehouse packing & inspection' },
   { key: 'shipped', label: 'Dispatched & Transit', desc: 'Hub transit & delivery courier' },
-  { key: 'delivered', label: 'Delivered', desc: 'Settled + 20% profit paid' },
+  { key: 'delivered', label: 'Delivered', desc: 'Settled + profit paid' },
 ];
 
 function getStepIndex(status) {
@@ -169,7 +169,7 @@ export default function SellerOrders() {
                 <th>Order Date</th>
                 <th>Items Ordered</th>
                 <th>Customer &amp; Address</th>
-                <th>Financial Settlement (20% Profit)</th>
+                <th>Financial Settlement (Profit)</th>
                 <th>Payment</th>
                 <th>Live Status</th>
                 <th>Actions</th>
@@ -197,8 +197,9 @@ export default function SellerOrders() {
                 const currentStatus = items[0]?.itemStatus || ord.status;
                 const tracking = items[0]?.trackingNumber;
                 const total = ord.sellerTotal || 0;
-                const profit = ord.sellerProfit || Number((total * 0.20).toFixed(2));
-                const totalReturn = ord.sellerReturn || Number((total * 1.20).toFixed(2));
+                const rate = ord.profitRate || 20;
+                const profit = ord.sellerProfit || Number(((total * rate) / 100).toFixed(2));
+                const totalReturn = ord.sellerReturn || Number((total + profit).toFixed(2));
                 const isPending = currentStatus === 'pending';
                 const isDelivered = currentStatus === 'delivered';
                 const isProcessing = ['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery'].includes(currentStatus);
@@ -237,7 +238,7 @@ export default function SellerOrders() {
                           <b>{formatMoney(total)}</b>
                         </div>
                         <div className="sof-row text-profit">
-                          <span className="sof-lbl">+20% Profit:</span>
+                          <span className="sof-lbl">{rate >= 35 ? '💎 ' : ''}+{rate}% Profit:</span>
                           <b>+{formatMoney(profit)}</b>
                         </div>
                         <div className="sof-row text-return">
@@ -355,7 +356,7 @@ export default function SellerOrders() {
                     <span className="processing-fund-tag">🔒 Processing Fund Locked</span>
                   )}
                   {selectedOrd.status === 'delivered' && (
-                    <span className="settled-fund-tag">🎉 20% Profit Settled</span>
+                    <span className="settled-fund-tag">🎉 {selectedOrd.profitRate || 20}% Profit Settled</span>
                   )}
                 </div>
                 <p style={{ margin: 0, fontSize: 12.5, color: '#475569', lineHeight: 1.45 }}>
@@ -365,7 +366,7 @@ export default function SellerOrders() {
                   {selectedOrd.status === 'out_from_warehouse' && '🚚 Package has been dispatched from the main warehouse and handed over to logistics transit.'}
                   {selectedOrd.status === 'delivery_warehouse' && '🏢 Package has reached the local delivery hub and is undergoing last-mile route sorting.'}
                   {['shipped', 'out_for_delivery'].includes(selectedOrd.status) && '🚴 Your order is currently out with the courier rider for customer doorstep delivery.'}
-                  {selectedOrd.status === 'delivered' && '🎉 Order successfully delivered! Total payout (Principal + 20% profit) has been credited to your wallet.'}
+                  {selectedOrd.status === 'delivered' && '🎉 Order successfully delivered! Total payout (Principal + profit) has been credited to your wallet.'}
                   {selectedOrd.status === 'cancelled' && '❌ Order cancelled. Locked funds returned to available balance.'}
                 </p>
               </div>
@@ -408,10 +409,10 @@ export default function SellerOrders() {
                 </div>
               </div>
 
-              {/* Financial Settlement Breakdown (20% Profit) */}
+              {/* Financial Settlement Breakdown (20% Basic / 35% Diamond) */}
               <div className="order-settlement-preview-box">
                 <div className="osp-head">
-                  <span>💰 Financial Settlement Summary (20% Profit Margin)</span>
+                  <span>💰 Financial Settlement Summary ({(selectedOrd.profitRate || 20) >= 35 ? '💎 Diamond · ' : ''}{selectedOrd.profitRate || 20}% Profit Margin)</span>
                 </div>
                 <div className="osp-grid">
                   <div className="osp-item">
@@ -419,16 +420,16 @@ export default function SellerOrders() {
                     <b>{formatMoney(selectedOrd.sellerTotal)}</b>
                   </div>
                   <div className="osp-item">
-                    <small>20% Profit Margin</small>
-                    <b style={{ color: '#16a34a' }}>+{formatMoney(selectedOrd.sellerProfit || ((selectedOrd.sellerTotal || 0) * 0.20))}</b>
+                    <small>{selectedOrd.profitRate || 20}% Profit Margin</small>
+                    <b style={{ color: '#16a34a' }}>+{formatMoney(selectedOrd.sellerProfit || ((selectedOrd.sellerTotal || 0) * (selectedOrd.profitRate || 20)) / 100)}</b>
                   </div>
                   <div className="osp-item highlight">
                     <small>Payout on Delivery</small>
-                    <b style={{ color: '#2563eb' }}>{formatMoney(selectedOrd.sellerReturn || ((selectedOrd.sellerTotal || 0) * 1.20))}</b>
+                    <b style={{ color: '#2563eb' }}>{formatMoney(selectedOrd.sellerReturn || ((selectedOrd.sellerTotal || 0) * (1 + (selectedOrd.profitRate || 20) / 100)))}</b>
                   </div>
                 </div>
                 <p className="osp-note">
-                  💡 When Platform Operations marks this order as <b>Delivered</b>, your locked fund ({formatMoney(selectedOrd.sellerTotal)}) + 20% profit ({formatMoney(selectedOrd.sellerProfit || (selectedOrd.sellerTotal * 0.2))}) is released to your merchant wallet.
+                  💡 When Platform Operations marks this order as <b>Delivered</b>, your locked fund ({formatMoney(selectedOrd.sellerTotal)}) + {selectedOrd.profitRate || 20}% profit ({formatMoney(selectedOrd.sellerProfit || ((selectedOrd.sellerTotal || 0) * (selectedOrd.profitRate || 20)) / 100)}) is released to your merchant wallet.
                 </p>
               </div>
 

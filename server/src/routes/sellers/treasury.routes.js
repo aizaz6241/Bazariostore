@@ -1,8 +1,11 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import TreasuryProduct from '../../models/TreasuryProduct.js';
 import Product from '../../models/Product.js';
 import Seller from '../../models/Seller.js';
 import Category from '../../models/Category.js';
+import Order from '../../models/Order.js';
+import { isDiamond } from '../../utils/sellerTier.js';
 import { authSeller } from '../../middleware/auth.js';
 import { slugify, blockWhenFrozen } from './helpers.js';
 import { escapeRegex } from '../../utils/sanitize.js';
@@ -277,12 +280,36 @@ router.post('/treasury/:id/add', authSeller, blockWhenFrozen('adding Treasury pr
   }
 });
 
-// POST or DELETE /api/sellers/treasury/:id/remove - Remove Treasury Product from seller's store (Blocked)
-router.all('/treasury/:id/remove', authSeller, async (req, res) => {
-  return res.status(403).json({
-    ok: false,
-    message: 'Products added from Product Treasury cannot be removed from your store.',
-  });
+// POST or DELETE /api/sellers/treasury/:id/remove - Remove a Treasury Product from the seller's store.
+// Only a 💎 Diamond store may do this; Basic stores are refused as before.
+router.all('/treasury/:id/remove', authSeller, blockWhenFrozen('removing products'), async (req, res) => {
+  try {
+    const me = await Seller.findById(req.seller.id).select('tier').lean();
+    if (!isDiamond(me)) {
+      return res.status(403).json({
+        ok: false,
+        upgradeRequired: true,
+        message: 'Products added from Product Treasury cannot be removed from your store. Upgrade to 💎 Diamond to remove products.',
+      });
+    }
+    const id = String(req.params.id || '');
+    if (!mongoose.Types.ObjectId.isValid(id)) return res.status(404).json({ message: 'Product not found' });
+    // the id may be the Treasury item or the store's own listing of it
+    const product = await Product.findOne({ seller: me._id, $or: [{ treasuryProduct: id }, { _id: id }] });
+    if (!product) return res.status(404).json({ message: 'Product not found in your store' });
+
+    const openOrder = await Order.exists({ 'items.product': product._id, status: { $nin: ['delivered', 'cancelled', 'refunded'] } });
+    if (openOrder) {
+      return res.status(400).json({
+        ok: false,
+        message: 'This product has orders that are still running. You can remove it once they are delivered or cancelled.',
+      });
+    }
+    await Product.deleteOne({ _id: product._id });
+    res.json({ ok: true, message: `"${product.name}" was removed from your store.` });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 export default router;

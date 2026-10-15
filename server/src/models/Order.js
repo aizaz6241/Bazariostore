@@ -90,6 +90,9 @@ const orderSchema = new mongoose.Schema(
     adminNotes: { type: String, default: '' },
     warning24hSent: { type: Boolean, default: false },
     penalty48hApplied: { type: Boolean, default: false },
+    // sellers of this order already warned / penalised (per-seller deadlines: Basic 48h, Diamond 72h)
+    warnedSellers: { type: [String], default: undefined },
+    penalizedSellers: { type: [String], default: undefined },
     // a refund of this (delivered) order was already taken off the seller's running targets
     targetProgressUndone: { type: Boolean, default: false },
     // when the order last became "pending" (empty: since it was placed); the 24h / 48h confirmation

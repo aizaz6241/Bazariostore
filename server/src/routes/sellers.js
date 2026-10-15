@@ -14,6 +14,7 @@ import shippingRoutes from './sellers/shipping.routes.js';
 import walletRoutes from './sellers/wallet.routes.js';
 import adminRoutes from './sellers/admin.routes.js';
 import treasuryRoutes from './sellers/treasury.routes.js';
+import tierRoutes from './sellers/tier.routes.js';
 import { slugify, calculateHealthStatus } from './sellers/helpers.js';
 
 const router = express.Router();
@@ -28,6 +29,7 @@ router.use(refundRoutes);
 router.use(couponRoutes);
 router.use(shippingRoutes);
 router.use(walletRoutes);
+router.use(tierRoutes); // before adminRoutes, whose '/:id' would catch '/tier'
 router.use(adminRoutes);
 
 // Re-export core helpers for external consumers (e.g. server/src/routes/orders.js)

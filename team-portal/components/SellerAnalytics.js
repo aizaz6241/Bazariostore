@@ -362,7 +362,7 @@ export function SellerAnalyticsView({ data, directory, isPartner, scope, onNote,
                   Last deposit
                 </SortTh>
                 <th className="px-3 py-2.5 text-right uppercase font-bold">Store wallet</th>
-                <th className="px-3 py-2.5 text-center uppercase font-bold">Orders</th>
+                <th className="px-3 py-2.5 text-center uppercase font-bold" title="Orders waiting for the seller to confirm">To confirm</th>
                 <th className="px-4 py-2.5" />
               </tr>
             </thead>
@@ -418,10 +418,11 @@ export function SellerAnalyticsView({ data, directory, isPartner, scope, onNote,
                             e.stopPropagation();
                             onOrders(dir);
                           }}
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${dir.pendingOrdersCount > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'}`}
-                          title="Pending orders and store wallet"
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold hover:ring-2 hover:ring-amber-300 transition ${dir.pendingOrdersCount > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'}`}
+                          title={dir.pendingOrdersCount > 0 ? `${dir.pendingOrdersCount} order(s) waiting for confirmation · needs $${Number(dir.pendingOrdersAmount || 0).toFixed(2)}` : 'Orders and store wallet'}
                         >
                           {dir.pendingOrdersCount || 0}
+                          {dir.pendingOrdersCount > 0 && <span className="block font-semibold text-[9px] text-amber-700/80">${Number(dir.pendingOrdersAmount || 0).toFixed(0)}</span>}
                         </button>
                       ) : (
                         <span className="text-slate-300">—</span>
@@ -469,7 +470,8 @@ export function SellerAnalyticsView({ data, directory, isPartner, scope, onNote,
             const dir = directory?.get(s.sellerId);
             const alias = dir?.assignment?.privateNotes?.customName;
             return (
-              <button key={s.sellerId} type="button" onClick={() => onOpen(s)} className="w-full text-left px-4 py-3 active:bg-slate-50">
+              <div key={s.sellerId} className="px-4 py-3">
+              <button type="button" onClick={() => onOpen(s)} className="w-full text-left active:opacity-80">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="font-bold text-slate-900 text-sm truncate">{alias && alias !== s.storeName ? alias : s.storeName}</div>
@@ -494,6 +496,25 @@ export function SellerAnalyticsView({ data, directory, isPartner, scope, onNote,
                   </div>
                 </div>
               </button>
+              {dir && (
+                <button
+                  type="button"
+                  onClick={() => onOrders(dir)}
+                  className={`mt-2 w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-[11px] font-semibold ${
+                    dir.pendingOrdersCount > 0 ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-slate-50 text-slate-500'
+                  }`}
+                >
+                  <span>
+                    {dir.pendingOrdersCount > 0
+                      ? `📦 ${dir.pendingOrdersCount} order${dir.pendingOrdersCount === 1 ? '' : 's'} waiting for confirmation`
+                      : '📦 Orders & store wallet'}
+                  </span>
+                  <span className="tabular-nums">
+                    {dir.pendingOrdersCount > 0 ? `$${Number(dir.pendingOrdersAmount || 0).toFixed(2)} ›` : '›'}
+                  </span>
+                </button>
+              )}
+              </div>
             );
           })}
         </div>
@@ -652,7 +673,7 @@ export function SellerDetailDrawer({ seller, scope, isPartner, dirEntry, onClose
               <Edit3 className="w-4 h-4" /> Memory note
             </button>
             <button onClick={() => onOrders(dirEntry)} className="flex-1 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold flex items-center justify-center gap-1.5">
-              <Package className="w-4 h-4" /> Orders & store wallet
+              <Package className="w-4 h-4" /> {dirEntry.pendingOrdersCount > 0 ? `${dirEntry.pendingOrdersCount} waiting · Orders & wallet` : 'Orders & store wallet'}
             </button>
           </div>
         )}

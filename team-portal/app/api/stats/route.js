@@ -5,7 +5,8 @@ import SellerAssignment from '@/lib/models/SellerAssignment';
 import { Seller, Order, CLIENT_SELLER_FILTER } from '@/lib/models/SharedModels';
 import RewardClaim from '@/lib/models/RewardClaim';
 import { syncEcommerceAdmins } from '@/lib/adminSync';
-import { loadTeamStats, OPEN_ORDER_STATUSES } from '@/lib/utils/teamStats';
+import { loadTeamStats } from '@/lib/utils/teamStats';
+import { countUnconfirmedOrders } from '@/lib/utils/sellerOrders';
 import { getWalletBalancesMap, EMPTY_WALLET } from '@/lib/utils/wallet';
 import { getLedgerStats, dashboardFinance } from '@/lib/utils/ledgerStats';
 
@@ -25,7 +26,7 @@ export async function GET(req) {
         Seller.countDocuments(CLIENT_SELLER_FILTER),
         getLedgerStats(),
         RewardClaim.countDocuments({ status: 'pending' }),
-        Order.countDocuments({ status: { $in: OPEN_ORDER_STATUSES } }),
+        countUnconfirmedOrders(),
         Member.find({ role: 'member', active: true }).select('name username phone avatar').lean(),
       ]);
 

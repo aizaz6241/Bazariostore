@@ -15,6 +15,7 @@ import { walletApply, walletNow } from '../../utils/wallet.js';
 import { restockOrder, settleDeliveredStock } from '../../utils/orderStock.js';
 import { adminRoom } from '../../utils/permissions.js';
 import { toAdmins } from '../../utils/realtime.js';
+import { profitRateFor, confirmHoursFor, warnHoursFor, tierOf } from '../../utils/sellerTier.js';
 
 const router = express.Router();
 
@@ -82,6 +83,7 @@ async function refreshItemFlags(order) {
     it.payoutSettled = f.payoutSettled === true;
     it.lockedAmount = f.lockedAmount || 0;
     it.profitAmount = f.profitAmount || 0;
+    it.profitRate = Number(f.profitRate) || 20;
     it.lockGen = f.lockGen || 0;
     if (f.settledAt) it.settledAt = f.settledAt;
   });
@@ -123,6 +125,11 @@ export async function lockSellerOrderFund(app, sellerId, order) {
   });
   if (mine.length === 0) return { totalToLock: 0, itemsLocked: 0 };
 
+  // profit % by the seller's tier: Diamond 35% for orders placed after the upgrade, else 20%
+  const tierDoc = await Seller.findById(sellerId).select('tier tierSince').lean();
+  const rate = profitRateFor(tierDoc, order);
+  const pct = rate / 100;
+
   const totalToLock = mine.reduce((sum, i) => sum + itemValue(order.items[i]), 0);
   const gen = Math.max(0, ...mine.map((i) => Number(order.items[i].lockGen) || 0));
   const opId = `lock:${order._id}:${sellerId}:${gen}`;
@@ -147,8 +154,8 @@ export async function lockSellerOrderFund(app, sellerId, order) {
     await setItemFields(order, index, {
       processingLocked: true,
       lockedAmount: itemVal,
-      profitRate: 20, // 20% profit margin
-      profitAmount: money(itemVal * 0.2),
+      profitRate: rate, // 20% Basic / 35% Diamond
+      profitAmount: money(itemVal * pct),
       lockGen: gen + 1,
     });
   }
@@ -162,14 +169,14 @@ export async function lockSellerOrderFund(app, sellerId, order) {
       storeName: moved.storeName,
       amount: totalToLock,
       principalAmount: totalToLock,
-      profitAmount: money(totalToLock * 0.2),
-      profitRate: 20,
+      profitAmount: money(totalToLock * pct),
+      profitRate: rate,
       order: order._id,
       orderNumber: order.orderNumber,
       status: 'completed',
       balanceAfter: moved.wallet.balance,
       processingFundAfter: moved.wallet.processingFund,
-      adminNote: `Order #${order.orderNumber} Confirmed — $${totalToLock.toFixed(2)} moved to Processing Fund (20% Profit on Delivery: +$${(totalToLock * 0.2).toFixed(2)})`,
+      adminNote: `Order #${order.orderNumber} Confirmed — $${totalToLock.toFixed(2)} moved to Processing Fund (${rate}% Profit on Delivery: +$${(totalToLock * pct).toFixed(2)})`,
       processedAt: new Date(),
     });
 
@@ -179,7 +186,7 @@ export async function lockSellerOrderFund(app, sellerId, order) {
         sellerId: String(sellerId),
         type: 'order',
         title: `⚡ Order #${order.orderNumber} Confirmed`,
-        body: `$${totalToLock.toFixed(2)} moved to Processing Fund. You will earn +$${(totalToLock * 0.2).toFixed(2)} (20% profit) upon delivery! Total return: $${(totalToLock * 1.2).toFixed(2)}.`,
+        body: `$${totalToLock.toFixed(2)} moved to Processing Fund. You will earn +$${(totalToLock * pct).toFixed(2)} (${rate}% profit) upon delivery! Total return: $${(totalToLock * (1 + pct)).toFixed(2)}.`,
         link: '/seller/orders',
       });
 
@@ -358,12 +365,15 @@ export async function releaseSellerOrderDelivered(app, sellerId, order) {
   const parts = mine.map((index) => {
     const it = order.items[index];
     const itemVal = it.lockedAmount || itemValue(it);
-    const itemProfit = it.profitAmount || money(itemVal * 0.2);
+    const itemProfit = it.profitAmount || money(itemVal * ((Number(it.profitRate) || 20) / 100));
     totalPrincipal += itemVal;
     totalProfit += itemProfit;
     return { index, itemVal, itemProfit };
   });
   const totalPayout = totalPrincipal + totalProfit;
+  // the % shown in the history: one rate for the whole order (20 or 35), else the effective one
+  const rates = [...new Set(mine.map((i) => Number(order.items[i].profitRate) || 20))];
+  const payoutRate = rates.length === 1 ? rates[0] : totalPrincipal > 0 ? Math.round((totalProfit / totalPrincipal) * 100) : 20;
 
   const moved = await walletApply(
     sellerId,
@@ -387,13 +397,13 @@ export async function releaseSellerOrderDelivered(app, sellerId, order) {
       amount: totalPayout,
       principalAmount: totalPrincipal,
       profitAmount: totalProfit,
-      profitRate: 20,
+      profitRate: payoutRate,
       order: order._id,
       orderNumber: order.orderNumber,
       status: 'completed',
       balanceAfter: moved.wallet.balance,
       processingFundAfter: moved.wallet.processingFund,
-      adminNote: `Order #${order.orderNumber} Delivered — $${totalPrincipal.toFixed(2)} Processing Fund released + $${totalProfit.toFixed(2)} Profit (20%) credited! Total: +$${totalPayout.toFixed(2)}`,
+      adminNote: `Order #${order.orderNumber} Delivered — $${totalPrincipal.toFixed(2)} Processing Fund released + $${totalProfit.toFixed(2)} Profit (${payoutRate}%) credited! Total: +$${totalPayout.toFixed(2)}`,
       processedAt: new Date(),
     });
 
@@ -411,7 +421,7 @@ export async function releaseSellerOrderDelivered(app, sellerId, order) {
         sellerId: String(sellerId),
         type: 'order',
         title: `🎉 Order #${order.orderNumber} Delivered & Settled!`,
-        body: `+$${totalPayout.toFixed(2)} credited to your wallet! ($${totalPrincipal.toFixed(2)} processing release + $${totalProfit.toFixed(2)} 20% profit).`,
+        body: `+$${totalPayout.toFixed(2)} credited to your wallet! ($${totalPrincipal.toFixed(2)} processing release + $${totalProfit.toFixed(2)} ${payoutRate}% profit).`,
         link: '/seller/wallet',
       });
 
@@ -644,8 +654,18 @@ router.get('/orders', authSellerOrAdmin, async (req, res) => {
         if (sellerItems.length === 0) return null;
 
         const sellerTotal = sellerItems.reduce((acc, it) => acc + (it.price || 0) * (it.qty || 1), 0);
-        const sellerProfit = Number((sellerTotal * 0.20).toFixed(2));
-        const sellerReturn = Number((sellerTotal * 1.20).toFixed(2));
+        // locked / settled items keep the profit fixed at confirmation; waiting items show what
+        // they will earn at the seller's current tier (Diamond 35% only for orders placed after upgrade)
+        const projectedRate = profitRateFor(seller, ord);
+        const sellerProfit = money(
+          sellerItems.reduce((acc, it) => {
+            const val = (it.price || 0) * (it.qty || 1);
+            if (it.processingLocked || it.payoutSettled) return acc + (Number(it.profitAmount) || val * ((Number(it.profitRate) || 20) / 100));
+            return acc + (val * projectedRate) / 100;
+          }, 0)
+        );
+        const sellerReturn = money(sellerTotal + sellerProfit);
+        const profitRate = sellerTotal > 0 ? Math.round((sellerProfit / sellerTotal) * 100) : projectedRate;
         const isLocked = sellerItems.some((it) => it.processingLocked);
         const isSettled = sellerItems.every((it) => it.payoutSettled);
 
@@ -655,6 +675,7 @@ router.get('/orders', authSellerOrAdmin, async (req, res) => {
           sellerTotal,
           sellerProfit,
           sellerReturn,
+          profitRate,
           isLocked,
           isSettled,
         };
@@ -1133,13 +1154,26 @@ async function sellersStillToConfirm(ord) {
 // was placed. An old order moved back to pending by an admin used to be penalised at once.
 const waitingSince = (cutoff) => ({ $or: [{ pendingSince: { $lt: cutoff } }, { pendingSince: null, createdAt: { $lt: cutoff } }] });
 
+/** Hours this order has been waiting for confirmation (from when it last became pending). */
+const hoursWaiting = (ord, now) => (now.getTime() - new Date(ord.pendingSince || ord.createdAt).getTime()) / 3600000;
+
+/**
+ * Deadlines follow each seller's tier (utils/sellerTier.js):
+ *   Basic   — warning after 24h, freeze after 48h
+ *   Diamond — warning after 48h, freeze after 72h (always 24h of warning before the deadline)
+ * The order's own flags (warning24hSent / penalty48hApplied) are set once EVERY seller still to
+ * confirm has been warned / penalised; warnedSellers / penalizedSellers remember who already was,
+ * so a Diamond seller in the same order is still handled later and nobody is handled twice.
+ */
 export async function processOrderPenalties(app) {
   try {
     const now = new Date();
+    // the shortest deadlines (Basic) decide which orders are looked at; Diamond sellers in them
+    // are skipped until their own, later time comes
     const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
 
-    // 1. Check for 24h Warning Candidates
+    // 1. Warnings (24h before each seller's deadline)
     const warnOrders = await Order.find({
       status: 'pending',
       ...waitingSince(twentyFourHoursAgo),
@@ -1147,16 +1181,28 @@ export async function processOrderPenalties(app) {
     });
 
     for (const ord of warnOrders) {
-      ord.warning24hSent = true;
-      await ord.save();
+      const waited = hoursWaiting(ord, now);
+      const sellers = await sellersStillToConfirm(ord);
+      const done = new Set((ord.warnedSellers || []).map(String));
+      const due = sellers.filter((s) => !done.has(String(s._id)) && waited >= warnHoursFor(s));
+      const allWarned = sellers.every((s) => done.has(String(s._id)) || due.includes(s));
+      if (!due.length && !allWarned) continue; // only Diamond sellers left, not yet due
 
-      for (const seller of await sellersStillToConfirm(ord)) {
+      const upd = {};
+      if (due.length) upd.$addToSet = { warnedSellers: { $each: due.map((s) => String(s._id)) } };
+      if (allWarned) upd.$set = { warning24hSent: true };
+      await Order.updateOne({ _id: ord._id }, upd);
+
+      for (const seller of due) {
+        const tier = tierOf(seller);
+        const warnH = warnHoursFor(seller);
+        const confirmH = confirmHoursFor(seller);
         notify(app, {
           recipientType: 'seller',
           sellerId: seller._id.toString(),
           type: 'compliance',
-          title: `⚠️ 24-Hour Urgent Order Confirmation Warning: #${ord.orderNumber}`,
-          body: `Order #${ord.orderNumber} has been unconfirmed for over 24 hours! Please confirm and process within 24 hours to avoid a 25-point account health penalty and store freeze.`,
+          title: `⚠️ ${warnH}-Hour Urgent Order Confirmation Warning: #${ord.orderNumber}`,
+          body: `Order #${ord.orderNumber} has been unconfirmed for over ${warnH} hours! Please confirm and process within 24 hours to avoid a 25-point account health penalty and store freeze.`,
           link: '/seller/orders',
         });
 
@@ -1165,12 +1211,12 @@ export async function processOrderPenalties(app) {
           if (conv) {
             const warnMsg =
               `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-              `⚠️ URGENT 24-HOUR ORDER CONFIRMATION NOTICE\n` +
+              `⚠️ URGENT ${warnH}-HOUR ORDER CONFIRMATION NOTICE\n` +
               `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
               `Order Number: #${ord.orderNumber}\n` +
               `Placed On: ${ord.createdAt.toLocaleString('en-US')}\n` +
-              `Status: PENDING CONFIRMATION (>24 Hours)\n\n` +
-              `Policy Reminder: All merchant orders must be confirmed within 48 hours. Failure to confirm will result in a 25-point Account Health penalty and immediate account freeze.\n` +
+              `Status: PENDING CONFIRMATION (>${warnH} Hours)\n\n` +
+              `Policy Reminder: All ${tier.label} merchant orders must be confirmed within ${confirmH} hours. Failure to confirm will result in a 25-point Account Health penalty and immediate account freeze.\n` +
               `Please go to "Orders & Dispatch" and confirm this order now.\n` +
               `━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
@@ -1182,7 +1228,7 @@ export async function processOrderPenalties(app) {
               text: warnMsg,
             });
 
-            conv.lastMessage = `⚠️ 24h Warning: Unconfirmed Order #${ord.orderNumber}`;
+            conv.lastMessage = `⚠️ ${warnH}h Warning: Unconfirmed Order #${ord.orderNumber}`;
             conv.lastSender = 'admin';
             conv.lastAt = new Date();
             conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
@@ -1194,7 +1240,7 @@ export async function processOrderPenalties(app) {
       }
     }
 
-    // 2. Check for 48h Penalty & Freeze Candidates
+    // 2. Penalty & freeze (at each seller's deadline: 48h Basic, 72h Diamond)
     const penaltyOrders = await Order.find({
       status: 'pending',
       ...waitingSince(fortyEightHoursAgo),
@@ -1202,10 +1248,20 @@ export async function processOrderPenalties(app) {
     });
 
     for (const ord of penaltyOrders) {
-      ord.penalty48hApplied = true;
-      await ord.save();
+      const waited = hoursWaiting(ord, now);
+      const sellers = await sellersStillToConfirm(ord);
+      const done = new Set((ord.penalizedSellers || []).map(String));
+      const due = sellers.filter((s) => !done.has(String(s._id)) && waited >= confirmHoursFor(s));
+      const allDone = sellers.every((s) => done.has(String(s._id)) || due.includes(s));
+      if (!due.length && !allDone) continue; // only Diamond sellers left, deadline not reached
 
-      for (const seller of await sellersStillToConfirm(ord)) {
+      const upd = {};
+      if (due.length) upd.$addToSet = { penalizedSellers: { $each: due.map((s) => String(s._id)) } };
+      if (allDone) upd.$set = { penalty48hApplied: true };
+      await Order.updateOne({ _id: ord._id }, upd);
+
+      for (const seller of due) {
+        const confirmH = confirmHoursFor(seller);
         const prevScore = seller.accountHealth?.score ?? 100;
         const newScore = Math.max(0, prevScore - 25);
 
@@ -1216,10 +1272,10 @@ export async function processOrderPenalties(app) {
         if (seller.status === 'active') {
           seller.accountHealth.status = 'frozen';
           seller.status = 'frozen';
-          seller.freezeReason = `Automatic Freeze: Order #${ord.orderNumber} remained unconfirmed for over 48 hours.`;
+          seller.freezeReason = `Automatic Freeze: Order #${ord.orderNumber} remained unconfirmed for over ${confirmH} hours.`;
           // when and by whom, like a freeze by an admin (the Complaints page sorts and shows by it)
           seller.frozenAt = new Date();
-          seller.frozenBy = 'Automatic (48-hour rule)';
+          seller.frozenBy = `Automatic (${confirmH}-hour rule)`;
         }
 
         seller.accountHealth.history = seller.accountHealth.history || [];
@@ -1227,7 +1283,7 @@ export async function processOrderPenalties(app) {
           previousScore: prevScore,
           newScore,
           delta: -25,
-          reason: `Automatic penalty for unconfirmed order #${ord.orderNumber} (>48 hours)`,
+          reason: `Automatic penalty for unconfirmed order #${ord.orderNumber} (>${confirmH} hours)`,
           changedBy: 'System Enforcement',
           createdAt: new Date(),
         });
@@ -1240,8 +1296,8 @@ export async function processOrderPenalties(app) {
           recipientType: 'seller',
           sellerId: seller._id.toString(),
           type: 'freeze',
-          title: `🚫 Account Frozen: 48h Unconfirmed Order #${ord.orderNumber}`,
-          body: `Your merchant account has been frozen and penalized -25 points due to failure to confirm order #${ord.orderNumber} within 48 hours. Please contact support.`,
+          title: `🚫 Account Frozen: ${confirmH}h Unconfirmed Order #${ord.orderNumber}`,
+          body: `Your merchant account has been frozen and penalized -25 points due to failure to confirm order #${ord.orderNumber} within ${confirmH} hours. Please contact support.`,
           link: '/seller/support',
         });
 
@@ -1253,7 +1309,7 @@ export async function processOrderPenalties(app) {
               `🚫 COMPLIANCE PENALTY & ACCOUNT FROZEN\n` +
               `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
               `Order Number: #${ord.orderNumber}\n` +
-              `Reason: Exceeded 48-Hour Confirmation Deadline\n` +
+              `Reason: Exceeded ${confirmH}-Hour Confirmation Deadline\n` +
               `Health Score Penalty: -25 Points (New Score: ${newScore}/100)\n` +
               `Account Status: ${String(seller.status || 'frozen').toUpperCase()}\n\n` +
               `Your seller store has been temporarily frozen. Please contact platform support immediately to request unfreezing.\n` +
@@ -1267,7 +1323,7 @@ export async function processOrderPenalties(app) {
               text: freezeMsg,
             });
 
-            conv.lastMessage = `🚫 Account Frozen: Order #${ord.orderNumber} (>48h)`;
+            conv.lastMessage = `🚫 Account Frozen: Order #${ord.orderNumber} (>${confirmH}h)`;
             conv.lastSender = 'admin';
             conv.lastAt = new Date();
             conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;

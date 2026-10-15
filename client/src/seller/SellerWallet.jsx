@@ -19,7 +19,7 @@ const TYPE_BADGE = {
   deposit: { label: 'Deposit', color: '#16a34a', bg: '#dcfce7', icon: '💰' },
   withdrawal: { label: 'Withdrawal', color: '#dc2626', bg: '#fee2e2', icon: '💸' },
   order_processing_lock: { label: 'Order Processing Lock', color: '#d97706', bg: '#fef3c7', icon: '🔒' },
-  order_delivered_release: { label: 'Delivered Payout (+20% Profit)', color: '#2563eb', bg: '#dbeafe', icon: '🎉' },
+  order_delivered_release: { label: 'Delivered Payout (+Profit)', color: '#2563eb', bg: '#dbeafe', icon: '🎉' },
   order_cancelled_release: { label: 'Cancelled Order Refund', color: '#64748b', bg: '#f1f5f9', icon: '↩️' },
   adjustment: { label: 'Admin Adjustment', color: '#7c3aed', bg: '#ede9fe', icon: '⚙️' },
 };
@@ -552,7 +552,7 @@ export default function SellerWallet() {
       <div className="seller-page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h2>💼 Merchant Wallet &amp; Financial Ledger</h2>
-          <p>Manage your available balance, in-flight processing funds, approved payouts, and 20% order profit earnings in <b>{currentCurrency.code} ({currentCurrency.symbol})</b>.</p>
+          <p>Manage your available balance, in-flight processing funds, approved payouts, and order profit earnings in <b>{currentCurrency.code} ({currentCurrency.symbol})</b>.</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <CurrencySelector />
@@ -607,7 +607,7 @@ export default function SellerWallet() {
         {/* 5. 20% Profit Earned */}
         <div className="sw-kpi-card card-profit">
           <div className="sw-kpi-head">
-            <span className="sw-kpi-title">20% Profit Earned</span>
+            <span className="sw-kpi-title">Order Profit Earned</span>
             <div className="sw-kpi-icon" style={{ color: '#16a34a', background: '#dcfce7' }}><Ic name="tag" size={20} /></div>
           </div>
           <div className="sw-kpi-val text-green">+{formatMoney(totalProfitEarned)}</div>
@@ -668,7 +668,7 @@ export default function SellerWallet() {
             <div>
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>📜 Financial Transaction Ledger</h3>
               <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#64748b' }}>
-                Complete audit trail of Order Processing locks, 20% Profit releases, Deposits, and Withdrawals.
+                Complete audit trail of Order Processing locks, Profit releases, Deposits, and Withdrawals.
               </p>
             </div>
 
@@ -713,7 +713,7 @@ export default function SellerWallet() {
                   <th>Transaction Type</th>
                   <th>Order / Ref</th>
                   <th>Principal</th>
-                  <th>+20% Profit</th>
+                  <th>+Profit</th>
                   <th>Total Amount</th>
                   <th>Balance After</th>
                   <th>Status</th>
@@ -781,7 +781,10 @@ export default function SellerWallet() {
                       </td>
                       <td>
                         {r.profitAmount > 0 ? (
-                          <b style={{ color: '#16a34a' }}>+{formatMoney(r.profitAmount)}</b>
+                          <b style={{ color: '#16a34a' }}>
+                            +{formatMoney(r.profitAmount)}
+                            {r.profitRate ? <small style={{ marginLeft: 4, fontWeight: 700, color: r.profitRate >= 35 ? '#0e7490' : '#64748b' }}>({r.profitRate >= 35 ? '💎 ' : ''}{r.profitRate}%)</small> : null}
+                          </b>
                         ) : (
                           <span className="muted-sm">—</span>
                         )}

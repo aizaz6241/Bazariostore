@@ -27,6 +27,7 @@ const SELLER_NAV = [
   { to: '/seller/shipping', icon: 'truck', label: 'Shipping Settings' },
   { to: '/seller/support', icon: 'chat', label: 'Support & Helpline', badgeKey: 'unreadChat' },
   { to: '/seller/settings', icon: 'shield', label: 'Store Settings' },
+  { to: '/seller/diamond', icon: 'star', label: 'Diamond Plan', badgeKey: 'tier' },
 ];
 
 export default function SellerLayout() {
@@ -323,6 +324,15 @@ export default function SellerLayout() {
               ) : (
                 <span className="seller-rating-pill">⭐ {seller?.rating?.toFixed(1) || '5.0'} • Merchant</span>
               )}
+              <Link
+                to="/seller/diamond"
+                onClick={() => setMobileSidebarOpen(false)}
+                className={seller?.tier === 'diamond' ? 'diamond-pill' : 'basic-pill'}
+                style={{ marginTop: 4, alignSelf: 'flex-start' }}
+                title={seller?.tier === 'diamond' ? 'Your store is Diamond' : 'Basic plan — tap to see Diamond'}
+              >
+                {seller?.tier === 'diamond' ? '💎 DIAMOND STORE' : 'BASIC PLAN'}
+              </Link>
             </div>
           </div>
         </div>
@@ -333,6 +343,13 @@ export default function SellerLayout() {
             let badge = null;
             if (n.badgeKey === 'unreadChat' && unreadChat > 0) {
               badge = <span className="seller-nav-badge">{unreadChat}</span>;
+            } else if (n.badgeKey === 'tier') {
+              badge =
+                seller?.tier === 'diamond' ? (
+                  <span className="diamond-pill" style={{ marginLeft: 'auto' }}>💎 Active</span>
+                ) : (
+                  <span className="diamond-pill" style={{ marginLeft: 'auto' }}>Upgrade</span>
+                );
             } else if (n.badge) {
               badge = (
                 <span
@@ -432,6 +449,9 @@ export default function SellerLayout() {
                 <VerifiedStoreBadge variant="pill" size={15} text="Verified Store" />
               ) : (
                 <span className="seller-pending-badge">⏳ Under Review</span>
+              )}
+              {seller?.tier === 'diamond' && (
+                <Link to="/seller/diamond" className="diamond-pill" title="Diamond Store">💎 DIAMOND</Link>
               )}
             </div>
 

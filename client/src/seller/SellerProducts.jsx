@@ -8,6 +8,7 @@ import useLiveReload from '../useLiveReload.js';
 
 export default function SellerProducts() {
   const { seller } = useOutletContext() || {};
+  const isDiamond = seller?.tier === 'diamond';
   const { formatMoney, currentCurrency } = useCurrency();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -214,11 +215,11 @@ export default function SellerProducts() {
 
   const handleDelete = async (id, name) => {
     const prod = products.find((p) => p._id === id);
-    if (prod?.treasuryProduct) {
-      alert('Products imported from Product Treasury cannot be removed from your store.');
+    if (prod?.treasuryProduct && !isDiamond) {
+      alert('Products imported from Product Treasury cannot be removed from your store. Upgrade to 💎 Diamond to remove products.');
       return;
     }
-    if (!confirm(`Are you sure you want to delete "${name}" from your store catalog?`)) return;
+    if (!confirm(`Are you sure you want to remove "${name}" from your store?`)) return;
     try {
       await sapi(`/sellers/products/${id}`, { method: 'DELETE' });
       loadProducts();
@@ -426,10 +427,11 @@ export default function SellerProducts() {
                         <button type="button" onClick={() => openEdit(p)} className="btn-action-edit" title="Edit Product">
                           <Ic name="sparkle" size={13} /> Edit
                         </button>
-                        {p.treasuryProduct ? (
-                          <span
+                        {p.treasuryProduct && !isDiamond ? (
+                          <Link
+                            to="/seller/diamond"
                             className="btn-action-locked"
-                            title="Products added from Product Treasury cannot be removed from your store"
+                            title="Only 💎 Diamond stores can remove Product Treasury items. Tap to see Diamond."
                             style={{
                               display: 'inline-flex',
                               alignItems: 'center',
@@ -441,15 +443,16 @@ export default function SellerProducts() {
                               background: '#f1f5f9',
                               border: '1px solid #e2e8f0',
                               borderRadius: '6px',
-                              cursor: 'not-allowed',
+                              cursor: 'pointer',
                               userSelect: 'none',
+                              textDecoration: 'none',
                             }}
                           >
-                            🔒 Treasury Locked
-                          </span>
+                            🔒 Diamond only
+                          </Link>
                         ) : (
-                          <button type="button" onClick={() => handleDelete(p._id, p.name)} className="btn-action-delete" title="Delete Product">
-                            <Ic name="x" size={13} /> Delete
+                          <button type="button" onClick={() => handleDelete(p._id, p.name)} className="btn-action-delete" title={p.treasuryProduct ? 'Remove from My Store (💎 Diamond)' : 'Delete Product'}>
+                            <Ic name="x" size={13} /> {p.treasuryProduct ? 'Remove' : 'Delete'}
                           </button>
                         )}
                       </div>

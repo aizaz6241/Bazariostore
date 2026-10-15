@@ -1,6 +1,6 @@
 // What a customer may see of an order: no cost prices, margins, payout flags or internal notes.
 const HIDDEN_ITEM_FIELDS = ['costPrice', 'processingLocked', 'lockedAmount', 'profitRate', 'profitAmount', 'payoutSettled', 'settledAt', 'lockGen'];
-const HIDDEN_ORDER_FIELDS = ['adminNotes', 'warning24hSent', 'penalty48hApplied', 'stockRestored', 'stockSettled', 'nextStatus', 'nextStatusAt', 'placedByAdminName'];
+const HIDDEN_ORDER_FIELDS = ['adminNotes', 'warning24hSent', 'penalty48hApplied', 'warnedSellers', 'penalizedSellers', 'stockRestored', 'stockSettled', 'nextStatus', 'nextStatusAt', 'placedByAdminName'];
 
 export function publicOrder(order) {
   const o = order?.toObject ? order.toObject() : { ...(order || {}) };

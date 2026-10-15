@@ -641,6 +641,98 @@ export default function Sellers() {
     }
   };
 
+  // ─── ACCOUNT TIER (Basic → 💎 Diamond, after the one-time fee is paid) ───
+  const applyTier = (sellerId, updated) => {
+    if (!updated) return;
+    const patch = { tier: updated.tier, tierSince: updated.tierSince, tierRequest: updated.tierRequest };
+    setSellers((prev) => prev.map((s) => (s._id === sellerId ? { ...s, ...patch } : s)));
+    if (profileSeller?._id === sellerId) setProfileSeller((prev) => ({ ...prev, ...patch }));
+  };
+  const handleUpgradeDiamond = async (s) => {
+    if (s.tier === 'diamond') return;
+    const ok = confirm(
+      `Upgrade "${s.storeName}" to 💎 DIAMOND?\n\n` +
+        `Do this only after the one-time $1,500 upgrade fee has been received.\n\n` +
+        `From now on this store gets:\n` +
+        `• 35% profit on every NEW order (instead of 20%)\n` +
+        `• 72 hours to confirm orders (warning at 48h)\n` +
+        `• Can remove products from My Store\n\n` +
+        `The seller is told in chat.`
+    );
+    if (!ok) return;
+    const note = prompt('Optional note for the record (e.g. fee received / payment reference):', s.tierRequest?.status === 'pending' ? 'Upgrade fee received' : '');
+    if (note === null) return;
+    try {
+      const res = await api(`/sellers/${s._id}/tier`, { method: 'POST', body: { tier: 'diamond', note } });
+      applyTier(s._id, res.seller);
+      setToggleToast(`💎 ${res.message}`);
+      setTimeout(() => setToggleToast(''), 5000);
+    } catch (err) {
+      alert('Could not upgrade: ' + err.message);
+    }
+  };
+  const handleClearTierRequest = async (s) => {
+    if (!confirm(`Clear the Diamond upgrade request of "${s.storeName}"? (The store stays Basic.)`)) return;
+    try {
+      const res = await api(`/sellers/${s._id}/tier`, { method: 'POST', body: { action: 'clear-request' } });
+      applyTier(s._id, res.seller);
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+  const tierChip = (s, size = 'card') => {
+    const small = size !== 'card';
+    const base = {
+      fontWeight: 800,
+      padding: small ? '2px 8px' : undefined,
+      borderRadius: small ? 10 : undefined,
+      fontSize: small ? 10.5 : undefined,
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 4,
+      cursor: 'pointer',
+    };
+    if (s.tier === 'diamond') {
+      return (
+        <span
+          className={small ? undefined : 'scard-chip'}
+          title={`Diamond store${s.tierSince ? ` since ${new Date(s.tierSince).toLocaleDateString()}` : ''} — 35% profit on new orders, 72h to confirm`}
+          style={{ ...base, cursor: 'default', background: 'linear-gradient(135deg,#164e63,#0891b2)', color: '#fff', border: '1px solid #0e7490' }}
+        >
+          💎 Diamond
+        </span>
+      );
+    }
+    const requested = s.tierRequest?.status === 'pending';
+    return (
+      <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+        <button
+          type="button"
+          onClick={() => handleUpgradeDiamond(s)}
+          className={small ? undefined : 'scard-chip'}
+          title={requested ? 'Seller requested Diamond — click to upgrade once the fee is paid' : 'Basic plan — click to upgrade to Diamond'}
+          style={
+            requested
+              ? { ...base, background: '#ecfeff', color: '#0e7490', border: '1px solid #67e8f9' }
+              : { ...base, background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0' }
+          }
+        >
+          {requested ? '💎 Diamond requested ⏳' : 'Basic'} <span style={{ fontSize: 9, opacity: 0.7 }}>⬆</span>
+        </button>
+        {requested && (
+          <button
+            type="button"
+            onClick={() => handleClearTierRequest(s)}
+            title="Clear this request (store stays Basic)"
+            style={{ ...base, background: 'transparent', border: 0, color: '#94a3b8', padding: '0 2px', fontSize: 12 }}
+          >
+            ✕
+          </button>
+        )}
+      </span>
+    );
+  };
+
   const activeSellers = sellers.filter((s) => s.status !== 'pending_approval');
 
   const clientCount = activeSellers.filter((s) => !s.isTestAccount && !s.isPreviousStoreSeller).length;
@@ -651,6 +743,8 @@ export default function Sellers() {
   const frozenOnlyCount = activeSellers.filter((s) => s.status === 'frozen').length;
   const suspendedCount = activeSellers.filter((s) => s.status === 'suspended').length;
   const atRiskCount = activeSellers.filter((s) => (s.accountHealth?.score ?? 100) <= 30).length;
+  const diamondCount = activeSellers.filter((s) => s.tier === 'diamond').length;
+  const diamondRequestCount = activeSellers.filter((s) => s.tier !== 'diamond' && s.tierRequest?.status === 'pending').length;
   const totalGMV = activeSellers.reduce((a, b) => a + (b.lifetimeSales || 0), 0);
 
   const FILTERS = [
@@ -659,6 +753,8 @@ export default function Sellers() {
     { key: 'client', label: '👤 Client', count: clientCount },
     { key: 'test', label: '🧪 Test', count: testCount },
     { key: 'previous', label: '🏛️ Previous', count: previousCount },
+    { key: 'diamond', label: '💎 Diamond', count: diamondCount },
+    { key: 'diamond_req', label: '⏳ Diamond requests', count: diamondRequestCount },
     { key: 'warned', label: '⚠️ Warned', count: warnedCount },
     { key: 'at_risk', label: '🔴 At risk', count: atRiskCount },
     { key: 'frozen', label: '❄️ Frozen', count: frozenOnlyCount },
@@ -683,6 +779,8 @@ export default function Sellers() {
       if (statusFilter === 'client' && (s.isTestAccount || s.isPreviousStoreSeller)) return false;
       if (statusFilter === 'test' && !s.isTestAccount) return false;
       if (statusFilter === 'previous' && !s.isPreviousStoreSeller) return false;
+      if (statusFilter === 'diamond' && s.tier !== 'diamond') return false;
+      if (statusFilter === 'diamond_req' && !(s.tier !== 'diamond' && s.tierRequest?.status === 'pending')) return false;
       if (statusFilter === 'frozen' && s.status !== 'frozen') return false;
       if (statusFilter === 'suspended' && s.status !== 'suspended') return false;
       if (statusFilter === 'warned' && !s.warning?.active) return false;
@@ -853,6 +951,7 @@ export default function Sellers() {
                   >
                     {s.isPreviousStoreSeller ? '🏛️ Prev Store' : '✨ Current'} <span className="scard-chip-swap">⇄</span>
                   </button>
+                  {tierChip(s, 'card')}
                   {s.warning?.active && <span className="scard-chip chip-warn">⚠️ Warned</span>}
                 </div>
 
@@ -1059,6 +1158,7 @@ export default function Sellers() {
                             {s.isPreviousStoreSeller ? '🏛️ Prev Store' : '✨ Current Store'}
                             <span style={{ fontSize: 9, opacity: 0.7 }}>⇄</span>
                           </button>
+                          {tierChip(s, 'table')}
                           <span
                             style={{
                               background: s.status === 'active' ? '#ecfdf5' : s.status === 'frozen' ? '#eff6ff' : '#fef2f2',
@@ -1188,6 +1288,7 @@ export default function Sellers() {
                           </span>
                           <span className="spm-tag">{ps.isTestAccount ? '🧪 Test account' : '👤 Client account'}</span>
                           {ps.isPreviousStoreSeller && <span className="spm-tag">🏛️ Previous store</span>}
+                          {tierChip(ps, 'table')}
                           {ps.warning?.active && <span className="spm-tag spm-tag-warn">⚠️ Warned</span>}
                         </div>
                       </div>

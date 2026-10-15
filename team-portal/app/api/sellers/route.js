@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { unconfirmedBySeller } from '@/lib/utils/sellerOrders';
 import { getAuthSession } from '@/lib/auth';
 import { Seller, Order, CLIENT_SELLER_FILTER } from '@/lib/models/SharedModels';
 import SellerAssignment from '@/lib/models/SellerAssignment';
@@ -45,18 +46,11 @@ export async function GET(req) {
       assignmentMap.set(a.sellerId.toString(), a);
     });
 
-    // Pending orders for every listed seller in ONE query (was one query per seller)
-    const pendingAgg = sellerIds.length
-      ? await Order.aggregate([
-          // the order's own store, plus stores that only have items in a multi-store order
-          { $match: { $or: [{ seller: { $in: sellerIds } }, { 'items.seller': { $in: sellerIds } }], status: { $in: ['pending', 'processing', 'unfulfilled', 'payment_pending'] } } },
-          { $project: { s: { $setUnion: [[{ $ifNull: ['$seller', null] }], { $ifNull: ['$items.seller', []] }] } } },
-          { $unwind: '$s' },
-          { $match: { s: { $in: sellerIds } } },
-          { $group: { _id: '$s', n: { $sum: 1 } } },
-        ])
-      : [];
-    const pendingBySeller = new Map(pendingAgg.map((o) => [String(o._id), o.n]));
+    // Orders waiting for the seller's confirmation, for every listed seller in ONE query
+    const unconfirmed = await unconfirmedBySeller(sellerIds).catch((e) => {
+      console.error('Unconfirmed orders error:', e.message);
+      return new Map();
+    });
 
     // Real Binance USDT per store (finance ledger). The store wallet below is the shop's own $ book.
     const ledgerStats = await getLedgerStats().catch((e) => {
@@ -67,7 +61,8 @@ export async function GET(req) {
     const enrichedSellers = await Promise.all(
       sellers.map(async (s) => {
         const assignment = assignmentMap.get(s._id.toString());
-        const pendingOrders = pendingBySeller.get(s._id.toString()) || 0;
+        const waiting = unconfirmed.get(s._id.toString());
+        const pendingOrders = waiting ? waiting.orders : 0;
 
         const totalDeposited = Number(s.wallet?.totalDeposited || 0);
         const totalWithdrawn = Number(s.wallet?.totalWithdrawn || 0);
@@ -98,6 +93,8 @@ export async function GET(req) {
             status: s.accountHealth?.status || 'healthy',
           },
           pendingOrdersCount: pendingOrders,
+          pendingOrdersAmount: waiting ? waiting.amount : 0, // money the seller needs to confirm them all
+          pendingOldestAt: waiting ? waiting.oldest : null,
           assignment: assignment
             ? {
                 _id: assignment._id,

@@ -704,11 +704,13 @@ const orderStatusHandler = async (req, res) => {
     it.itemStatus = status;
   });
 
-  // back to waiting: the seller gets a fresh 24h warning / 48h deadline from now
+  // back to waiting: the seller gets a fresh warning / deadline from now (48h Basic, 72h Diamond)
   if (status === 'pending' && prev !== 'pending') {
     order.pendingSince = new Date();
     order.warning24hSent = false;
     order.penalty48hApplied = false;
+    order.warnedSellers = [];
+    order.penalizedSellers = [];
   }
 
   order.status = status;

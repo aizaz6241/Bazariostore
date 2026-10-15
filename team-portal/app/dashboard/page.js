@@ -347,14 +347,14 @@ export default function DashboardPage() {
 
             <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm flex flex-col justify-between">
               <div className="flex items-center justify-between text-slate-500 mb-1">
-                <span className="text-xs font-semibold uppercase tracking-wider">Pending Orders</span>
+                <span className="text-xs font-semibold uppercase tracking-wider">Orders to confirm</span>
                 <Clock className="w-4 h-4 text-amber-500" />
               </div>
               <div>
                 <p className="text-3xl font-extrabold text-amber-600">
                   {stats?.pendingOrdersCount ?? 0}
                 </p>
-                <p className="text-[11px] text-slate-400 mt-1">Orders awaiting fulfillment</p>
+                <p className="text-[11px] text-slate-400 mt-1">Waiting for the seller to confirm</p>
               </div>
               <Link
                 href="/sellers"

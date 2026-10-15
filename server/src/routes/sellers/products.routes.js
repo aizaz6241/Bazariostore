@@ -1,6 +1,8 @@
 import express from 'express';
 import Seller from '../../models/Seller.js';
 import Product from '../../models/Product.js';
+import Order from '../../models/Order.js';
+import { isDiamond } from '../../utils/sellerTier.js';
 import { authSeller } from '../../middleware/auth.js';
 import { slugify, blockWhenFrozen } from './helpers.js';
 
@@ -173,9 +175,27 @@ router.delete('/products/:id', authSeller, blockWhenFrozen('deleting products'),
     if (!product) return res.status(404).json({ message: 'Product not found or access denied' });
 
     if (product.treasuryProduct) {
-      return res.status(403).json({
+      // only a Diamond store may remove Product Treasury items from My Store
+      const me = await Seller.findById(req.seller.id).select('tier').lean();
+      if (!isDiamond(me)) {
+        return res.status(403).json({
+          ok: false,
+          upgradeRequired: true,
+          message: 'Products imported from Product Treasury cannot be removed from your store. Upgrade to 💎 Diamond to remove products.',
+        });
+      }
+    }
+
+    // a product with orders still running stays until they are finished (its stock and the
+    // order's money steps still point at it)
+    const openOrder = await Order.exists({
+      'items.product': product._id,
+      status: { $nin: ['delivered', 'cancelled', 'refunded'] },
+    });
+    if (openOrder) {
+      return res.status(400).json({
         ok: false,
-        message: 'Products imported from Product Treasury cannot be removed from your store.',
+        message: 'This product has orders that are still running. You can remove it once they are delivered or cancelled.',
       });
     }
 
