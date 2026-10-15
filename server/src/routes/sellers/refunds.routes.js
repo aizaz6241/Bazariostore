@@ -1,4 +1,5 @@
 import express from 'express';
+import { blockWhenFrozen } from './helpers.js';
 import Refund from '../../models/Refund.js';
 import { authSeller } from '../../middleware/auth.js';
 
@@ -18,7 +19,7 @@ router.get('/refunds', authSeller, async (req, res) => {
 });
 
 // POST /api/sellers/refunds/:id/action
-router.post('/refunds/:id/action', authSeller, async (req, res) => {
+router.post('/refunds/:id/action', authSeller, blockWhenFrozen('deciding refunds'), async (req, res) => {
   try {
     const { action, reason } = req.body; // 'approve' | 'reject'
     const refund = await Refund.findOne({ _id: req.params.id, seller: req.seller.id });

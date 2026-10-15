@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { NavLink, Outlet, useNavigate, Link, Navigate } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
 import { sapi } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { getSocket } from '../socket.js';
@@ -32,6 +32,7 @@ const SELLER_NAV = [
 
 export default function SellerLayout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { logoutSeller } = useAuth();
   const token = localStorage.getItem('ng_seller_token');
   const { formatMoney } = useCurrency();
@@ -341,7 +342,9 @@ export default function SellerLayout() {
         <nav className="seller-nav">
           {SELLER_NAV.map((n) => {
             let badge = null;
-            if (n.badgeKey === 'unreadChat' && unreadChat > 0) {
+            if (seller?.status === 'suspended' && n.to !== '/seller/support') {
+              badge = <span style={{ marginLeft: 'auto', fontSize: 12, opacity: 0.8 }} title="Closed while your account is suspended">🔒</span>;
+            } else if (n.badgeKey === 'unreadChat' && unreadChat > 0) {
               badge = <span className="seller-nav-badge">{unreadChat}</span>;
             } else if (n.badgeKey === 'tier') {
               badge =
@@ -568,8 +571,13 @@ export default function SellerLayout() {
               </p>
               {seller.status === 'frozen' && (
                 <p className="banner-desc">
-                  While frozen, withdrawals and changes to products, coupons, shipping and Treasury items are paused.
-                  Your current orders continue normally.
+                  While frozen you can view your dashboard, orders and wallet, but you cannot confirm or process orders,
+                  deposit, withdraw, or change products, coupons, shipping or store settings. Chat with support to resolve it.
+                </p>
+              )}
+              {seller.status === 'suspended' && (
+                <p className="banner-desc">
+                  While suspended your whole account is closed. Only the support chat is open — please contact support to resolve it.
                 </p>
               )}
             </div>
@@ -599,7 +607,25 @@ export default function SellerLayout() {
         )}
 
         <div className="seller-content-body">
-          <Outlet context={{ seller, setSeller, setUnreadChat, isFrozen: seller?.status === 'frozen' || seller?.status === 'suspended' }} />
+          {seller?.status === 'suspended' && !location.pathname.startsWith('/seller/support') ? (
+            <div className="seller-suspended-screen">
+              <div className="sss-icon">⛔</div>
+              <h2>Your account is suspended</h2>
+              <p>
+                Everything in your seller account is closed while it is suspended. You can still talk to our support team to resolve it.
+              </p>
+              {seller?.freezeReason && (
+                <p className="sss-reason">
+                  <b>Reason:</b> {seller.freezeReason}
+                </p>
+              )}
+              <Link to="/seller/support" className="sss-btn">
+                <Ic name="chat" size={16} /> Open Support Chat
+              </Link>
+            </div>
+          ) : (
+            <Outlet context={{ seller, setSeller, setUnreadChat, isFrozen: seller?.status === 'frozen' || seller?.status === 'suspended' }} />
+          )}
         </div>
       </div>
 

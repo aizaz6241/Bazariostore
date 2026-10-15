@@ -1,0 +1,61 @@
+/* Frozen / suspended seller: locked actions and the suspended screen (SellerLayout etc.) */
+.seller-restricted-note {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin: 0 0 16px;
+  border-radius: 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #7f1d1d;
+}
+.seller-restricted-note .srn-icon { font-size: 20px; flex: none; }
+.seller-restricted-note b { display: block; font-size: 14px; color: #991b1b; }
+.seller-restricted-note p { margin: 2px 0 0; font-size: 13px; line-height: 1.45; }
+.seller-restricted-note .srn-btn {
+  margin-left: auto;
+  flex: none;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: #dc2626;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.seller-restricted-note .srn-btn:hover { background: #b91c1c; }
+
+.seller-suspended-screen {
+  max-width: 520px;
+  margin: 40px auto;
+  padding: 32px 24px;
+  text-align: center;
+  background: #fff;
+  border: 1px solid #fecaca;
+  border-radius: 16px;
+}
+.seller-suspended-screen .sss-icon { font-size: 44px; line-height: 1; }
+.seller-suspended-screen h2 { margin: 12px 0 8px; font-size: 22px; color: #991b1b; }
+.seller-suspended-screen p { margin: 0 0 12px; color: #475569; font-size: 14px; line-height: 1.55; }
+.seller-suspended-screen .sss-reason { background: #fef2f2; border-radius: 10px; padding: 10px 12px; color: #7f1d1d; text-align: left; }
+.seller-suspended-screen .sss-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 12px 20px;
+  border-radius: 10px;
+  background: #dc2626;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+}
+.seller-suspended-screen .sss-btn:hover { background: #b91c1c; }
+
+@media (max-width: 720px) {
+  .seller-restricted-note { flex-wrap: wrap; }
+  .seller-restricted-note .srn-btn { margin-left: 0; width: 100%; text-align: center; }
+  .seller-suspended-screen { margin: 16px auto; padding: 24px 16px; }
+}

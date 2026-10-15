@@ -20,9 +20,10 @@ export function calculateHealthStatus(score) {
 }
 
 /**
- * A FROZEN store keeps its login, chat and running orders, but cannot start anything new: no
- * withdrawals, no product / coupon / shipping changes, no Treasury imports. ("Frozen" used to be
- * only a banner; the store could still take its money out.) An admin acting for the store passes.
+ * A FROZEN store can log in and LOOK (dashboard, orders, wallet) and use the support chat, but
+ * cannot do anything: no order confirming / processing, no deposits or withdrawals, no product /
+ * coupon / shipping / store-settings changes, no Treasury imports, no refund decisions.
+ * (A suspended store is stopped even earlier, by the login check.) An admin acting for the store passes.
  */
 export function blockWhenFrozen(what) {
   return async (req, res, next) => {
@@ -30,10 +31,10 @@ export function blockWhenFrozen(what) {
     try {
       const id = String(req.seller?.id || req.seller?._id || '');
       const s = mongoose.Types.ObjectId.isValid(id) ? await Seller.findById(id).select('status freezeReason').lean() : null;
-      if (s?.status === 'frozen') {
+      if (s?.status === 'frozen' || s?.status === 'suspended') {
         return res.status(403).json({
           frozen: true,
-          message: `Your store is frozen, so ${what} is paused. Reason: ${s.freezeReason || 'compliance review'}. Please contact support to resolve it.`,
+          message: `Your store is ${s.status}, so ${what} is not possible. Reason: ${s.freezeReason || 'compliance review'}. Please contact support to resolve it.`,
         });
       }
       next();

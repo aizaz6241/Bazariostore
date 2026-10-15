@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, Link, useOutletContext } from 'react-router-dom';
 import { sapi, fmtDay, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import CurrencySelector from '../components/CurrencySelector.jsx';
@@ -56,6 +56,20 @@ const UPI_APPS = [
   { id: 'other', name: 'Custom UPI VPA', handle: '', icon: '⚡', color: '#2563eb' },
 ];
 
+// Shown instead of an action while the store is frozen / suspended (the server refuses it too)
+function RestrictedNote({ what }) {
+  return (
+    <div className="seller-restricted-note">
+      <span className="srn-icon">🔒</span>
+      <div>
+        <b>Not available while your account is restricted</b>
+        <p>Your store is frozen, so {what} is paused. Please contact support to resolve it.</p>
+      </div>
+      <Link to="/seller/support" className="srn-btn">💬 Contact Support</Link>
+    </div>
+  );
+}
+
 export default function SellerWallet() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { formatMoney, currentCurrency } = useCurrency();
@@ -75,6 +89,7 @@ export default function SellerWallet() {
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { isFrozen: restricted } = useOutletContext() || {};
   const [tab, setTab] = useState(() => searchParams.get('tab') || 'ledger'); // 'ledger' | 'deposit' | 'withdraw'
   const [ledgerFilter, setLedgerFilter] = useState('all'); // 'all' | 'orders' | 'deposits' | 'withdrawals'
   const [msg, setMsg] = useState('');
@@ -890,7 +905,8 @@ export default function SellerWallet() {
       {/* ─────────────────────────────────────────────────────────────
           TAB 2: DEPOSIT FUNDS
           ───────────────────────────────────────────────────────────── */}
-      {tab === 'deposit' && (
+      {tab === 'deposit' && restricted && <RestrictedNote what="depositing funds" />}
+      {tab === 'deposit' && !restricted && (
         <div className="card form-card mb-4">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
             <div>
@@ -1031,7 +1047,8 @@ export default function SellerWallet() {
       {/* ─────────────────────────────────────────────────────────────
           TAB 3: WITHDRAW FUNDS & TIERED WITHDRAWAL LIMITS
           ───────────────────────────────────────────────────────────── */}
-      {tab === 'withdraw' && (
+      {tab === 'withdraw' && restricted && <RestrictedNote what="withdrawing funds" />}
+      {tab === 'withdraw' && !restricted && (
         <div className="seller-withdraw-tab-wrap">
           {/* ─── TIERED WITHDRAWAL LIMIT & UPGRADE PROGRESS HERO CARD ─── */}
           {(() => {

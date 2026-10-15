@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { blockWhenFrozen } from './sellers/helpers.js';
 import Order, { STATUSES, PAYMENT_STATUSES } from '../models/Order.js';
 import Seller from '../models/Seller.js';
 import Product from '../models/Product.js';
@@ -761,9 +762,9 @@ const orderStatusHandler = async (req, res) => {
   res.json(order);
 };
 
-router.patch('/:id/status', authSellerOrAdmin, orderStatusHandler);
-router.put('/:id/status', authSellerOrAdmin, orderStatusHandler);
-router.post('/:id/status', authSellerOrAdmin, orderStatusHandler);
+router.patch('/:id/status', authSellerOrAdmin, blockWhenFrozen('confirming or processing orders'), orderStatusHandler);
+router.put('/:id/status', authSellerOrAdmin, blockWhenFrozen('confirming or processing orders'), orderStatusHandler);
+router.post('/:id/status', authSellerOrAdmin, blockWhenFrozen('confirming or processing orders'), orderStatusHandler);
 
 router.patch('/:id/payment', authAdmin('orders'), async (req, res) => {
   const { paymentStatus } = req.body || {};

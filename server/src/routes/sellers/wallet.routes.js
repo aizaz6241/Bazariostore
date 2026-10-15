@@ -216,7 +216,7 @@ router.get('/wallet', authSellerOrAdmin, async (req, res) => {
 });
 
 // POST /api/sellers/wallet/deposit
-router.post('/wallet/deposit', authSellerOrAdmin, oneRequestAtATime('deposit'), async (req, res) => {
+router.post('/wallet/deposit', authSellerOrAdmin, blockWhenFrozen('sending a deposit request'), oneRequestAtATime('deposit'), async (req, res) => {
   try {
     const seller = await getSellerFromReq(req);
     if (!seller) return res.status(404).json({ message: 'Seller not found. Please log in again.' });

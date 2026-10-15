@@ -15,6 +15,7 @@ import { walletApply, walletNow } from '../../utils/wallet.js';
 import { restockOrder, settleDeliveredStock } from '../../utils/orderStock.js';
 import { adminRoom } from '../../utils/permissions.js';
 import { toAdmins } from '../../utils/realtime.js';
+import { blockWhenFrozen } from './helpers.js';
 import { profitRateFor, confirmHoursFor, warnHoursFor, tierOf } from '../../utils/sellerTier.js';
 
 const router = express.Router();
@@ -689,7 +690,7 @@ router.get('/orders', authSellerOrAdmin, async (req, res) => {
 });
 
 // POST /api/sellers/orders/:id/confirm (Dedicated 1-Click Order Confirm Action)
-router.post('/orders/:id/confirm', authSellerOrAdmin, async (req, res) => {
+router.post('/orders/:id/confirm', authSellerOrAdmin, blockWhenFrozen('confirming or processing orders'), async (req, res) => {
   try {
     const seller = await getSellerFromReq(req);
     if (!seller) return res.status(404).json({ message: 'Seller not found. Please log in again.' });
@@ -954,12 +955,12 @@ export const handleStatusUpdate = async (req, res) => {
   }
 };
 
-router.put('/orders/:id/status', authSellerOrAdmin, handleStatusUpdate);
-router.patch('/orders/:id/status', authSellerOrAdmin, handleStatusUpdate);
-router.post('/orders/:id/status', authSellerOrAdmin, handleStatusUpdate);
-router.put('/orders/:id', authSellerOrAdmin, handleStatusUpdate);
-router.patch('/orders/:id', authSellerOrAdmin, handleStatusUpdate);
-router.post('/orders/:id', authSellerOrAdmin, handleStatusUpdate);
+router.put('/orders/:id/status', authSellerOrAdmin, blockWhenFrozen('confirming or processing orders'), handleStatusUpdate);
+router.patch('/orders/:id/status', authSellerOrAdmin, blockWhenFrozen('confirming or processing orders'), handleStatusUpdate);
+router.post('/orders/:id/status', authSellerOrAdmin, blockWhenFrozen('confirming or processing orders'), handleStatusUpdate);
+router.put('/orders/:id', authSellerOrAdmin, blockWhenFrozen('confirming or processing orders'), handleStatusUpdate);
+router.patch('/orders/:id', authSellerOrAdmin, blockWhenFrozen('confirming or processing orders'), handleStatusUpdate);
+router.post('/orders/:id', authSellerOrAdmin, blockWhenFrozen('confirming or processing orders'), handleStatusUpdate);
 
 // POST /api/sellers/place-order (Admin manually places an order for a specific seller)
 router.post('/place-order', authAdmin('orders'), async (req, res) => {
@@ -1154,6 +1155,36 @@ async function sellersStillToConfirm(ord) {
 // was placed. An old order moved back to pending by an admin used to be penalised at once.
 const waitingSince = (cutoff) => ({ $or: [{ pendingSince: { $lt: cutoff } }, { pendingSince: null, createdAt: { $lt: cutoff } }] });
 
+/**
+ * A store made active again (unfrozen / unsuspended) gets a fresh confirmation deadline for the
+ * orders that were waiting on it — it could not confirm them while restricted. Only orders where
+ * every waiting item is this store's own are restarted (a shared order keeps the other store's clock).
+ */
+export async function restartSellerDeadlines(sellerId) {
+  try {
+    const id = String(sellerId);
+    const orders = await Order.find({ status: 'pending', $or: [{ 'items.seller': sellerId }, { seller: sellerId }] })
+      .select('_id seller items.seller items.itemStatus')
+      .lean();
+    const ids = orders
+      .filter((o) => {
+        const waiting = (o.items || []).filter((it) => !it.itemStatus || it.itemStatus === 'pending');
+        const owners = new Set(waiting.map((it) => String(it.seller || o.seller || '')));
+        return owners.size === 1 && owners.has(id);
+      })
+      .map((o) => o._id);
+    if (!ids.length) return 0;
+    await Order.updateMany(
+      { _id: { $in: ids } },
+      { $set: { pendingSince: new Date(), warning24hSent: false, penalty48hApplied: false }, $pull: { warnedSellers: id, penalizedSellers: id } }
+    );
+    return ids.length;
+  } catch (e) {
+    console.error('[orders] restart deadlines:', e.message);
+    return 0;
+  }
+}
+
 /** Hours this order has been waiting for confirmation (from when it last became pending). */
 const hoursWaiting = (ord, now) => (now.getTime() - new Date(ord.pendingSince || ord.createdAt).getTime()) / 3600000;
 
@@ -1184,7 +1215,9 @@ export async function processOrderPenalties(app) {
       const waited = hoursWaiting(ord, now);
       const sellers = await sellersStillToConfirm(ord);
       const done = new Set((ord.warnedSellers || []).map(String));
-      const due = sellers.filter((s) => !done.has(String(s._id)) && waited >= warnHoursFor(s));
+      // a frozen / suspended store cannot confirm orders, so it is not warned or penalised while
+      // restricted; it gets a fresh deadline when it is made active again (restartSellerDeadlines)
+      const due = sellers.filter((s) => s.status === 'active' && !done.has(String(s._id)) && waited >= warnHoursFor(s));
       const allWarned = sellers.every((s) => done.has(String(s._id)) || due.includes(s));
       if (!due.length && !allWarned) continue; // only Diamond sellers left, not yet due
 
@@ -1251,7 +1284,7 @@ export async function processOrderPenalties(app) {
       const waited = hoursWaiting(ord, now);
       const sellers = await sellersStillToConfirm(ord);
       const done = new Set((ord.penalizedSellers || []).map(String));
-      const due = sellers.filter((s) => !done.has(String(s._id)) && waited >= confirmHoursFor(s));
+      const due = sellers.filter((s) => s.status === 'active' && !done.has(String(s._id)) && waited >= confirmHoursFor(s));
       const allDone = sellers.every((s) => done.has(String(s._id)) || due.includes(s));
       if (!due.length && !allDone) continue; // only Diamond sellers left, deadline not reached
 

@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import Seller from '../../models/Seller.js';
 import { authSeller } from '../../middleware/auth.js';
-import { slugify } from './helpers.js';
+import { slugify, blockWhenFrozen } from './helpers.js';
 import { notify } from '../../utils/notify.js';
 import { comparePassword, cleanEmail } from '../../utils/password.js';
 import { sendVerificationOtpEmail, sendPasswordResetEmail, sendWelcomeEmail } from '../../services/email.service.js';
@@ -323,9 +323,8 @@ router.post('/login', async (req, res) => {
         message: `Your store registration was not approved. Reason: ${seller.freezeReason || 'not given'}. Please contact platform support if you think this is a mistake.`,
       });
     }
-    if (seller.status === 'suspended') {
-      return res.status(403).json({ message: 'Your seller account has been suspended. Please contact platform admin.' });
-    }
+    // a suspended store may log in: it sees the suspension and can only talk to support
+    // (every other request is refused by the login check, see middleware/auth.js)
     if (seller.status === 'pending_approval') {
       return res.status(403).json({
         message: 'Your merchant application is currently pending admin approval. Once reviewed and verified, you will be able to log in. You can also chat with our support team.',
@@ -382,7 +381,7 @@ function payoutFingerprint(seller) {
 }
 
 // PUT /api/sellers/me
-router.put('/me', authSeller, async (req, res) => {
+router.put('/me', authSeller, blockWhenFrozen('changing store settings and payout details'), async (req, res) => {
   try {
     const seller = await Seller.findById(req.seller.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });

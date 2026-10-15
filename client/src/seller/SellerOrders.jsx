@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { Link, useOutletContext } from 'react-router-dom';
 import { sapi, fmtDate, money } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
@@ -39,6 +40,7 @@ function getStepIndex(status) {
 
 export default function SellerOrders() {
   const { formatMoney } = useCurrency();
+  const { isFrozen: restricted } = useOutletContext() || {};
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('all');
@@ -122,6 +124,17 @@ export default function SellerOrders() {
           <p>Confirm incoming customer orders to lock processing funds. Downstream fulfillment &amp; dispatch are managed centrally by Operations.</p>
         </div>
       </div>
+
+      {restricted && (
+        <div className="seller-restricted-note">
+          <span className="srn-icon">🔒</span>
+          <div>
+            <b>Your store is frozen — you can view orders but cannot confirm or process them</b>
+            <p>Please contact support to resolve the freeze. Orders waiting for you get a fresh deadline once your store is active again.</p>
+          </div>
+          <Link to="/seller/support" className="srn-btn">💬 Contact Support</Link>
+        </div>
+      )}
 
       {actionMsg && (
         <div className="seller-action-alert">
@@ -271,7 +284,8 @@ export default function SellerOrders() {
                             type="button"
                             onClick={() => handleQuickConfirm(ord)}
                             className="btn-quick-confirm"
-                            disabled={confirmingId === ord._id}
+                            disabled={restricted || confirmingId === ord._id}
+                            title={restricted ? 'Your store is frozen: orders cannot be confirmed. Contact support.' : undefined}
                           >
                             <Ic name="checkCircle" size={14} />
                             {confirmingId === ord._id ? 'Locking Fund...' : '⚡ Confirm Order'}
@@ -484,7 +498,8 @@ export default function SellerOrders() {
                   type="button"
                   onClick={() => handleQuickConfirm(selectedOrd)}
                   className="btn-quick-confirm"
-                  disabled={confirmingId === selectedOrd._id}
+                  disabled={restricted || confirmingId === selectedOrd._id}
+                  title={restricted ? 'Your store is frozen: orders cannot be confirmed. Contact support.' : undefined}
                   style={{ padding: '9px 18px', fontSize: 13 }}
                 >
                   <Ic name="checkCircle" size={15} />

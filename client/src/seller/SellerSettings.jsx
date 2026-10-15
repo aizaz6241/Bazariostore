@@ -33,7 +33,7 @@ const INDIAN_BANKS = [
 ];
 
 export default function SellerSettings() {
-  const { seller, setSeller } = useOutletContext();
+  const { seller, setSeller, isFrozen: restricted } = useOutletContext();
   const [appModalOpen, setAppModalOpen] = useState(false);
   const [form, setForm] = useState({
     storeName: '',
@@ -267,6 +267,16 @@ export default function SellerSettings() {
       )}
 
       {/* Main Profile Form */}
+      {restricted && (
+        <div className="seller-restricted-note">
+          <span className="srn-icon">🔒</span>
+          <div>
+            <b>Store settings are locked while your store is frozen</b>
+            <p>You cannot change your store details or payout details until the freeze is lifted. Please contact support.</p>
+          </div>
+          <Link to="/seller/support" className="srn-btn">💬 Contact Support</Link>
+        </div>
+      )}
       <form onSubmit={handleSave} className="settings-main-form">
         {/* Section 1: Storefront Branding */}
         <div className="settings-card-panel">
@@ -1049,7 +1059,7 @@ export default function SellerSettings() {
 
           {/* Form Save Button */}
           <div className="scp-footer">
-            <button type="submit" className="settings-save-btn" disabled={saving}>
+            <button type="submit" className="settings-save-btn" disabled={saving || restricted} title={restricted ? 'Locked while your store is frozen' : undefined}>
               {saving ? (
                 <>
                   <span className="btn-spinner" /> Saving Changes...

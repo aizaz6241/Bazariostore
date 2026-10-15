@@ -81,9 +81,9 @@ export async function loadAdminAccount(id) {
 async function loadSellerAccount(id) {
   if (!isId(id)) return null;
   return cached('seller', id, async () => {
-    const s = await mongoose.connection.collection('sellers').findOne({ _id: oid(id) }, { projection: { status: 1, pwdAt: 1 } });
+    const s = await mongoose.connection.collection('sellers').findOne({ _id: oid(id) }, { projection: { status: 1, pwdAt: 1, registrationRejectedAt: 1 } });
     if (!s) return null;
-    return { id: String(s._id), status: s.status || 'active', pwdAt: s.pwdAt || null };
+    return { id: String(s._id), status: s.status || 'active', pwdAt: s.pwdAt || null, rejected: Boolean(s.registrationRejectedAt) };
   });
 }
 
@@ -117,11 +117,31 @@ export async function resolveSeller(payload) {
   if (!payload || payload.t !== 'seller') return { status: 401, message: 'Seller access required' };
   const account = await loadSellerAccount(payload.id);
   if (!account) return { status: 401, message: 'Session expired, please login again' };
-  // 401 (not 403) so the seller app signs the session out instead of showing a half-working screen
-  if (account.status === 'suspended') return { status: 401, message: 'Your seller account has been suspended. Please contact platform admin.' };
+  // 401 (not 403) so the seller app signs the session out instead of showing a half-working screen.
+  // A rejected registration is still refused. A SUSPENDED store may log in, but only to talk to
+  // support (see SUSPENDED_ALLOWED below): everything else is closed.
+  if (account.status === 'suspended' && account.rejected) return { status: 401, message: 'Your store registration was not approved. Please contact platform support.' };
   if (account.status === 'pending_approval') return { status: 401, message: 'Your merchant application is pending admin approval.' };
   if (olderThanPassword(payload, account.pwdAt)) return { status: 401, message: 'Session expired, please login again' };
-  return { seller: payload };
+  return { seller: payload, status: account.status };
+}
+
+/**
+ * A suspended store can only: load its own profile (to see the banner), use the support chat
+ * (thread, send, read, edit/delete its own messages, chat attachments) and keep phone alerts on.
+ * Every other seller request is refused with { suspended: true }.
+ */
+const SUSPENDED_ALLOWED = [
+  (m, u) => m === 'GET' && u === '/sellers/me',
+  (m, u) => u.startsWith('/chat/seller/'),
+  (m, u) => u.startsWith('/chat/messages/'),
+  (m, u) => u === '/uploads' || u.startsWith('/uploads/'),
+  (m, u) => u.startsWith('/push/seller/'),
+];
+function suspendedMayUse(req) {
+  // routes are mounted both with and without the /api prefix
+  const url = (`${req.baseUrl || ''}${req.path || ''}`.toLowerCase().replace(/\/+$/, '') || '/').replace(/^\/api(?=\/)/, '');
+  return SUSPENDED_ALLOWED.some((ok) => ok(req.method, url));
 }
 
 const hasPerm = (admin, permission) => !permission || admin.role === 'super_admin' || (admin.permissions || []).includes(permission);
@@ -184,7 +204,14 @@ async function sellerOrAdmin(req, res, next, messages) {
     if (payload.t === 'seller') {
       const out = await resolveSeller(payload);
       if (!out.seller) return res.status(out.status).json({ message: out.message });
+      if (out.status === 'suspended' && !suspendedMayUse(req)) {
+        return res.status(403).json({
+          suspended: true,
+          message: 'Your seller account is suspended. Everything is closed except the support chat — please contact support to resolve it.',
+        });
+      }
       req.seller = out.seller;
+      req.sellerStatus = out.status;
       return next();
     }
     if (payload.t === 'admin') {
