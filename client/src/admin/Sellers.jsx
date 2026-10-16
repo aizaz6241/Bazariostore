@@ -964,6 +964,7 @@ export default function Sellers() {
                   <div className="scard-metric">
                     <span className="lbl">Wallet</span>
                     <b className="val val-green">{money(s.wallet?.balance || 0)}</b>
+                    {s.wallet?.frozenFund > 0 && <small style={{ display: 'block', fontSize: 10, color: '#1d4ed8', fontWeight: 700 }}>🔒 {money(s.wallet.frozenFund)} held</small>}
                   </div>
                   <div className="scard-metric">
                     <span className="lbl">
@@ -1306,6 +1307,7 @@ export default function Sellers() {
                     <div>
                       <span>Wallet</span>
                       <b>{money(ps.wallet?.balance || 0)}</b>
+                      {ps.wallet?.frozenFund > 0 && <small style={{ display: 'block', fontSize: 10, color: '#1d4ed8', fontWeight: 700 }}>🔒 {money(ps.wallet.frozenFund)} held until unfrozen</small>}
                     </div>
                     <div>
                       <span>Locked</span>

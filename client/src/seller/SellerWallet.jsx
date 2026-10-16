@@ -23,6 +23,7 @@ const TYPE_BADGE = {
   order_cancelled_release: { label: 'Cancelled Order Refund', color: '#64748b', bg: '#f1f5f9', icon: '↩️' },
   adjustment: { label: 'Admin Adjustment', color: '#7c3aed', bg: '#ede9fe', icon: '⚙️' },
   diamond_fee: { label: 'Diamond Upgrade Fee (one-time)', color: '#0e7490', bg: '#cffafe', icon: '💎' },
+  frozen_release: { label: 'Frozen Amount Released', color: '#1d4ed8', bg: '#dbeafe', icon: '🔓' },
 };
 
 const INDIAN_BANKS = [
@@ -549,6 +550,7 @@ export default function SellerWallet() {
 
   const bal = wallet?.balance || 0;
   const processingFund = wallet?.processingFund || 0;
+  const frozenFund = wallet?.frozenFund || 0;
   const totalProfitEarned = wallet?.totalProfitEarned || 0;
   const totalEarned = wallet?.totalEarned || 0;
   const totalWithdrawn = wallet?.totalWithdrawn || 0;
@@ -619,6 +621,18 @@ export default function SellerWallet() {
           <div className="sw-kpi-val text-amber">{formatMoney(processingFund)}</div>
           <small className="sw-kpi-sub">Locked for confirmed orders</small>
         </div>
+
+        {/* Frozen amount: payouts held while the account is frozen */}
+        {(frozenFund > 0 || restricted) && (
+          <div className="sw-kpi-card card-processing" style={{ borderColor: '#bfdbfe' }}>
+            <div className="sw-kpi-head">
+              <span className="sw-kpi-title">Frozen Amount</span>
+              <div className="sw-kpi-icon" style={{ color: '#1d4ed8', background: '#dbeafe' }}><Ic name="lock" size={20} /></div>
+            </div>
+            <div className="sw-kpi-val" style={{ color: '#1d4ed8' }}>{formatMoney(frozenFund)}</div>
+            <small className="sw-kpi-sub">Order payouts held — added to your wallet when the account is unfrozen</small>
+          </div>
+        )}
 
         {/* 5. 20% Profit Earned */}
         <div className="sw-kpi-card card-profit">
@@ -906,8 +920,16 @@ export default function SellerWallet() {
       {/* ─────────────────────────────────────────────────────────────
           TAB 2: DEPOSIT FUNDS
           ───────────────────────────────────────────────────────────── */}
-      {tab === 'deposit' && restricted && <RestrictedNote what="depositing funds" />}
-      {tab === 'deposit' && !restricted && (
+      {tab === 'deposit' && restricted && (
+        <div className="seller-restricted-note" style={{ background: '#eff6ff', borderColor: '#bfdbfe', color: '#1e3a8a' }}>
+          <span className="srn-icon">💰</span>
+          <div>
+            <b style={{ color: '#1e40af' }}>Your account is frozen — deposit to confirm your pending orders</b>
+            <p>Payouts of delivered orders are held in your Frozen amount until the account is unfrozen, so pending orders have to be confirmed with a new deposit.</p>
+          </div>
+        </div>
+      )}
+      {tab === 'deposit' && (
         <div className="card form-card mb-4">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
             <div>

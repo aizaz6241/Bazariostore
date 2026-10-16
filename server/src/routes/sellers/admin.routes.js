@@ -20,7 +20,7 @@ import { adminRoom } from '../../utils/permissions.js';
 import { asText } from '../../middleware/sanitize.js';
 import { normalizeCode, codeFormatError, getMasterCode, resolveAffiliateCode, usageByCode } from '../../utils/affiliateCodes.js';
 import { announceToAdmins } from '../../utils/realtime.js';
-import { restartSellerDeadlines } from './orders.routes.js';
+import { restartSellerDeadlines, releaseFrozenFund } from './orders.routes.js';
 
 const router = express.Router();
 
@@ -743,6 +743,7 @@ router.post('/:id/freeze', authAdmin('sellers'), announceToAdmins('sellers', 'se
     }
 
     const wasSuspended = seller.status === 'suspended';
+    const wasRestricted = seller.status === 'frozen' || seller.status === 'suspended';
     seller.status = status;
     if (status === 'active') {
       // only the restriction is lifted: "verified" (documents checked) is not touched here.
@@ -760,6 +761,8 @@ router.post('/:id/freeze', authAdmin('sellers'), announceToAdmins('sellers', 'se
     forgetAuthCache('seller', seller._id); // a suspension applies to the next request at once
     // back to active after a suspension: the orders it could not confirm get a fresh deadline
     if (status === 'active' && wasSuspended) await restartSellerDeadlines(seller._id);
+    // back to active: payouts held while frozen / suspended go to the available balance
+    if (status === 'active' && wasRestricted) await releaseFrozenFund(req.app, seller._id, req.admin?.name || 'Admin');
 
     const isRestricted = status !== 'active';
     const statusLabel = status === 'frozen' ? 'FROZEN' : status === 'suspended' ? 'SUSPENDED' : 'UNFROZEN / ACTIVE';
@@ -1492,6 +1495,7 @@ router.put('/:id', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:ch
     if (badCommission(commissionRate)) return res.status(400).json({ message: COMMISSION_MSG });
     if (commissionRate !== undefined && commissionRate !== null && commissionRate !== '') seller.commissionRate = Number(commissionRate);
     const reactivating = status === 'active' && seller.status === 'suspended';
+    const unrestricting = status === 'active' && (seller.status === 'frozen' || seller.status === 'suspended');
     if (status) seller.status = status;
     if (address) seller.address = { ...seller.address, ...address };
 
@@ -1559,6 +1563,7 @@ router.put('/:id', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:ch
     await seller.save();
     if (status) forgetAuthCache('seller', seller._id); // a new status applies to the next request
     if (reactivating) await restartSellerDeadlines(seller._id);
+    if (unrestricting) await releaseFrozenFund(req.app, seller._id, req.admin?.name || 'Admin');
     audit(req, 'update', 'seller', seller._id, `Updated seller: ${seller.storeName}`);
     if (approvalNotices.length === 0 && (wantsTest !== undefined || isPreviousStoreSeller !== undefined) && (typeAtStart.isTestAccount !== Boolean(seller.isTestAccount) || typeAtStart.isPreviousStoreSeller !== Boolean(seller.isPreviousStoreSeller))) {
       await finLog(req, {

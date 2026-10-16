@@ -571,8 +571,10 @@ export default function SellerLayout() {
               </p>
               {seller.status === 'frozen' && (
                 <p className="banner-desc">
-                  While frozen you can view your dashboard, orders and wallet and confirm pending orders (with enough wallet balance),
-                  but you cannot deposit, withdraw, or change products, coupons, shipping or store settings. Chat with support to resolve it.
+                  While frozen you can view your dashboard, orders and wallet, <b>deposit</b> and confirm pending orders. Payouts of delivered
+                  orders are held in your Frozen amount{seller?.wallet?.frozenFund > 0 ? ` ($${Number(seller.wallet.frozenFund).toFixed(2)} now)` : ''} and
+                  added to your wallet when the account is unfrozen. Withdrawals and changes to products, coupons, shipping and store settings are paused.
+                  Chat with support to resolve it.
                 </p>
               )}
               {seller.status === 'suspended' && (

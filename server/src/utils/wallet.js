@@ -13,9 +13,9 @@ import Seller from '../models/Seller.js';
  * be overwritten, and two actions at once simply both apply.
  */
 
-const FIELDS = ['balance', 'processingFund', 'totalProfitEarned', 'totalEarned', 'totalDeposited', 'pendingDeposit', 'pendingWithdrawal', 'totalWithdrawn', 'totalHelpingAmount'];
+const FIELDS = ['balance', 'processingFund', 'frozenFund', 'totalProfitEarned', 'totalEarned', 'totalDeposited', 'pendingDeposit', 'pendingWithdrawal', 'totalWithdrawn', 'totalHelpingAmount'];
 // counters that must never show below zero (old records can be out of step)
-const NEVER_NEGATIVE = ['processingFund', 'pendingDeposit', 'pendingWithdrawal', 'totalHelpingAmount'];
+const NEVER_NEGATIVE = ['processingFund', 'frozenFund', 'pendingDeposit', 'pendingWithdrawal', 'totalHelpingAmount'];
 const EPS = 1e-6;
 
 const toId = (v) => (v instanceof mongoose.Types.ObjectId ? v : new mongoose.Types.ObjectId(String(v)));
@@ -82,6 +82,31 @@ export async function walletApply(sellerId, change, { requireBalance = null, opI
     }
   }
   return { wallet: doc.wallet, storeName: doc.storeName || '' };
+}
+
+/** Is the store restricted (frozen / suspended)? Its incoming order payouts are then held. */
+export async function sellerIsRestricted(sellerId) {
+  if (!sellerId || !mongoose.Types.ObjectId.isValid(String(sellerId))) return false;
+  const s = await Seller.findById(sellerId).select('status').lean();
+  return s?.status === 'frozen' || s?.status === 'suspended';
+}
+
+/**
+ * Move the whole held (frozen) amount to the available balance, in ONE database step, so nothing
+ * that arrives at the same moment can be lost or counted twice.
+ * @returns {Promise<{amount:number, wallet:object, storeName:string}|null>}  null = nothing was held
+ */
+export async function walletReleaseFrozen(sellerId) {
+  if (!sellerId || !mongoose.Types.ObjectId.isValid(String(sellerId))) return null;
+  const before = await Seller.findOneAndUpdate(
+    { _id: toId(sellerId), 'wallet.frozenFund': { $gt: EPS } },
+    [{ $set: { 'wallet.balance': { $add: [{ $ifNull: ['$wallet.balance', 0] }, '$wallet.frozenFund'] }, 'wallet.frozenFund': 0 } }],
+    { new: false, projection: { wallet: 1, storeName: 1 } }
+  ).lean();
+  if (!before) return null;
+  const amount = Number(before.wallet?.frozenFund) || 0;
+  const wallet = { ...(before.wallet || {}), balance: (Number(before.wallet?.balance) || 0) + amount, frozenFund: 0 };
+  return { amount, wallet, storeName: before.storeName || '' };
 }
 
 /** The wallet as it is right now. */

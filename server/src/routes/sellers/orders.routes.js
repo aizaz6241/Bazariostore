@@ -11,7 +11,7 @@ import { audit } from '../../utils/audit.js';
 import { adjustTreasuryStock } from '../../utils/stockSync.js';
 import { scheduleNextOrderStep } from '../../services/orderProgressionService.js';
 import { Conversation, Message } from '../../models/Chat.js';
-import { walletApply, walletNow } from '../../utils/wallet.js';
+import { walletApply, walletNow, sellerIsRestricted, walletReleaseFrozen } from '../../utils/wallet.js';
 import { restockOrder, settleDeliveredStock } from '../../utils/orderStock.js';
 import { adminRoom } from '../../utils/permissions.js';
 import { toAdmins } from '../../utils/realtime.js';
@@ -235,7 +235,9 @@ async function advanceSellerTargets(app, sellerId) {
 
     const bonusAmt = Number(target.bonusAmount) || 0;
     if (bonusAmt <= 0) continue;
-    const paid = await walletApply(sellerId, { balance: bonusAmt, totalProfitEarned: bonusAmt, totalEarned: bonusAmt }, { opId: `target:${target._id}` });
+    // a frozen / suspended store's bonus is held until the store is active again
+    const held = await sellerIsRestricted(sellerId);
+    const paid = await walletApply(sellerId, { [held ? 'frozenFund' : 'balance']: bonusAmt, totalProfitEarned: bonusAmt, totalEarned: bonusAmt }, { opId: `target:${target._id}` });
     if (!paid || paid.already) continue;
 
     await ledgerLine({
@@ -376,12 +378,18 @@ export async function releaseSellerOrderDelivered(app, sellerId, order) {
   const rates = [...new Set(mine.map((i) => Number(order.items[i].profitRate) || 20))];
   const payoutRate = rates.length === 1 ? rates[0] : totalPrincipal > 0 ? Math.round((totalProfit / totalPrincipal) * 100) : 20;
 
+  // A FROZEN / SUSPENDED store does not get its delivered payouts in the available balance: they
+  // are held (frozenFund) until the store is active again, so a pending order has to be confirmed
+  // with a fresh deposit instead of waiting days for these payouts.
+  const held = await sellerIsRestricted(sellerId);
   const moved = await walletApply(
     sellerId,
-    { processingFund: -totalPrincipal, balance: totalPayout, totalProfitEarned: totalProfit, totalEarned: totalPayout },
+    { processingFund: -totalPrincipal, [held ? 'frozenFund' : 'balance']: totalPayout, totalProfitEarned: totalProfit, totalEarned: totalPayout },
     { opId: `deliver:${order._id}:${sellerId}` }
   );
   if (!moved) return empty; // seller no longer exists
+  // made active again in the same moment: nothing may stay held
+  if (held && !moved.already && !(await sellerIsRestricted(sellerId))) await releaseFrozenFund(app, sellerId, 'Store active again');
 
   const settledAt = new Date();
   for (const part of parts) {
@@ -404,7 +412,10 @@ export async function releaseSellerOrderDelivered(app, sellerId, order) {
       status: 'completed',
       balanceAfter: moved.wallet.balance,
       processingFundAfter: moved.wallet.processingFund,
-      adminNote: `Order #${order.orderNumber} Delivered — $${totalPrincipal.toFixed(2)} Processing Fund released + $${totalProfit.toFixed(2)} Profit (${payoutRate}%) credited! Total: +$${totalPayout.toFixed(2)}`,
+      heldFrozen: held || undefined,
+      adminNote: held
+        ? `Order #${order.orderNumber} Delivered — $${totalPayout.toFixed(2)} ($${totalPrincipal.toFixed(2)} + ${payoutRate}% profit $${totalProfit.toFixed(2)}) HELD in Frozen amount: released when the account is unfrozen`
+        : `Order #${order.orderNumber} Delivered — $${totalPrincipal.toFixed(2)} Processing Fund released + $${totalProfit.toFixed(2)} Profit (${payoutRate}%) credited! Total: +$${totalPayout.toFixed(2)}`,
       processedAt: new Date(),
     });
 
@@ -421,14 +432,17 @@ export async function releaseSellerOrderDelivered(app, sellerId, order) {
         recipientType: 'seller',
         sellerId: String(sellerId),
         type: 'order',
-        title: `🎉 Order #${order.orderNumber} Delivered & Settled!`,
-        body: `+$${totalPayout.toFixed(2)} credited to your wallet! ($${totalPrincipal.toFixed(2)} processing release + $${totalProfit.toFixed(2)} ${payoutRate}% profit).`,
+        title: held ? `🔒 Order #${order.orderNumber} Delivered — amount held` : `🎉 Order #${order.orderNumber} Delivered & Settled!`,
+        body: held
+          ? `$${totalPayout.toFixed(2)} is held in your Frozen amount because your account is frozen. It is added to your wallet when the account is unfrozen — contact support.`
+          : `+$${totalPayout.toFixed(2)} credited to your wallet! ($${totalPrincipal.toFixed(2)} processing release + $${totalProfit.toFixed(2)} ${payoutRate}% profit).`,
         link: '/seller/wallet',
       });
 
       app.get('io')?.to(`seller:${sellerId}`).emit('wallet:update', {
         balance: latest.wallet.balance,
         processingFund: latest.wallet.processingFund,
+        frozenFund: latest.wallet.frozenFund || 0,
         totalProfitEarned: latest.wallet.totalProfitEarned,
       });
     }
@@ -1183,6 +1197,43 @@ export async function restartSellerDeadlines(sellerId) {
     return ids.length;
   } catch (e) {
     console.error('[orders] restart deadlines:', e.message);
+    return 0;
+  }
+}
+
+/**
+ * The store is active again: everything held in its Frozen amount goes to the available balance,
+ * with a line in the wallet history and a notification. Safe to call any time (nothing held → nothing).
+ */
+export async function releaseFrozenFund(app, sellerId, by = 'Admin') {
+  try {
+    const out = await walletReleaseFrozen(sellerId);
+    if (!out || !(out.amount > 0)) return 0;
+    await ledgerLine({
+      type: 'adjustment',
+      purpose: 'frozen_release',
+      seller: sellerId,
+      storeName: out.storeName,
+      amount: out.amount,
+      status: 'completed',
+      balanceAfter: out.wallet.balance,
+      adminNote: `Frozen amount released — $${out.amount.toFixed(2)} added to the available balance (account active again${by ? `, by ${by}` : ''})`,
+      processedAt: new Date(),
+    });
+    if (app) {
+      notify(app, {
+        recipientType: 'seller',
+        sellerId: String(sellerId),
+        type: 'system',
+        title: `🔓 Frozen amount released: +$${out.amount.toFixed(2)}`,
+        body: 'Your account is active again. The amount held while it was frozen is now in your available balance.',
+        link: '/seller/wallet',
+      });
+      app.get('io')?.to(`seller:${sellerId}`).emit('wallet:update', { balance: out.wallet.balance, frozenFund: 0 });
+    }
+    return out.amount;
+  } catch (e) {
+    console.error('[wallet] frozen release failed:', e.message);
     return 0;
   }
 }

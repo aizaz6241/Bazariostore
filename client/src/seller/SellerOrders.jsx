@@ -130,7 +130,10 @@ export default function SellerOrders() {
           <span className="srn-icon">🔒</span>
           <div>
             <b>Your store is frozen</b>
-            <p>You can still confirm your pending orders if your wallet has enough balance — please confirm them on time. Everything else stays paused until support lifts the freeze.</p>
+            <p>
+              Confirm your pending orders on time: if your balance is not enough, <b>deposit</b> to confirm them. Payouts of delivered orders are held in your
+              Frozen amount until support lifts the freeze, so do not wait for them. Everything else stays paused.
+            </p>
           </div>
           <Link to="/seller/support" className="srn-btn">💬 Contact Support</Link>
         </div>

@@ -166,6 +166,7 @@ router.get('/wallet', authSellerOrAdmin, async (req, res) => {
       // the Diamond upgrade fee is kept as a deposit record for the accounts, but it was paid to
       // the platform and never entered the store wallet: shown as its own line
       if (obj.purpose === 'diamond_fee') obj.type = 'diamond_fee';
+      if (obj.purpose === 'frozen_release') obj.type = 'frozen_release';
       return obj;
     });
 
@@ -191,6 +192,7 @@ router.get('/wallet', authSellerOrAdmin, async (req, res) => {
       wallet: {
         balance: w.balance || 0,
         processingFund: w.processingFund || 0,
+        frozenFund: w.frozenFund || 0,
         totalProfitEarned: w.totalProfitEarned || 0,
         totalEarned: w.totalEarned || 0,
         totalDeposited: w.totalDeposited || 0,
@@ -219,7 +221,8 @@ router.get('/wallet', authSellerOrAdmin, async (req, res) => {
 });
 
 // POST /api/sellers/wallet/deposit
-router.post('/wallet/deposit', authSellerOrAdmin, blockWhenFrozen('sending a deposit request'), oneRequestAtATime('deposit'), async (req, res) => {
+// a FROZEN store may deposit (to confirm its pending orders with fresh money); a suspended one cannot
+router.post('/wallet/deposit', authSellerOrAdmin, oneRequestAtATime('deposit'), async (req, res) => {
   try {
     const seller = await getSellerFromReq(req);
     if (!seller) return res.status(404).json({ message: 'Seller not found. Please log in again.' });
