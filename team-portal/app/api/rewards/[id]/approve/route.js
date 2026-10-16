@@ -19,9 +19,13 @@ export async function POST(req, { params }) {
     const body = await req.json().catch(() => ({}));
 
     // A partner never approves his own reward: the other partner does
-    const own = await RewardClaim.findById(id).select('memberId').lean();
+    const own = await RewardClaim.findById(id).select('memberId rewardType gift').lean();
     if (own && String(own.memberId) === String(session._id)) {
       return NextResponse.json({ message: 'This reward is yours. The other partner has to approve it.' }, { status: 403 });
+    }
+    // a device gift is approved only once its real purchase cost is entered
+    if (own && own.rewardType === 'device_gift' && own.gift?.costEntered !== true) {
+      return NextResponse.json({ message: 'Enter the real purchase cost of the gift first (Change → cost in PKR).' }, { status: 400 });
     }
 
     // 1. Atomic status update prevents race condition and double-crediting
@@ -48,15 +52,18 @@ export async function POST(req, { params }) {
     }
 
     const memberId = claim.memberId._id || claim.memberId;
-    await Member.updateOne(
-      { _id: memberId },
-      {
-        $inc: {
-          'wallet.balancePKR': claim.amountPKR,
-          'wallet.totalBonusesPKR': claim.amountPKR,
-        },
-      }
-    );
+    // a device gift is given as the device, never as wallet money
+    if (claim.rewardType !== 'device_gift') {
+      await Member.updateOne(
+        { _id: memberId },
+        {
+          $inc: {
+            'wallet.balancePKR': claim.amountPKR,
+            'wallet.totalBonusesPKR': claim.amountPKR,
+          },
+        }
+      );
+    }
 
     const targetMember = await Member.findById(memberId);
     if (!targetMember) {
@@ -82,7 +89,17 @@ export async function POST(req, { params }) {
     }
 
     // 3. Post Automatic Public Announcement in Group Chat
-    const celebrationMsg =
+    const isGift = claim.rewardType === 'device_gift';
+    const celebrationMsg = isGift
+      ? `🎉 ━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `🎁 GIFT ANNOUNCEMENT 🎁\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `Congratulations to @${targetMember.name}!\n` +
+        `🎁 ${String(claim.title).replace(/^🎁\s*/, '')}\n` +
+        `For reaching a net of ₮${Number(claim.gift?.thresholdUSDT || 0).toLocaleString('en-US')} with his sellers.\n` +
+        `Keep up the fantastic work! 🚀\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━━━`
+      :
       `🎉 ━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `🏆 BONUS AWARD ANNOUNCEMENT 🏆\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
@@ -102,7 +119,7 @@ export async function POST(req, { params }) {
       messageType: 'system_bonus',
       text: celebrationMsg,
       bonusMetadata: {
-        amountPKR: claim.amountPKR,
+        amountPKR: isGift ? 0 : claim.amountPKR,
         reason: claim.title,
         recipientMemberName: targetMember.name,
         recipientMemberId: targetMember._id,
@@ -119,14 +136,16 @@ export async function POST(req, { params }) {
       senderRole: 'admin',
       targetMemberId: targetMember._id,
       messageType: 'system_bonus',
-      text: `🎁 Your bonus claim of Rs ${claim.amountPKR.toLocaleString()} PKR for "${claim.title}" has been APPROVED! It has been credited to your wallet balance.`,
+      text: isGift
+        ? `🎁 Your gift "${String(claim.title).replace(/^🎁\s*/, '')}" has been APPROVED! The admins will hand it over to you.`
+        : `🎁 Your bonus claim of Rs ${claim.amountPKR.toLocaleString()} PKR for "${claim.title}" has been APPROVED! It has been credited to your wallet balance.`,
     });
 
     // 5. Send Push Notification to Member with Cash Sound
     try {
       sendPushToUser(targetMember._id, {
-        title: `🎉 Bonus Approved! Rs ${claim.amountPKR.toLocaleString()} PKR`,
-        body: `"${claim.title}" has been approved and added to your wallet!`,
+        title: isGift ? '🎁 Your gift is approved!' : `🎉 Bonus Approved! Rs ${claim.amountPKR.toLocaleString()} PKR`,
+        body: isGift ? `"${String(claim.title).replace(/^🎁\s*/, '')}" — the admins will hand it over to you.` : `"${claim.title}" has been approved and added to your wallet!`,
         url: '/wallet',
         type: 'finance',
         sound: '/sounds/cash.wav',
@@ -136,7 +155,7 @@ export async function POST(req, { params }) {
       // Also announce to group push
       sendPushToAllExcept(session._id, {
         title: `🏆 Bonus Announcement!`,
-        body: `@${targetMember.name} earned Rs ${claim.amountPKR.toLocaleString()} PKR bonus for "${claim.title}"!`,
+        body: isGift ? `@${targetMember.name} earned a gift: ${String(claim.title).replace(/^🎁\s*/, '')}!` : `@${targetMember.name} earned Rs ${claim.amountPKR.toLocaleString()} PKR bonus for "${claim.title}"!`,
         url: '/chat',
         type: 'chat',
         sound: '/sounds/cash.wav',

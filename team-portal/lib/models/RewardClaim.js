@@ -26,6 +26,8 @@ const rewardClaimSchema = new mongoose.Schema(
         'wallet_300',           // seller's real deposits reach $300 -> 5,000 PKR (once per seller)
         'daily_target',         // ₹1L–5L+ real INR in one day -> 1,000–5,000 PKR
         'weekly_target',        // ₹5L+ real INR in one week -> 5,000 PKR
+        // ── device gifts (16 Oct 2026) ──
+        'device_gift',          // net 10,000 USDT -> iPhone, net 20,000 USDT -> laptop (amount = real purchase cost)
       ],
       required: true,
     },
@@ -91,6 +93,20 @@ const rewardClaimSchema = new mongoose.Schema(
         to: { type: mongoose.Schema.Types.Mixed, default: null },
       },
     ],
+    // Device gift (rewardType 'device_gift'): amountPKR is the real purchase cost, entered by an
+    // admin after buying (approve is blocked until then). Counted like a bonus (partners 50 / 50)
+    // AND as a payout to the person (he got the device, not money), so his wallet does not change.
+    gift: {
+      item: { type: String, default: '' }, // iphone | laptop
+      label: { type: String, default: '' },
+      thresholdUSDT: { type: Number, default: 0 },
+      netAtCross: { type: Number, default: 0 },
+      crossedAt: { type: Date, default: null },
+      costEntered: { type: Boolean, default: false },
+      status: { type: String, default: '' }, // due | purchased | delivered
+      purchasedAt: { type: Date, default: null },
+      deliveredAt: { type: Date, default: null },
+    },
     // Deduplication key to prevent creating duplicate claims for the same milestone
     claimKey: {
       type: String,

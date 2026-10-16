@@ -24,6 +24,7 @@ export const ACTION_LABEL = {
   reserve_take: 'Move reserve money back to the wallets',
   reassign: 'Move a seller to another owner',
   seller_flag: 'Change seller type',
+  diamond_upgrade: 'Diamond upgrade fee',
   admin_create: 'Create an admin account',
   admin_update: 'Change an admin account',
   admin_delete: 'Delete an admin account',

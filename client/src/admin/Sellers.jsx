@@ -4,6 +4,7 @@ import Ic from '../components/Icons.jsx';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
 import SellersAnalytics from './SellersAnalytics.jsx';
 import useLiveReload from '../useLiveReload.js';
+import DiamondUpgradeModal from './DiamondUpgradeModal.jsx';
 
 export default function Sellers() {
   const [sellers, setSellers] = useState([]);
@@ -648,28 +649,20 @@ export default function Sellers() {
     setSellers((prev) => prev.map((s) => (s._id === sellerId ? { ...s, ...patch } : s)));
     if (profileSeller?._id === sellerId) setProfileSeller((prev) => ({ ...prev, ...patch }));
   };
-  const handleUpgradeDiamond = async (s) => {
+  const [diamondFor, setDiamondFor] = useState(null);
+  const handleUpgradeDiamond = (s) => {
     if (s.tier === 'diamond') return;
-    const ok = confirm(
-      `Upgrade "${s.storeName}" to 💎 DIAMOND?\n\n` +
-        `Do this only after the one-time $1,500 upgrade fee has been received.\n\n` +
-        `From now on this store gets:\n` +
-        `• 35% profit on every NEW order (instead of 20%)\n` +
-        `• 72 hours to confirm orders (warning at 48h)\n` +
-        `• Can remove products from My Store\n\n` +
-        `The seller is told in chat.`
-    );
-    if (!ok) return;
-    const note = prompt('Optional note for the record (e.g. fee received / payment reference):', s.tierRequest?.status === 'pending' ? 'Upgrade fee received' : '');
-    if (note === null) return;
-    try {
-      const res = await api(`/sellers/${s._id}/tier`, { method: 'POST', body: { tier: 'diamond', note } });
-      applyTier(s._id, res.seller);
-      setToggleToast(`💎 ${res.message}`);
-      setTimeout(() => setToggleToast(''), 5000);
-    } catch (err) {
-      alert('Could not upgrade: ' + err.message);
+    if (s.tierRequest?.status === 'awaiting_approval') {
+      alert(`The Diamond fee of "${s.storeName}" is waiting for the other partner's approval on the team portal (Finance).`);
+      return;
     }
+    setDiamondFor(s);
+  };
+  const onDiamondDone = (res) => {
+    if (diamondFor) applyTier(diamondFor._id, res.seller);
+    setDiamondFor(null);
+    setToggleToast(`${res.pendingApproval ? '🔐' : '💎'} ${res.message}`);
+    setTimeout(() => setToggleToast(''), 7000);
   };
   const handleClearTierRequest = async (s) => {
     if (!confirm(`Clear the Diamond upgrade request of "${s.storeName}"? (The store stays Basic.)`)) return;
@@ -704,6 +697,17 @@ export default function Sellers() {
       );
     }
     const requested = s.tierRequest?.status === 'pending';
+    if (s.tierRequest?.status === 'awaiting_approval') {
+      return (
+        <span
+          className={small ? undefined : 'scard-chip'}
+          title="Fee entered — waiting for the other partner's approval on the team portal (Finance)"
+          style={{ ...base, cursor: 'default', background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}
+        >
+          💎 Fee awaiting approval ⏳
+        </span>
+      );
+    }
     return (
       <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
         <button
@@ -3257,6 +3261,7 @@ export default function Sellers() {
         </div>
       )}
 
+      {diamondFor && <DiamondUpgradeModal seller={diamondFor} onClose={() => setDiamondFor(null)} onDone={onDiamondDone} />}
       {toggleToast && (
         <div style={{
           position: 'fixed',

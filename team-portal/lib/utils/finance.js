@@ -244,6 +244,8 @@ async function computeLedger() {
       pkrRate,
       previousStore,
       isManual: doc.isManualAdjustment === true,
+      // 'diamond_fee' = the store's Diamond upgrade fee (divided like a deposit, not in the store wallet)
+      purpose: doc.purpose || '',
       owner,
       ref: doc.depositRef || doc.transactionRef || '',
       editedBy: doc.finEditedBy || '',
@@ -326,7 +328,12 @@ async function computeLedger() {
   }
 
   // ─── Milestone bonuses: member +bonus, partners pay 50 / 50 ───
+  // A DEVICE GIFT (iPhone / laptop) is counted the same way at its real purchase cost, plus a payout
+  // of the same amount to the person: he received the device, not money, so his wallet does not
+  // change, the two partners pay 50 / 50 and the money has left Binance.
+  const giftPayouts = [];
   for (const claim of claimDocs) {
+    if (claim.rewardType === 'device_gift' && claim.gift?.costEntered !== true) continue;
     const amountPKR = num(claim.amountPKR);
     if (!(amountPKR > 0)) continue;
 
@@ -406,6 +413,19 @@ async function computeLedger() {
     }
 
     entries.push({ ...base, shares });
+    if (claim.rewardType === 'device_gift') {
+      giftPayouts.push({
+        id: `gift_${id}`,
+        userId: base.owner.id,
+        name: base.owner.name,
+        amountUSDT: usdt,
+        date: base.date,
+        note: claim.title || 'Device gift',
+        description: 'Device gift — given as the device itself, not as money',
+        processedBy: '',
+        gift: true,
+      });
+    }
   }
 
   // ─── Entries typed in by an admin on the Finance screen ───
@@ -472,6 +492,9 @@ async function computeLedger() {
       processedBy: tx.processedBy || '',
     });
   }
+
+  payouts.push(...giftPayouts);
+  payouts.sort((a, b) => new Date(a.date) - new Date(b.date));
 
   // ─── Wallets ───
   const walletMap = new Map();

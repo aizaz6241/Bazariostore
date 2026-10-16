@@ -7,6 +7,12 @@
  *             Product Treasury items from My Store.
  *   Diamond — 35% profit on orders placed from the upgrade on, 72h to confirm (warning at 48h,
  *             i.e. 24h before the deadline), may remove products from My Store, fast 3–5 day delivery.
+ *             Lifetime: there is no way back to Basic.
+ *
+ * The upgrade fee: the admin enters what came in (real USDT + INR, and any helping amount); the
+ * other partner approves it on the team portal (Finance), which then records the fee as a deposit
+ * that is divided like any other deposit (owner's share, referral, partners) WITHOUT adding it to
+ * the seller's store wallet, and makes the store Diamond.
  */
 export const DIAMOND_UPGRADE_FEE_USD = 1500;
 export const WARNING_BEFORE_DEADLINE_HOURS = 24;
@@ -62,7 +68,8 @@ export function tierInfo(seller) {
     deliveryDays: t.deliveryDays,
     tierSince: seller?.tierSince || null,
     request: {
-      status: seller?.tierRequest?.status || 'none',
+      // the seller only sees "request sent" (also while the partners approve the fee)
+      status: seller?.tierRequest?.status && seller.tierRequest.status !== 'none' ? 'pending' : 'none',
       requestedAt: seller?.tierRequest?.requestedAt || null,
     },
     upgradeFee: DIAMOND_UPGRADE_FEE_USD,

@@ -5,6 +5,12 @@ export const NUMBER_STATUS = {
   inactive: { label: 'Not in use', color: '#94a3b8' },
 };
 
+// the WhatsApp app a number is registered on
+export const APP_TYPES = {
+  business: { label: 'WhatsApp Business', short: 'Business', color: '#0f766e' },
+  normal: { label: 'Normal WhatsApp', short: 'Normal', color: '#1baf7a' },
+};
+
 export const CURRENCIES = ['USD', 'USDT', 'GBP', 'EUR', 'AED', 'PKR', 'INR'];
 
 // WhatsApp: one main phone + up to 4 linked devices

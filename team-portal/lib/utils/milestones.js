@@ -34,6 +34,22 @@ export const REWARD_RULES = {
 };
 
 export const NEW_REWARD_TYPES = ['wallet_300', 'daily_target', 'weekly_target'];
+
+/**
+ * DEVICE GIFTS (agreed 16 Oct 2026)
+ *   net = all REAL USDT deposits of a person's sellers − all their sellers' withdrawals (real USDT),
+ *         from 1 Oct 2026, every seller together (the Diamond fee counts as a deposit).
+ *   net reaches 10,000 USDT -> iPhone 17 Pro Max (White, 256GB, Non-PTA)
+ *   net reaches 20,000 USDT -> laptop (PKR 2–3 lakh range)
+ * - Members and partners alike; each gift once per person.
+ * - Once reached it stays earned: a later drop of the net never closes it.
+ * - Previous-store sellers and test accounts are left out completely.
+ * - Deposits / withdrawals count for whoever owned the seller when the money moved.
+ */
+export const DEVICE_GIFTS = [
+  { item: 'iphone', usdt: 10000, label: 'iPhone 17 Pro Max (White, 256GB, Non-PTA)' },
+  { item: 'laptop', usdt: 20000, label: 'Laptop (PKR 2–3 lakh range)' },
+];
 // Rewards of the old system: never created again. Approved ones stay as they are.
 export const OLD_REWARD_TYPES = ['milestone_1lakh', 'milestone_2lakh', 'milestone_3lakh', 'weekly_5lakh_sprint', 'first_seller_5orders'];
 
@@ -147,6 +163,33 @@ export function computeRewardFacts(deposits, now = new Date()) {
   }
   return out;
 }
+
+/**
+ * Each person's net USDT and when it first reached each gift. Pure (no database).
+ * @param {object[]} entries  ledger entries (kind deposit / seller_withdrawal, owner, usdt, date)
+ */
+export function computeDeviceFacts(entries) {
+  const people = new Map();
+  const sorted = [...(entries || [])]
+    .filter((e) => (e.kind === 'deposit' || e.kind === 'seller_withdrawal') && e.owner?.id && !e.previousStore && num(e.usdt) > 0)
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+  for (const e of sorted) {
+    const id = sid(e.owner.id);
+    if (!people.has(id)) people.set(id, { ownerId: id, ownerName: e.owner.name || '', depositUSDT: 0, withdrawUSDT: 0, net: 0, crossed: {} });
+    const p = people.get(id);
+    if (e.kind === 'deposit') p.depositUSDT = r2(p.depositUSDT + num(e.usdt));
+    else p.withdrawUSDT = r2(p.withdrawUSDT + num(e.usdt));
+    p.net = r2(p.depositUSDT - p.withdrawUSDT);
+    for (const g of DEVICE_GIFTS) {
+      if (!p.crossed[g.item] && p.net >= g.usdt) p.crossed[g.item] = { at: new Date(e.date), net: p.net };
+    }
+  }
+  return [...people.values()].sort((a, b) => b.net - a.net);
+}
+
+let lastDevices = [];
+/** Each person's net and gift status from the last check (for the Rewards screen). */
+export const deviceProgress = () => lastDevices;
 
 let lastRun = 0;
 let running = null;
@@ -326,6 +369,84 @@ export async function evaluateRewards({ force = false } = {}) {
         } catch (e) {
           console.error('[rewards] notify failed', e?.message);
         }
+      }
+
+      // ─── Device gifts (once reached, never closed by this check) ───
+      try {
+        const people = computeDeviceFacts(ledger.entries || []);
+        const ids = people.map((p) => p.ownerId);
+        const [ppl, gifts] = await Promise.all([
+          Member.find({ _id: { $in: ids } }).select('name role active').lean(),
+          RewardClaim.find({ rewardType: 'device_gift' }).select('claimKey memberId status gift').lean(),
+        ]);
+        const pplOf = new Map(ppl.map((m) => [sid(m._id), m]));
+        const giftByKey = new Map(gifts.map((c) => [c.claimKey, c]));
+        const newGifts = [];
+        for (const p of people) {
+          const m = pplOf.get(p.ownerId);
+          if (!m) continue;
+          p.ownerName = m.name;
+          p.role = m.role;
+          for (const g of DEVICE_GIFTS) {
+            const key = `device_${g.item}_${p.ownerId}`;
+            const hit = p.crossed[g.item];
+            if (!hit || giftByKey.has(key)) continue;
+            const res = await RewardClaim.updateOne(
+              { claimKey: key },
+              {
+                $setOnInsert: {
+                  memberId: m._id,
+                  sellerId: null,
+                  rewardType: 'device_gift',
+                  title: `🎁 ${g.label}`,
+                  amountPKR: 1, // placeholder: the real purchase cost is entered before approval
+                  description: `${m.name}'s sellers reached a net of ₮${hit.net.toLocaleString('en-US')} (deposits − withdrawals) on ${dayKey(hit.at)}. Buy the gift, enter its real cost, then approve.`,
+                  periodKey: dayKey(hit.at),
+                  status: 'pending',
+                  claimKey: key,
+                  autoCreated: true,
+                  gift: { item: g.item, label: g.label, thresholdUSDT: g.usdt, netAtCross: hit.net, crossedAt: hit.at, costEntered: false, status: 'due' },
+                },
+              },
+              { upsert: true }
+            );
+            if (res.upsertedCount) newGifts.push({ ownerId: p.ownerId, ownerName: m.name, label: g.label });
+          }
+        }
+        const fresh = await RewardClaim.find({ rewardType: 'device_gift' }).select('claimKey status gift amountPKR').lean();
+        const freshByKey = new Map(fresh.map((c) => [c.claimKey, c]));
+        lastDevices = people
+          .filter((p) => pplOf.has(p.ownerId))
+          .map((p) => ({
+            ownerId: p.ownerId,
+            ownerName: p.ownerName,
+            role: p.role,
+            depositUSDT: p.depositUSDT,
+            withdrawUSDT: p.withdrawUSDT,
+            net: p.net,
+            gifts: DEVICE_GIFTS.map((g) => {
+              const c = freshByKey.get(`device_${g.item}_${p.ownerId}`);
+              return { item: g.item, label: g.label, usdt: g.usdt, reachedAt: p.crossed[g.item]?.at || null, claimStatus: c?.status || '', giftStatus: c?.gift?.status || '' };
+            }),
+          }));
+        if (newGifts.length) {
+          try {
+            const { sendPushToUser, sendPushToRole } = await import('./push.js');
+            for (const g of newGifts) {
+              sendPushToUser(g.ownerId, { title: '🎁 You earned a gift!', body: `${g.label}. The admins will arrange it.`, url: '/rewards', type: 'finance' }).catch(() => {});
+            }
+            sendPushToRole('admin', {
+              title: `🎁 ${newGifts.length} device gift${newGifts.length > 1 ? 's' : ''} earned`,
+              body: newGifts.map((g) => `${g.ownerName}: ${g.label}`).join(' • ').slice(0, 180),
+              url: '/rewards',
+              type: 'finance',
+            }).catch(() => {});
+          } catch (e) {
+            console.error('[rewards] gift notify failed', e?.message);
+          }
+        }
+      } catch (e) {
+        console.error('[rewards] device gifts check failed', e?.message);
       }
 
       lastFacts = facts;

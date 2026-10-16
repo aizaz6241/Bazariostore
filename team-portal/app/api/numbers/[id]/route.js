@@ -21,7 +21,8 @@ const nameOf = (n) => `${n.label ? `${n.label} · ` : ''}${n.number}`;
  * PATCH /api/numbers/:id  { action, ... }   (admins only)
  *
  *   edit     number details / cost / renewal date / notes
- *   link     { memberId, primary? }  give the number to one more member
+ *   link     { memberId, primary?, device? }  give the number to one more member
+ *   device   { memberId, device }    which mobile this member has the number logged in on
  *   unlink   { memberId }            take it back from a member
  *   primary  { memberId }            mark whose phone the number is on
  *   status   { status: banned|active|inactive, reason? }
@@ -68,7 +69,26 @@ export async function PATCH(req, { params }) {
         };
         set('country', body.country !== undefined ? clean(body.country, 30).toUpperCase() : undefined, 'country');
         set('label', body.label !== undefined ? clean(body.label, 60) : undefined, 'name');
-        set('provider', body.provider !== undefined ? clean(body.provider, 80) : undefined, 'provider');
+        set('provider', body.provider !== undefined ? clean(body.provider, 80) : undefined, 'bought from');
+        if (body.appType !== undefined) {
+          const t = ['', 'business', 'normal'].includes(body.appType) ? body.appType : '';
+          if (t !== (doc.appType || '')) {
+            doc.appType = t;
+            changes.push(`app ${t ? (t === 'business' ? 'WhatsApp Business' : 'normal WhatsApp') : 'not set'}`);
+          }
+        }
+        if (body.purchasedById !== undefined) {
+          let next = { memberId: null, name: '' };
+          if (body.purchasedById) {
+            const buyer = isOid(body.purchasedById) ? await Member.findById(body.purchasedById).select('name').lean() : null;
+            if (!buyer) return fail('Choose who bought the number.');
+            next = { memberId: buyer._id, name: buyer.name };
+          }
+          if (sid(next.memberId) !== sid(doc.purchasedBy?.memberId)) {
+            doc.purchasedBy = next;
+            changes.push(`bought by ${next.name || 'not set'}`);
+          }
+        }
         set('monthlyCost', body.monthlyCost !== undefined ? money(body.monthlyCost) : undefined, `monthly cost ${money(body.monthlyCost)}`);
         set('currency', body.currency !== undefined ? clean(body.currency, 8).toUpperCase() : undefined, 'currency');
         set('nextRenewalAt', body.nextRenewalAt !== undefined ? dateOrNull(body.nextRenewalAt) : undefined, 'renewal date');
@@ -85,8 +105,9 @@ export async function PATCH(req, { params }) {
         if (doc.holders.some((h) => sid(h.memberId) === sid(m._id))) return fail(`${m.name} already has this number.`);
         const primary = Boolean(body.primary) || doc.holders.length === 0;
         if (primary) doc.holders.forEach((h) => (h.primary = false));
-        doc.holders.push({ memberId: m._id, name: m.name, primary, since: new Date() });
-        log('linked', `Linked to ${m.name}${primary ? ' (main phone)' : ''}`, m._id);
+        const device = clean(body.device, 60);
+        doc.holders.push({ memberId: m._id, name: m.name, primary, device, since: new Date() });
+        log('linked', `Linked to ${m.name}${primary ? ' (main phone)' : ''}${device ? ` on ${device}` : ''}`, m._id);
         notify([m._id], { title: '📱 WhatsApp number linked to you', body: `${nameOf(doc)} is now linked to you. Use it for your leads.` });
         message = `Linked to ${m.name}.`;
         break;
@@ -100,6 +121,18 @@ export async function PATCH(req, { params }) {
         log('unlinked', `Removed from ${h.name}`, h.memberId);
         notify([h.memberId], { title: '📱 WhatsApp number removed', body: `${nameOf(doc)} is no longer linked to you. Please log it out of your phone.` });
         message = `Removed from ${h.name}.`;
+        break;
+      }
+
+      case 'device': {
+        const h = doc.holders.find((x) => sid(x.memberId) === sid(body.memberId));
+        if (!h) return fail('This member does not have this number.');
+        const device = clean(body.device, 60);
+        if ((h.device || '') === device) break;
+        log('edited', `${h.name}'s mobile: ${h.device || 'not set'} → ${device || 'not set'}`, h.memberId);
+        h.device = device;
+        doc.markModified('holders');
+        message = 'Mobile saved.';
         break;
       }
 
@@ -142,13 +175,15 @@ export async function PATCH(req, { params }) {
         const taken = await WaNumber.findOne({ numberKey: key }).select('_id').lean();
         if (taken) return fail('The new number is already in the list. Link the members to it instead.', 409);
 
-        const holders = doc.holders.map((h) => ({ memberId: h.memberId, name: h.name, primary: h.primary, since: new Date() }));
+        const holders = doc.holders.map((h) => ({ memberId: h.memberId, name: h.name, primary: h.primary, device: h.device || '', since: new Date() }));
         const fresh = await WaNumber.create({
           number: phoneDisplay(body.number),
           numberKey: key,
           country: clean(body.country ?? doc.country, 30).toUpperCase(),
           label: clean(body.label ?? doc.label, 60),
           provider: doc.provider,
+          appType: doc.appType || '',
+          purchasedBy: doc.purchasedBy?.memberId ? doc.purchasedBy : { memberId: null, name: '' },
           monthlyCost: body.monthlyCost !== undefined ? money(body.monthlyCost) : doc.monthlyCost,
           currency: doc.currency,
           nextRenewalAt: dateOrNull(body.nextRenewalAt) || null,

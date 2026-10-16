@@ -12,6 +12,7 @@ const holderSchema = new mongoose.Schema(
     memberId: { type: mongoose.Schema.Types.ObjectId, ref: 'PortalMember', required: true },
     name: { type: String, default: '' },
     primary: { type: Boolean, default: false }, // the one whose phone the number's SIM / account is on
+    device: { type: String, default: '', trim: true }, // which mobile it is logged in on: "iPhone 13", "Samsung A54"
     since: { type: Date, default: Date.now },
   },
   { _id: false }
@@ -47,7 +48,15 @@ const waNumberSchema = new mongoose.Schema(
     numberKey: { type: String, required: true, unique: true }, // last 10 digits (lib/utils/phone.js), to stop the same number twice
     country: { type: String, default: '', trim: true }, // UK, US, ...
     label: { type: String, default: '', trim: true }, // a nickname: "UK-3", "US main"
-    provider: { type: String, default: '', trim: true }, // where the number / subscription comes from
+    provider: { type: String, default: '', trim: true }, // the platform it was bought from
+    // who bought the number (a member or a partner) — tracking only, not finance
+    purchasedBy: {
+      memberId: { type: mongoose.Schema.Types.ObjectId, ref: 'PortalMember', default: null },
+      name: { type: String, default: '' },
+    },
+    // the WhatsApp app the number is registered on (one number is on one app at a time; its
+    // linked devices use the same app)
+    appType: { type: String, enum: ['', 'business', 'normal'], default: '' },
     status: { type: String, enum: ['active', 'banned', 'replaced', 'inactive'], default: 'active', index: true },
     monthlyCost: { type: Number, default: 0 },
     currency: { type: String, default: 'USD' },

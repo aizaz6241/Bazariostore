@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
-import { Smartphone, Plus, Search, LayoutGrid, BarChart3, Wallet, CalendarClock, Ban, Users, X, Star } from 'lucide-react';
+import { Smartphone, Plus, Search, LayoutGrid, BarChart3, Wallet, CalendarClock, Ban, Users, X, Star, UserRound } from 'lucide-react';
 import {
   api,
   PageHeader,
@@ -25,9 +25,10 @@ import {
 } from '@/components/ui/kit';
 import NumberDrawer from '@/components/numbers/NumberDrawer';
 import NumbersAnalytics from '@/components/numbers/NumbersAnalytics';
-import { NUMBER_STATUS, CURRENCIES, MAX_HOLDERS, renewalInfo } from '@/components/numbers/meta';
+import { NUMBER_STATUS, CURRENCIES, MAX_HOLDERS, APP_TYPES, renewalInfo } from '@/components/numbers/meta';
+import NumbersByMember from '@/components/numbers/NumbersByMember';
 
-const emptyForm = { number: '', label: '', country: '', provider: '', monthlyCost: '', currency: 'USD', nextRenewalAt: '', notes: '' };
+const emptyForm = { number: '', label: '', country: '', provider: '', purchasedById: '', appType: '', monthlyCost: '', currency: 'USD', nextRenewalAt: '', notes: '' };
 
 export default function NumbersPage() {
   const { user } = useAuth();
@@ -64,6 +65,8 @@ export default function NumbersPage() {
 
   const numbers = data?.numbers || [];
   const members = data?.members || [];
+  const devices = data?.devices || {};
+  const platforms = data?.platforms || [];
 
   const counts = useMemo(() => {
     const c = { all: numbers.length, active: 0, banned: 0, replaced: 0, inactive: 0 };
@@ -94,8 +97,8 @@ export default function NumbersPage() {
       if (!term) return true;
       return (
         (digits.length >= 3 && String(n.number || '').replace(/\D+/g, '').includes(digits)) ||
-        [n.label, n.country, n.provider].some((x) => x?.toLowerCase().includes(term)) ||
-        n.holders.some((h) => h.name?.toLowerCase().includes(term))
+        [n.label, n.country, n.provider, n.purchasedBy?.name, APP_TYPES[n.appType]?.label].some((x) => x?.toLowerCase().includes(term)) ||
+        n.holders.some((h) => h.name?.toLowerCase().includes(term) || h.device?.toLowerCase().includes(term))
       );
     });
   }, [numbers, status, q]);
@@ -180,6 +183,7 @@ export default function NumbersPage() {
         onChange={setTab}
         options={[
           { value: 'numbers', label: 'Numbers', icon: LayoutGrid },
+          { value: 'members', label: 'By member', icon: UserRound },
           { value: 'analytics', label: 'Analytics', icon: BarChart3 },
         ]}
       />
@@ -188,6 +192,8 @@ export default function NumbersPage() {
 
       {tab === 'analytics' ? (
         <NumbersAnalytics onOpen={setOpenId} />
+      ) : tab === 'members' ? (
+        <NumbersByMember numbers={numbers} loading={!data} onOpen={setOpenId} />
       ) : (
         <>
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
@@ -251,6 +257,17 @@ export default function NumbersPage() {
                           <div className="min-w-0">
                             <p className="font-extrabold text-slate-900 tabular-nums truncate">{n.number}</p>
                             <p className="text-[11px] text-slate-500 truncate">{[n.label, n.provider].filter(Boolean).join(' · ') || 'No name'}</p>
+                            {(n.appType || n.purchasedBy?.name) && (
+                              <p className="text-[11px] truncate mt-0.5">
+                                {n.appType && (
+                                  <span className="font-bold" style={{ color: APP_TYPES[n.appType].color }}>
+                                    {APP_TYPES[n.appType].short}
+                                  </span>
+                                )}
+                                {n.appType && n.purchasedBy?.name && <span className="text-slate-300"> · </span>}
+                                {n.purchasedBy?.name && <span className="text-slate-500">Bought by {n.purchasedBy.name}</span>}
+                              </p>
+                            )}
                           </div>
                         </div>
                         <Pill color={st.color}>{st.label}</Pill>
@@ -265,7 +282,7 @@ export default function NumbersPage() {
                               ))}
                             </div>
                             <span className={`ml-2 text-xs truncate ${over ? 'text-red-600 font-bold' : 'text-slate-600'}`}>
-                              {n.holders.length === 1 ? n.holders[0].name : `${n.holders.length} people`}
+                              {n.holders.length === 1 ? `${n.holders[0].name}${n.holders[0].device ? ` · ${n.holders[0].device}` : ''}` : `${n.holders.length} people`}
                             </span>
                           </div>
                         ) : (
@@ -339,8 +356,31 @@ export default function NumbersPage() {
                 ))}
               </select>
             </Field>
-            <Field label="Provider">
-              <input value={form.provider} onChange={set('provider')} placeholder="Where it is bought" className={inputClass} />
+            <Field label="Bought from (platform)">
+              <input value={form.provider} onChange={set('provider')} list="wa-platforms" placeholder="App / website" className={inputClass} />
+              <datalist id="wa-platforms">
+                {platforms.map((p) => (
+                  <option key={p} value={p} />
+                ))}
+              </datalist>
+            </Field>
+            <Field label="Bought by">
+              <select value={form.purchasedById} onChange={set('purchasedById')} className={inputClass}>
+                <option value="">Not set</option>
+                {members.map((m) => (
+                  <option key={m._id} value={m._id}>
+                    {m.name}
+                    {m.role === 'admin' ? ' (partner)' : ''}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="WhatsApp app">
+              <select value={form.appType} onChange={set('appType')} className={inputClass}>
+                <option value="">Not set</option>
+                <option value="business">WhatsApp Business</option>
+                <option value="normal">Normal WhatsApp</option>
+              </select>
             </Field>
             <Field label="Next renewal">
               <input type="date" value={form.nextRenewalAt} onChange={set('nextRenewalAt')} className={inputClass} />
@@ -353,7 +393,9 @@ export default function NumbersPage() {
         </div>
       </Modal>
 
-      {openNumber && <NumberDrawer number={openNumber} members={members} onClose={() => setOpenId(null)} onChanged={load} toast={toast} />}
+      {openNumber && (
+        <NumberDrawer number={openNumber} members={members} devices={devices} platforms={platforms} onClose={() => setOpenId(null)} onChanged={load} toast={toast} />
+      )}
       {toastNode}
     </div>
   );

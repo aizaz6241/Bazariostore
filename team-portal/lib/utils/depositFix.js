@@ -65,6 +65,7 @@ export async function inspectDepositFix({ id, mode, toSellerId }) {
   const doc = await withdrawalsCol().findOne({ _id: oid(id) });
   if (!doc) throw new Error('Deposit not found');
   if (doc.type !== 'deposit') throw new Error('Only a deposit can be fixed this way');
+  if (doc.purpose === 'diamond_fee') throw new Error('This is a Diamond upgrade fee (it is not in a store wallet), so it cannot be moved or reversed here');
   if (!['approved', 'completed'].includes(doc.status)) throw new Error('This deposit is not approved (it may already have been reversed)');
 
   const amount = doc.approvedAmount !== null && doc.approvedAmount !== undefined ? num(doc.approvedAmount) : num(doc.amount);

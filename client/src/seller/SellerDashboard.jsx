@@ -104,7 +104,7 @@ export default function SellerDashboard() {
         <div className="sdm-upsell">
           <span style={{ fontSize: 22 }}>💎</span>
           <div>
-            {me?.tierRequest?.status === 'pending' ? (
+            {['pending', 'awaiting_approval'].includes(me?.tierRequest?.status) ? (
               <>Your <b>Diamond upgrade request</b> is with our support team — they will contact you in chat.</>
             ) : (
               <>Upgrade to <b>Diamond</b>: earn <b>35% profit</b> per order instead of 20%, get <b>72 hours</b> to confirm orders, remove products from My Store and fast 3–5 day delivery.</>

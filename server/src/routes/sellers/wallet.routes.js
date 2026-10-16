@@ -163,6 +163,9 @@ router.get('/wallet', authSellerOrAdmin, async (req, res) => {
         delete obj.inrAmount;
         delete obj.usdtAmount;
       }
+      // the Diamond upgrade fee is kept as a deposit record for the accounts, but it was paid to
+      // the platform and never entered the store wallet: shown as its own line
+      if (obj.purpose === 'diamond_fee') obj.type = 'diamond_fee';
       return obj;
     });
 

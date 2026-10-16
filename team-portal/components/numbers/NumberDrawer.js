@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Star, UserMinus, UserPlus, RefreshCw, Ban, CheckCircle2, Repeat, Pencil, CalendarClock, MessageSquareText } from 'lucide-react';
+import { Star, UserMinus, UserPlus, RefreshCw, Ban, CheckCircle2, Repeat, Pencil, CalendarClock, MessageSquareText, Smartphone } from 'lucide-react';
 import { Drawer, Pill, Button, Field, Timeline, Banner, Avatar, inputClass, api, fmtDate, fmtMoney } from '@/components/ui/kit';
-import { NUMBER_STATUS, renewalInfo, CURRENCIES, MAX_HOLDERS } from './meta';
+import { NUMBER_STATUS, renewalInfo, CURRENCIES, MAX_HOLDERS, APP_TYPES } from './meta';
 
 const historyColor = (h) =>
   ({ banned: NUMBER_STATUS.banned.color, replaced: NUMBER_STATUS.replaced.color, renewed: '#1baf7a', linked: '#2a78d6', unlinked: '#94a3b8', created: '#0f172a' }[h.type] ||
@@ -12,14 +12,16 @@ const historyColor = (h) =>
 const toDateInput = (d) => (d ? new Date(d).toISOString().slice(0, 10) : '');
 
 /** One company WhatsApp number: who holds it, its subscription, and what happened to it. */
-export default function NumberDrawer({ number, members = [], onClose, onChanged, toast }) {
+export default function NumberDrawer({ number, members = [], devices = {}, platforms = [], onClose, onChanged, toast }) {
   const [panel, setPanel] = useState(null); // link | renew | ban | replace | edit | note
   const [busy, setBusy] = useState('');
   const [form, setForm] = useState({});
+  const [deviceEdit, setDeviceEdit] = useState(null); // { memberId, device }
 
   useEffect(() => {
     setPanel(null);
     setForm({});
+    setDeviceEdit(null);
   }, [number?._id]);
 
   if (!number) return <Drawer open={false} />;
@@ -62,11 +64,12 @@ export default function NumberDrawer({ number, members = [], onClose, onChanged,
           <div className="flex flex-wrap items-center gap-2">
             <Pill color={st.color}>{st.label}</Pill>
             {renew && active && <Pill color={renew.color}>{renew.text}</Pill>}
+            {number.appType && <Pill color={APP_TYPES[number.appType].color}>{APP_TYPES[number.appType].label}</Pill>}
           </div>
           <div className="flex flex-wrap gap-2">
             {active && (
               <>
-                <Button size="sm" icon={UserPlus} variant={panel === 'link' ? 'primary' : 'secondary'} onClick={() => openPanel('link', { memberId: '', primary: false })}>
+                <Button size="sm" icon={UserPlus} variant={panel === 'link' ? 'primary' : 'secondary'} onClick={() => openPanel('link', { memberId: '', primary: false, device: '' })}>
                   Link member
                 </Button>
                 <Button
@@ -102,6 +105,8 @@ export default function NumberDrawer({ number, members = [], onClose, onChanged,
                   label: number.label,
                   country: number.country,
                   provider: number.provider,
+                  purchasedById: number.purchasedBy?.memberId || '',
+                  appType: number.appType || '',
                   monthlyCost: String(number.monthlyCost ?? ''),
                   currency: number.currency,
                   nextRenewalAt: toDateInput(number.nextRenewalAt),
@@ -131,6 +136,14 @@ export default function NumberDrawer({ number, members = [], onClose, onChanged,
                   ))}
                 </select>
               </Field>
+              <Field label="On which mobile?" hint="The phone this member has the number logged in on.">
+                <input value={form.device || ''} onChange={set('device')} list="wa-link-devices" placeholder="e.g. iPhone 13, Samsung A54" className={inputClass} />
+                <datalist id="wa-link-devices">
+                  {(devices[form.memberId] || []).map((d) => (
+                    <option key={d} value={d} />
+                  ))}
+                </datalist>
+              </Field>
               <label className="flex items-center gap-2 text-sm text-slate-700">
                 <input type="checkbox" checked={!!form.primary} onChange={set('primary')} className="w-4 h-4 accent-slate-900" />
                 The number's main phone (SIM / account) is with this member
@@ -138,7 +151,7 @@ export default function NumberDrawer({ number, members = [], onClose, onChanged,
               {number.holders.length >= MAX_HOLDERS && (
                 <Banner tone="warning">WhatsApp allows one main phone and 4 linked devices. This number already has {number.holders.length} people.</Banner>
               )}
-              <Button loading={busy === 'link'} disabled={!form.memberId} onClick={() => act('link', { action: 'link', memberId: form.memberId, primary: form.primary })}>
+              <Button loading={busy === 'link'} disabled={!form.memberId} onClick={() => act('link', { action: 'link', memberId: form.memberId, primary: form.primary, device: form.device })}>
                 Link
               </Button>
             </>
@@ -219,8 +232,31 @@ export default function NumberDrawer({ number, members = [], onClose, onChanged,
                     ))}
                   </select>
                 </Field>
-                <Field label="Provider">
-                  <input value={form.provider} onChange={set('provider')} className={inputClass} />
+                <Field label="Bought from (platform)">
+                  <input value={form.provider} onChange={set('provider')} list="wa-edit-platforms" className={inputClass} />
+                  <datalist id="wa-edit-platforms">
+                    {platforms.map((p) => (
+                      <option key={p} value={p} />
+                    ))}
+                  </datalist>
+                </Field>
+                <Field label="Bought by">
+                  <select value={form.purchasedById} onChange={set('purchasedById')} className={inputClass}>
+                    <option value="">Not set</option>
+                    {members.map((m) => (
+                      <option key={m._id} value={m._id}>
+                        {m.name}
+                        {m.role === 'admin' ? ' (partner)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="WhatsApp app">
+                  <select value={form.appType} onChange={set('appType')} className={inputClass}>
+                    <option value="">Not set</option>
+                    <option value="business">WhatsApp Business</option>
+                    <option value="normal">Normal WhatsApp</option>
+                  </select>
                 </Field>
                 <Field label="Next renewal">
                   <input type="date" value={form.nextRenewalAt} onChange={set('nextRenewalAt')} className={inputClass} />
@@ -261,6 +297,40 @@ export default function NumberDrawer({ number, members = [], onClose, onChanged,
                   <p className="text-[11px] text-slate-500">
                     {h.primary ? 'Main phone · ' : 'Linked device · '}since {fmtDate(h.since)}
                   </p>
+                  {deviceEdit?.memberId === h.memberId ? (
+                    <div className="flex gap-1.5 mt-1.5">
+                      <input
+                        autoFocus
+                        value={deviceEdit.device}
+                        onChange={(e) => setDeviceEdit({ memberId: h.memberId, device: e.target.value })}
+                        list={`wa-dev-${h.memberId}`}
+                        placeholder="e.g. iPhone 13"
+                        className={`${inputClass} !py-1.5 text-xs`}
+                      />
+                      <datalist id={`wa-dev-${h.memberId}`}>
+                        {(devices[h.memberId] || []).map((d) => (
+                          <option key={d} value={d} />
+                        ))}
+                      </datalist>
+                      <Button
+                        size="sm"
+                        loading={busy === `d-${h.memberId}`}
+                        onClick={async () => {
+                          if (await act(`d-${h.memberId}`, { action: 'device', memberId: h.memberId, device: deviceEdit.device })) setDeviceEdit(null);
+                        }}
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setDeviceEdit({ memberId: h.memberId, device: h.device || '' })}
+                      className={`mt-1 inline-flex items-center gap-1 text-[11px] font-semibold ${h.device ? 'text-slate-700' : 'text-amber-600'} hover:underline`}
+                    >
+                      <Smartphone className="w-3 h-3" /> {h.device || 'Which mobile? Tap to set'}
+                    </button>
+                  )}
                 </div>
                 {!h.primary && active && (
                   <button
@@ -293,6 +363,10 @@ export default function NumberDrawer({ number, members = [], onClose, onChanged,
       {/* subscription */}
       <section>
         <p className="text-xs font-bold text-slate-700 mb-3">Subscription</p>
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <Box label="Bought by" value={number.purchasedBy?.name || '—'} />
+          <Box label="Bought from" value={number.provider || '—'} />
+        </div>
         <div className="grid grid-cols-3 gap-2">
           <Box label="Per month" value={number.monthlyCost ? fmtMoney(number.monthlyCost, number.currency) : '—'} />
           <Box label="Next renewal" value={number.nextRenewalAt ? fmtDate(number.nextRenewalAt) : '—'} icon={CalendarClock} />

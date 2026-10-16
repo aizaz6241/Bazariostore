@@ -1781,6 +1781,7 @@ export default function FinancePage() {
                         </span>
                       )}
                       {row.isManual && <span className="text-slate-500">• Direct add</span>}
+                      {row.purpose === 'diamond_fee' && <span className="px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-800 text-[9px] font-bold uppercase">💎 Diamond fee</span>}
                       {row.reason !== 'unassigned' && <span className="text-slate-500">• {ownerText(row.owner, row.previousStore, row.kind)}</span>}
                     </div>
                     <div className="text-[11px] text-amber-800 mt-1">{REASONS[row.reason] || row.reason}</div>
@@ -1917,6 +1918,7 @@ export default function FinancePage() {
                           <b className="text-slate-900">{e.storeName}</b>
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${KIND_STYLE[e.kind]}`}>{KIND_LABEL[e.kind]}</span>
                           {e.manual && <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[9px] font-bold uppercase">Manual</span>}
+                          {e.purpose === 'diamond_fee' && <span className="px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-800 text-[9px] font-bold uppercase">💎 Diamond fee</span>}
                         </div>
                         <div className="text-[11px] text-slate-500 mt-0.5">
                           {day(e.date)} • {e.owner ? e.owner.name : '—'}
@@ -1987,6 +1989,7 @@ export default function FinancePage() {
                           <td className="px-3 py-3">
                             <b className="text-slate-900">{e.storeName}</b>
                             {e.manual && <span className="ml-1.5 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[9px] font-bold uppercase">Manual</span>}
+                            {e.purpose === 'diamond_fee' && <span className="ml-1.5 px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-800 text-[9px] font-bold uppercase">💎 Diamond fee</span>}
                             {e.note && <div className="text-[10px] text-slate-400 mt-0.5">{e.note}</div>}
                             {e.movedFrom && <div className="text-[10px] text-amber-700 mt-0.5">Moved from {e.movedFrom} (was added to the wrong seller)</div>}
                             {(e.reserveCovers || []).map((c) => (
@@ -2213,7 +2216,7 @@ export default function FinancePage() {
                           )}
                         </div>
                         <span className="font-black text-amber-700 tabular-nums text-sm">−{fmt(p.amountUSDT)}</span>
-                        {!waitingByEntry.get(p.id) && (
+                        {!waitingByEntry.get(p.id) && !p.gift && (
                           <button
                             disabled={busyId === p.id}
                             onClick={() => reversePayout(p)}

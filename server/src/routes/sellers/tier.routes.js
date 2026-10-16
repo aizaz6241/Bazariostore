@@ -6,7 +6,7 @@ import { authSeller, authAdmin } from '../../middleware/auth.js';
 import { notify } from '../../utils/notify.js';
 import { sendPush } from '../../utils/push.js';
 import { audit } from '../../utils/audit.js';
-import { finLog } from '../../utils/financeLog.js';
+import { requestApproval } from '../../utils/financeLog.js';
 import { adminRoom } from '../../utils/permissions.js';
 import { announceToAdmins } from '../../utils/realtime.js';
 import { asText } from '../../middleware/sanitize.js';
@@ -143,7 +143,13 @@ router.post('/tier/request-upgrade', authSeller, announceToAdmins('sellers', 'se
   }
 });
 
-// POST /api/sellers/:id/tier  { tier: 'diamond', note } | { action: 'clear-request' }
+// POST /api/sellers/:id/tier
+//   { tier: 'diamond', usdtAmount, inrAmount, helpingAmount, pkrRate, note }
+//       client store → a request for the other partner (team portal → Finance). When approved, the
+//       fee is recorded as a deposit that is divided like any other deposit (it never goes into the
+//       store wallet) and the store becomes Diamond — for life.
+//       test store   → upgraded at once (test accounts are outside the finance count)
+//   { action: 'clear-request' }  the store stays Basic, the seller's request is closed
 router.post('/:id/tier', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:changed'), async (req, res, next) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return next();
@@ -151,87 +157,148 @@ router.post('/:id/tier', authAdmin('sellers'), announceToAdmins('sellers', 'sell
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
     const by = req.admin?.name || req.admin?.email || 'Admin';
     const io = req.app.get('io');
-
-    if (req.body?.action === 'clear-request') {
-      seller.tierRequest = { status: 'none', requestedAt: null };
-      await seller.save();
-      audit(req, 'update', 'seller', seller._id, `Cleared the Diamond upgrade request of ${seller.storeName}`);
+    const pushOut = () => {
       const safe = lightSeller(seller);
       io?.to(adminRoom('sellers')).emit('seller:status_update', { seller: safe });
       io?.to(`seller:${seller._id}`).emit('seller:status_update', { seller: safe });
-      return res.json({ ok: true, message: `Diamond request of "${seller.storeName}" cleared.`, seller: safe });
+      return safe;
+    };
+
+    if (req.body?.action === 'clear-request') {
+      if (seller.tierRequest?.status === 'awaiting_approval') {
+        return res.status(400).json({ message: 'The fee is waiting for the other partner’s approval. Cancel or reject it on the team portal (Finance) instead.' });
+      }
+      seller.tierRequest = { status: 'none', requestedAt: null };
+      await seller.save();
+      audit(req, 'update', 'seller', seller._id, `Cleared the Diamond upgrade request of ${seller.storeName}`);
+      return res.json({ ok: true, message: `Diamond request of "${seller.storeName}" cleared.`, seller: pushOut() });
     }
 
-    // Only Basic → Diamond for now (going back to Basic is decided later)
-    if (req.body?.tier !== 'diamond') return res.status(400).json({ message: 'Only an upgrade to Diamond is possible right now.' });
+    if (req.body?.tier !== 'diamond') return res.status(400).json({ message: 'Only an upgrade to Diamond is possible (Diamond is for life).' });
     if (isDiamond(seller)) return res.status(400).json({ message: `"${seller.storeName}" is already Diamond.` });
-    if (seller.status === 'pending_approval') return res.status(400).json({ message: 'Approve the store registration first.' });
+    if (seller.status === 'pending_approval' || seller.registrationRejectedAt) return res.status(400).json({ message: 'Approve the store registration first.' });
 
     const note = asText(req.body?.note, 300).trim();
-    const now = new Date();
-    seller.tierHistory = seller.tierHistory || [];
-    seller.tierHistory.push({ from: seller.tier || 'basic', to: 'diamond', at: now, by, note });
-    seller.tier = 'diamond';
-    seller.tierSince = now;
-    seller.tierRequest = { status: 'none', requestedAt: null };
-    await seller.save();
+    const isTest = seller.isTestAccount === true || seller.accountType === 'test';
 
-    audit(req, 'update', 'seller', seller._id, `Upgraded ${seller.storeName} to 💎 Diamond${note ? ` — ${note}` : ''}`);
-    await finLog(req, {
-      action: 'seller.tier_set',
-      summary: `Upgraded seller “${seller.storeName}” from Basic to 💎 Diamond (35% profit on new orders, 72h to confirm)${note ? ` — ${note}` : ''}`,
-      entity: 'seller',
-      entityId: seller._id,
-      sellerId: seller._id,
-      storeName: seller.storeName,
-      before: { tier: 'basic' },
-      after: { tier: 'diamond', tierSince: now },
-    });
-
-    const d = TIERS.diamond;
-    try {
-      const conv = await supportConversation(seller);
-      const text =
-        `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `💎 WELCOME TO DIAMOND!\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `Your store "${seller.storeName}" has been upgraded to 💎 Diamond.\n\n` +
-        `Your Diamond benefits (from now on):\n` +
-        `• ${d.profitRate}% profit on every new order (instead of 20%)\n` +
-        `• ${d.confirmHours} hours (3 days) to confirm & process orders (instead of 48 hours)\n` +
-        `• Remove products from My Store anytime\n` +
-        `• Fast delivery: ${d.deliveryDays} days\n\n` +
-        `Thank you for growing with Bazario!\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━━━━`;
-      const msg = await Message.create({ conversation: conv._id, seller: seller._id, sender: 'admin', senderName: by, text });
-      conv.lastMessage = '💎 Your store is now Diamond!';
-      conv.lastSender = 'admin';
-      conv.lastAt = new Date();
-      conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
-      await conv.save();
-      io?.to(`seller:${seller._id}`).emit('message:new', msg);
-      io?.to(adminRoom('chat')).emit('message:new', msg);
-    } catch (chatErr) {
-      console.error('[tier] welcome message:', chatErr.message);
+    if (isTest) {
+      await makeDiamond(req, seller, { by, note: note || 'Test account (no fee in finance)' });
+      return res.json({ ok: true, message: `"${seller.storeName}" (test account) is now 💎 Diamond.`, seller: pushOut() });
     }
 
-    notify(req.app, {
-      recipientType: 'seller',
-      sellerId: String(seller._id),
-      type: 'system',
-      title: '💎 Your store is now Diamond!',
-      body: `You now earn ${d.profitRate}% profit on new orders, have ${d.confirmHours} hours to confirm orders and can remove products from My Store.`,
-      link: '/seller/diamond',
+    // ── the fee: what really came in ──
+    const numOf = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : NaN;
+    };
+    const fee = DIAMOND_UPGRADE_FEE_USD;
+    const helping = req.body?.helpingAmount === '' || req.body?.helpingAmount === undefined ? 0 : numOf(req.body.helpingAmount);
+    const usdt = req.body?.usdtAmount === '' || req.body?.usdtAmount === undefined ? 0 : numOf(req.body.usdtAmount);
+    const inr = req.body?.inrAmount === '' || req.body?.inrAmount === undefined ? 0 : numOf(req.body.inrAmount);
+    const pkrRate = req.body?.pkrRate === '' || req.body?.pkrRate === undefined ? 0 : numOf(req.body.pkrRate);
+    if (![helping, usdt, inr, pkrRate].every((n) => Number.isFinite(n) && n >= 0)) return res.status(400).json({ message: 'Please enter valid numbers (0 or more).' });
+    if (helping > fee) return res.status(400).json({ message: `The helping amount cannot be more than the fee ($${fee}).` });
+    const realPart = Math.round((fee - helping) * 100) / 100;
+    if (realPart > 0 && !(usdt > 0)) return res.status(400).json({ message: `$${realPart} of the fee is real money: enter the real USDT received on Binance (or the helping amount if the admins paid it).` });
+    if (realPart > 0 && !(inr > 0)) return res.status(400).json({ message: 'Enter the INR the seller paid for the fee (it counts for rewards, like a deposit).' });
+    if (realPart <= 0 && usdt > 0) return res.status(400).json({ message: 'The whole fee is helping amount, so no USDT can have come in. Lower the helping amount or set USDT to 0.' });
+
+    // the fee is divided like a deposit, so the store needs an owner (and a 1:1 PKR member needs the day's rate)
+    if (usdt > 0) {
+      const db = mongoose.connection.db;
+      const asg = await db.collection('portalsellerassignments').findOne({ sellerId: seller._id, status: 'active' });
+      if (!asg) return res.status(400).json({ message: 'This store has no owner yet (member or partner). Assign it first so the fee can be divided.' });
+      const owner = await db.collection('portalmembers').findOne({ _id: asg.memberId }, { projection: { name: 1, role: 1, commissionLabel: 1 } });
+      const isPkr = owner && owner.role === 'member' && (owner.commissionLabel || 'pkr_1to1') !== 'inr_50';
+      if (isPkr && !(pkrRate > 0)) return res.status(400).json({ message: `The owner (${owner.name}) is a 1:1 PKR member: enter today's PKR rate (PKR per 1 USDT).` });
+    }
+
+    const money2 = (n) => Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
+    const asked = await requestApproval(req, {
+      action: 'diamond_upgrade',
+      targetId: String(seller._id),
+      summary: `Upgrade “${seller.storeName}” to 💎 Diamond — fee $${fee}: ${usdt > 0 ? `₮${money2(usdt)} real (₹${money2(inr)})` : 'no real money'}${helping > 0 ? `, $${money2(helping)} helping` : ''}`,
+      details: [
+        usdt > 0 ? 'The real USDT is divided like a normal deposit of this store (owner, referral, partners) and counts for rewards.' : 'No real money came in: nothing is divided.',
+        'The fee is NOT added to the store wallet. The store becomes Diamond for life: 35% profit on new orders, 72h to confirm.',
+        ...(note ? [`Note: ${note}`] : []),
+      ],
+      payload: {
+        sellerId: String(seller._id),
+        storeName: seller.storeName,
+        fee,
+        helpingAmount: helping,
+        usdtAmount: usdt,
+        inrAmount: inr,
+        pkrRate,
+        note,
+        askedBy: by,
+      },
+      sellerId: seller._id,
+      storeName: seller.storeName,
     });
 
-    const safe = lightSeller(seller);
-    io?.to(adminRoom('sellers')).emit('seller:status_update', { seller: safe });
-    io?.to(`seller:${seller._id}`).emit('seller:status_update', { seller: safe });
-
-    res.json({ ok: true, message: `"${seller.storeName}" is now 💎 Diamond.`, seller: safe });
+    if (!asked.already) {
+      seller.tierRequest = { status: 'awaiting_approval', requestedAt: seller.tierRequest?.requestedAt || new Date() };
+      await seller.save();
+      audit(req, 'update', 'seller', seller._id, `Asked to upgrade ${seller.storeName} to Diamond (fee $${fee}${usdt > 0 ? `, ₮${usdt}` : ''}${helping > 0 ? `, helping $${helping}` : ''})`);
+    }
+    return res.json({ ok: true, pendingApproval: true, message: asked.message, seller: pushOut() });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
+
+/** Make a store Diamond at once (only used for test accounts: no fee in finance). */
+async function makeDiamond(req, seller, { by, note }) {
+  const now = new Date();
+  seller.tierHistory = seller.tierHistory || [];
+  seller.tierHistory.push({ from: seller.tier || 'basic', to: 'diamond', at: now, by, note });
+  seller.tier = 'diamond';
+  seller.tierSince = now;
+  seller.tierRequest = { status: 'none', requestedAt: null };
+  await seller.save();
+  audit(req, 'update', 'seller', seller._id, `Upgraded ${seller.storeName} to 💎 Diamond${note ? ` — ${note}` : ''}`);
+
+  const d = TIERS.diamond;
+  try {
+    const conv = await supportConversation(seller);
+    const msg = await Message.create({ conversation: conv._id, seller: seller._id, sender: 'admin', senderName: by, text: diamondWelcomeText(seller.storeName) });
+    conv.lastMessage = '💎 Your store is now Diamond!';
+    conv.lastSender = 'admin';
+    conv.lastAt = new Date();
+    conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
+    await conv.save();
+    req.app.get('io')?.to(`seller:${seller._id}`).emit('message:new', msg);
+  } catch (chatErr) {
+    console.error('[tier] welcome message:', chatErr.message);
+  }
+  notify(req.app, {
+    recipientType: 'seller',
+    sellerId: String(seller._id),
+    type: 'system',
+    title: '💎 Your store is now Diamond!',
+    body: `You now earn ${d.profitRate}% profit on new orders, have ${d.confirmHours} hours to confirm orders and can remove products from My Store.`,
+    link: '/seller/diamond',
+  });
+}
+
+/** The chat message a store gets when it becomes Diamond (the team portal sends the same text). */
+export function diamondWelcomeText(storeName) {
+  const d = TIERS.diamond;
+  return (
+    `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `💎 WELCOME TO DIAMOND!\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+    `Your store "${storeName}" has been upgraded to 💎 Diamond — for life.\n\n` +
+    `Your Diamond benefits (from now on):\n` +
+    `• ${d.profitRate}% profit on every new order (instead of 20%)\n` +
+    `• ${d.confirmHours} hours (3 days) to confirm & process orders (instead of 48 hours)\n` +
+    `• Remove products from My Store anytime\n` +
+    `• Fast delivery: ${d.deliveryDays} days\n\n` +
+    `Thank you for growing with Bazario!\n` +
+    `━━━━━━━━━━━━━━━━━━━━━━━━━`
+  );
+}
 
 export default router;

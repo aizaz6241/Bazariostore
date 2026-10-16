@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAuthSession } from '@/lib/auth';
 import RewardClaim from '@/lib/models/RewardClaim';
 import SellerAssignment from '@/lib/models/SellerAssignment';
-import { evaluateRewards, REWARD_RULES } from '@/lib/utils/milestones';
+import { evaluateRewards, REWARD_RULES, DEVICE_GIFTS, deviceProgress } from '@/lib/utils/milestones';
 import { buildLedger } from '@/lib/utils/finance';
 
 export const dynamic = 'force-dynamic';
@@ -70,7 +70,10 @@ export async function GET(req) {
       }))
       .sort((a, b) => b.realUSD - a.realUSD);
 
-    return NextResponse.json({ claims, progress, rules: REWARD_RULES });
+    // Device gifts: each person's net (deposits − withdrawals of all his sellers) towards the gifts
+    const devices = (deviceProgress() || []).filter((d) => isAdmin || String(d.ownerId) === String(session._id));
+
+    return NextResponse.json({ claims, progress, devices, deviceGifts: DEVICE_GIFTS, rules: REWARD_RULES });
   } catch (err) {
     console.error('Fetch rewards error:', err);
     return NextResponse.json({ message: err.message }, { status: 500 });

@@ -16,6 +16,7 @@ import { syncEcommerceAdmins } from '@/lib/adminSync';
 import { isFinancePartner } from '@/lib/partners';
 import { inspectDepositFix, fixDeposit, ownerWords } from '@/lib/utils/depositFix';
 import { checkReferral } from '@/lib/utils/referralRules';
+import { describeDiamondUpgrade, applyDiamondUpgrade } from '@/lib/utils/diamondFee';
 
 /**
  * TWO-PERSON APPROVALS
@@ -381,6 +382,9 @@ async function describe(action, payload) {
     return { summary: `Make seller “${seller.storeName}” ${what}`, details: [], targetId: `${sid(p.sellerId)}:${p.field}`, sellerId: sid(p.sellerId), storeName: seller.storeName };
   }
 
+  // 💎 Diamond upgrade (asked for on the store admin panel's Sellers screen)
+  if (action === 'diamond_upgrade') return describeDiamondUpgrade(p);
+
   // Admin accounts (asked for on the store admin panel's Staff screen)
   if (action === 'admin_create') {
     const kind = p.financePartner ? 'FINANCE PARTNER' : `staff, role ${p.role}`;
@@ -699,6 +703,12 @@ async function performAction(action, payload, { requester, approver = null, appr
     out.after = done.after;
     out.entity = 'seller';
     invalidateLedger();
+  } else if (action === 'diamond_upgrade') {
+    const done = await applyDiamondUpgrade(p, { by: approver?.name || by });
+    out.before = done.before;
+    out.after = done.after;
+    out.entity = 'seller';
+    out.entityId = sid(p.sellerId);
   } else if (action === 'admin_create' || action === 'admin_update' || action === 'admin_delete') {
     const done = await applyAdminChange(action, p);
     out.before = done.before;
@@ -817,6 +827,16 @@ export async function decideApproval({ id, decision, session, note = '' }) {
       { new: true }
     );
     if (!closed) throw new Error('This request is already closed');
+    // a Diamond fee that was not approved: the store stays Basic and its request is open again
+    if (approval.action === 'diamond_upgrade' && isId(approval.payload?.sellerId)) {
+      try {
+        await mongoose.connection.db
+          .collection('sellers')
+          .updateOne({ _id: oid(approval.payload.sellerId), 'tierRequest.status': 'awaiting_approval' }, { $set: { 'tierRequest.status': 'pending', updatedAt: new Date() } });
+      } catch (e) {
+        console.error('[approvals] diamond request reset failed:', e.message);
+      }
+    }
     await logFinance({
       actor: viewer,
       action: `approval.${status}`,

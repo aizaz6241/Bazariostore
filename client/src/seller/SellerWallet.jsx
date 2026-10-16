@@ -22,6 +22,7 @@ const TYPE_BADGE = {
   order_delivered_release: { label: 'Delivered Payout (+Profit)', color: '#2563eb', bg: '#dbeafe', icon: '🎉' },
   order_cancelled_release: { label: 'Cancelled Order Refund', color: '#64748b', bg: '#f1f5f9', icon: '↩️' },
   adjustment: { label: 'Admin Adjustment', color: '#7c3aed', bg: '#ede9fe', icon: '⚙️' },
+  diamond_fee: { label: 'Diamond Upgrade Fee (one-time)', color: '#0e7490', bg: '#cffafe', icon: '💎' },
 };
 
 const INDIAN_BANKS = [

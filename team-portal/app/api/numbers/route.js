@@ -2,10 +2,26 @@ import { getAuthSession } from '@/lib/auth';
 import WaNumber from '@/lib/models/WaNumber';
 import Member from '@/lib/models/Member';
 import Lead from '@/lib/models/Lead';
-import { ok, fail, clean, money, dateOrNull, byOf, sid } from '@/lib/utils/routeHelpers';
+import { ok, fail, clean, money, dateOrNull, byOf, sid, isOid } from '@/lib/utils/routeHelpers';
 import { phoneKey, phoneDisplay } from '@/lib/utils/phone';
 
 export const dynamic = 'force-dynamic';
+
+const APP_TYPES = ['', 'business', 'normal'];
+
+/** memberId → the mobile names already written for that member's numbers */
+function deviceSuggestions(numbers) {
+  const out = {};
+  for (const n of numbers) {
+    for (const h of n.holders || []) {
+      const d = (h.device || '').trim();
+      if (!d) continue;
+      const k = sid(h.memberId);
+      (out[k] = out[k] || new Set()).add(d);
+    }
+  }
+  return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, [...v].sort((a, b) => a.localeCompare(b))]));
+}
 
 /**
  * GET /api/numbers
@@ -46,6 +62,9 @@ export async function GET(req) {
         converted: statsOf.get(sid(n._id))?.converted || 0,
       })),
       members: members.map((m) => ({ _id: sid(m._id), name: m.name, role: m.role })),
+      // names already used, offered as suggestions so the same phone / platform is not typed two ways
+      devices: deviceSuggestions(numbers),
+      platforms: [...new Set(numbers.map((n) => (n.provider || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)),
     });
   } catch (err) {
     console.error('Numbers list error:', err);
@@ -68,12 +87,21 @@ export async function POST(req) {
     if (existing) return fail(`This number is already in the list${existing.label ? ` as "${existing.label}"` : ''} (${existing.status}).`, 409);
 
     const who = byOf(session);
+    let purchasedBy = { memberId: null, name: '' };
+    if (body.purchasedById) {
+      const buyer = isOid(body.purchasedById) ? await Member.findById(body.purchasedById).select('name').lean() : null;
+      if (!buyer) return fail('Choose who bought the number.');
+      purchasedBy = { memberId: buyer._id, name: buyer.name };
+    }
+    const appType = APP_TYPES.includes(body.appType) ? body.appType : '';
     const doc = await WaNumber.create({
       number,
       numberKey,
       country: clean(body.country, 30).toUpperCase(),
       label: clean(body.label, 60),
       provider: clean(body.provider, 80),
+      purchasedBy,
+      appType,
       monthlyCost: money(body.monthlyCost),
       currency: clean(body.currency || 'USD', 8).toUpperCase(),
       nextRenewalAt: dateOrNull(body.nextRenewalAt),

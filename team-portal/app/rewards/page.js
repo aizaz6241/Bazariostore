@@ -25,6 +25,8 @@ export default function RewardsPage() {
   const { user } = useAuth();
   const [claims, setClaims] = useState([]);
   const [progress, setProgress] = useState([]);
+  const [devices, setDevices] = useState([]);
+  const [deviceGifts, setDeviceGifts] = useState([]);
   // Fixing a mistake: { claim, mode: 'edit' | 'reverse' | 'move', memberId, amountPKR, reason }
   const [fix, setFix] = useState(null);
   const [fixBusy, setFixBusy] = useState(false);
@@ -66,6 +68,8 @@ export default function RewardsPage() {
         const data = await rewardsRes.json();
         setClaims(data.claims || []);
         setProgress(data.progress || []);
+        setDevices(data.devices || []);
+        setDeviceGifts(data.deviceGifts || []);
       }
 
       if (membersRes && membersRes.ok) {
@@ -224,8 +228,27 @@ export default function RewardsPage() {
     weekly_target: 'Weekly target',
     custom_bonus: 'Special bonus',
     first_seller_5orders: 'Milestone',
+    device_gift: 'Device gift',
   };
-  const TYPE_ORDER = ['wallet_300', 'daily_target', 'weekly_target', 'custom_bonus', 'first_seller_5orders'];
+  const TYPE_ORDER = ['wallet_300', 'daily_target', 'weekly_target', 'device_gift', 'custom_bonus', 'first_seller_5orders'];
+  const isGift = (c) => c?.rewardType === 'device_gift';
+  const giftCostMissing = (c) => isGift(c) && c.gift?.costEntered !== true;
+  const handleGiftDelivered = async (claim) => {
+    if (!window.confirm(`Mark “${claim.title}” as handed over to ${claim.memberId?.name || 'the person'}?`)) return;
+    try {
+      const token = localStorage.getItem('portal_token');
+      const res = await fetch(`/api/rewards/${claim._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ giftDelivered: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) alert(data.message || 'Could not save');
+      fetchData(true);
+    } catch (e) {
+      alert(e.message);
+    }
+  };
   const typeName = (t) => TYPE_LABEL[t] || String(t || 'reward').replace(/_/g, ' ');
   const approved = claims.filter((c) => c.status === 'approved');
   const IST = 330 * 60000;
@@ -233,7 +256,7 @@ export default function RewardsPage() {
   const thisMonth = monthOf(new Date());
   const stats = {
     pendingCount: pendingClaims.length,
-    pendingPKR: pendingClaims.reduce((t, c) => t + (Number(c.amountPKR) || 0), 0),
+    pendingPKR: pendingClaims.filter((c) => !giftCostMissing(c)).reduce((t, c) => t + (Number(c.amountPKR) || 0), 0),
     monthPKR: approved.filter((c) => monthOf(c.approvedAt || c.createdAt) === thisMonth).reduce((t, c) => t + (Number(c.amountPKR) || 0), 0),
     totalPKR: approved.reduce((t, c) => t + (Number(c.amountPKR) || 0), 0),
     approvedCount: approved.length,
@@ -295,6 +318,7 @@ export default function RewardsPage() {
     { key: 'pending', label: 'Waiting', count: pendingClaims.length },
     { key: 'history', label: 'History', count: pastClaims.length },
     { key: 'progress', label: 'Seller progress', count: progress.length },
+    { key: 'gifts', label: '🎁 Gifts', count: devices.length },
     { key: 'rules', label: 'Rules' },
   ];
 
@@ -416,24 +440,34 @@ export default function RewardsPage() {
                 </div>
                 <div className="flex items-center gap-3 md:justify-end">
                   <div className="text-right mr-auto md:mr-0">
-                    <div className="text-lg font-black text-emerald-600 leading-tight">{pk(claim.amountPKR)}</div>
-                    <div className="text-[10px] text-slate-400">PKR</div>
+                    {giftCostMissing(claim) ? (
+                      <>
+                        <div className="text-sm font-black text-amber-600 leading-tight">🎁 Cost not entered</div>
+                        <div className="text-[10px] text-slate-400">buy it, then enter the price</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-lg font-black text-emerald-600 leading-tight">{pk(claim.amountPKR)}</div>
+                        <div className="text-[10px] text-slate-400">{isGift(claim) ? 'PKR · purchase cost' : 'PKR'}</div>
+                      </>
+                    )}
                   </div>
                   {isAdmin ? (
                     <div className="flex items-center gap-1.5">
                       <button
                         onClick={() => handleApprove(claim._id)}
-                        disabled={approvingId === claim._id}
+                        disabled={approvingId === claim._id || giftCostMissing(claim)}
+                        title={giftCostMissing(claim) ? 'Enter the real purchase cost first' : undefined}
                         className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-1 disabled:opacity-50"
                       >
                         <Check className="w-3.5 h-3.5" /> {approvingId === claim._id ? 'Saving…' : 'Approve'}
                       </button>
                       <button
-                        onClick={() => { setFixMsg(''); setFix({ claim, mode: 'edit', memberId: claim.memberId?._id || '', amountPKR: claim.amountPKR, reason: '' }); }}
-                        className="px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs"
-                        title="Wrong person or amount? Change it before approving"
+                        onClick={() => { setFixMsg(''); setFix({ claim, mode: 'edit', memberId: claim.memberId?._id || '', amountPKR: giftCostMissing(claim) ? '' : claim.amountPKR, reason: '' }); }}
+                        className={`px-3 py-2 rounded-lg font-semibold text-xs ${giftCostMissing(claim) ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}
+                        title={isGift(claim) ? 'Enter the real purchase cost of the gift (PKR)' : 'Wrong person or amount? Change it before approving'}
                       >
-                        Change
+                        {giftCostMissing(claim) ? 'Enter cost' : 'Change'}
                       </button>
                       <button onClick={() => handleReject(claim._id)} className="px-3 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-semibold text-xs">
                         Decline
@@ -504,7 +538,18 @@ export default function RewardsPage() {
                     )}
                   </div>
                   <div className="flex sm:flex-col items-center sm:items-end gap-2 shrink-0">
-                    <span className={`text-sm font-black ${claim.status === 'approved' ? 'text-emerald-600' : 'text-slate-400 line-through'}`}>{pk(claim.amountPKR)}</span>
+                    <span className={`text-sm font-black ${claim.status === 'approved' ? 'text-emerald-600' : 'text-slate-400 line-through'}`}>{giftCostMissing(claim) ? '🎁' : pk(claim.amountPKR)}</span>
+                    {isGift(claim) && claim.status === 'approved' && (
+                      claim.gift?.status === 'delivered' ? (
+                        <span className="text-[11px] font-bold text-emerald-700">✓ Handed over{claim.gift?.deliveredAt ? ` ${new Date(claim.gift.deliveredAt).toLocaleDateString()}` : ''}</span>
+                      ) : isAdmin ? (
+                        <button onClick={() => handleGiftDelivered(claim)} className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-semibold">
+                          Mark handed over
+                        </button>
+                      ) : (
+                        <span className="text-[11px] font-semibold text-amber-600">To be handed over</span>
+                      )
+                    )}
                     {isAdmin && claim.status === 'approved' && (
                       <div className="flex gap-1.5">
                         <button
@@ -600,6 +645,71 @@ export default function RewardsPage() {
         </div>
       )}
 
+      {/* ─── Device gifts ─── */}
+      {rewardTab === 'gifts' && (
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+              <Gift className="w-4 h-4 text-amber-500" /> Device gifts
+              <span className="text-xs font-normal text-slate-400">net = all sellers&apos; real USDT deposits − their withdrawals, from 1 Oct 2026</span>
+            </h3>
+            <p className="text-[11px] text-slate-500 mt-1">
+              {(deviceGifts.length ? deviceGifts : [{ item: 'iphone', usdt: 10000, label: 'iPhone 17 Pro Max' }, { item: 'laptop', usdt: 20000, label: 'Laptop' }])
+                .map((g) => `₮${Number(g.usdt).toLocaleString('en-US')} → ${g.label}`)
+                .join(' · ')}
+              . Once reached it stays earned.
+            </p>
+          </div>
+          {devices.length === 0 ? (
+            <p className="p-5 text-xs text-slate-400">No real deposits yet.</p>
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {devices.map((d) => {
+                const top = deviceGifts.length ? Math.max(...deviceGifts.map((g) => g.usdt)) : 20000;
+                return (
+                  <li key={d.ownerId} className="p-4">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <p className="font-bold text-slate-900 text-sm">
+                        {d.ownerName}
+                        {d.role === 'admin' && <span className="ml-1.5 text-[10px] font-bold uppercase text-slate-400">partner</span>}
+                      </p>
+                      <p className="text-xs text-slate-500 tabular-nums">
+                        Net <b className={d.net >= 0 ? 'text-slate-900' : 'text-red-600'}>₮{Number(d.net).toLocaleString('en-US', { maximumFractionDigits: 2 })}</b>
+                        <span className="text-slate-400"> = ₮{Number(d.depositUSDT).toLocaleString('en-US', { maximumFractionDigits: 2 })} in − ₮{Number(d.withdrawUSDT).toLocaleString('en-US', { maximumFractionDigits: 2 })} out</span>
+                      </p>
+                    </div>
+                    <div className="relative w-full bg-slate-100 rounded-full h-2 mt-2">
+                      <div className="bg-amber-500 h-2 rounded-full" style={{ width: `${Math.max(0, Math.min(100, (d.net / top) * 100))}%` }} />
+                      {(d.gifts || []).map((g) => (
+                        <span key={g.item} className="absolute -top-0.5 w-0.5 h-3 bg-slate-500" style={{ left: `${Math.min(100, (g.usdt / top) * 100)}%` }} />
+                      ))}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {(d.gifts || []).map((g) => {
+                        const state = g.reachedAt
+                          ? g.giftStatus === 'delivered'
+                            ? { t: '✓ Handed over', c: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
+                            : g.claimStatus === 'approved'
+                            ? { t: 'Approved · to hand over', c: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
+                            : g.claimStatus === 'reversed' || g.claimStatus === 'rejected'
+                            ? { t: g.claimStatus === 'reversed' ? 'Taken back' : 'Declined', c: 'bg-slate-50 text-slate-500 border-slate-200' }
+                            : { t: 'Earned · waiting for approval', c: 'bg-amber-50 text-amber-800 border-amber-200' }
+                          : { t: `₮${Math.max(0, g.usdt - d.net).toLocaleString('en-US', { maximumFractionDigits: 2 })} to go`, c: 'bg-slate-50 text-slate-600 border-slate-200' };
+                        return (
+                          <span key={g.item} className={`text-[11px] font-semibold px-2 py-1 rounded-lg border ${state.c}`}>
+                            {g.item === 'iphone' ? '📱' : '💻'} {g.label} — {state.t}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+
       {/* ─── Rules ─── */}
       {rewardTab === 'rules' && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -607,6 +717,7 @@ export default function RewardsPage() {
             { n: 1, tone: 'bg-emerald-50 text-emerald-600', title: '$300 wallet reward', body: <>When a seller&apos;s <strong>real</strong> deposits (helping not counted) reach <strong>$300</strong> → <strong>5,000 PKR</strong>. Once per seller.</> },
             { n: 2, tone: 'bg-blue-50 text-blue-600', title: 'Daily target (one seller, one day)', body: <>₹1L → <strong>1,000</strong> · ₹2L → <strong>2,000</strong> · ₹3L → <strong>3,000</strong> · ₹4L → <strong>4,000</strong> · ₹5L+ → <strong>5,000 PKR</strong>. Only the highest tier of the day, given after the day ends (India time).</> },
             { n: 3, tone: 'bg-amber-50 text-amber-600', title: 'Weekly target (one seller)', body: <><strong>₹5 Lakh</strong> real INR from Monday to Sunday → <strong>5,000 PKR</strong>, given after the week ends.</> },
+            { n: 4, tone: 'bg-cyan-50 text-cyan-700', title: 'Device gifts (all your sellers together)', body: <>Net real USDT (deposits − withdrawals, from 1 Oct 2026) reaches <strong>₮10,000</strong> → <strong>iPhone 17 Pro Max</strong> (White, 256GB, Non-PTA); <strong>₮20,000</strong> → <strong>Laptop</strong> (PKR 2–3 lakh). Each once; once reached it stays earned. Diamond fees count; previous-store sellers do not.</> },
           ].map((r) => (
             <div key={r.n} className="bg-white rounded-2xl p-4 border border-slate-200">
               <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs mb-2 ${r.tone}`}>{r.n}</div>
@@ -658,7 +769,8 @@ export default function RewardsPage() {
 
             {fix.mode === 'edit' && (
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Amount (PKR)</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">{isGift(fix.claim) ? 'Real purchase cost of the gift (PKR)' : 'Amount (PKR)'}</label>
+                {isGift(fix.claim) && <p className="text-[11px] text-slate-500 mb-1">Paid 50 / 50 by the two partners. The person's wallet does not change (he gets the device, not money).</p>}
                 <input
                   type="number"
                   min="1"
