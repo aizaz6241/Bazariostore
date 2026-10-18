@@ -1,325 +1,287 @@
-import { useEffect, useRef, useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
-import { sapi, fmtDate, compressImage, dropClearedMessages, addChatMessage, syncLatestMessages } from '../api.js';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Link, useOutletContext } from 'react-router-dom';
+import { sapi, compressImage, dropClearedMessages, addChatMessage, syncLatestMessages } from '../api.js';
 import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
-import ChatAttachment from '../components/ChatAttachment.jsx';
 import ChatMessageBubble from '../components/ChatMessageBubble.jsx';
+
+const MAX_FILE = 15 * 1024 * 1024; // same limit as the upload server
+const FILE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf'];
+
+const TOPICS = [
+  { icon: 'package', label: 'An order', text: 'Hi, I need help with order #' },
+  { icon: 'wallet', label: 'Deposit / add funds', text: 'Hi, I want to add funds to my wallet. ' },
+  { icon: 'banknote', label: 'Withdrawal', text: 'Hi, I have a question about my withdrawal. ' },
+  { icon: 'tag', label: 'Products', text: 'Hi, I need help with a product in my store. ' },
+  { icon: 'shield', label: 'My account', text: 'Hi, I have a question about my store account. ' },
+  { icon: 'star', label: 'Diamond plan', text: 'Hi, I would like to know more about the Diamond plan. ' },
+];
+
+const STATUS = {
+  open: { label: 'Open', tone: 'green', text: 'Your messages go straight to the Bazario team.' },
+  in_progress: { label: 'Team is on it', tone: 'blue', text: 'Someone from the team is looking into your request.' },
+  resolved: { label: 'Resolved', tone: 'slate', text: 'Marked as resolved. Send a message any time to open it again.' },
+};
+
+const dayKey = (d) => {
+  const x = new Date(d);
+  return `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}`;
+};
+function dayLabel(d) {
+  const x = new Date(d);
+  const today = new Date();
+  const y = new Date();
+  y.setDate(today.getDate() - 1);
+  if (dayKey(x) === dayKey(today)) return 'Today';
+  if (dayKey(x) === dayKey(y)) return 'Yesterday';
+  return x.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: x.getFullYear() === today.getFullYear() ? undefined : 'numeric' });
+}
+const quoteText = (m) => m?.text || (m?.attachmentType === 'pdf' ? `📄 ${m.attachmentName || 'PDF document'}` : '📷 Photo');
+const fileSize = (n) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
 export default function SellerSupport() {
   const context = useOutletContext() || {};
   const seller = context.seller || null;
+  const sellerId = seller?._id || null;
+  const restricted = context.isFrozen;
   const setUnreadChat = context.setUnreadChat || (() => {});
+
   const [conv, setConv] = useState(null);
   const [messages, setMessages] = useState([]);
   const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState('');
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const [text, setText] = useState('');
   const [file, setFile] = useState(null);
   const [filePreview, setFilePreview] = useState(null);
   const [replyingTo, setReplyingTo] = useState(null);
-  const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [newBelow, setNewBelow] = useState(0);
+  const [dragging, setDragging] = useState(false);
 
-  const scrollRef = useRef(null);
-  const threadMessagesRef = useRef(null);
+  const feedRef = useRef(null);
+  const endRef = useRef(null);
   const fileInputRef = useRef(null);
-  const textInputRef = useRef(null);
-  const isNearBottomRef = useRef(true);
-  // Blocks a second send while one is still going (fast double Enter / double click)
+  const inputRef = useRef(null);
+  const nearBottomRef = useRef(true);
   const sendingRef = useRef(false);
+  const sellerIdRef = useRef(sellerId);
+  sellerIdRef.current = sellerId;
 
-  // Coming back to this screen (phone unlocked / tab shown): now the seller really sees the chat
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState !== 'visible') return;
-      sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
-      try {
-        const s = getSocket();
-        if (s) s.emit('seller:read', { sellerId: seller?._id });
-      } catch {}
-      setUnreadChat(0);
-      // A phone that slept missed live updates (e.g. support deleted or edited a message): re-sync
-      loadThread(true);
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [seller?._id]);
+  const scrollToBottom = useCallback((behavior = 'smooth') => {
+    endRef.current?.scrollIntoView({ behavior, block: 'end' });
+    setNewBelow(0);
+  }, []);
 
-  const scrollToBottom = (behavior = 'smooth') => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollIntoView({ behavior });
-    }
-  };
+  const markRead = useCallback(() => {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+    sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
+    try { getSocket()?.emit('seller:read', { sellerId: sellerIdRef.current }); } catch {}
+    setUnreadChat(0);
+  }, [setUnreadChat]);
 
-  const handleThreadScroll = (e) => {
-    const el = e.currentTarget;
-    const threshold = 150;
-    const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    isNearBottomRef.current = distanceToBottom <= threshold;
-  };
-
-  const loadThread = (isPolling = false) => {
-    sapi('/chat/seller/thread?limit=100')
+  // first load (fresh) or a quiet re-sync (keeps "Load earlier" messages, does not jump)
+  const loadThread = useCallback((resync = false) => {
+    return sapi('/chat/seller/thread?limit=100')
       .then((res) => {
         if (!res) return;
         setConv(res.conversation || null);
-        const msgList = Array.isArray(res.messages) ? res.messages : [];
+        const list = Array.isArray(res.messages) ? res.messages : [];
         const more = Boolean(res.hasMore);
-
-        if (!isPolling) {
-          setMessages(msgList);
+        if (!resync) {
+          setMessages(list);
           setHasMore(more);
-          setTimeout(() => scrollToBottom('auto'), 50);
+          setTimeout(() => scrollToBottom('auto'), 30);
         } else {
           setMessages((prev) => {
-            const next = syncLatestMessages(prev, msgList, more);
-            if (next !== prev && isNearBottomRef.current && next[next.length - 1]?._id !== prev?.[prev.length - 1]?._id) {
-              setTimeout(() => scrollToBottom('smooth'), 50);
+            const next = syncLatestMessages(prev, list, more);
+            if (next !== prev && next[next.length - 1]?._id !== prev[prev.length - 1]?._id) {
+              if (nearBottomRef.current) setTimeout(() => scrollToBottom('smooth'), 30);
+              else setNewBelow((n) => n + 1);
             }
             return next;
           });
         }
-
-        // Mark read — only while this page is really on screen (not a background tab / locked phone)
-        if (typeof document === 'undefined' || document.visibilityState === 'visible') {
-          sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
-          try {
-            const s = getSocket();
-            if (s) s.emit('seller:read', { sellerId: seller?._id || res.conversation?.seller });
-          } catch {}
-          if (typeof setUnreadChat === 'function') setUnreadChat(0);
-        }
+        setLoadErr('');
+        markRead();
       })
-      .catch((e) => console.error(e))
+      .catch((e) => { if (!resync) setLoadErr(e.message || 'Could not open the support chat'); })
       .finally(() => setLoading(false));
+  }, [markRead, scrollToBottom]);
+
+  // Live updates. Keyed on the seller's id only: the store object changes on every wallet
+  // update, and the whole chat (with any "Load earlier" messages) used to reload and jump each time.
+  useEffect(() => {
+    if (!sellerId) return undefined;
+    loadThread(false);
+    let socket;
+    try { socket = getSocket(); } catch {}
+    const mine = (msg) => {
+      const id = msg?.seller?._id || msg?.seller;
+      return id && String(id) === String(sellerIdRef.current);
+    };
+    const onNew = (msg) => {
+      if (!mine(msg)) return;
+      setMessages((prev) => addChatMessage(prev, msg));
+      if (nearBottomRef.current || msg.sender === 'seller') setTimeout(() => scrollToBottom('smooth'), 30);
+      else setNewBelow((n) => n + 1);
+      if (msg.sender !== 'seller') markRead();
+    };
+    const onEdit = (p) => {
+      const id = p?.messageId || p?._id;
+      if (!id) return;
+      setMessages((prev) => prev.map((m) => (m._id === id ? { ...m, text: p.text, isEdited: true, editedAt: p.editedAt || new Date() } : m)));
+    };
+    const onDelete = (p) => {
+      const id = p?.messageId || p?._id;
+      if (!id) return;
+      setMessages((prev) => prev.filter((m) => m._id !== id));
+    };
+    const onCleared = (p) => p && setMessages((prev) => dropClearedMessages(prev, p));
+    const onReconnect = () => loadThread(true);
+    const onVisible = () => { if (document.visibilityState === 'visible') loadThread(true); };
+    if (socket) {
+      socket.on('connect', onReconnect);
+      socket.on('message:new', onNew);
+      socket.on('message:edit', onEdit);
+      socket.on('message:delete', onDelete);
+      socket.on('chat:cleared', onCleared);
+    }
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      if (socket) {
+        socket.off('connect', onReconnect);
+        socket.off('message:new', onNew);
+        socket.off('message:edit', onEdit);
+        socket.off('message:delete', onDelete);
+        socket.off('chat:cleared', onCleared);
+      }
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [sellerId, loadThread, markRead, scrollToBottom]);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const t = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // the box grows with the text (up to a limit)
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [text]);
+
+  const onFeedScroll = (e) => {
+    const el = e.currentTarget;
+    nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 150;
+    if (nearBottomRef.current && newBelow) setNewBelow(0);
   };
 
-  // Load earlier messages with scroll anchoring
-  const handleLoadEarlier = async () => {
-    if (loadingEarlier || !hasMore || messages.length === 0) return;
+  const loadEarlier = async () => {
+    if (loadingEarlier || !hasMore || !messages.length) return;
     const earliest = messages[0]?.createdAt;
     if (!earliest) return;
-
     setLoadingEarlier(true);
-    const container = threadMessagesRef.current;
-    const prevScrollHeight = container ? container.scrollHeight : 0;
-    const prevScrollTop = container ? container.scrollTop : 0;
-
+    const box = feedRef.current;
+    const prevHeight = box?.scrollHeight || 0;
+    const prevTop = box?.scrollTop || 0;
     try {
       const res = await sapi(`/chat/seller/thread?before=${encodeURIComponent(earliest)}&limit=100`);
-      const olderMsgs = Array.isArray(res?.messages) ? res.messages : [];
-      const more = Boolean(res?.hasMore);
-      setHasMore(more);
-
-      if (olderMsgs.length > 0) {
+      const older = Array.isArray(res?.messages) ? res.messages : [];
+      setHasMore(Boolean(res?.hasMore));
+      if (older.length) {
         setMessages((prev) => {
-          const existingIds = new Set(prev.map((m) => m._id));
-          const freshOlder = olderMsgs.filter((m) => !existingIds.has(m._id));
-          return [...freshOlder, ...prev];
+          const ids = new Set(prev.map((m) => m._id));
+          return [...older.filter((m) => !ids.has(m._id)), ...prev];
         });
-
-        // Anchor scroll position
-        requestAnimationFrame(() => {
-          if (container) {
-            const newScrollHeight = container.scrollHeight;
-            container.scrollTop = prevScrollTop + (newScrollHeight - prevScrollHeight);
-          }
-        });
+        requestAnimationFrame(() => { if (box) box.scrollTop = prevTop + (box.scrollHeight - prevHeight); });
       }
     } catch (err) {
-      console.error('Failed to load earlier messages:', err);
+      setToast({ ok: false, text: err.message || 'Could not load earlier messages' });
     } finally {
       setLoadingEarlier(false);
     }
   };
 
-  useEffect(() => {
-    loadThread(false);
-
-    let socket;
-    try {
-      socket = getSocket();
-    } catch (e) {
-      console.warn('Socket warning:', e);
-    }
-
-    const onNewMessage = (msg) => {
-      if (!msg) return;
-      // only messages of this seller's own conversation belong in this thread
-      const msgSellerId = msg.seller?._id || msg.seller;
-      if (!msgSellerId || !seller?._id || String(msgSellerId) !== String(seller._id)) return;
-      setMessages((prev) => addChatMessage(prev, msg));
-      if (isNearBottomRef.current) {
-        setTimeout(() => scrollToBottom('smooth'), 50);
-      }
-      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
-        sapi('/chat/seller/read', { method: 'POST' }).catch(() => {});
-        try {
-          if (socket) socket.emit('seller:read', { sellerId: seller?._id, conversationId: msg.conversation });
-        } catch {}
-        if (typeof setUnreadChat === 'function') setUnreadChat(0);
-      }
-    };
-
-    const onMessageEdit = (payload) => {
-      const targetId = payload?.messageId || payload?._id;
-      if (!targetId) return;
-      setMessages((prev) =>
-        Array.isArray(prev)
-          ? prev.map((m) =>
-              m._id === targetId
-                ? { ...m, text: payload.text, isEdited: true, editedAt: payload.editedAt || new Date() }
-                : m
-            )
-          : prev
-      );
-    };
-
-    const onMessageDelete = (payload) => {
-      const targetId = payload?.messageId || payload?._id;
-      if (!targetId) return;
-      setMessages((prev) => (Array.isArray(prev) ? prev.filter((m) => m._id !== targetId) : prev));
-    };
-
-
-    // Admin cleared this chat (or part of it): remove those messages here too
-    const onChatCleared = (payload) => {
-      if (!payload) return;
-      setMessages((prev) => dropClearedMessages(prev, payload));
-    };
-
-    // After a dropped connection the live updates in between are lost: re-sync the thread
-    const onReconnect = () => loadThread(true);
-
-    if (socket) {
-      socket.on('connect', onReconnect);
-      socket.on('message:new', onNewMessage);
-      socket.on('message:edit', onMessageEdit);
-      socket.on('message:delete', onMessageDelete);
-      socket.on('chat:cleared', onChatCleared);
-    }
-    return () => {
-      if (socket) {
-        socket.off('connect', onReconnect);
-        socket.off('message:new', onNewMessage);
-        socket.off('message:edit', onMessageEdit);
-        socket.off('message:delete', onMessageDelete);
-        socket.off('chat:cleared', onChatCleared);
-      }
-    };
-  }, [seller]);
-
-  const handleFileChange = (e) => {
-    const selected = e.target.files?.[0];
-    if (!selected) return;
-
-    // Check size limit (max 15MB)
-    if (selected.size > 15 * 1024 * 1024) {
-      alert('File size exceeds 15 MB limit');
-      return;
-    }
-
-    setFile(selected);
-    if (selected.type.startsWith('image/')) {
+  const pickFile = (f) => {
+    if (!f) return;
+    if (!FILE_TYPES.includes(f.type)) { setToast({ ok: false, text: 'Only photos (PNG, JPG, WebP, GIF) and PDF files can be sent.' }); return; }
+    if (f.size > MAX_FILE) { setToast({ ok: false, text: `This file is ${fileSize(f.size)} — the limit is 15 MB.` }); return; }
+    setFile(f);
+    if (f.type.startsWith('image/')) {
       const reader = new FileReader();
       reader.onload = (ev) => setFilePreview(ev.target.result);
-      reader.readAsDataURL(selected);
-    } else {
-      setFilePreview(null);
-    }
+      reader.readAsDataURL(f);
+    } else setFilePreview(null);
+    inputRef.current?.focus();
   };
-
-  const removeFile = () => {
+  const clearFile = () => {
     setFile(null);
     setFilePreview(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // A seller removes their own message (e.g. wrong bank details sent by mistake): gone for support too
-  const handleDeleteOwn = async (msg) => {
-    if (!msg?._id || msg.sender !== 'seller') return;
-    if (!window.confirm('Delete this message? It will be removed for support as well.')) return;
-    try {
-      await sapi(`/chat/messages/${msg._id}`, { method: 'DELETE' });
-      setMessages((prev) => prev.filter((m) => m._id !== msg._id));
-    } catch (err) {
-      alert(err.message || 'Could not delete the message');
-    }
-  };
-
-  const handleStartReply = (msg) => {
+  const startReply = (msg) => {
     setReplyingTo(msg);
-    textInputRef.current?.focus();
+    inputRef.current?.focus();
   };
 
-  const handleSend = async (e) => {
-    e.preventDefault();
-    const clean = text.trim();
-    if (!clean && !file) return;
-    if (sendingRef.current) return;
+  const applyTopic = (t) => {
+    setText((cur) => (cur.trim() ? cur : t.text));
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+    });
+  };
 
+  const send = async (e) => {
+    e?.preventDefault();
+    const clean = text.trim();
+    if ((!clean && !file) || sendingRef.current) return;
     sendingRef.current = true;
     setSending(true);
-    let attachmentUrl = null;
-    let attachmentType = null;
-    let attachmentName = '';
-    let attachmentSize = 0;
-
+    const keep = { text, file, filePreview, replyingTo };
     try {
+      let attachment = null;
       if (file) {
         setUploading(true);
-        const fileToUpload = await compressImage(file);
         const fd = new FormData();
-        fd.append('files', fileToUpload);
-
-        const uploadRes = await sapi('/uploads', {
-          method: 'POST',
-          body: fd,
-        });
-
-        const uploadedItem = Array.isArray(uploadRes) ? uploadRes[0] : uploadRes;
-        if (uploadedItem?.url) {
-          attachmentUrl = uploadedItem.url;
-          attachmentType = uploadedItem.type || (file.type === 'application/pdf' ? 'pdf' : 'image');
-          attachmentName = uploadedItem.name || file.name;
-          attachmentSize = uploadedItem.size || file.size;
-        }
+        fd.append('files', await compressImage(file));
+        const up = await sapi('/uploads', { method: 'POST', body: fd });
+        const item = Array.isArray(up) ? up[0] : up;
+        // a failed upload used to send the message WITHOUT the file, and the file was gone
+        if (!item?.url) throw new Error('The file could not be uploaded. Please try again.');
+        attachment = {
+          attachment: item.url,
+          attachmentType: item.type || (file.type === 'application/pdf' ? 'pdf' : 'image'),
+          attachmentName: item.name || file.name,
+          attachmentSize: item.size || file.size,
+        };
         setUploading(false);
       }
-
-      const targetReply = replyingTo ? {
-        messageId: replyingTo._id,
-        sender: replyingTo.sender,
-        senderName: replyingTo.sender === 'seller' ? 'You' : (replyingTo.senderName || 'Super Admin'),
-        text: replyingTo.text || (replyingTo.attachmentType === 'pdf' ? `📄 ${replyingTo.attachmentName || 'PDF Document'}` : '📷 Image Attachment'),
-        attachmentType: replyingTo.attachmentType || null,
-        attachmentName: replyingTo.attachmentName || '',
-      } : null;
-
+      // the server reads the quoted message itself; only its id matters
+      const replyTo = replyingTo ? { messageId: replyingTo._id, text: quoteText(replyingTo) } : null;
       setText('');
-      removeFile();
+      clearFile();
       setReplyingTo(null);
-
-      const newMsg = await sapi('/chat/seller/send', {
-        method: 'POST',
-        body: {
-          text: clean,
-          attachment: attachmentUrl,
-          attachmentType,
-          attachmentName,
-          attachmentSize,
-          replyTo: targetReply,
-        },
-      });
-      if (newMsg?._id) {
-        setMessages((prev) => addChatMessage(prev, newMsg));
-      }
-      setTimeout(() => scrollToBottom('smooth'), 50);
+      const msg = await sapi('/chat/seller/send', { method: 'POST', body: { text: clean, ...(attachment || {}), replyTo } });
+      if (msg?._id) setMessages((prev) => addChatMessage(prev, msg));
+      setConv((c) => (c ? { ...c, status: 'open' } : c));
+      setTimeout(() => scrollToBottom('smooth'), 30);
     } catch (err) {
-      setText(clean);
-      alert('Failed to send message: ' + err.message);
+      // nothing is lost: the text, the file and the reply come back
+      setText(keep.text);
+      setFile(keep.file);
+      setFilePreview(keep.filePreview);
+      setReplyingTo(keep.replyingTo);
+      setToast({ ok: false, text: err.message || 'Message not sent. Please try again.' });
     } finally {
       sendingRef.current = false;
       setSending(false);
@@ -327,240 +289,226 @@ export default function SellerSupport() {
     }
   };
 
+  const deleteOwn = async (msg) => {
+    try {
+      await sapi(`/chat/messages/${msg._id}`, { method: 'DELETE' });
+      setMessages((prev) => prev.filter((m) => m._id !== msg._id));
+      setToast({ ok: true, text: 'Message deleted for you and for support.' });
+    } catch (err) {
+      setToast({ ok: false, text: err.message || 'Could not delete the message' });
+    } finally {
+      setConfirmDelete(null);
+    }
+  };
+
+  const onPaste = (e) => {
+    const f = Array.from(e.clipboardData?.files || [])[0];
+    if (f) { e.preventDefault(); pickFile(f); }
+  };
+  const onDrop = (e) => {
+    e.preventDefault();
+    setDragging(false);
+    pickFile(e.dataTransfer?.files?.[0]);
+  };
+
+  const st = STATUS[conv?.status] || STATUS.open;
+  const agent = conv?.assignedStaffName;
+
+  let lastDay = '';
   return (
-    <div className="seller-support-page">
-      {/* Top Header Banner */}
-      <div className="seller-support-header">
-        <div className="ssh-left">
-          <div className="ssh-icon-box">
-            <Ic name="chat" size={24} />
-          </div>
-          <div>
-            <h2>24/7 Merchant Support &amp; Helpline 🎧</h2>
-            <p>Direct official channel to Super Admin &amp; Compliance Team. Inquire regarding orders, payouts, account health, or store assistance.</p>
-          </div>
+    <div className="sp">
+      <header className="sp-head">
+        <div>
+          <p className="sp-eyebrow">Help</p>
+          <h1>Support</h1>
+          <p className="sp-sub">Chat with the Bazario team about orders, deposits, withdrawals, products or your account.</p>
         </div>
+      </header>
 
-        <div className="ssh-chips">
-          <div className="ssh-chip">
-            <span className="ssh-pulse-green"></span>
-            <span>24/7 Live Support &amp; Helpline</span>
-          </div>
-          <div className="ssh-chip hide-on-mobile">
-            <span>⚡ Avg Reply: &lt; 2 mins</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Support Chat Console Card */}
-      <div className="seller-chat-container">
-        {/* Support Console Bar */}
-        <div className="seller-chat-head">
-          <div className="admin-status-indicator">
-            <div className="admin-avatar-wrap">
-              <Ic name="headset" size={20} />
-              <span className="online-beacon" title="Online and Ready"></span>
-            </div>
-            <div className="admin-status-info">
-              <b className="admin-title">Bazario Official Merchant Helpline</b>
-              <span className="admin-subtitle">
-                {conv?.assignedStaffName ? `Assigned agent: ${conv.assignedStaffName}` : 'Super Admin & Financial Compliance Team'}
-              </span>
-            </div>
-          </div>
-
-          <div className="seller-chat-head-actions">
-            <div className="ticket-status-pill">
-              <span className="status-dot"></span>
-              <span>Open Support Ticket</span>
-            </div>
-            <button
-              type="button"
-              onClick={loadThread}
-              className="chat-refresh-btn"
-              title="Refresh conversation messages"
-            >
-              <Ic name="refresh" size={15} />
-            </button>
-          </div>
-        </div>
-
-        {/* Messages Feed Area */}
-        <div
-          ref={threadMessagesRef}
-          onScroll={handleThreadScroll}
-          className="seller-chat-messages"
+      <div className="sp-layout">
+        <section
+          className={`sp-chat ${dragging ? 'is-drag' : ''}`}
+          onDragOver={(e) => { e.preventDefault(); if (!dragging) setDragging(true); }}
+          onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false); }}
+          onDrop={onDrop}
         >
-          {loading && (
-            <div className="chat-loading-box">
-              <div className="chat-spinner"></div>
-              <p>Connecting to secure support thread...</p>
-            </div>
-          )}
-
-          {hasMore && (
-            <div style={{ textAlign: 'center', padding: '10px 0 16px' }}>
-              <button
-                type="button"
-                onClick={handleLoadEarlier}
-                disabled={loadingEarlier}
-                style={{
-                  padding: '7px 18px',
-                  fontSize: 12.5,
-                  fontWeight: 700,
-                  borderRadius: 20,
-                  border: '1px solid #cbd5e1',
-                  background: '#f8fafc',
-                  color: '#1e293b',
-                  cursor: loadingEarlier ? 'not-allowed' : 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-                }}
-              >
-                {loadingEarlier ? (
-                  <span>⏳ Loading earlier messages...</span>
-                ) : (
-                  <>
-                    <span>⬆️</span>
-                    <span>Load earlier messages (Purani chat dekhein)</span>
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-          {!hasMore && messages.length >= 50 && (
-            <div style={{ textAlign: 'center', padding: '8px 0 14px', fontSize: 11.5, color: '#94a3b8' }}>
-              📜 Beginning of conversation history
-            </div>
-          )}
-
-          {!loading && messages.length === 0 && (
-            <div className="chat-empty-state">
-              <div className="empty-icon"><Ic name="chat" size={32} /></div>
-              <h4>Start a conversation with Support Desk</h4>
-              <p>Type your message below regarding balance deposits, payout withdrawals, catalog listings, or account verification.</p>
-            </div>
-          )}
-
-          {messages.map((m) => {
-            const isMe = m.sender === 'seller';
-            return (
-              <ChatMessageBubble
-                key={m._id}
-                msg={m}
-                isMe={isMe}
-                myRole="seller"
-                onReply={handleStartReply}
-                onDelete={isMe ? handleDeleteOwn : undefined}
-              />
-            );
-          })}
-          <div ref={scrollRef} />
-        </div>
-
-        {/* WhatsApp-Style Quoted Replying Bar */}
-        {replyingTo && (
-          <div className="chat-replying-bar">
-            <div className="crb-left">
-              <div className="crb-indicator"></div>
-              <div className="crb-info">
-                <span className="crb-title">Replying to <b>{replyingTo.sender === 'seller' ? 'You' : (replyingTo.senderName || 'Super Admin')}</b></span>
-                <span className="crb-snippet">
-                  {replyingTo.text || (replyingTo.attachmentType === 'pdf' ? `📄 ${replyingTo.attachmentName || 'PDF Document'}` : '📷 Image Attachment')}
-                </span>
+          <div className="sp-chat-head">
+            <div className="sp-agent">
+              <span className="sp-avatar"><Ic name="headset" size={20} /></span>
+              <div>
+                <b>Bazario Support</b>
+                <small>{agent ? `${agent} is helping you` : 'The Bazario team'}</small>
               </div>
             </div>
-            <button type="button" className="crb-close" onClick={() => setReplyingTo(null)} title="Cancel reply">
-              <Ic name="x" size={16} />
-            </button>
+            <div className="sp-head-right">
+              <span className={`sp-tag tone-${st.tone}`} title={st.text}><i />{st.label}</span>
+              <button type="button" className="sp-icon-btn" onClick={() => loadThread(true)} title="Refresh" aria-label="Refresh"><Ic name="refresh" size={16} /></button>
+            </div>
           </div>
-        )}
 
-        {/* Pending Attachment Preview Bar */}
-        {file && (
-          <div className="chat-attachment-preview-bar">
-            <div className="preview-file-box">
-              {filePreview ? (
-                <img src={filePreview} alt="Upload preview" className="preview-thumb" />
-              ) : (
-                <div className="preview-pdf-icon">
-                  <Ic name="fileText" size={24} />
-                  <span>PDF</span>
+          <div className="sp-feed" ref={feedRef} onScroll={onFeedScroll}>
+            {loading ? (
+              <div className="sp-feed-state"><span className="sp-spin" /><p>Opening your support chat…</p></div>
+            ) : loadErr ? (
+              <div className="sp-feed-state">
+                <span className="sp-state-ico"><Ic name="alert" size={22} /></span>
+                <b>Could not open the chat</b>
+                <p>{loadErr}</p>
+                <button type="button" className="sp-btn sp-btn-ghost sm" onClick={() => { setLoading(true); loadThread(false); }}>Try again</button>
+              </div>
+            ) : messages.length === 0 ? (
+              <div className="sp-feed-state">
+                <span className="sp-state-ico"><Ic name="chat" size={22} /></span>
+                <b>How can we help?</b>
+                <p>Pick a topic or type your question below. You can also send a screenshot or a PDF.</p>
+                <div className="sp-topics center">
+                  {TOPICS.map((t) => (
+                    <button key={t.label} type="button" onClick={() => applyTopic(t)}><Ic name={t.icon} size={14} /> {t.label}</button>
+                  ))}
                 </div>
-              )}
-              <div className="preview-file-details">
-                <b className="preview-file-name">{file.name}</b>
-                <small className="muted-sm">
-                  {(file.size / 1024).toFixed(1)} KB • {file.type.startsWith('image/') ? 'Photo Attachment' : 'PDF Document'}
-                </small>
               </div>
-            </div>
-            <button type="button" className="btn-remove-preview" onClick={removeFile} title="Remove attachment">
-              <Ic name="x" size={16} />
-            </button>
+            ) : (
+              <>
+                {hasMore ? (
+                  <div className="sp-earlier">
+                    <button type="button" onClick={loadEarlier} disabled={loadingEarlier}>{loadingEarlier ? 'Loading…' : 'Show earlier messages'}</button>
+                  </div>
+                ) : (
+                  <div className="sp-begin">Start of your conversation with Bazario Support</div>
+                )}
+                {messages.map((m) => {
+                  const k = dayKey(m.createdAt);
+                  const sep = k !== lastDay;
+                  lastDay = k;
+                  const isMe = m.sender === 'seller';
+                  return (
+                    <div key={m._id} className="sp-msg">
+                      {sep && <div className="sp-day"><span>{dayLabel(m.createdAt)}</span></div>}
+                      <ChatMessageBubble msg={m} isMe={isMe} myRole="seller" onReply={startReply} onDelete={isMe ? (msg) => setConfirmDelete(msg) : undefined} />
+                    </div>
+                  );
+                })}
+              </>
+            )}
+            <div ref={endRef} />
           </div>
-        )}
 
-        {/* Chat Input Console Bar */}
-        <form onSubmit={handleSend} className="seller-chat-input-bar" style={{ alignItems: 'flex-end' }}>
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
-            style={{ display: 'none' }}
-          />
+          {newBelow > 0 && (
+            <button type="button" className="sp-jump" onClick={() => scrollToBottom('smooth')}>
+              <Ic name="chevDown" size={14} /> {newBelow === 1 ? 'New message' : `${newBelow} new messages`}
+            </button>
+          )}
 
-          <button
-            type="button"
-            className="chat-attach-btn"
-            onClick={() => fileInputRef.current?.click()}
-            title="Attach Screenshot, Photo or PDF (Max 15MB)"
-            disabled={sending}
-            style={{ marginBottom: 6 }}
-          >
-            <Ic name="paperclip" size={19} stroke={2} />
-          </button>
+          {dragging && <div className="sp-drop"><Ic name="paperclip" size={22} /><b>Drop a photo or PDF to attach</b></div>}
 
-          <textarea
-            ref={textInputRef}
-            rows={2}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSend(e);
-              }
-            }}
-            placeholder={file ? 'Add a caption with your attachment...' : replyingTo ? `Replying to message... (Enter to send, Shift+Enter for newline)` : 'Type your message to Support Desk... (Enter to send, Shift+Enter for newline)'}
-            disabled={sending}
-            style={{
-              flex: 1,
-              padding: '10px 14px',
-              borderRadius: 8,
-              border: '1px solid #cbd5e1',
-              resize: 'vertical',
-              minHeight: 52,
-              maxHeight: 140,
-              fontFamily: 'inherit',
-              fontSize: 13.5,
-              lineHeight: 1.45,
-            }}
-          />
+          <div className="sp-composer-wrap">
+            {replyingTo && (
+              <div className="sp-pending">
+                <i className="bar" />
+                <div className="sp-pending-txt">
+                  <b>Replying to {replyingTo.sender === 'seller' ? 'yourself' : replyingTo.senderName || 'Support'}</b>
+                  <span>{quoteText(replyingTo)}</span>
+                </div>
+                <button type="button" className="sp-icon-btn" onClick={() => setReplyingTo(null)} aria-label="Cancel reply"><Ic name="x" size={15} /></button>
+              </div>
+            )}
+            {file && (
+              <div className="sp-pending">
+                {filePreview ? <img src={filePreview} alt="" /> : <span className="sp-pdf"><Ic name="fileText" size={18} /></span>}
+                <div className="sp-pending-txt">
+                  <b>{file.name}</b>
+                  <span>{fileSize(file.size)} · {file.type === 'application/pdf' ? 'PDF' : 'Photo'}{uploading ? ' · uploading…' : ''}</span>
+                </div>
+                <button type="button" className="sp-icon-btn" onClick={clearFile} disabled={sending} aria-label="Remove file"><Ic name="x" size={15} /></button>
+              </div>
+            )}
+            <form className="sp-composer" onSubmit={send}>
+              <input ref={fileInputRef} type="file" hidden accept={FILE_TYPES.join(',')} onChange={(e) => pickFile(e.target.files?.[0])} />
+              <button type="button" className="sp-icon-btn attach" onClick={() => fileInputRef.current?.click()} disabled={sending} title="Attach a photo or PDF (max 15 MB)" aria-label="Attach file">
+                <Ic name="paperclip" size={18} />
+              </button>
+              <textarea
+                ref={inputRef}
+                rows={1}
+                value={text}
+                maxLength={5000}
+                onChange={(e) => setText(e.target.value)}
+                onPaste={onPaste}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); }
+                }}
+                placeholder={file ? 'Add a message (optional)' : 'Write a message…'}
+                aria-label="Message"
+              />
+              <button type="submit" className="sp-send" disabled={sending || (!text.trim() && !file)} aria-label="Send">
+                {sending ? <span className="sp-spin sm" /> : <Ic name="send" size={17} />}
+              </button>
+            </form>
+            <p className="sp-hint">Enter to send · Shift + Enter for a new line · paste or drop a screenshot</p>
+          </div>
+        </section>
 
-          <button
-            type="submit"
-            className="seller-send-btn"
-            disabled={sending || (!text.trim() && !file)}
-            style={{ height: 42, marginBottom: 4 }}
-          >
-            {sending ? (uploading ? 'Uploading...' : 'Sending...') : <><Ic name="send" size={16} /> <span>Send</span></>}
-          </button>
-        </form>
+        <aside className="sp-side">
+          {restricted && (
+            <div className="sp-card sp-alert">
+              <Ic name="lock" size={16} />
+              <p><b>Your store is restricted.</b> This chat stays open — tell the team what happened and they will guide you.</p>
+            </div>
+          )}
+          <div className="sp-card">
+            <h3>Quick topics</h3>
+            <p>Starts your message for you.</p>
+            <div className="sp-topics">
+              {TOPICS.map((t) => (
+                <button key={t.label} type="button" onClick={() => applyTopic(t)}><Ic name={t.icon} size={14} /> {t.label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="sp-card">
+            <h3>Get a faster answer</h3>
+            <ul className="sp-tips">
+              <li><Ic name="check" size={14} /> <span>Write the order number (like <code>ORD-2026-…</code>)</span></li>
+              <li><Ic name="check" size={14} /> For a deposit, send the payment screenshot</li>
+              <li><Ic name="check" size={14} /> One message with all the details is quicker than many short ones</li>
+            </ul>
+          </div>
+          <div className="sp-card">
+            <h3>Shortcuts</h3>
+            <div className="sp-links">
+              <Link to="/seller/orders"><Ic name="package" size={15} /> Orders <Ic name="chevRight" size={14} /></Link>
+              <Link to="/seller/wallet"><Ic name="wallet" size={15} /> Wallet <Ic name="chevRight" size={14} /></Link>
+              <Link to="/seller/refunds"><Ic name="refresh" size={15} /> Returns <Ic name="chevRight" size={14} /></Link>
+            </div>
+          </div>
+          <div className="sp-card sp-safe">
+            <Ic name="shield" size={16} />
+            <p>The Bazario team will <b>never</b> ask for your password or OTP. Do not share them in chat.</p>
+          </div>
+        </aside>
       </div>
+
+      {confirmDelete && (
+        <div className="sp-modal-root" role="dialog" aria-modal="true" aria-label="Delete message">
+          <button type="button" className="sp-modal-bg" onClick={() => setConfirmDelete(null)} aria-label="Close" />
+          <div className="sp-modal">
+            <h3>Delete this message?</h3>
+            <p>It will be removed for you and for the support team.</p>
+            <blockquote>{quoteText(confirmDelete)}</blockquote>
+            <div className="sp-modal-btns">
+              <button type="button" className="sp-btn sp-btn-ghost" onClick={() => setConfirmDelete(null)}>Keep</button>
+              <button type="button" className="sp-btn sp-btn-danger" onClick={() => deleteOwn(confirmDelete)}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className={`sp-toast ${toast.ok ? 'ok' : 'err'}`} role="status">
+          <Ic name={toast.ok ? 'checkCircle' : 'alert'} size={18} />
+          <span>{toast.text}</span>
+          <button type="button" onClick={() => setToast(null)} aria-label="Close"><Ic name="x" size={14} /></button>
+        </div>
+      )}
     </div>
   );
 }
