@@ -1601,7 +1601,7 @@ router.put('/:id', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:ch
       io.to(`seller:${seller._id}`).emit('seller:status_update', { seller: safeSeller });
       io.to(`seller:${seller._id}`).emit('wallet:update', { wallet: seller.wallet, sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
       io.to(`seller:${seller._id}`).emit('seller:limit_update', { sellerId: seller._id, withdrawalLimit: seller.withdrawalLimit });
-      io.to('sellers').emit('seller:status_update', { seller: safeSeller });
+      // (no broadcast to every store: a seller's details only ever go to that seller's own room)
     }
 
     // Only for the admin screen: tells it that a type change is waiting for the other partner

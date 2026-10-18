@@ -132,7 +132,10 @@ export default function SellerLayout() {
       if (wData?.notification) return;
       setSeller((prev) => {
         if (!prev) return prev;
-        const updated = { ...prev, wallet: { ...(prev.wallet || {}), ...wData } };
+        // some events send the figures flat ({ balance, ... }), others nested ({ wallet: {...} })
+        const figures = wData?.wallet && typeof wData.wallet === 'object' ? wData.wallet : wData || {};
+        const { sellerId: _sid, withdrawalLimit: _wl, ...walletFigures } = figures;
+        const updated = { ...prev, wallet: { ...(prev.wallet || {}), ...walletFigures } };
         localStorage.setItem('ng_seller', JSON.stringify(updated));
         return updated;
       });
@@ -150,8 +153,9 @@ export default function SellerLayout() {
       });
     };
 
-    const onStatusUpdate = ({ seller: updatedSeller }) => {
-      if (updatedSeller) {
+    const onStatusUpdate = ({ seller: updatedSeller } = {}) => {
+      // only this store's own record is ever taken (never another store's)
+      if (updatedSeller && (!sellerIdRef.current || String(updatedSeller._id) === String(sellerIdRef.current))) {
         setSeller(updatedSeller);
         localStorage.setItem('ng_seller', JSON.stringify(updatedSeller));
       }

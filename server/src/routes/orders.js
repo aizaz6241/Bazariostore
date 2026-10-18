@@ -25,6 +25,7 @@ import crypto from 'crypto';
 import { publicOrder } from '../utils/publicOrder.js';
 import { adminRoom } from '../utils/permissions.js';
 import { announceToAdmins } from '../utils/realtime.js';
+import { sellerOrderPing, maskName } from '../utils/orderPrivacy.js';
 
 const router = Router();
 
@@ -248,7 +249,7 @@ router.post('/', placeOrderLimit, softUser, async (req, res) => {
         sellerId: sId,
         type: 'order',
         title: `📦 New Order #${order.orderNumber}`,
-        body: `You received an order for ${sItems.length} item(s)! Customer: ${addr.fullName}`,
+        body: `You received an order for ${sItems.length} item(s)! Customer: ${maskName(addr.fullName)}`,
         link: '/seller/orders',
       });
       req.app.get('io')?.to(`seller:${sId}`).emit('order:new', { _id: order._id, orderNumber: order.orderNumber, total: order.total, itemsCount: sItems.length });
@@ -740,8 +741,8 @@ const orderStatusHandler = async (req, res) => {
     io.to(adminRoom('orders')).emit('order:update', order);
     io.to(adminRoom('orders')).emit('order:status_update', { orderId: order._id, orderNumber: order.orderNumber, status: order.status, order });
     for (const sId of sellerIds) {
-      io.to(`seller:${sId}`).emit('order:update', order);
-      io.to(`seller:${sId}`).emit('seller:status_update', { order });
+      io.to(`seller:${sId}`).emit('order:update', sellerOrderPing(order));
+      io.to(`seller:${sId}`).emit('seller:status_update', { order: sellerOrderPing(order) });
     }
   }
 

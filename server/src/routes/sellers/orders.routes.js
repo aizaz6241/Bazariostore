@@ -17,6 +17,7 @@ import { adminRoom } from '../../utils/permissions.js';
 import { toAdmins } from '../../utils/realtime.js';
 import { blockWhenFrozen } from './helpers.js';
 import { profitRateFor, confirmHoursFor, warnHoursFor, tierOf } from '../../utils/sellerTier.js';
+import { sellerSafeOrder, sellerOrderPing, maskName } from '../../utils/orderPrivacy.js';
 
 const router = express.Router();
 
@@ -616,7 +617,8 @@ router.get('/orders', authSellerOrAdmin, async (req, res) => {
         { 'items.product': { $in: sellerProdIds } },
       ],
     })
-      .populate('items.product')
+      // perf: only the product fields the screen uses (full products carry descriptions and every image)
+      .populate('items.product', 'name image price seller')
       .populate('user', 'name email phone')
       .sort({ createdAt: -1 });
 
@@ -684,9 +686,18 @@ router.get('/orders', authSellerOrAdmin, async (req, res) => {
         const isLocked = sellerItems.some((it) => it.processingLocked);
         const isSettled = sellerItems.every((it) => it.payoutSettled);
 
+        // the store's confirmation deadline (counted from when the order last became pending)
+        const waitingItems = sellerItems.filter((it) => !it.itemStatus || it.itemStatus === 'pending');
+        const confirmHours = confirmHoursFor(seller);
+        const pendingFrom = ord.pendingSince || ord.createdAt;
+        const confirmDeadline = waitingItems.length && pendingFrom ? new Date(new Date(pendingFrom).getTime() + confirmHours * 3600000) : null;
+
         return {
-          ...ord.toObject(),
+          // a store never receives the customer's full name, street, phone or email (admins do)
+          ...(req.admin ? ord.toObject() : sellerSafeOrder(ord, sellerItems)),
           sellerItems,
+          confirmHours,
+          confirmDeadline,
           sellerTotal,
           sellerProfit,
           sellerReturn,
@@ -734,7 +745,7 @@ router.post('/orders/:id/confirm', authSellerOrAdmin, async (req, res) => {
     if (myItems.length > 0 && myItems.every((it) => it.itemStatus === 'confirmed' || it.processingLocked)) {
       return res.json({
         ok: true,
-        order,
+        order: req.admin ? order : sellerSafeOrder(order),
         lockedAmount: 0,
         alreadyConfirmed: true,
         message: 'Order is already confirmed',
@@ -799,8 +810,8 @@ router.post('/orders/:id/confirm', authSellerOrAdmin, async (req, res) => {
     if (io) {
       io.to(adminRoom('orders')).emit('order:update', order);
       io.to(adminRoom('orders')).emit('order:status_update', { orderId: order._id, orderNumber: order.orderNumber, status: order.status, order });
-      io.to(`seller:${sellerId}`).emit('order:update', order);
-      io.to(`seller:${sellerId}`).emit('seller:status_update', { order });
+      io.to(`seller:${sellerId}`).emit('order:update', sellerOrderPing(order));
+      io.to(`seller:${sellerId}`).emit('seller:status_update', { order: sellerOrderPing(order) });
     }
 
     // Notify Admins about seller confirmation
@@ -812,7 +823,7 @@ router.post('/orders/:id/confirm', authSellerOrAdmin, async (req, res) => {
       link: `/admin/orders/${order._id}`,
     });
 
-    res.json({ ok: true, order, lockedAmount: fundResult?.totalToLock || 0 });
+    res.json({ ok: true, order: req.admin ? order : sellerSafeOrder(order), lockedAmount: fundResult?.totalToLock || 0 });
   } catch (err) {
     res.status(err.status || 500).json({ message: err.message });
   }
@@ -937,8 +948,8 @@ export const handleStatusUpdate = async (req, res) => {
       io.to(adminRoom('orders')).emit('order:update', order);
       io.to(adminRoom('orders')).emit('order:status_update', { orderId: order._id, orderNumber: order.orderNumber, status: order.status, order });
       for (const sId of affectedSellerIds) {
-        io.to(`seller:${sId}`).emit('order:update', order);
-        io.to(`seller:${sId}`).emit('seller:status_update', { order });
+        io.to(`seller:${sId}`).emit('order:update', sellerOrderPing(order));
+        io.to(`seller:${sId}`).emit('seller:status_update', { order: sellerOrderPing(order) });
       }
     }
 
@@ -965,7 +976,7 @@ export const handleStatusUpdate = async (req, res) => {
       });
     }
 
-    res.json({ ok: true, order });
+    res.json({ ok: true, order: req.admin ? order : sellerSafeOrder(order) });
   } catch (err) {
     res.status(err.status || 500).json({ message: err.message });
   }
@@ -1113,7 +1124,7 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
       sellerId: seller._id,
       type: 'order',
       title: `📦 New Order #${orderNumber}`,
-      body: `You received a new order for ${lineItems.length} item(s)! Customer: ${customerName} ($${total.toLocaleString('en-US')})`,
+      body: `You received a new order for ${lineItems.length} item(s)! Customer: ${maskName(customerName)} ($${total.toLocaleString('en-US')})`,
       link: '/seller/orders',
     });
 
@@ -1122,7 +1133,7 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
       orderNumber: order.orderNumber,
       total: order.total,
       itemsCount: lineItems.length,
-      name: customerName,
+      name: maskName(customerName),
     });
 
     // Re-populate order before broadcasting

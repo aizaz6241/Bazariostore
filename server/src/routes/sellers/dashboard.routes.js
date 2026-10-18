@@ -5,13 +5,16 @@ import Order from '../../models/Order.js';
 import Refund from '../../models/Refund.js';
 import Withdrawal from '../../models/Withdrawal.js';
 import { authSeller } from '../../middleware/auth.js';
+import { profitRateFor } from '../../utils/sellerTier.js';
+import { maskName } from '../../utils/orderPrivacy.js';
 
 const router = express.Router();
 
 // What one order means for this store (only the store's own items count)
 const ACTIVE_STATUSES = ['pending', 'confirmed', 'processing', 'packed'];
 const sameId = (a, b) => Boolean(a) && Boolean(b) && a.toString() === b.toString();
-function storeSideOf(ord, sellerId) {
+// `rate`: the % a not-yet-locked item will earn (the store's tier); locked / paid items keep theirs
+function storeSideOf(ord, sellerId, rate) {
   const items = (ord.items || []).filter((it) => sameId(it.seller, sellerId));
   let total = 0;
   let profit = 0;
@@ -21,7 +24,9 @@ function storeSideOf(ord, sellerId) {
     const line = (it.price || 0) * q;
     total += line;
     qty += q;
-    profit += it.profitAmount > 0 ? it.profitAmount : (line * (it.profitRate || 20)) / 100;
+    if (it.profitAmount > 0) profit += it.profitAmount;
+    else if (rate && !it.processingLocked && !it.payoutSettled) profit += (line * rate) / 100;
+    else profit += (line * (it.profitRate || 20)) / 100;
   }
   const status = items[0]?.itemStatus || ord.status || 'pending';
   return { items, total, profit, qty, status };
@@ -186,7 +191,7 @@ router.get('/dashboard', authSeller, async (req, res) => {
       statusCounts,
       salesByDay,
       topProducts,
-      recentOrders: orders.slice(0, 6),
+      recentOrders: orders.slice(0, 6).map((o) => ({ ...o, shippingAddress: { fullName: maskName(o.shippingAddress?.fullName), city: o.shippingAddress?.city || '' } })),
       lowStockProducts: lowStockProducts.slice(0, 5),
     });
   } catch (err) {
@@ -208,9 +213,10 @@ router.get('/dashboard/activity', authSeller, async (req, res) => {
     }
     if (to - from > 400 * 86400000) return res.status(400).json({ message: 'Date range is too long (max 400 days)' });
 
-    const [orders, moves] = await Promise.all([
+    const [tierDoc, orders, moves] = await Promise.all([
+      Seller.findById(sellerId).select('tier tierSince').lean(),
       Order.find({ 'items.seller': sellerId, createdAt: { $gte: from, $lte: to } })
-        .select('orderNumber status createdAt items.seller items.name items.price items.qty items.itemStatus items.profitAmount items.profitRate shippingAddress.city')
+        .select('orderNumber status createdAt items.seller items.name items.price items.qty items.itemStatus items.profitAmount items.profitRate items.processingLocked items.payoutSettled shippingAddress.city')
         .sort({ createdAt: 1 })
         .lean(),
       // money that really moved: approved deposits / payouts and the order payouts (with profit)
@@ -228,7 +234,8 @@ router.get('/dashboard/activity', authSeller, async (req, res) => {
 
     const orderLines = [];
     for (const ord of orders) {
-      const side = storeSideOf(ord, sellerId);
+      // Diamond 35% only for orders placed after the upgrade (same rule as the order screens)
+      const side = storeSideOf(ord, sellerId, profitRateFor(tierDoc, ord));
       if (!side.items.length) continue;
       orderLines.push({
         id: ord._id,
@@ -534,7 +541,7 @@ router.get('/analytics', authSeller, async (req, res) => {
       orders: orders.slice(-20).reverse().map((o) => ({
         _id: o._id,
         orderNumber: o.orderNumber,
-        customer: o.contact?.email || o.shippingAddress?.fullName || 'Guest',
+        customer: o.shippingAddress?.fullName ? maskName(o.shippingAddress.fullName) : 'Customer',
         total: o.total,
         status: o.status,
         paymentMethod: o.paymentMethod || 'Cash On Delivery',

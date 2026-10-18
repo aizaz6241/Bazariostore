@@ -4,6 +4,7 @@ import { releaseSellerOrderDelivered } from '../routes/sellers/orders.routes.js'
 import { notify } from '../utils/notify.js';
 import { settleDeliveredStock } from '../utils/orderStock.js';
 import { adminRoom } from '../utils/permissions.js';
+import { sellerOrderPing } from '../utils/orderPrivacy.js';
 
 // Configuration: Realistic 5 to 7 days progression schedule
 export const PROGRESSION_STEPS = {
@@ -229,8 +230,8 @@ export async function processAutoProgressOrders(app) {
             ),
           ];
           for (const sId of sellerIds) {
-            io.to(`seller:${sId}`).emit('order:update', order);
-            io.to(`seller:${sId}`).emit('seller:status_update', { order });
+            io.to(`seller:${sId}`).emit('order:update', sellerOrderPing(order));
+            io.to(`seller:${sId}`).emit('seller:status_update', { order: sellerOrderPing(order) });
           }
         }
 
