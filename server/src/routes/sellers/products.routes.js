@@ -78,7 +78,9 @@ router.post('/products', authSeller, blockWhenFrozen('adding products'), async (
       sellerName: seller.storeName,
       sellerSlug: seller.storeSlug || slugify(seller.storeName),
       active: data.active !== false,
-      stock: Number(data.stock ?? 20),
+      // stock is set by the platform (admin Inventory), never by the store: a new own product
+      // starts with the usual opening stock, whatever number was sent
+      stock: req.admin && data.stock !== undefined ? Math.max(0, Math.floor(Number(data.stock) || 0)) : 20,
       reservedStock: 0,
       sold: 0,
       price: Number(data.price || 0),
@@ -120,7 +122,9 @@ router.put('/products/:id', authSeller, blockWhenFrozen('editing products'), asy
     if (data.shortDescription !== undefined) product.shortDescription = String(data.shortDescription);
     // a Central Treasury listing shows the master's stock: a seller cannot change it (a higher
     // number here let the listing sell more than the Treasury holds)
-    if (data.stock !== undefined && !product.treasuryProduct) {
+    // Stores cannot change stock at all any more — it is managed by the platform (admin
+    // Inventory). Only an admin acting for the store may still set it on an own product.
+    if (data.stock !== undefined && req.admin && !product.treasuryProduct) {
       const stock = Number(data.stock);
       if (!Number.isFinite(stock)) return res.status(400).json({ message: 'Please enter a valid stock number.' });
       product.stock = Math.max(0, Math.floor(stock));

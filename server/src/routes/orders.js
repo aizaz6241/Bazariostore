@@ -24,7 +24,7 @@ import mongoose from 'mongoose';
 import crypto from 'crypto';
 import { publicOrder } from '../utils/publicOrder.js';
 import { adminRoom } from '../utils/permissions.js';
-import { announceToAdmins } from '../utils/realtime.js';
+import { announceToAdmins, toSellers } from '../utils/realtime.js';
 import { sellerOrderPing, maskName } from '../utils/orderPrivacy.js';
 
 const router = Router();
@@ -322,9 +322,14 @@ router.post('/:id/refund-request', authUser, announceToAdmins('refunds', 'refund
   const order = await Order.findById(req.params.id);
   if (!order || String(order.user) !== String(req.user.id)) return res.status(404).json({ message: 'Order not found' });
   if (order.refundId) return res.status(400).json({ message: 'Is order ki refund request pehle se mojood hai' });
+  // nothing to refund on an order that was cancelled or already refunded
+  if (['cancelled', 'refunded'].includes(order.status)) return res.status(400).json({ message: 'This order is already closed, so a refund cannot be requested.' });
+  // the store(s) of the order: the refund used to be saved without one, so the store never saw it
+  const refundStores = [...new Set([order.seller, ...order.items.map((i) => i.seller)].filter(Boolean).map(String))];
   const refund = await Refund.create({
     order: order._id,
     orderNumber: order.orderNumber,
+    seller: refundStores.length === 1 ? refundStores[0] : order.seller || null,
     customer: { name: order.shippingAddress?.fullName, email: order.contact?.email, phone: order.contact?.phone },
     amount: order.total,
     reason: (req.body?.reason || '').slice(0, 500),
@@ -335,6 +340,10 @@ router.post('/:id/refund-request', authUser, announceToAdmins('refunds', 'refund
   order.refundId = refund._id;
   await order.save();
   notify(req.app, { type: 'refund', title: 'Refund requested', body: `${order.orderNumber} — $${order.total}`, link: '/admin/refunds' });
+  for (const sId of refundStores) {
+    notify(req.app, { recipientType: 'seller', sellerId: sId, type: 'refund', title: 'New return request', body: `Order ${order.orderNumber} — please review it`, link: '/seller/refunds' });
+  }
+  toSellers(refundStores, 'refunds:changed', { refundId: String(refund._id) });
   res.status(201).json(refund);
 });
 

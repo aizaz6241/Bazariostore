@@ -14,14 +14,17 @@
 @import './orders.css';
 @import './orders-v2.css';
 @import './refunds.css';
+@import './refunds-v2.css';
 @import './inventory.css';
 @import './discounts.css';
+@import './discounts-v2.css';
 @import './analytics.css';
 @import './wallet.css';
 @import './wallet-v2.css';
 @import './shipping.css';
 @import './support.css';
 @import './settings.css';
+@import './settings-v2.css';
 @import './diamond.css';
 @import './account-plan.css';
 @import './restricted.css';

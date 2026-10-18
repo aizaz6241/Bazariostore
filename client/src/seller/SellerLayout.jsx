@@ -19,7 +19,6 @@ const SELLER_NAV = [
   { to: '/seller/products', icon: 'tag', label: 'My Store Products' },
   { to: '/seller/orders', icon: 'package', label: 'Orders & Dispatch' },
   { to: '/seller/refunds', icon: 'refresh', label: 'Refunds & Returns' },
-  { to: '/seller/inventory', icon: 'box', label: 'Inventory Center' },
   { to: '/seller/discounts', icon: 'gift', label: 'Discounts & Coupons' },
   { to: '/seller/analytics', icon: 'eye', label: 'Analytics & Reports' },
   { to: '/seller/wallet', icon: 'banknote', label: 'My Wallet', badgeKey: 'wallet' },

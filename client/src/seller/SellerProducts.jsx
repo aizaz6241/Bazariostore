@@ -446,7 +446,6 @@ function ProductEditor({ product, categories, rate, formatMoney, onClose, onSave
     if (!form.category) return setErr('Choose a category.');
     if (!(price > 0)) return setErr('Enter a selling price above $0.');
     if (old && old <= price) return setErr('The compare-at price must be higher than the selling price (or leave it empty).');
-    if (!isTreasury && !(Number(form.stock) >= 0)) return setErr('Enter a stock number (0 or more).');
     if (!form.images.length) return setErr('Add at least one photo.');
     setSaving(true);
     setErr('');
@@ -458,8 +457,7 @@ function ProductEditor({ product, categories, rate, formatMoney, onClose, onSave
         lowStockThreshold: Number(form.lowStockThreshold) || 5,
         images: form.images, image: form.images[0]?.url || '',
       };
-      // a Treasury product's stock is the warehouse's: never sent from here
-      if (!isTreasury) payload.stock = Math.max(0, Math.floor(Number(form.stock) || 0));
+      // stock is managed by Bazario (warehouse / admin Inventory): never sent from the store
       if (product) await sapi(`/sellers/products/${product._id}`, { method: 'PUT', body: payload });
       else await sapi('/sellers/products', { method: 'POST', body: payload });
       onSaved(product ? `“${payload.name}” was saved.` : `“${payload.name}” is now listed in your store.`);
@@ -537,7 +535,7 @@ function ProductEditor({ product, categories, rate, formatMoney, onClose, onSave
           <section className="pp-sec">
             <h3>Stock</h3>
             <div className="pp-row">
-              <label className="pp-field"><span>{isTreasury ? 'Warehouse stock' : 'Units in stock'} {!isTreasury && <em>*</em>}</span><input className="pp-input" type="number" min="0" value={form.stock} onChange={set('stock')} disabled={isTreasury} /></label>
+              <label className="pp-field"><span>{isTreasury ? 'Warehouse stock' : 'Units in stock'}</span><input className="pp-input" type="number" value={product ? form.stock : ''} placeholder={product ? '' : 'Set by Bazario'} disabled readOnly /><small className="pp-hint">Stock is managed by the Bazario warehouse team.</small></label>
               <label className="pp-field"><span>Low-stock alert at</span><input className="pp-input" type="number" min="1" value={form.lowStockThreshold} onChange={set('lowStockThreshold')} /></label>
             </div>
             <div className="pp-row">

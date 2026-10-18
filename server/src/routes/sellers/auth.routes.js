@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import Seller from '../../models/Seller.js';
+import Product from '../../models/Product.js';
 import { authSeller } from '../../middleware/auth.js';
 import { slugify, blockWhenFrozen } from './helpers.js';
 import { notify } from '../../utils/notify.js';
@@ -386,25 +387,96 @@ router.put('/me', authSeller, blockWhenFrozen('changing store settings and payou
     const seller = await Seller.findById(req.seller.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
-    const { storeName, ownerName, phone, description, address, bankDetails, withdrawalMethods, logo, banner } = req.body;
-    if (storeName && typeof storeName === 'string' && storeName.trim().toLowerCase() !== String(seller.storeName || '').trim().toLowerCase()) {
+    const body = req.body || {};
+    const txt = (v, max) => (typeof v === 'string' || typeof v === 'number' ? String(v).trim().slice(0, max) : '');
+    const storeName = body.storeName !== undefined ? txt(body.storeName, 60) : undefined;
+    const ownerName = body.ownerName !== undefined ? txt(body.ownerName, 80) : undefined;
+    if (storeName !== undefined && storeName.length < 2) return res.status(400).json({ message: 'Store name must be at least 2 characters.' });
+    if (ownerName !== undefined && ownerName.length < 2) return res.status(400).json({ message: 'Owner name must be at least 2 characters.' });
+    const imageUrl = (v) => {
+      const u = txt(v, 1000);
+      if (!u) return '';
+      return /^(https?:\/\/|\/)/i.test(u) ? u : null;
+    };
+    const logo = body.logo !== undefined ? imageUrl(body.logo) : undefined;
+    const banner = body.banner !== undefined ? imageUrl(body.banner) : undefined;
+    if (logo === null || banner === null) return res.status(400).json({ message: 'The logo must be an uploaded picture or a link starting with https://' });
+
+    // Payout methods: only the known methods and fields, as plain text (anything else used to be
+    // saved as sent). A method that is switched on must be filled in correctly.
+    const METHOD_FIELDS = {
+      bankTransfer: ['accountTitle', 'accountNumber', 'bankName', 'ifscCode', 'branchName', 'accountType'],
+      upi: ['upiId', 'holderName'],
+      paytm: ['phone', 'accountName'],
+      gpay: ['phone', 'upiId', 'accountName'],
+      phonepe: ['phone', 'upiId', 'accountName'],
+      usdt: ['walletAddress', 'network'],
+    };
+    let withdrawalMethods;
+    if (body.withdrawalMethods && typeof body.withdrawalMethods === 'object') {
+      withdrawalMethods = {};
+      for (const [key, fields] of Object.entries(METHOD_FIELDS)) {
+        const m = body.withdrawalMethods[key];
+        if (!m || typeof m !== 'object') continue;
+        const clean = { enabled: Boolean(m.enabled) };
+        for (const f of fields) clean[f] = txt(m[f], 120);
+        withdrawalMethods[key] = clean;
+      }
+      const w = withdrawalMethods;
+      const bad = (msg) => res.status(400).json({ message: msg });
+      // only a method whose details were changed now is checked (details saved earlier in an older
+      // format must not stop the store from saving something else)
+      const storedWm = seller.withdrawalMethods?.toObject ? seller.withdrawalMethods.toObject() : seller.withdrawalMethods || {};
+      const changed = (k) => {
+        const before = storedWm[k] || {};
+        return Boolean(w[k]?.enabled) && METHOD_FIELDS[k].concat('enabled').some((f) => String(w[k][f] ?? '') !== String(before[f] ?? (f === 'enabled' ? false : '')));
+      };
+      if (w.bankTransfer?.enabled && changed('bankTransfer')) {
+        const b = w.bankTransfer;
+        b.ifscCode = b.ifscCode.toUpperCase().replace(/\s+/g, '');
+        b.accountNumber = b.accountNumber.replace(/[\s-]/g, '');
+        if (!b.accountTitle || !b.bankName) return bad('Bank transfer: enter the account holder name and bank.');
+        if (!/^\d{6,20}$/.test(b.accountNumber)) return bad('Bank transfer: the account number should be 6–20 digits.');
+        if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(b.ifscCode)) return bad('Bank transfer: the IFSC code looks wrong (example: SBIN0001234).');
+        if (!['Savings', 'Current'].includes(b.accountType)) b.accountType = 'Savings';
+      }
+      if (w.upi?.enabled && changed('upi') && (!/^[\w.\-]{2,}@[a-zA-Z]{2,}$/.test(w.upi.upiId) || !w.upi.holderName)) return bad('UPI: enter a valid UPI ID (like name@okhdfcbank) and the registered name.');
+      for (const k of ['paytm', 'gpay', 'phonepe']) {
+        const m = w[k];
+        if (m?.enabled && changed(k) && !(/^\+?\d[\d\s]{8,14}$/.test(m.phone) || /@/.test(m.upiId || ''))) return bad(`${k === 'gpay' ? 'Google Pay' : k === 'phonepe' ? 'PhonePe' : 'Paytm'}: enter a valid mobile number${k === 'paytm' ? '' : ' or UPI ID'}.`);
+      }
+      if (w.usdt?.enabled && changed('usdt')) {
+        const u = w.usdt;
+        if (!['TRC-20', 'BEP-20', 'ERC-20'].includes(u.network)) u.network = 'TRC-20';
+        const ok = u.network === 'TRC-20' ? /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(u.walletAddress) : /^0x[a-fA-F0-9]{40}$/.test(u.walletAddress);
+        if (!ok) return bad(u.network === 'TRC-20' ? 'USDT: a TRC-20 address starts with T and has 34 characters.' : 'USDT: a BEP-20 / ERC-20 address starts with 0x and has 42 characters.');
+      }
+    }
+
+    if (storeName && storeName.toLowerCase() !== String(seller.storeName || '').trim().toLowerCase()) {
       // Older products and orders are matched to their store partly by the store NAME, so taking
       // the exact name of another store would hand that store's items (and payouts) to this one.
       const taken = await Seller.findOne({
         _id: { $ne: seller._id },
-        storeName: { $regex: `^${storeName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
+        storeName: { $regex: `^${storeName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
       }).select('_id').lean();
       if (taken) return res.status(400).json({ message: 'Another store already uses this name. Please choose a different store name.' });
     }
     const payoutBefore = payoutFingerprint(seller);
+    const nameBefore = seller.storeName;
     if (storeName) seller.storeName = storeName;
     if (ownerName) seller.ownerName = ownerName;
-    if (phone !== undefined) seller.phone = phone;
-    if (description !== undefined) seller.description = description;
+    if (body.phone !== undefined) seller.phone = txt(body.phone, 30);
+    if (body.description !== undefined) seller.description = txt(body.description, 1000);
     if (logo !== undefined) seller.logo = logo;
     if (banner !== undefined) seller.banner = banner;
-    if (address) seller.address = { ...seller.address, ...address };
-    if (bankDetails) seller.bankDetails = { ...seller.bankDetails, ...bankDetails };
+    if (body.address && typeof body.address === 'object') {
+      // the stored address as plain values (spreading the stored sub-document copied Mongoose internals)
+      const prev = seller.address?.toObject ? seller.address.toObject() : { ...(seller.address || {}) };
+      const next = { ...prev };
+      for (const f of ['street', 'city', 'state', 'postalCode', 'country']) if (body.address[f] !== undefined) next[f] = txt(body.address[f], 150);
+      seller.address = next;
+    }
     if (withdrawalMethods) {
       seller.withdrawalMethods = {
         ...(seller.withdrawalMethods ? (seller.withdrawalMethods.toObject ? seller.withdrawalMethods.toObject() : seller.withdrawalMethods) : {}),
@@ -422,7 +494,21 @@ router.put('/me', authSeller, blockWhenFrozen('changing store settings and payou
       seller.markModified('withdrawalMethods');
     }
 
+    // Changing where payouts go needs the account password (someone using a left-open or stolen
+    // login could otherwise send the next withdrawal to their own account). An admin acting for
+    // the store is not asked.
+    if (!req.admin && payoutFingerprint(seller) !== payoutBefore) {
+      const pw = typeof body.currentPassword === 'string' ? body.currentPassword.slice(0, 200) : '';
+      if (!pw) return res.status(400).json({ needPassword: true, message: 'Enter your account password to change payout details.' });
+      if (!(await comparePassword(pw, seller.passwordHash))) return res.status(400).json({ needPassword: true, message: 'The password is not correct. Payout details were not changed.' });
+    }
+
     await seller.save();
+
+    // products show the store name on their cards: a renamed store's own products follow it
+    if (storeName && storeName !== nameBefore) {
+      await Product.updateMany({ seller: seller._id }, { $set: { sellerName: storeName } }).catch((e) => console.error('[store-rename]', e.message));
+    }
 
     // Where payouts are sent is the first thing someone changes after taking over an account:
     // the admins are told every time it changes, so a stranger's account number is noticed.

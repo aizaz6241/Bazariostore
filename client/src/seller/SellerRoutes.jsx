@@ -6,7 +6,6 @@ import SellerDashboard from './SellerDashboard.jsx';
 import SellerProducts from './SellerProducts.jsx';
 import SellerOrders from './SellerOrders.jsx';
 import SellerRefunds from './SellerRefunds.jsx';
-import SellerInventory from './SellerInventory.jsx';
 import SellerDiscounts from './SellerDiscounts.jsx';
 import SellerAnalytics from './SellerAnalytics.jsx';
 import SellerWallet from './SellerWallet.jsx';
@@ -25,7 +24,8 @@ export default function SellerRoutes() {
         <Route path="products" element={<SellerProducts />} />
         <Route path="orders" element={<SellerOrders />} />
         <Route path="refunds" element={<SellerRefunds />} />
-        <Route path="inventory" element={<SellerInventory />} />
+        {/* stock is managed by Bazario; the old Inventory Center duplicated My Store Products */}
+        <Route path="inventory" element={<Navigate to="/seller/products" replace />} />
         <Route path="discounts" element={<SellerDiscounts />} />
         <Route path="analytics" element={<SellerAnalytics />} />
         <Route path="wallet" element={<SellerWallet />} />

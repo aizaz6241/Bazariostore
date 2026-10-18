@@ -7,6 +7,7 @@ import Withdrawal from '../../models/Withdrawal.js';
 import { authSeller } from '../../middleware/auth.js';
 import { profitRateFor } from '../../utils/sellerTier.js';
 import { maskName } from '../../utils/orderPrivacy.js';
+import { refundFilterFor } from './refunds.routes.js';
 
 const router = express.Router();
 
@@ -45,7 +46,7 @@ router.get('/dashboard', authSeller, async (req, res) => {
       Seller.findById(sellerId).lean(),
       Product.find({ seller: sellerId }).select('name image stock lowStockThreshold').lean(),
       Order.find({ 'items.seller': sellerId }).select(ORDER_FIELDS).sort({ createdAt: -1 }).lean(),
-      Refund.countDocuments({ seller: sellerId }),
+      refundFilterFor(sellerId).then((f) => Refund.countDocuments(f)),
     ]);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 

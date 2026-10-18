@@ -100,7 +100,7 @@ export default function App() {
       <Route path="/sellers/wallet" element={<Navigate to="/seller/wallet" replace />} />
       <Route path="/sellers/products" element={<Navigate to="/seller/products" replace />} />
       <Route path="/sellers/refunds" element={<Navigate to="/seller/refunds" replace />} />
-      <Route path="/sellers/inventory" element={<Navigate to="/seller/inventory" replace />} />
+      <Route path="/sellers/inventory" element={<Navigate to="/seller/products" replace />} />
       <Route path="/sellers/discounts" element={<Navigate to="/seller/discounts" replace />} />
       <Route path="/sellers/analytics" element={<Navigate to="/seller/analytics" replace />} />
       <Route path="/sellers/shipping" element={<Navigate to="/seller/shipping" replace />} />

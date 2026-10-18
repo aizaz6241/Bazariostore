@@ -232,6 +232,26 @@ router.post('/seller/send', authSeller, sellerSendLimit, async (req, res) => {
       );
     }
 
+    // The quoted message is read from the database: the quote used to be taken as sent, so a
+    // seller could show a "reply" to a support message that was never written (e.g. a fake
+    // "withdrawal approved"). Only a real, not deleted message of this seller's own chat is quoted.
+    let quoted = null;
+    const quoteId = replyTo && (replyTo.messageId || replyTo._id);
+    if (quoteId && mongoose.Types.ObjectId.isValid(String(quoteId))) {
+      const q = await Message.findOne({ _id: quoteId, seller: seller._id, isDeleted: { $ne: true } })
+        .select('sender senderName text attachmentType attachmentName').lean();
+      if (q) {
+        quoted = {
+          messageId: q._id,
+          sender: q.sender || '',
+          senderName: q.sender === 'seller' ? (seller.storeName || 'Seller') : q.senderName || 'Support',
+          text: String(q.text || (q.attachmentType === 'pdf' ? `📄 ${q.attachmentName || 'PDF Document'}` : q.attachmentType ? '📷 Image Attachment' : '')).slice(0, 300),
+          attachmentType: q.attachmentType || null,
+          attachmentName: q.attachmentName || '',
+        };
+      }
+    }
+
     const previewMsg = cleanText || (attachmentType === 'pdf' ? `📄 ${attachmentName || 'PDF Document'}` : '📷 Image Attachment');
     conv.lastMessage = previewMsg;
     conv.lastSender = 'seller';
@@ -251,14 +271,7 @@ router.post('/seller/send', authSeller, sellerSendLimit, async (req, res) => {
       attachmentType: !attachment ? null : ATTACHMENT_TYPES.includes(attachmentType) ? attachmentType : attachment.toLowerCase().endsWith('.pdf') ? 'pdf' : 'image',
       attachmentName: attachment ? asText(attachmentName, 200) : '',
       attachmentSize: attachment ? Math.max(0, Number(attachmentSize) || 0) : 0,
-      replyTo: replyTo && (replyTo.text || replyTo?.attachmentName) ? {
-        messageId: replyTo.messageId || replyTo._id || null,
-        sender: replyTo.sender || '',
-        senderName: replyTo.senderName || '',
-        text: replyTo.text || '',
-        attachmentType: replyTo.attachmentType || null,
-        attachmentName: replyTo.attachmentName || '',
-      } : null,
+      replyTo: quoted,
     });
     await message.save();
 

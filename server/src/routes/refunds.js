@@ -7,7 +7,7 @@ import { releaseSellerOrderCancelled, undoTargetProgressForOrder } from './selle
 import { authAdmin } from '../middleware/auth.js';
 import { audit } from '../utils/audit.js';
 import { notify } from '../utils/notify.js';
-import { announceToAdmins } from '../utils/realtime.js';
+import { announceToAdmins, toSellers } from '../utils/realtime.js';
 
 const router = Router();
 
@@ -46,9 +46,11 @@ router.post('/', authAdmin('refunds'), announceToAdmins('refunds', 'refunds:chan
   const order = await Order.findById(orderId);
   if (!order) return res.status(404).json({ message: 'Order not found' });
   if (order.refundId) return res.status(400).json({ message: 'Is order ki refund entry pehle se mojood hai' });
+  const refundStores = [...new Set([order.seller, ...order.items.map((i) => i.seller)].filter(Boolean).map(String))];
   const refund = await Refund.create({
     order: order._id,
     orderNumber: order.orderNumber,
+    seller: refundStores.length === 1 ? refundStores[0] : order.seller || null,
     customer: { name: order.shippingAddress?.fullName, email: order.contact?.email, phone: order.contact?.phone },
     amount: Number(amount) || order.total,
     reason: reason || '',
@@ -59,6 +61,7 @@ router.post('/', authAdmin('refunds'), announceToAdmins('refunds', 'refunds:chan
   order.refundId = refund._id;
   await order.save();
   await audit(req, 'refund_created', 'refund', refund._id, { orderNumber: order.orderNumber, amount: refund.amount });
+  toSellers(refundStores, 'refunds:changed', { refundId: String(refund._id) });
   res.status(201).json(refund);
 });
 
@@ -103,6 +106,9 @@ router.patch('/:id/status', authAdmin('refunds'), announceToAdmins('refunds', 'r
     amount: refund.amount,
     note: note || '',
   });
+  // the store's Refunds page updates live
+  const ord = order || (await Order.findById(refund.order).select('seller items.seller').lean());
+  toSellers([refund.seller, ord?.seller, ...(ord?.items || []).map((i) => i.seller)].filter(Boolean), 'refunds:changed', { refundId: String(refund._id) });
   res.json(refund);
 });
 

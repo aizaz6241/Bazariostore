@@ -221,3 +221,6 @@ textarea.pp-input { height: auto; padding: 10px 12px; resize: vertical; line-hei
   .pp-gallery { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .pp-ph-set { opacity: 1; }
 }
+
+/* stock is managed by Bazario: read-only note under the stock field */
+.pp .pp-hint, .pp-drawer-root .pp-hint, .pp-hint { display: block; margin-top: 4px; font-size: 11.5px; color: #64748b; font-weight: 500; }
