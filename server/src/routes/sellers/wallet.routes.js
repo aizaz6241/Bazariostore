@@ -145,6 +145,44 @@ async function sendWalletChatNotification(app, seller, reqDoc) {
   }
 }
 
+/**
+ * Orders in which THIS store's own item is still waiting for confirmation. One rule for the
+ * wallet screen and for the withdraw check (the screen used an older query that also counted
+ * another store's waiting item, so it could show "withdrawals blocked" when they were not).
+ * (A line without a seller belongs to the order's seller.)
+ */
+function countUnconfirmedOrders(sellerId) {
+  const waiting = { $or: [{ itemStatus: 'pending' }, { itemStatus: { $exists: false } }, { itemStatus: null }] };
+  return Order.countDocuments({
+    status: { $nin: ['cancelled', 'refunded', 'delivered'] },
+    $or: [
+      { items: { $elemMatch: { seller: sellerId, ...waiting } } },
+      { seller: sellerId, items: { $elemMatch: { seller: null, ...waiting } } },
+    ],
+  });
+}
+
+// One wallet line as the store may see it: admin-only figures removed, special lines named.
+function lineForStore(r, isAdmin) {
+  const obj = typeof r.toObject === 'function' ? r.toObject() : { ...r };
+  if (!isAdmin) {
+    delete obj.helpingAmount;
+    delete obj.binanceRate;
+    delete obj.inrAmount;
+    delete obj.usdtAmount;
+    delete obj.pkrRate;
+    delete obj.finConfirmed;
+    delete obj.finSkip;
+    delete obj.pendingDecision;
+    delete obj.processedById;
+  }
+  // the Diamond upgrade fee is kept as a deposit record for the accounts, but it was paid to
+  // the platform and never entered the store wallet: shown as its own line
+  if (obj.purpose === 'diamond_fee') obj.type = 'diamond_fee';
+  if (obj.purpose === 'frozen_release') obj.type = 'frozen_release';
+  return obj;
+}
+
 // GET /api/sellers/wallet — seller's wallet info + all requests
 router.get('/wallet', authSellerOrAdmin, async (req, res) => {
   try {
@@ -154,21 +192,7 @@ router.get('/wallet', authSellerOrAdmin, async (req, res) => {
     const w = seller.wallet || {};
     const requests = await Withdrawal.find({ seller: seller._id }).sort({ createdAt: -1 }).limit(100);
 
-    // Sanitize requests: helpingAmount, binanceRate, inrAmount, and usdtAmount are strictly admin internal fields and hidden from seller
-    const sanitizedRequests = requests.map((r) => {
-      const obj = r.toObject();
-      if (!req.admin) {
-        delete obj.helpingAmount;
-        delete obj.binanceRate;
-        delete obj.inrAmount;
-        delete obj.usdtAmount;
-      }
-      // the Diamond upgrade fee is kept as a deposit record for the accounts, but it was paid to
-      // the platform and never entered the store wallet: shown as its own line
-      if (obj.purpose === 'diamond_fee') obj.type = 'diamond_fee';
-      if (obj.purpose === 'frozen_release') obj.type = 'frozen_release';
-      return obj;
-    });
+    const sanitizedRequests = requests.map((r) => lineForStore(r, Boolean(req.admin)));
 
     const defaultLimit = {
       maxAmount: 500,
@@ -180,13 +204,24 @@ router.get('/wallet', authSellerOrAdmin, async (req, res) => {
       pendingIncreaseRequest: { status: 'none' },
     };
 
-    // Check pending unconfirmed orders count
-    const pendingOrdersCount = await Order.countDocuments({
-      $or: [
-        { 'items.seller': seller._id, 'items.itemStatus': 'pending' },
-        { seller: seller._id, status: 'pending' },
-      ],
-    });
+    const pendingOrdersCount = await countUnconfirmedOrders(seller._id);
+
+    // 12 months of money that really moved, one compact line each, for the wallet charts
+    // (the browser groups them into days / months in the store's own time zone)
+    const since = new Date();
+    since.setMonth(since.getMonth() - 12);
+    const moves = await Withdrawal.find({ seller: seller._id, createdAt: { $gte: since } })
+      .select('type purpose amount approvedAmount profitAmount principalAmount status createdAt processedAt')
+      .lean();
+    const insights = moves
+      .filter((m) => m.purpose !== 'diamond_fee')
+      .map((m) => ({
+        t: m.processedAt && (m.type === 'deposit' || m.type === 'withdrawal') ? m.processedAt : m.createdAt,
+        type: m.purpose === 'frozen_release' ? 'frozen_release' : m.type,
+        amount: Number(m.approvedAmount != null && (m.type === 'deposit' || m.type === 'withdrawal') ? m.approvedAmount : m.amount) || 0,
+        profit: Number(m.profitAmount) || 0,
+        status: m.status,
+      }));
 
     res.json({
       wallet: {
@@ -206,6 +241,8 @@ router.get('/wallet', authSellerOrAdmin, async (req, res) => {
       withdrawalMethods: seller.withdrawalMethods || {},
       pendingOrdersCount,
       requests: sanitizedRequests,
+      hasMoreLines: requests.length >= 100,
+      insights,
       targets: seller.targets || [],
       seller: {
         storeName: seller.storeName,
@@ -215,6 +252,26 @@ router.get('/wallet', authSellerOrAdmin, async (req, res) => {
         securityDeposit: seller.securityDeposit || {},
       },
     });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/sellers/wallet/ledger?before=ISO&limit=50 — older wallet lines (the wallet screen
+// shows the latest 100 and pages back from there)
+router.get('/wallet/ledger', authSellerOrAdmin, async (req, res) => {
+  try {
+    const seller = await getSellerFromReq(req);
+    if (!seller) return res.status(404).json({ message: 'Seller not found. Please log in again.' });
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+    const q = { seller: seller._id };
+    if (req.query.before) {
+      const before = new Date(req.query.before);
+      if (Number.isNaN(before.getTime())) return res.status(400).json({ message: 'Invalid date' });
+      q.createdAt = { $lt: before };
+    }
+    const rows = await Withdrawal.find(q).sort({ createdAt: -1 }).limit(limit + 1);
+    res.json({ lines: rows.slice(0, limit).map((r) => lineForStore(r, Boolean(req.admin))), hasMore: rows.length > limit });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -310,13 +367,7 @@ router.post('/wallet/withdraw', authSellerOrAdmin, blockWhenFrozen('withdrawing'
     // order when any item was this seller's and any (other seller's) item was waiting, or when the
     // order's first seller was this seller — so another store's unconfirmed item blocked payouts.
     // (A line without a seller belongs to the order's seller.)
-    const unconfirmedCount = await Order.countDocuments({
-      status: { $nin: ['cancelled', 'refunded', 'delivered'] },
-      $or: [
-        { items: { $elemMatch: { seller: seller._id, $or: [{ itemStatus: 'pending' }, { itemStatus: { $exists: false } }, { itemStatus: null }] } } },
-        { seller: seller._id, items: { $elemMatch: { seller: null, $or: [{ itemStatus: 'pending' }, { itemStatus: { $exists: false } }, { itemStatus: null }] } } },
-      ],
-    });
+    const unconfirmedCount = await countUnconfirmedOrders(seller._id);
 
     if (unconfirmedCount > 0) {
       return res.status(400).json({

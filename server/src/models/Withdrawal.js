@@ -66,6 +66,11 @@ const withdrawalSchema = new mongoose.Schema(
     pkrRate: { type: Number, default: 0 },          // PKR per 1 USDT on that day (1:1 PKR members)
     finConfirmed: { type: Boolean, default: false }, // USDT amount was confirmed by an admin
     finSkip: { type: Boolean, default: false },      // no real money moved on Binance (e.g. helping-only credit)
+    // What a line is for when its type alone does not say it: 'diamond_fee' (the one-time Diamond
+    // upgrade fee, written by the team portal; it never enters the store wallet) or 'frozen_release'
+    // (held payouts released when a store is active again). It was missing from the schema, so
+    // lines written by this server lost it.
+    purpose: { type: String, default: undefined },
     // Status
     // 'processing' = an admin's decision is being applied right now (see finishWalletRequest)
     status: { type: String, enum: ['pending', 'processing', 'approved', 'rejected', 'completed'], default: 'pending' },

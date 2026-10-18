@@ -1,386 +1,293 @@
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams, Link, useOutletContext } from 'react-router-dom';
-import { sapi, fmtDay, fmtDate } from '../api.js';
+import { sapi, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import CurrencySelector from '../components/CurrencySelector.jsx';
-import CurrencyConverterWidget from '../components/CurrencyConverterWidget.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 import { getSocket } from '../socket.js';
 import { playNotificationSound } from '../utils/audio.js';
-
-const STATUS_COLOR = {
-  pending: 'chip-orange',
-  approved: 'chip-green',
-  rejected: 'chip-red',
-  completed: 'chip-green',
-};
-
-const TYPE_BADGE = {
-  deposit: { label: 'Deposit', color: '#16a34a', bg: '#dcfce7', icon: '💰' },
-  withdrawal: { label: 'Withdrawal', color: '#dc2626', bg: '#fee2e2', icon: '💸' },
-  order_processing_lock: { label: 'Order Processing Lock', color: '#d97706', bg: '#fef3c7', icon: '🔒' },
-  order_delivered_release: { label: 'Delivered Payout (+Profit)', color: '#2563eb', bg: '#dbeafe', icon: '🎉' },
-  order_cancelled_release: { label: 'Cancelled Order Refund', color: '#64748b', bg: '#f1f5f9', icon: '↩️' },
-  adjustment: { label: 'Admin Adjustment', color: '#7c3aed', bg: '#ede9fe', icon: '⚙️' },
-  diamond_fee: { label: 'Diamond Upgrade Fee (one-time)', color: '#0e7490', bg: '#cffafe', icon: '💎' },
-  frozen_release: { label: 'Frozen Amount Released', color: '#1d4ed8', bg: '#dbeafe', icon: '🔓' },
-};
+import WalletInsights from './wallet/WalletInsights.jsx';
+import { usd, DEFAULT_LIMIT, describeLine, STATUS_LABEL } from './wallet/walletUtils.js';
 
 const INDIAN_BANKS = [
-  'State Bank of India (SBI)',
-  'HDFC Bank',
-  'ICICI Bank',
-  'Axis Bank',
-  'Punjab National Bank (PNB)',
-  'Kotak Mahindra Bank',
-  'Bank of Baroda',
-  'Canara Bank',
-  'Union Bank of India',
-  'IndusInd Bank',
-  'IDFC FIRST Bank',
-  'Yes Bank',
-  'Federal Bank',
-  'Bank of India',
-  'Central Bank of India',
-  'Indian Bank',
-  'UCO Bank',
-  'Indian Overseas Bank',
-  'Standard Chartered Bank',
-  'Other / Custom Bank',
+  'State Bank of India (SBI)', 'HDFC Bank', 'ICICI Bank', 'Axis Bank', 'Punjab National Bank (PNB)', 'Kotak Mahindra Bank',
+  'Bank of Baroda', 'Canara Bank', 'Union Bank of India', 'IndusInd Bank', 'IDFC FIRST Bank', 'Yes Bank', 'Federal Bank',
+  'Bank of India', 'Central Bank of India', 'Indian Bank', 'UCO Bank', 'Indian Overseas Bank', 'Standard Chartered Bank', 'Other / Custom Bank',
 ];
 
-const UPI_APPS = [
-  { id: 'gpay', name: 'Google Pay (GPay)', handle: '@okhdfcbank', icon: '🔵', color: '#1a73e8' },
-  { id: 'phonepe', name: 'PhonePe', handle: '@ybl', icon: '🟣', color: '#5f259f' },
-  { id: 'paytm', name: 'Paytm UPI', handle: '@paytm', icon: '🔷', color: '#00b9f5' },
-  { id: 'bhim', name: 'BHIM UPI', handle: '@upi', icon: '🟠', color: '#f37021' },
-  { id: 'amazonpay', name: 'Amazon Pay', handle: '@apl', icon: '🟡', color: '#ff9900' },
-  { id: 'other', name: 'Custom UPI VPA', handle: '', icon: '⚡', color: '#2563eb' },
+const PAYOUT_METHODS = [
+  { id: 'bank', label: 'Bank transfer', sub: 'NEFT / IMPS / RTGS', saved: 'bankTransfer' },
+  { id: 'upi', label: 'UPI', sub: 'Any UPI ID', saved: 'upi' },
+  { id: 'paytm', label: 'Paytm', sub: 'Mobile number', saved: 'paytm' },
+  { id: 'gpay', label: 'Google Pay', sub: 'Mobile or UPI', saved: 'gpay' },
+  { id: 'phonepe', label: 'PhonePe', sub: 'Mobile or UPI', saved: 'phonepe' },
+  { id: 'usdt', label: 'USDT', sub: 'TRC-20 / BEP-20', saved: 'usdt' },
 ];
-
-// Shown instead of an action while the store is frozen / suspended (the server refuses it too)
-function RestrictedNote({ what }) {
-  return (
-    <div className="seller-restricted-note">
-      <span className="srn-icon">🔒</span>
-      <div>
-        <b>Not available while your account is restricted</b>
-        <p>Your store is frozen, so {what} is paused. Please contact support to resolve it.</p>
-      </div>
-      <Link to="/seller/support" className="srn-btn">💬 Contact Support</Link>
-    </div>
-  );
-}
+const DEPOSIT_METHODS = [
+  { id: 'upi', label: 'UPI / QR', sub: 'GPay, PhonePe, Paytm, BHIM' },
+  { id: 'bank', label: 'Bank transfer', sub: 'IMPS / NEFT / RTGS' },
+  { id: 'card', label: 'Card', sub: 'Visa, Mastercard, RuPay' },
+  { id: 'other', label: 'Other / wire', sub: 'International transfer' },
+];
+const LEDGER_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'orders', label: 'Orders' },
+  { id: 'deposits', label: 'Deposits' },
+  { id: 'withdrawals', label: 'Payouts' },
+  { id: 'other', label: 'Other' },
+];
+const EMPTY_WD = { amount: '', upiId: '', phone: '', walletAddress: '', network: 'TRC-20', accountTitle: '', accountNumber: '', bankName: 'State Bank of India (SBI)', ifscCode: '', bankBranch: '' };
+const EMPTY_DEP = { amount: '', method: 'upi', depositRef: '', depositNote: '', depositedFrom: '' };
 
 export default function SellerWallet() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { formatMoney, currentCurrency } = useCurrency();
+  const { formatMoney, convert, currentCurrency, rates } = useCurrency();
+  const { isFrozen: restricted } = useOutletContext() || {};
 
-  // Initialize wallet from localStorage seller data as immediate fallback
-  // This prevents $0.00 flicker while API call is in progress
-  // The API load() will overwrite with fresh data shortly after
+  // the cached seller record avoids a $0.00 flash while the first answer is on its way
   const [wallet, setWallet] = useState(() => {
     try {
-      const cached = JSON.parse(localStorage.getItem('ng_seller') || 'null');
-      return cached?.wallet || null;
+      return JSON.parse(localStorage.getItem('ng_seller') || 'null')?.wallet || null;
     } catch {
       return null;
     }
   });
   const [withdrawalLimit, setWithdrawalLimit] = useState(null);
+  const [withdrawalMethods, setWithdrawalMethods] = useState({});
   const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
   const [requests, setRequests] = useState([]);
+  const [hasMoreLines, setHasMoreLines] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [insights, setInsights] = useState([]);
   const [loading, setLoading] = useState(true);
-  const { isFrozen: restricted } = useOutletContext() || {};
-  const [tab, setTab] = useState(() => searchParams.get('tab') || 'ledger'); // 'ledger' | 'deposit' | 'withdraw'
-  const [ledgerFilter, setLedgerFilter] = useState('all'); // 'all' | 'orders' | 'deposits' | 'withdrawals'
-  const [msg, setMsg] = useState('');
-  const [err, setErr] = useState('');
+  const [loadErr, setLoadErr] = useState('');
+
+  const [tab, setTab] = useState(() => (['ledger', 'deposit', 'withdraw'].includes(searchParams.get('tab')) ? searchParams.get('tab') : 'ledger'));
+  const [ledgerFilter, setLedgerFilter] = useState('all');
+  const [ledgerQuery, setLedgerQuery] = useState('');
+  const [notice, setNotice] = useState(null); // { ok, text } — one message, shown in the open form
   const [submitting, setSubmitting] = useState(false);
   const submitLockRef = useRef(false);
 
-  // Limit Increase Modal
   const [limitModalOpen, setLimitModalOpen] = useState(false);
   const [reqLimitAmount, setReqLimitAmount] = useState('');
   const [reqLimitReason, setReqLimitReason] = useState('');
   const [submittingLimitReq, setSubmittingLimitReq] = useState(false);
+  const [respondingOffer, setRespondingOffer] = useState(false);
+  const [successSlip, setSuccessSlip] = useState(null);
 
-  // Request Success Confirmation Modal (for Deposit & Withdrawal)
-  const [requestSuccessModal, setRequestSuccessModal] = useState(null);
+  // forms
+  const [depForm, setDepForm] = useState(EMPTY_DEP);
+  const [depInLocal, setDepInLocal] = useState(false);
+  const [method, setMethod] = useState('bank');
+  const [activeSavedKey, setActiveSavedKey] = useState('');
+  const savedKeyRef = useRef(''); // read by load(): a live refresh must never reset a form being filled
+  const [confirmAccountNumber, setConfirmAccountNumber] = useState('');
+  const [accountType, setAccountType] = useState('Savings');
+  const [usdtNetwork, setUsdtNetwork] = useState('TRC-20');
+  const [wdForm, setWdForm] = useState(EMPTY_WD);
 
   useEffect(() => {
     const urlTab = searchParams.get('tab');
-    if (urlTab && ['ledger', 'deposit', 'withdraw'].includes(urlTab)) {
-      setTab(urlTab);
-    }
+    if (urlTab && ['ledger', 'deposit', 'withdraw'].includes(urlTab)) setTab(urlTab);
   }, [searchParams]);
 
-  const handleTabChange = (newTab) => {
-    setTab(newTab);
-    setSearchParams({ tab: newTab });
-    setMsg('');
-    setErr('');
+  const changeTab = (next) => {
+    setTab(next);
+    setSearchParams({ tab: next });
+    setNotice(null);
   };
 
-  // Deposit form
-  const [depForm, setDepForm] = useState({
-    amount: '',
-    method: 'upi',
-    depositRef: '',
-    depositNote: '',
-    depositedFrom: '',
-  });
-
-  // Withdrawal form
-  const [method, setMethod] = useState('bank'); // 'bank' | 'upi' | 'paytm' | 'gpay' | 'phonepe' | 'usdt'
-  const [withdrawalMethods, setWithdrawalMethods] = useState({});
-  const [activeSavedKey, setActiveSavedKey] = useState('');
-  const [confirmAccountNumber, setConfirmAccountNumber] = useState('');
-  const [accountType, setAccountType] = useState('Savings');
-  const [selectedUpiApp, setSelectedUpiApp] = useState('gpay');
-  const [upiPhone, setUpiPhone] = useState('');
-  const [usdtNetwork, setUsdtNetwork] = useState('TRC-20');
-  const [wdForm, setWdForm] = useState({
-    amount: '',
-    upiId: '',
-    phone: '',
-    walletAddress: '',
-    network: 'TRC-20',
-    accountTitle: '',
-    accountNumber: '',
-    bankName: 'State Bank of India (SBI)',
-    ifscCode: '',
-    bankBranch: '',
-  });
-
-  const applySavedMethod = (key, data) => {
+  const applySavedMethod = useCallback((key, data) => {
+    if (!data) return;
+    savedKeyRef.current = key;
     setActiveSavedKey(key);
     if (key === 'bankTransfer') {
       setMethod('bank');
-      setWdForm((prev) => ({
-        ...prev,
-        accountTitle: data.accountTitle || '',
-        bankName: data.bankName || 'State Bank of India (SBI)',
-        accountNumber: data.accountNumber || '',
-        ifscCode: data.ifscCode || '',
-        bankBranch: data.branchName || '',
-      }));
+      setWdForm((p) => ({ ...p, accountTitle: data.accountTitle || '', bankName: data.bankName || 'State Bank of India (SBI)', accountNumber: data.accountNumber || '', ifscCode: data.ifscCode || '', bankBranch: data.branchName || '' }));
       setConfirmAccountNumber(data.accountNumber || '');
       setAccountType(data.accountType || 'Savings');
     } else if (key === 'upi') {
       setMethod('upi');
-      setWdForm((prev) => ({
-        ...prev,
-        upiId: data.upiId || '',
-        accountTitle: data.holderName || '',
-      }));
-      setSelectedUpiApp('other');
+      setWdForm((p) => ({ ...p, upiId: data.upiId || '', accountTitle: data.holderName || '' }));
     } else if (key === 'paytm') {
       setMethod('paytm');
-      setWdForm((prev) => ({
-        ...prev,
-        phone: data.phone || '',
-        upiId: data.phone ? `${data.phone}@paytm` : '',
-        accountTitle: data.accountName || '',
-      }));
-      setUpiPhone(data.phone || '');
+      setWdForm((p) => ({ ...p, phone: data.phone || '', upiId: data.phone ? `${data.phone}@paytm` : '', accountTitle: data.accountName || '' }));
     } else if (key === 'gpay') {
       setMethod('gpay');
-      setWdForm((prev) => ({
-        ...prev,
-        phone: data.phone || '',
-        upiId: data.upiId || (data.phone ? `${data.phone}@okhdfcbank` : ''),
-        accountTitle: data.accountName || '',
-      }));
-      setUpiPhone(data.phone || '');
+      setWdForm((p) => ({ ...p, phone: data.phone || '', upiId: data.upiId || '', accountTitle: data.accountName || '' }));
     } else if (key === 'phonepe') {
       setMethod('phonepe');
-      setWdForm((prev) => ({
-        ...prev,
-        phone: data.phone || '',
-        upiId: data.upiId || (data.phone ? `${data.phone}@ybl` : ''),
-        accountTitle: data.accountName || '',
-      }));
-      setUpiPhone(data.phone || '');
+      setWdForm((p) => ({ ...p, phone: data.phone || '', upiId: data.upiId || '', accountTitle: data.accountName || '' }));
     } else if (key === 'usdt') {
       setMethod('usdt');
-      setWdForm((prev) => ({
-        ...prev,
-        walletAddress: data.walletAddress || '',
-        network: data.network || 'TRC-20',
-      }));
+      setWdForm((p) => ({ ...p, walletAddress: data.walletAddress || '', network: data.network || 'TRC-20' }));
       setUsdtNetwork(data.network || 'TRC-20');
     }
-  };
+  }, []);
 
-  const load = () => {
-    sapi('/sellers/wallet')
+  const load = useCallback(() => {
+    return sapi('/sellers/wallet')
       .then((res) => {
         setWallet(res.wallet);
         setWithdrawalLimit(res.withdrawalLimit);
-        setWithdrawalMethods(res.withdrawalMethods || res.seller?.withdrawalMethods || {});
+        const wm = res.withdrawalMethods || res.seller?.withdrawalMethods || {};
+        setWithdrawalMethods(wm);
         setPendingOrdersCount(res.pendingOrdersCount || 0);
         setRequests(res.requests || []);
-
-        // Auto-select first active saved method if form empty
-        const wm = res.withdrawalMethods || res.seller?.withdrawalMethods || {};
-        if (!activeSavedKey) {
-          if (wm.bankTransfer?.enabled && wm.bankTransfer?.accountNumber) {
-            applySavedMethod('bankTransfer', wm.bankTransfer);
-          } else if (wm.upi?.enabled && wm.upi?.upiId) {
-            applySavedMethod('upi', wm.upi);
-          } else if (wm.paytm?.enabled && wm.paytm?.phone) {
-            applySavedMethod('paytm', wm.paytm);
-          } else if (wm.gpay?.enabled) {
-            applySavedMethod('gpay', wm.gpay);
-          } else if (wm.phonepe?.enabled) {
-            applySavedMethod('phonepe', wm.phonepe);
-          } else if (wm.usdt?.enabled && wm.usdt?.walletAddress) {
-            applySavedMethod('usdt', wm.usdt);
-          }
+        setHasMoreLines(Boolean(res.hasMoreLines));
+        setInsights(Array.isArray(res.insights) ? res.insights : []);
+        setLoadErr('');
+        // pre-select the first saved payout method once (never over a method the seller picked)
+        if (!savedKeyRef.current) {
+          if (wm.bankTransfer?.enabled && wm.bankTransfer?.accountNumber) applySavedMethod('bankTransfer', wm.bankTransfer);
+          else if (wm.upi?.enabled && wm.upi?.upiId) applySavedMethod('upi', wm.upi);
+          else if (wm.paytm?.enabled && wm.paytm?.phone) applySavedMethod('paytm', wm.paytm);
+          else if (wm.gpay?.enabled && (wm.gpay?.phone || wm.gpay?.upiId)) applySavedMethod('gpay', wm.gpay);
+          else if (wm.phonepe?.enabled && (wm.phonepe?.phone || wm.phonepe?.upiId)) applySavedMethod('phonepe', wm.phonepe);
+          else if (wm.usdt?.enabled && wm.usdt?.walletAddress) applySavedMethod('usdt', wm.usdt);
         }
       })
-      .catch((err) => {
-        console.error('[SellerWallet] load error:', err?.message);
-        // Fallback: use cached seller wallet from localStorage if API fails
+      .catch((e) => {
+        setLoadErr(e?.message || 'Could not load your wallet');
         try {
           const cached = JSON.parse(localStorage.getItem('ng_seller') || 'null');
-          if (cached?.wallet) setWallet(cached.wallet);
+          if (cached?.wallet) setWallet((w) => w || cached.wallet);
         } catch {}
       })
       .finally(() => setLoading(false));
-  };
+  }, [applySavedMethod]);
 
   useEffect(() => {
     load();
-
     const socket = getSocket();
     const token = localStorage.getItem('ng_seller_token');
-
-    // Ensure seller is joined to their socket room so wallet:update events arrive
-    // This is a safety net in case SellerLayout's join hasn't fired yet
     const sellerData = (() => { try { return JSON.parse(localStorage.getItem('ng_seller') || 'null'); } catch { return null; } })();
+    // safety net: be in this store's room so wallet events arrive (the layout joins it too)
     const joinRoom = () => {
-      // fresh read: never re-join with a token that was logged out after this screen opened
       const t = localStorage.getItem('ng_seller_token');
-      if (t && t === token && sellerData?._id) {
-        socket.emit('seller:join', { token: t, sellerId: sellerData._id });
-      }
+      if (t && t === token && sellerData?._id) socket.emit('seller:join', { token: t, sellerId: sellerData._id });
     };
     if (socket.connected) joinRoom();
     socket.on('connect', joinRoom);
 
+    let timer = null;
+    const refresh = () => {
+      clearTimeout(timer);
+      timer = setTimeout(load, 500); // events come in bursts: one reload
+    };
     const onWalletUpdate = (payload) => {
-      // Directly update wallet state from socket payload — instant, no API round-trip needed
-      // This ensures balance shows immediately without waiting for API call
-      if (payload && typeof payload === 'object') {
-        if (payload?.withdrawalLimit) {
-          setWithdrawalLimit(payload.withdrawalLimit);
-        }
-        // If payload has balance data, update wallet state directly
-        const hasWalletData = payload.balance !== undefined ||
-          payload.totalDeposited !== undefined ||
-          payload.pendingDeposit !== undefined ||
-          payload.pendingWithdrawal !== undefined;
-        if (hasWalletData) {
-          setWallet((prev) => ({
-            ...(prev || {}),
-            ...(payload.balance !== undefined && { balance: payload.balance }),
-            ...(payload.totalDeposited !== undefined && { totalDeposited: payload.totalDeposited }),
-            ...(payload.totalEarned !== undefined && { totalEarned: payload.totalEarned }),
-            ...(payload.totalWithdrawn !== undefined && { totalWithdrawn: payload.totalWithdrawn }),
-            ...(payload.pendingDeposit !== undefined && { pendingDeposit: payload.pendingDeposit }),
-            ...(payload.pendingWithdrawal !== undefined && { pendingWithdrawal: payload.pendingWithdrawal }),
-          }));
-        }
+      if (payload && typeof payload === 'object' && !payload.notification) {
+        const figures = payload.wallet && typeof payload.wallet === 'object' ? payload.wallet : payload;
+        if (payload.withdrawalLimit) setWithdrawalLimit(payload.withdrawalLimit);
+        const keys = ['balance', 'processingFund', 'frozenFund', 'totalDeposited', 'totalEarned', 'totalWithdrawn', 'pendingDeposit', 'pendingWithdrawal', 'totalProfitEarned'];
+        const patch = {};
+        for (const k of keys) if (figures[k] !== undefined) patch[k] = figures[k];
+        if (Object.keys(patch).length) setWallet((w) => ({ ...(w || {}), ...patch }));
       }
-      // Also reload from API for full consistency (requests list, etc.)
-      load();
+      refresh();
     };
-
-    // notify event: server sends this on approval — also triggers a refresh
-    const onNotify = () => load();
-
-    socket.on('wallet:update', onWalletUpdate);
-    socket.on('withdrawal:update', onWalletUpdate);
-    socket.on('withdrawal:new', onWalletUpdate);
-    socket.on('seller:limit_update', onWalletUpdate);
-    socket.on('limit:update', onWalletUpdate);
-    socket.on('seller:status_update', onWalletUpdate);
-    socket.on('order:new', onWalletUpdate);
-    socket.on('notify', onNotify);
-
+    const events = ['wallet:update', 'withdrawal:update', 'withdrawal:new', 'seller:limit_update', 'limit:update', 'seller:status_update', 'order:new', 'order:update'];
+    events.forEach((e) => socket.on(e, onWalletUpdate));
+    socket.on('notify', refresh);
     return () => {
+      clearTimeout(timer);
       socket.off('connect', joinRoom);
-      socket.off('wallet:update', onWalletUpdate);
-      socket.off('withdrawal:update', onWalletUpdate);
-      socket.off('withdrawal:new', onWalletUpdate);
-      socket.off('seller:limit_update', onWalletUpdate);
-      socket.off('limit:update', onWalletUpdate);
-      socket.off('seller:status_update', onWalletUpdate);
-      socket.off('order:new', onWalletUpdate);
-      socket.off('notify', onNotify);
+      events.forEach((e) => socket.off(e, onWalletUpdate));
+      socket.off('notify', refresh);
     };
-  }, []);
+  }, [load]);
 
+  const loadMore = async () => {
+    const last = requests[requests.length - 1];
+    if (!last || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const res = await sapi(`/sellers/wallet/ledger?before=${encodeURIComponent(last.createdAt)}&limit=50`);
+      setRequests((prev) => {
+        const seen = new Set(prev.map((r) => r._id));
+        return [...prev, ...(res.lines || []).filter((r) => !seen.has(r._id))];
+      });
+      setHasMoreLines(Boolean(res.hasMore));
+    } catch (e) {
+      setNotice({ ok: false, text: e.message || 'Could not load older transactions' });
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  // ── figures ──
+  const bal = Number(wallet?.balance) || 0;
+  const processingFund = Number(wallet?.processingFund) || 0;
+  const frozenFund = Number(wallet?.frozenFund) || 0;
+  const pendingWithdrawal = Number(wallet?.pendingWithdrawal) || 0;
+  const pendingDeposit = Number(wallet?.pendingDeposit) || 0;
+  const securityDeposit = Number(wallet?.securityDeposit) || 0;
+  const totalProfitEarned = Number(wallet?.totalProfitEarned) || 0;
+  const totalWithdrawn = Number(wallet?.totalWithdrawn) || 0;
+  const totalDeposited = Number(wallet?.totalDeposited) || 0;
+  const totalEarned = Number(wallet?.totalEarned) || 0;
+  const limit = { ...DEFAULT_LIMIT, ...(withdrawalLimit || {}) };
+  const maxLimit = Number(limit.maxAmount ?? 500);
+  const minLimit = Number(limit.minAmount ?? 10);
+  const openWithdrawal = requests.find((r) => r.type === 'withdrawal' && (r.status === 'pending' || r.status === 'processing'));
+  const openDeposit = requests.find((r) => r.type === 'deposit' && (r.status === 'pending' || r.status === 'processing'));
+  const parts = [
+    { key: 'Available', v: bal, c: '#10b981' },
+    { key: 'Locked in orders', v: processingFund, c: '#3b82f6' },
+    { key: 'Payout in progress', v: pendingWithdrawal, c: '#8b5cf6' },
+    { key: 'Frozen', v: frozenFund, c: '#94a3b8' },
+  ];
+  const partsTotal = parts.reduce((a, p) => a + Math.max(0, p.v), 0);
+
+  const ledger = useMemo(() => {
+    const q = ledgerQuery.trim().toLowerCase();
+    return requests.filter((r) => {
+      const t = String(r.type || '');
+      if (ledgerFilter === 'orders' && !t.startsWith('order_')) return false;
+      if (ledgerFilter === 'deposits' && t !== 'deposit') return false;
+      if (ledgerFilter === 'withdrawals' && t !== 'withdrawal') return false;
+      if (ledgerFilter === 'other' && (t.startsWith('order_') || t === 'deposit' || t === 'withdrawal')) return false;
+      if (!q) return true;
+      return [r.orderNumber, r.depositRef, r.transactionRef, describeLine(r).label].some((x) => String(x || '').toLowerCase().includes(q));
+    });
+  }, [requests, ledgerFilter, ledgerQuery]);
+  const filterCount = (id) => requests.filter((r) => {
+    const t = String(r.type || '');
+    if (id === 'all') return true;
+    if (id === 'orders') return t.startsWith('order_');
+    if (id === 'deposits') return t === 'deposit';
+    if (id === 'withdrawals') return t === 'withdrawal';
+    return !(t.startsWith('order_') || t === 'deposit' || t === 'withdrawal');
+  }).length;
+
+  // ── actions ──
   const setDep = (k) => (e) => setDepForm((f) => ({ ...f, [k]: e.target.value }));
   const setWd = (k) => (e) => setWdForm((f) => ({ ...f, [k]: e.target.value }));
+  const fail = (text) => setNotice({ ok: false, text });
 
   const handleDeposit = async (e) => {
     e.preventDefault();
     if (submitLockRef.current) return;
-    setErr('');
-    setMsg('');
-
+    setNotice(null);
     const amt = Number(depForm.amount);
-    if (!amt || isNaN(amt) || amt < 1) {
-      setErr('Please enter a valid deposit amount (minimum $1.00 USD)');
-      return;
-    }
-    if (!depForm.depositRef || !depForm.depositRef.trim()) {
-      setErr('Please enter the Payment UTR / Transaction Reference ID');
-      return;
-    }
-
+    if (!amt || Number.isNaN(amt) || amt < 1) return fail('Enter a deposit amount of at least $1.00.');
+    if (!depForm.depositRef.trim()) return fail('Enter the payment UTR / transaction reference so the team can find your payment.');
+    if (openDeposit) return fail('You already have a deposit waiting for approval. Please wait until it is approved before sending another.');
     submitLockRef.current = true;
     setSubmitting(true);
     try {
-      const res = await sapi('/sellers/wallet/deposit', {
+      await sapi('/sellers/wallet/deposit', {
         method: 'POST',
-        body: {
-          amount: amt,
-          method: depForm.method || 'bank',
-          depositRef: (depForm.depositRef || '').trim(),
-          depositNote: (depForm.depositNote || '').trim(),
-          depositedFrom: (depForm.depositedFrom || '').trim(),
-        },
+        body: { amount: amt, method: depForm.method || 'bank', depositRef: depForm.depositRef.trim(), depositNote: depForm.depositNote.trim(), depositedFrom: depForm.depositedFrom.trim() },
       });
-
-      const submittedAmt = amt;
-      const submittedRef = (depForm.depositRef || '').trim();
-      const submittedMethod = depForm.method || 'bank';
-      const submittedFrom = (depForm.depositedFrom || '').trim();
-
-      setMsg(`Deposit request for $${submittedAmt.toLocaleString('en-US', { minimumFractionDigits: 2 })} submitted successfully! Admin will verify and credit your balance.`);
-      setDepForm({ amount: '', method: 'upi', depositRef: '', depositNote: '', depositedFrom: '' });
-
-      // Audio notification chime
       playNotificationSound('deposit');
-
-      // Open High-Visibility Confirmation Modal Dialog
-      setRequestSuccessModal({
-        type: 'deposit',
-        title: '💰 Deposit Request Submitted!',
-        amount: submittedAmt,
-        ref: submittedRef,
-        method: submittedMethod,
-        from: submittedFrom,
-        message: 'Your deposit request has been securely dispatched to Super Admin. Once verified, the funds will be added directly to your Available Balance.',
-      });
-
+      setSuccessSlip({ type: 'deposit', amount: amt, rows: [['Method', DEPOSIT_METHODS.find((m) => m.id === depForm.method)?.label || depForm.method], ['UTR / reference', depForm.depositRef.trim()], ...(depForm.depositedFrom.trim() ? [['Sent from', depForm.depositedFrom.trim()]] : [])] });
+      setDepForm(EMPTY_DEP);
       load();
-    } catch (e) {
-      setErr(e.message || 'Failed to submit deposit request. Please check your connection.');
+    } catch (err) {
+      fail(err.message || 'Could not send the deposit request. Check your connection and try again.');
     } finally {
       submitLockRef.current = false;
       setSubmitting(false);
@@ -390,62 +297,26 @@ export default function SellerWallet() {
   const handleWithdraw = async (e) => {
     e.preventDefault();
     if (submitLockRef.current) return;
-    setErr('');
-    setMsg('');
-
-    if (pendingOrdersCount > 0) {
-      return setErr(`Withdrawal blocked! You have ${pendingOrdersCount} unconfirmed pending order(s). Please confirm them in "Orders & Dispatch" first.`);
-    }
-
+    setNotice(null);
+    if (pendingOrdersCount > 0) return fail(`Confirm your ${pendingOrdersCount} waiting order${pendingOrdersCount === 1 ? '' : 's'} in Orders first — payouts are paused until then.`);
+    if (openWithdrawal) return fail('You already have a payout in progress. A new one can be requested once it is done.');
     const amt = Number(wdForm.amount);
-    const maxLimit = withdrawalLimit?.maxAmount !== undefined ? withdrawalLimit.maxAmount : 500;
-    const minLimit = withdrawalLimit?.minAmount !== undefined ? withdrawalLimit.minAmount : 10;
-
-    if (!amt || isNaN(amt) || amt < minLimit) {
-      return setErr(`Minimum withdrawal amount is ${formatMoney(minLimit)}`);
-    }
-    if (amt > maxLimit) {
-      return setErr(`Withdrawal amount (${formatMoney(amt)}) exceeds your current tier limit of ${formatMoney(maxLimit)}. Apply for a limit increase below.`);
-    }
-    if (amt > (wallet?.balance || 0)) {
-      return setErr(`Insufficient balance. Available: ${formatMoney(wallet?.balance)}`);
-    }
-
+    // limits are in US dollars, like the amount field
+    if (!amt || Number.isNaN(amt) || amt < minLimit) return fail(`The minimum payout is ${usd(minLimit)}.`);
+    if (amt > maxLimit) return fail(`${usd(amt)} is above your payout limit of ${usd(maxLimit)} per request.`);
+    if (amt > bal) return fail(`Not enough available balance — you have ${usd(bal)}.`);
     if (method === 'bank') {
-      if (!wdForm.accountTitle || !wdForm.accountNumber || !wdForm.bankName) {
-        return setErr('Please fill in Account Holder Name, Bank Name, and Account Number.');
-      }
-      if (confirmAccountNumber && confirmAccountNumber !== wdForm.accountNumber) {
-        return setErr('Bank Account Numbers do not match. Please verify your account number.');
-      }
-      if (wdForm.ifscCode && wdForm.ifscCode.trim().length < 11) {
-        return setErr('Please enter a valid 11-character Indian IFSC Code (e.g. SBIN0001234).');
-      }
+      if (!wdForm.accountTitle || !wdForm.accountNumber || !wdForm.bankName) return fail('Fill in the account holder name, bank and account number.');
+      if (confirmAccountNumber !== wdForm.accountNumber) return fail('The two account numbers do not match.');
+      if (wdForm.ifscCode && wdForm.ifscCode.trim().length !== 11) return fail('The IFSC code has 11 characters (e.g. SBIN0001234).');
     } else if (method === 'upi') {
-      if (!wdForm.upiId || !wdForm.upiId.includes('@')) {
-        return setErr('Please enter a valid UPI ID / VPA (e.g. yourname@okhdfcbank or 9876543210@paytm).');
-      }
-      if (!wdForm.accountTitle) {
-        return setErr('Please enter your full registered name on the UPI / Bank account.');
-      }
-    } else if (method === 'paytm') {
-      if (!wdForm.phone && !upiPhone) {
-        return setErr('Please enter your 10-digit Paytm registered mobile number.');
-      }
-    } else if (method === 'gpay') {
-      if (!wdForm.phone && !wdForm.upiId && !upiPhone) {
-        return setErr('Please enter your Google Pay registered mobile number or UPI ID.');
-      }
-    } else if (method === 'phonepe') {
-      if (!wdForm.phone && !wdForm.upiId && !upiPhone) {
-        return setErr('Please enter your PhonePe registered mobile number or UPI ID.');
-      }
+      if (!wdForm.upiId.includes('@')) return fail('Enter a valid UPI ID (e.g. name@okhdfcbank).');
+      if (!wdForm.accountTitle) return fail('Enter the name registered on the UPI account.');
+    } else if (['paytm', 'gpay', 'phonepe'].includes(method)) {
+      if (!wdForm.phone && !wdForm.upiId) return fail('Enter the registered mobile number or UPI ID.');
     } else if (method === 'usdt') {
-      if (!wdForm.walletAddress) {
-        return setErr('Please enter your USDT receiving wallet address (TRC-20 / BEP-20).');
-      }
+      if (!wdForm.walletAddress.trim()) return fail('Enter your USDT wallet address.');
     }
-
     submitLockRef.current = true;
     setSubmitting(true);
     try {
@@ -454,39 +325,26 @@ export default function SellerWallet() {
         body: {
           amount: amt,
           method,
-          upiId: (wdForm.upiId || '').trim(),
-          phone: (wdForm.phone || upiPhone || '').trim(),
-          walletAddress: (wdForm.walletAddress || '').trim(),
+          upiId: wdForm.upiId.trim(),
+          phone: wdForm.phone.trim(),
+          walletAddress: wdForm.walletAddress.trim(),
           network: (usdtNetwork || wdForm.network || 'TRC-20').trim(),
-          accountTitle: (wdForm.accountTitle || '').trim(),
-          accountNumber: method === 'bank' ? (wdForm.accountNumber || '').trim() : '',
-          bankName: method === 'bank' ? (wdForm.bankName || '').trim() : '',
-          ifscCode: method === 'bank' ? (wdForm.ifscCode || '').trim().toUpperCase() : '',
-          branchName: method === 'bank' ? (wdForm.bankBranch || '').trim() : '',
+          accountTitle: wdForm.accountTitle.trim(),
+          accountNumber: method === 'bank' ? wdForm.accountNumber.trim() : '',
+          bankName: method === 'bank' ? wdForm.bankName.trim() : '',
+          ifscCode: method === 'bank' ? wdForm.ifscCode.trim().toUpperCase() : '',
+          branchName: method === 'bank' ? wdForm.bankBranch.trim() : '',
           accountType: method === 'bank' ? accountType : '',
-          upiPhone: (upiPhone || wdForm.phone || '').trim(),
+          upiPhone: wdForm.phone.trim(),
         },
       });
-
-      setMsg(`Withdrawal payout request for $${amt.toLocaleString('en-US', { minimumFractionDigits: 2 })} submitted successfully!`);
-      setWdForm((prev) => ({ ...prev, amount: '' }));
-
-      // Audio notification chime
       playNotificationSound('withdrawal');
-
-      // Open High-Visibility Confirmation Modal Dialog
-      setRequestSuccessModal({
-        type: 'withdrawal',
-        title: '💸 Payout Request Submitted!',
-        amount: amt,
-        method: method,
-        account: method === 'bank' ? `${wdForm.bankName} (A/C: •••• ${String(wdForm.accountNumber || '').slice(-4)})` : (wdForm.upiId || wdForm.phone || wdForm.walletAddress),
-        message: 'Your payout transfer request has been registered and deducted from your Available Balance. Super Admin will verify and process the transfer.',
-      });
-
+      const dest = method === 'bank' ? `${wdForm.bankName} ·••• ${String(wdForm.accountNumber).slice(-4)}` : method === 'usdt' ? `${wdForm.walletAddress.slice(0, 6)}…${wdForm.walletAddress.slice(-4)} (${usdtNetwork})` : wdForm.upiId || wdForm.phone;
+      setSuccessSlip({ type: 'withdrawal', amount: amt, rows: [['Method', PAYOUT_METHODS.find((m) => m.id === method)?.label || method], ['To', dest]] });
+      setWdForm((p) => ({ ...p, amount: '' }));
       load();
-    } catch (e) {
-      setErr(e.message || 'Failed to submit withdrawal request');
+    } catch (err) {
+      fail(err.message || 'Could not send the payout request.');
     } finally {
       submitLockRef.current = false;
       setSubmitting(false);
@@ -495,1674 +353,656 @@ export default function SellerWallet() {
 
   const handleLimitIncreaseSubmit = async (e) => {
     e.preventDefault();
-    setErr('');
-    setMsg('');
     const amt = Number(reqLimitAmount);
-    const currentMax = withdrawalLimit?.maxAmount !== undefined ? withdrawalLimit.maxAmount : 500;
-    if (!amt || amt <= currentMax) {
-      return setErr(`Requested limit must be greater than current limit of ${formatMoney(currentMax)}`);
-    }
+    if (!amt || amt <= maxLimit) return fail(`The new limit must be above your current ${usd(maxLimit)}.`);
     setSubmittingLimitReq(true);
     try {
-      await sapi('/sellers/wallet/limit-increase-request', {
-        method: 'POST',
-        body: {
-          requestedLimit: amt,
-          reason: reqLimitReason.trim(),
-        },
-      });
-      setMsg('🚀 Limit increase request submitted! An official notice has been posted to Admin Support Chat.');
+      await sapi('/sellers/wallet/limit-increase-request', { method: 'POST', body: { requestedLimit: amt, reason: reqLimitReason.trim() } });
+      setNotice({ ok: true, text: 'Limit increase request sent. The team will review it and send you an offer.' });
       setLimitModalOpen(false);
       setReqLimitAmount('');
       setReqLimitReason('');
       load();
-    } catch (e) {
-      setErr(e.message);
+    } catch (err) {
+      fail(err.message);
+      setLimitModalOpen(false);
     } finally {
       setSubmittingLimitReq(false);
     }
   };
 
-  const [respondingOffer, setRespondingOffer] = useState(false);
   const handleLimitOfferResponse = async (action) => {
-    setErr('');
-    setMsg('');
+    setNotice(null);
     setRespondingOffer(true);
     try {
-      const res = await sapi('/sellers/wallet/limit-offer-response', {
-        method: 'POST',
-        body: { action },
-      });
-      if (res?.withdrawalLimit) {
-        setWithdrawalLimit(res.withdrawalLimit);
-      }
-      setMsg(`✅ ${res?.message || 'Offer response processed successfully!'}`);
+      const res = await sapi('/sellers/wallet/limit-offer-response', { method: 'POST', body: { action } });
+      if (res?.withdrawalLimit) setWithdrawalLimit(res.withdrawalLimit);
+      setNotice({ ok: true, text: res?.message || (action === 'accept' ? 'Offer accepted.' : 'Offer declined.') });
       load();
-    } catch (e) {
-      setErr(e.message || 'Failed to process offer response');
-      alert(e.message || 'Failed to process offer response');
+    } catch (err) {
+      fail(err.message || 'Could not answer the offer');
     } finally {
       setRespondingOffer(false);
     }
   };
 
-  if (loading) return <div className="seller-loading">Loading wallet &amp; financial ledger...</div>;
+  if (loading && !wallet) {
+    return (
+      <div className="wl">
+        <div className="wl-skel" style={{ height: 80 }} />
+        <div className="wl-top"><div className="wl-skel" style={{ height: 220 }} /><div className="wl-skel" style={{ height: 220 }} /></div>
+      </div>
+    );
+  }
 
-  const bal = wallet?.balance || 0;
-  const processingFund = wallet?.processingFund || 0;
-  const frozenFund = wallet?.frozenFund || 0;
-  const totalProfitEarned = wallet?.totalProfitEarned || 0;
-  const totalEarned = wallet?.totalEarned || 0;
-  const totalWithdrawn = wallet?.totalWithdrawn || 0;
-  const pendingWithdrawal = wallet?.pendingWithdrawal || 0;
-  const securityDeposit = wallet?.securityDeposit || 0;
-
-  const filteredLedger = requests.filter((r) => {
-    if (ledgerFilter === 'all') return true;
-    if (ledgerFilter === 'orders') return r.type.startsWith('order_');
-    if (ledgerFilter === 'deposits') return r.type === 'deposit';
-    if (ledgerFilter === 'withdrawals') return r.type === 'withdrawal';
-    return true;
-  });
+  const NoticeBox = notice ? (
+    <div className={`wl-notice ${notice.ok ? 'ok' : 'err'}`} role="status">
+      <Ic name={notice.ok ? 'checkCircle' : 'alert'} size={17} />
+      <span>{notice.text}</span>
+      <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss"><Ic name="x" size={14} /></button>
+    </div>
+  ) : null;
 
   return (
-    <div className="seller-page">
-      <div className="seller-page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+    <div className="wl">
+      {/* ── Header ── */}
+      <header className="wl-head">
         <div>
-          <h2>💼 Merchant Wallet &amp; Financial Ledger</h2>
-          <p>Manage your available balance, in-flight processing funds, approved payouts, and order profit earnings in <b>{currentCurrency.code} ({currentCurrency.symbol})</b>.</p>
+          <p className="wl-eyebrow">Finance</p>
+          <h1>My Wallet</h1>
+          <p className="wl-head-sub">Amounts are kept in US dollars and shown in {currentCurrency.code}.</p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <CurrencySelector />
+        <div className="wl-head-actions">
+          <CurrencySelector compact />
+          <button type="button" className="wl-btn wl-btn-ghost" onClick={() => changeTab('deposit')}><Ic name="plus" size={15} /> Deposit</button>
+          <button type="button" className="wl-btn wl-btn-dark" onClick={() => changeTab('withdraw')}><Ic name="send" size={15} /> Withdraw</button>
         </div>
-      </div>
+      </header>
 
-      {msg && <div className="alert-success mb-3">{msg}</div>}
-      {err && <div className="alert-error mb-3">⚠️ {err}</div>}
-
-      {/* Core Financial KPI Cards (Enhanced with Total Withdrawn & Pending Withdrawals) */}
-      <div className="seller-wallet-kpi-grid">
-        {/* 1. Available Balance */}
-        <div className="sw-kpi-card card-available">
-          <div className="sw-kpi-head">
-            <span className="sw-kpi-title">Available Balance</span>
-            <div className="sw-kpi-icon"><Ic name="banknote" size={22} /></div>
-          </div>
-          <div className="sw-kpi-val">{formatMoney(bal)}</div>
-          <small className="sw-kpi-sub">Ready for immediate payout</small>
+      {loadErr && (
+        <div className="wl-banner tone-red">
+          <Ic name="alert" size={18} />
+          <div><b>Wallet could not refresh</b><p>{loadErr} — showing the last known figures.</p></div>
+          <button type="button" className="wl-btn wl-btn-ghost sm" onClick={load}>Retry</button>
         </div>
+      )}
 
-        {/* 2. Total Approved Withdrawals */}
-        <div className="sw-kpi-card card-total">
-          <div className="sw-kpi-head">
-            <span className="sw-kpi-title">Total Withdrawn</span>
-            <div className="sw-kpi-icon" style={{ color: '#0284c7', background: '#e0f2fe' }}><Ic name="wallet" size={20} /></div>
-          </div>
-          <div className="sw-kpi-val" style={{ color: '#0284c7' }}>{formatMoney(totalWithdrawn)}</div>
-          <small className="sw-kpi-sub">Cumulative approved withdrawals</small>
-        </div>
-
-        {/* 3. Pending Withdrawals */}
-        <div className="sw-kpi-card card-processing">
-          <div className="sw-kpi-head">
-            <span className="sw-kpi-title">Pending Withdrawals</span>
-            <div className="sw-kpi-icon" style={{ color: '#ea580c', background: '#ffedd5' }}><Ic name="clock" size={20} /></div>
-          </div>
-          <div className="sw-kpi-val" style={{ color: '#ea580c' }}>{formatMoney(pendingWithdrawal)}</div>
-          <small className="sw-kpi-sub">Awaiting admin payout approval</small>
-        </div>
-
-        {/* 4. Processing Funds (In-Flight) */}
-        <div className="sw-kpi-card card-processing">
-          <div className="sw-kpi-head">
-            <span className="sw-kpi-title">Processing Funds</span>
-            <div className="sw-kpi-icon" style={{ color: '#d97706', background: '#fef3c7' }}><Ic name="lock" size={20} /></div>
-          </div>
-          <div className="sw-kpi-val text-amber">{formatMoney(processingFund)}</div>
-          <small className="sw-kpi-sub">Locked for confirmed orders</small>
-        </div>
-
-        {/* Frozen amount: payouts held while the account is frozen */}
-        {(frozenFund > 0 || restricted) && (
-          <div className="sw-kpi-card card-processing" style={{ borderColor: '#bfdbfe' }}>
-            <div className="sw-kpi-head">
-              <span className="sw-kpi-title">Frozen Amount</span>
-              <div className="sw-kpi-icon" style={{ color: '#1d4ed8', background: '#dbeafe' }}><Ic name="lock" size={20} /></div>
+      {/* ── Balance + lifetime ── */}
+      <div className="wl-top">
+        <section className="wl-balance">
+          <div className="wl-bal-row">
+            <div>
+              <span className="wl-bal-lbl">Available balance</span>
+              <b className="wl-bal-val">{formatMoney(bal)}</b>
+              {currentCurrency.code !== 'USD' && <span className="wl-bal-usd">{usd(bal)}</span>}
             </div>
-            <div className="sw-kpi-val" style={{ color: '#1d4ed8' }}>{formatMoney(frozenFund)}</div>
-            <small className="sw-kpi-sub">Order payouts held — added to your wallet when the account is unfrozen</small>
+            <span className="wl-bal-icon"><Ic name="wallet" size={22} /></span>
           </div>
-        )}
+          <div className="wl-stack" role="img" aria-label="Wallet breakdown">
+            {partsTotal > 0 ? parts.filter((p) => p.v > 0).map((p) => <span key={p.key} style={{ flexGrow: p.v, background: p.c }} title={`${p.key}: ${formatMoney(p.v)}`} />) : <span style={{ flexGrow: 1, background: 'rgba(255,255,255,0.12)' }} />}
+          </div>
+          <ul className="wl-parts">
+            {parts.map((p) => (
+              <li key={p.key} className={p.v > 0 ? '' : 'zero'}><i style={{ background: p.c }} /><span>{p.key}</span><b>{formatMoney(p.v)}</b></li>
+            ))}
+            {securityDeposit > 0 && <li className="sep"><i className="ring" /><span>Security deposit</span><b>{formatMoney(securityDeposit)}</b></li>}
+          </ul>
+          <div className="wl-bal-actions">
+            <button type="button" className="wl-btn wl-btn-light" onClick={() => changeTab('withdraw')} disabled={restricted}><Ic name="send" size={15} /> Withdraw</button>
+            <button type="button" className="wl-btn wl-btn-glass" onClick={() => changeTab('deposit')}><Ic name="plus" size={15} /> Add funds</button>
+          </div>
+        </section>
 
-        {/* 5. 20% Profit Earned */}
-        <div className="sw-kpi-card card-profit">
-          <div className="sw-kpi-head">
-            <span className="sw-kpi-title">Order Profit Earned</span>
-            <div className="sw-kpi-icon" style={{ color: '#16a34a', background: '#dcfce7' }}><Ic name="tag" size={20} /></div>
+        <section className="wl-life">
+          <div className="wl-life-grid">
+            <div><span><i className="dot green" />Profit earned</span><b className="t-green">+{formatMoney(totalProfitEarned)}</b><small>Lifetime order profit</small></div>
+            <div><span><i className="dot blue" />Total deposited</span><b>{formatMoney(totalDeposited)}</b><small>{pendingDeposit > 0 ? `${formatMoney(pendingDeposit)} waiting approval` : 'Approved deposits'}</small></div>
+            <div><span><i className="dot violet" />Total withdrawn</span><b>{formatMoney(totalWithdrawn)}</b><small>{pendingWithdrawal > 0 ? `${formatMoney(pendingWithdrawal)} in progress` : 'Paid out to you'}</small></div>
+            <div><span><i className="dot slate" />Order payouts</span><b>{formatMoney(totalEarned)}</b><small>Order amount + profit released</small></div>
           </div>
-          <div className="sw-kpi-val text-green">+{formatMoney(totalProfitEarned)}</div>
-          <small className="sw-kpi-sub">Net profit margins accumulated</small>
-        </div>
-
-        {/* 6. Total Lifetime Earnings Released */}
-        <div className="sw-kpi-card card-total">
-          <div className="sw-kpi-head">
-            <span className="sw-kpi-title">Total Payout Volume</span>
-            <div className="sw-kpi-icon" style={{ color: '#2563eb', background: '#dbeafe' }}><Ic name="checkCircle" size={20} /></div>
-          </div>
-          <div className="sw-kpi-val">{formatMoney(totalEarned)}</div>
-          <small className="sw-kpi-sub">Lifetime principal + profit released</small>
-        </div>
-
-        {/* 7. Security Deposit (If Recorded) */}
-        {(securityDeposit > 0 || wallet?.securityDepositPaid) && (
-          <div className="sw-kpi-card" style={{ background: '#f8fafc', borderLeft: '4px solid #6366f1' }}>
-            <div className="sw-kpi-head">
-              <span className="sw-kpi-title">Security Deposit</span>
-              <div className="sw-kpi-icon" style={{ color: '#6366f1', background: '#e0e7ff' }}><Ic name="shield" size={20} /></div>
-            </div>
-            <div className="sw-kpi-val" style={{ color: '#4338ca' }}>{formatMoney(securityDeposit)}</div>
-            <small className="sw-kpi-sub">Merchant collateral (Active &amp; Verified)</small>
-          </div>
-        )}
+          <LimitMini limit={limit} onApply={() => setLimitModalOpen(true)} onOpen={() => changeTab('withdraw')} />
+        </section>
       </div>
 
-      {/* Action Navigation Tabs */}
-      <div className="wallet-action-tabs">
-        <button
-          className={`wallet-action-tab ${tab === 'ledger' ? 'active' : ''}`}
-          onClick={() => handleTabChange('ledger')}
-        >
-          📊 Financial Ledger &amp; Payouts
-        </button>
-        <button
-          className={`wallet-action-tab ${tab === 'deposit' ? 'active' : ''}`}
-          onClick={() => handleTabChange('deposit')}
-        >
-          💰 Deposit Funds
-        </button>
-        <button
-          className={`wallet-action-tab ${tab === 'withdraw' ? 'active' : ''}`}
-          onClick={() => handleTabChange('withdraw')}
-        >
-          💸 Withdraw Funds
-        </button>
+      {/* ── Things in progress ── */}
+      {(pendingOrdersCount > 0 || openWithdrawal || openDeposit || restricted) && (
+        <div className="wl-alerts">
+          {pendingOrdersCount > 0 && (
+            <Link to="/seller/orders" className="wl-alert tone-red">
+              <Ic name="alert" size={16} /><span><b>Payouts paused</b> — {pendingOrdersCount} order{pendingOrdersCount === 1 ? '' : 's'} waiting for your confirmation</span><em>Confirm →</em>
+            </Link>
+          )}
+          {openWithdrawal && (
+            <div className="wl-alert tone-violet"><Ic name="clock" size={16} /><span><b>Payout of {formatMoney(Math.abs(openWithdrawal.amount))}</b> in progress · requested {fmtDate(openWithdrawal.createdAt)}</span></div>
+          )}
+          {openDeposit && (
+            <div className="wl-alert tone-blue"><Ic name="clock" size={16} /><span><b>Deposit of {formatMoney(openDeposit.amount)}</b> waiting for approval · ref {openDeposit.depositRef || '—'}</span></div>
+          )}
+          {restricted && (
+            <Link to="/seller/support" className="wl-alert tone-slate"><Ic name="lock" size={16} /><span><b>Store frozen</b> — payouts are paused; you can still deposit to confirm orders</span><em>Support →</em></Link>
+          )}
+        </div>
+      )}
+
+      {/* ── Charts ── */}
+      <WalletInsights insights={insights} formatMoney={formatMoney} convert={convert} symbol={currentCurrency.symbol} />
+
+      {/* ── Tabs ── */}
+      <div className="wl-tabs" role="tablist" aria-label="Wallet sections">
+        {[
+          { id: 'ledger', label: 'Transactions', icon: 'list' },
+          { id: 'deposit', label: 'Add funds', icon: 'plus' },
+          { id: 'withdraw', label: 'Withdraw', icon: 'send' },
+        ].map((t) => (
+          <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} onClick={() => changeTab(t.id)}>
+            <Ic name={t.icon} size={15} /> {t.label}
+          </button>
+        ))}
       </div>
 
-      {/* ─────────────────────────────────────────────────────────────
-          TAB 1: FINANCIAL LEDGER & TRANSACTION HISTORY
-          ───────────────────────────────────────────────────────────── */}
+      {/* ── Transactions ── */}
       {tab === 'ledger' && (
-        <div className="seller-card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>📜 Financial Transaction Ledger</h3>
-              <p style={{ margin: '2px 0 0', fontSize: 12.5, color: '#64748b' }}>
-                Complete audit trail of Order Processing locks, Profit releases, Deposits, and Withdrawals.
-              </p>
+        <section className="wl-card wl-ledger">
+          {NoticeBox}
+          <div className="wl-ledger-bar">
+            <div className="wl-chips">
+              {LEDGER_FILTERS.map((f) => (
+                <button key={f.id} type="button" className={ledgerFilter === f.id ? 'on' : ''} onClick={() => setLedgerFilter(f.id)}>
+                  {f.label} <span>{filterCount(f.id)}</span>
+                </button>
+              ))}
             </div>
-
-            {/* Filter Pills */}
-            <div className="ledger-filter-pills">
-              <button
-                type="button"
-                className={`lfp-btn ${ledgerFilter === 'all' ? 'active' : ''}`}
-                onClick={() => setLedgerFilter('all')}
-              >
-                All ({requests.length})
-              </button>
-              <button
-                type="button"
-                className={`lfp-btn ${ledgerFilter === 'orders' ? 'active' : ''}`}
-                onClick={() => setLedgerFilter('orders')}
-              >
-                Order Settlements ({requests.filter((r) => r.type.startsWith('order_')).length})
-              </button>
-              <button
-                type="button"
-                className={`lfp-btn ${ledgerFilter === 'deposits' ? 'active' : ''}`}
-                onClick={() => setLedgerFilter('deposits')}
-              >
-                Deposits ({requests.filter((r) => r.type === 'deposit').length})
-              </button>
-              <button
-                type="button"
-                className={`lfp-btn ${ledgerFilter === 'withdrawals' ? 'active' : ''}`}
-                onClick={() => setLedgerFilter('withdrawals')}
-              >
-                Withdrawals ({requests.filter((r) => r.type === 'withdrawal').length})
-              </button>
-            </div>
+            <label className="wl-search">
+              <Ic name="search" size={15} />
+              <input type="search" value={ledgerQuery} onChange={(e) => setLedgerQuery(e.target.value)} placeholder="Order #, UTR or type" aria-label="Search transactions" />
+            </label>
           </div>
 
-          <div className="seller-table-wrap">
-            <table className="seller-table">
-              <thead>
-                <tr>
-                  <th>Date &amp; Time</th>
-                  <th>Transaction Type</th>
-                  <th>Order / Ref</th>
-                  <th>Principal</th>
-                  <th>+Profit</th>
-                  <th>Total Amount</th>
-                  <th>Balance After</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredLedger.length === 0 && (
-                  <tr>
-                    <td colSpan="8" className="text-center py-8 muted">No transactions found matching this filter.</td>
-                  </tr>
-                )}
-                {filteredLedger.map((r) => {
-                  let badge = TYPE_BADGE[r.type] || { label: r.type, color: '#64748b', bg: '#f1f5f9', icon: '📄' };
-                  if (r.type === 'adjustment') {
-                    if (Number(r.amount) < 0) {
-                      badge = { label: 'Admin Charge / Upgrade Fee', color: '#dc2626', bg: '#fee2e2', icon: '⚙️' };
-                    } else {
-                      badge = { label: 'Admin Credit Adjustment', color: '#16a34a', bg: '#dcfce7', icon: '⚙️' };
-                    }
-                  }
-
-                  const isLock = r.type === 'order_processing_lock';
-                  const isDelivered = r.type === 'order_delivered_release';
-                  const isDeposit = r.type === 'deposit';
-                  const isWithdrawal = r.type === 'withdrawal';
-                  const isNegative = Number(r.amount) < 0;
-                  const absAmt = Math.abs(Number(r.amount || 0));
-                  const dObj = new Date(r.createdAt || r.processedAt || Date.now());
-
-                  return (
-                    <tr key={r._id}>
-                      <td>
-                        <div className="ledger-datetime-cell">
-                          <span className="ldt-date">
-                            {dObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                          </span>
-                          <span className="ldt-time">
-                            {dObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
-                      </td>
-                      <td>
-                        <span
-                          className="ledger-type-chip"
-                          style={{ color: badge.color, background: badge.bg, border: `1px solid ${badge.color}30` }}
-                        >
-                          {badge.icon} {badge.label}
-                        </span>
-                      </td>
-                      <td>
-                        {r.orderNumber ? (
-                          <b>#{r.orderNumber}</b>
-                        ) : r.depositRef ? (
-                          <span className="muted-sm">Ref: {r.depositRef}</span>
-                        ) : (
-                          <span className="muted-sm">—</span>
-                        )}
-                      </td>
-                      <td>
-                        {r.principalAmount ? (
-                          <span>{formatMoney(r.principalAmount)}</span>
-                        ) : (
-                          <span className="muted-sm">—</span>
-                        )}
-                      </td>
-                      <td>
-                        {r.profitAmount > 0 ? (
-                          <b style={{ color: '#16a34a' }}>
-                            +{formatMoney(r.profitAmount)}
-                            {r.profitRate ? <small style={{ marginLeft: 4, fontWeight: 700, color: r.profitRate >= 35 ? '#0e7490' : '#64748b' }}>({r.profitRate >= 35 ? '💎 ' : ''}{r.profitRate}%)</small> : null}
-                          </b>
-                        ) : (
-                          <span className="muted-sm">—</span>
-                        )}
-                      </td>
-                      <td>
-                        {(() => {
-                          if (isWithdrawal) {
-                            if (r.status === 'approved') {
-                              const finalAmt = r.approvedAmount !== undefined && r.approvedAmount !== null ? r.approvedAmount : r.amount;
-                              const absFinal = Math.abs(Number(finalAmt || 0));
-                              const isPartial = absFinal < absAmt;
-                              return (
-                                <div>
-                                  <b style={{ fontSize: 14, color: '#dc2626' }}>
-                                    -{formatMoney(absFinal)}
-                                  </b>
-                                  {isPartial && (
-                                    <small style={{ display: 'block', color: '#16a34a', fontSize: 11, fontWeight: 700 }}>
-                                      +{formatMoney(absAmt - absFinal)} Refunded
-                                    </small>
-                                  )}
-                                </div>
-                              );
-                            }
-                            if (r.status === 'rejected') {
-                              return (
-                                <div>
-                                  <b style={{ fontSize: 13, color: '#64748b', textDecoration: 'line-through' }}>
-                                    -{formatMoney(absAmt)}
-                                  </b>
-                                  <small style={{ display: 'block', color: '#16a34a', fontSize: 11, fontWeight: 700 }}>
-                                    Full {formatMoney(absAmt)} Refunded
-                                  </small>
-                                </div>
-                              );
-                            }
-                            return (
-                              <b style={{ fontSize: 14, color: '#dc2626' }}>
-                                -{formatMoney(absAmt)}
-                              </b>
-                            );
-                          }
-
-                          if (isDeposit) {
-                            if (r.status === 'approved') {
-                              const finalAmt = r.approvedAmount !== undefined && r.approvedAmount !== null ? r.approvedAmount : r.amount;
-                              return (
-                                <b style={{ fontSize: 14, color: '#16a34a' }}>
-                                  +{formatMoney(Math.abs(Number(finalAmt || 0)))}
-                                </b>
-                              );
-                            }
-                            if (r.status === 'rejected') {
-                              return (
-                                <b style={{ fontSize: 13, color: '#64748b', textDecoration: 'line-through' }}>
-                                  +{formatMoney(absAmt)}
-                                </b>
-                              );
-                            }
-                            return (
-                              <b style={{ fontSize: 14, color: '#16a34a' }}>
-                                +{formatMoney(absAmt)}
-                              </b>
-                            );
-                          }
-
-                          if (isLock || isNegative) {
-                            return (
-                              <b style={{ fontSize: 14, color: '#dc2626' }}>
-                                -{formatMoney(absAmt)}
-                              </b>
-                            );
-                          }
-
-                          return (
-                            <b style={{ fontSize: 14, color: '#16a34a' }}>
-                              +{formatMoney(absAmt)}
-                            </b>
-                          );
-                        })()}
-                      </td>
-                      <td>
-                        {r.balanceAfter !== null && r.balanceAfter !== undefined ? (
-                          <b style={{ color: '#0f172a' }}>{formatMoney(r.balanceAfter)}</b>
-                        ) : (
-                          <span className="muted-sm">—</span>
-                        )}
-                      </td>
-                      <td>
-                        <span className={`status-chip ${STATUS_COLOR[r.status] || ''}`}>
-                          {r.status?.toUpperCase()}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+          {ledger.length === 0 ? (
+            <div className="wl-empty-box"><Ic name="fileText" size={20} /><b>No transactions here</b><p>{ledgerQuery ? 'Try a different search.' : 'Deposits, order payouts and withdrawals will show up here.'}</p></div>
+          ) : (
+            <ul className="wl-lines">
+              {ledger.map((r) => <LedgerRow key={r._id} r={r} formatMoney={formatMoney} />)}
+            </ul>
+          )}
+          {hasMoreLines && ledgerFilter === 'all' && !ledgerQuery && (
+            <div className="wl-more"><button type="button" className="wl-btn wl-btn-ghost" onClick={loadMore} disabled={loadingMore}>{loadingMore ? 'Loading…' : 'Load older transactions'}</button></div>
+          )}
+          {hasMoreLines && (ledgerFilter !== 'all' || ledgerQuery) && <p className="wl-fine center">Showing your latest transactions. Clear the filter to load older ones.</p>}
+        </section>
       )}
 
-      {/* ─────────────────────────────────────────────────────────────
-          TAB 2: DEPOSIT FUNDS
-          ───────────────────────────────────────────────────────────── */}
-      {tab === 'deposit' && restricted && (
-        <div className="seller-restricted-note" style={{ background: '#eff6ff', borderColor: '#bfdbfe', color: '#1e3a8a' }}>
-          <span className="srn-icon">💰</span>
-          <div>
-            <b style={{ color: '#1e40af' }}>Your account is frozen — deposit to confirm your pending orders</b>
-            <p>Payouts of delivered orders are held in your Frozen amount until the account is unfrozen, so pending orders have to be confirmed with a new deposit.</p>
-          </div>
-        </div>
-      )}
+      {/* ── Add funds ── */}
       {tab === 'deposit' && (
-        <div className="card form-card mb-4">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
-            <div>
-              <h3 style={{ margin: 0 }}>💰 Add Funds to Merchant Wallet</h3>
-              <p className="muted-sm" style={{ margin: '2px 0 0' }}>
-                Submit a deposit request to add funds into your Available Balance (USD $). Supports Indian UPI Apps &amp; Instant Bank Transfers.
-              </p>
-            </div>
-            <span className="swt-pill-limit-tag" style={{ background: '#ecfdf5', borderColor: '#a7f3d0', color: '#065f46' }}>
-              Instant Verification • <b>24/7 Support</b>
-            </span>
-          </div>
-
-          <form onSubmit={handleDeposit} className="form-grid">
-            <div className="field field-full">
-              <CurrencyConverterWidget
-                usdValue={depForm.amount}
-                onUsdChange={(val) => setDepForm((prev) => ({ ...prev, amount: val }))}
-                title="Deposit Currency Converter (INR / EUR / GBP / AED to USD)"
-                mode="deposit"
+        <div className="wl-form-grid">
+          <section className="wl-card">
+            <div className="wl-card-head"><div><h3>Add funds</h3><p className="wl-sub">Send the money, then tell us the payment reference. The team verifies it and credits your balance.</p></div></div>
+            {restricted && <div className="wl-callout tone-blue"><Ic name="lock" size={16} /><p>Your store is frozen — deposit to confirm your waiting orders. Delivered payouts stay in your Frozen amount until it is lifted.</p></div>}
+            {openDeposit && <div className="wl-callout tone-amber"><Ic name="clock" size={16} /><p>Your deposit of <b>{formatMoney(openDeposit.amount)}</b> is still waiting for approval. A new deposit can be sent once it is approved.</p></div>}
+            <form onSubmit={handleDeposit} className="wl-form">
+              <AmountField
+                label="Amount"
+                value={depForm.amount}
+                onChange={(v) => setDepForm((p) => ({ ...p, amount: v }))}
+                local={depInLocal}
+                onToggleLocal={() => setDepInLocal((x) => !x)}
+                rates={rates}
+                presets={[50, 100, 250, 500, 1000]}
               />
-            </div>
-
-            {/* Deposit Payment Method Segment */}
-            <div className="field field-full">
-              <label style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginBottom: 6 }}>
-                Select Your Deposit Method:
-              </label>
-              <div className="deposit-method-pills">
-                {[
-                  { id: 'upi', label: '⚡ UPI / QR Transfer', sub: 'GPay, PhonePe, Paytm, BHIM' },
-                  { id: 'bank', label: '🏦 IMPS / NEFT / RTGS', sub: 'Direct Bank Wire Transfer' },
-                  { id: 'card', label: '💳 Debit / Credit Card', sub: 'Visa, MasterCard, RuPay' },
-                  { id: 'other', label: '🌐 Other / Wire', sub: 'International Remittance' },
-                ].map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    className={`deposit-method-pill ${depForm.method === m.id ? 'active' : ''}`}
-                    onClick={() => setDepForm((prev) => ({ ...prev, method: m.id }))}
-                  >
-                    <b>{m.label}</b>
-                    <small>{m.sub}</small>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="field">
-              <label>
-                {depForm.method === 'upi'
-                  ? 'Your Sender UPI ID / Mobile Number'
-                  : depForm.method === 'bank'
-                  ? 'Your Sender Bank Name & Account'
-                  : 'Deposited From Account / Card Name'}
-              </label>
-              <input
-                value={depForm.depositedFrom}
-                onChange={setDep('depositedFrom')}
-                placeholder={
-                  depForm.method === 'upi'
-                    ? 'e.g. yourname@okhdfcbank / 9876543210'
-                    : depForm.method === 'bank'
-                    ? 'e.g. HDFC Bank - Aizaz Ahmad'
-                    : 'Account / Cardholder Name'
-                }
-              />
-            </div>
-
-            <div className="field">
-              <label>
-                Payment UTR / Reference / Transaction ID <span className="sig-req">*</span>
-              </label>
-              <input
-                value={depForm.depositRef}
-                onChange={setDep('depositRef')}
-                placeholder="12-digit UTR number or Bank Transfer Ref ID"
-                required
-              />
-            </div>
-
-            <div className="field field-full">
-              <label>Deposit Notes for Admin <span className="muted-sm">(optional)</span></label>
-              <input
-                value={depForm.depositNote}
-                onChange={setDep('depositNote')}
-                placeholder="e.g. Deposited ₹10,000 via Google Pay for order fulfillment fund"
-              />
-            </div>
-
-            {/* Inline Alert Feedback inside Deposit Card */}
-            {err && (
-              <div className="field field-full">
-                <div style={{ background: '#fef2f2', border: '1.5px solid #f87171', borderRadius: 8, padding: '12px 16px', color: '#991b1b', fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontSize: 18 }}>⚠️</span>
-                  <div>
-                    <b>Deposit Request Error:</b>
-                    <div style={{ marginTop: 2 }}>{err}</div>
-                  </div>
+              <div className="wl-field">
+                <span className="wl-label">How did you pay?</span>
+                <div className="wl-options cols-4">
+                  {DEPOSIT_METHODS.map((m) => (
+                    <button key={m.id} type="button" className={depForm.method === m.id ? 'on' : ''} onClick={() => setDepForm((p) => ({ ...p, method: m.id }))}>
+                      <b>{m.label}</b><small>{m.sub}</small>
+                    </button>
+                  ))}
                 </div>
               </div>
-            )}
-            {msg && (
-              <div className="field field-full">
-                <div style={{ background: '#ecfdf5', border: '1.5px solid #34d399', borderRadius: 8, padding: '12px 16px', color: '#065f46', fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontSize: 18 }}>✅</span>
-                  <div>
-                    <b>Success:</b>
-                    <div style={{ marginTop: 2 }}>{msg}</div>
-                  </div>
-                </div>
+              <div className="wl-row-2">
+                <label className="wl-field">
+                  <span className="wl-label">UTR / transaction reference <em>*</em></span>
+                  <input className="wl-input" value={depForm.depositRef} onChange={setDep('depositRef')} placeholder="e.g. 12-digit UTR number" required />
+                </label>
+                <label className="wl-field">
+                  <span className="wl-label">{depForm.method === 'upi' ? 'Paid from UPI ID / mobile' : depForm.method === 'bank' ? 'Paid from bank & account name' : 'Paid from (name)'}</span>
+                  <input className="wl-input" value={depForm.depositedFrom} onChange={setDep('depositedFrom')} placeholder={depForm.method === 'upi' ? 'name@okhdfcbank / 9876543210' : 'Account / card holder name'} />
+                </label>
               </div>
-            )}
-
-            <div className="field field-full">
-              <button
-                type="submit"
-                className="seller-btn-pri"
-                disabled={submitting}
-                style={{ padding: '13px 20px', fontSize: 15, fontWeight: 800, cursor: submitting ? 'not-allowed' : 'pointer' }}
-              >
-                {submitting ? (
-                  <span>⏳ Submitting Deposit Request to Admin...</span>
-                ) : (
-                  <span>💰 Submit Deposit Request ({Number(depForm.amount) > 0 ? `$${Number(depForm.amount).toFixed(2)} USD` : 'Enter Amount Above'})</span>
-                )}
+              <label className="wl-field">
+                <span className="wl-label">Note for the team <small>(optional)</small></span>
+                <input className="wl-input" value={depForm.depositNote} onChange={setDep('depositNote')} placeholder="Anything that helps us match your payment" />
+              </label>
+              {NoticeBox}
+              <button type="submit" className="wl-btn wl-btn-primary lg" disabled={submitting || Boolean(openDeposit) || !(Number(depForm.amount) >= 1)}>
+                {submitting ? 'Sending…' : Number(depForm.amount) >= 1 ? `Send deposit request · ${usd(depForm.amount)}` : 'Enter an amount'}
               </button>
-              {(!depForm.amount || Number(depForm.amount) < 1) && (
-                <small className="muted-sm" style={{ display: 'block', marginTop: 6, color: '#64748b' }}>
-                  ℹ️ Please enter the amount in USD ($) or use the converter widget above before submitting.
-                </small>
-              )}
-            </div>
-          </form>
+            </form>
+          </section>
+          <aside className="wl-card wl-side">
+            <h3>How it works</h3>
+            <ol className="wl-steps">
+              <li><b>Pay</b><span>Send the amount by UPI, bank transfer or card.</span></li>
+              <li><b>Send the reference</b><span>Enter the UTR / transaction ID here and submit.</span></li>
+              <li><b>Get credited</b><span>Once the team verifies the payment, it is added to your available balance.</span></li>
+            </ol>
+            <RecentList title="Recent deposits" rows={requests.filter((r) => r.type === 'deposit').slice(0, 4)} formatMoney={formatMoney} />
+          </aside>
         </div>
       )}
 
-      {/* ─────────────────────────────────────────────────────────────
-          TAB 3: WITHDRAW FUNDS & TIERED WITHDRAWAL LIMITS
-          ───────────────────────────────────────────────────────────── */}
-      {tab === 'withdraw' && restricted && <RestrictedNote what="withdrawing funds" />}
+      {/* ── Withdraw ── */}
+      {tab === 'withdraw' && restricted && (
+        <div className="wl-banner tone-slate">
+          <Ic name="lock" size={18} />
+          <div><b>Withdrawals are paused while your store is frozen</b><p>Please contact support to resolve it.</p></div>
+          <Link to="/seller/support" className="wl-btn wl-btn-ghost sm">Contact support</Link>
+        </div>
+      )}
       {tab === 'withdraw' && !restricted && (
-        <div className="seller-withdraw-tab-wrap">
-          {/* ─── TIERED WITHDRAWAL LIMIT & UPGRADE PROGRESS HERO CARD ─── */}
-          {(() => {
-            const limit = withdrawalLimit || {
-              maxAmount: 500,
-              minAmount: 10,
-              requiredWithdrawalsForIncrease: 10,
-              successfulWithdrawalCount: 0,
-              upgradeFee: 50,
-              currentTierName: 'Tier 1 - Standard ($500 Max)',
-              pendingIncreaseRequest: { status: 'none' },
-            };
-
-            const maxAmount = limit.maxAmount !== undefined ? limit.maxAmount : 500;
-            const completedCount = limit.successfulWithdrawalCount || 0;
-            const requiredCount = limit.requiredWithdrawalsForIncrease || 10;
-            const upgradeFee = limit.upgradeFee !== undefined ? limit.upgradeFee : 50;
-            const tierName = limit.currentTierName || 'Tier 1 - Standard';
-            const pendingReq = limit.pendingIncreaseRequest || { status: 'none' };
-            const status = pendingReq.status || 'none';
-
-            const isPending = status === 'pending';
-            const isOffered = status === 'offered';
-            const isAccepted = status === 'accepted_by_seller';
-            const progressPercent = Math.min(100, Math.round((completedCount / (requiredCount || 1)) * 100));
-            const isEligible = completedCount >= requiredCount;
-
-            return (
-              <div className="seller-withdrawal-tier-card">
-                <div className="swt-top">
-                  <div className="swt-left">
-                    <div className="swt-icon-box">
-                      <Ic name="shield" size={26} />
-                    </div>
-                    <div className="swt-meta">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="swt-tier-name">{tierName}</span>
-                        <span className="swt-limit-badge">Current Max: {formatMoney(maxAmount)} / request</span>
-                      </div>
-                      <p className="swt-sub">
-                        Single withdrawal ceiling. Complete <b>{requiredCount} successful withdrawals</b> to unlock higher limits.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="swt-right">
-                    {isPending ? (
-                      <div className="swt-pending-badge">
-                        <span>⏳ Application Under Review:</span>
-                        <b>{formatMoney(pendingReq.requestedLimit || 0)}</b>
-                      </div>
-                    ) : isOffered ? (
-                      <div className="swt-pending-badge" style={{ background: '#ecfdf5', borderColor: '#a7f3d0', color: '#065f46' }}>
-                        <span>📋 Offer Received:</span>
-                        <b>{formatMoney(pendingReq.offeredLimit || 0)}</b>
-                      </div>
-                    ) : isAccepted ? (
-                      <div className="swt-pending-badge" style={{ background: '#eff6ff', borderColor: '#bfdbfe', color: '#1e40af' }}>
-                        <span>🤝 Terms Accepted — Awaiting Admin Activation</span>
-                      </div>
-                    ) : isEligible ? (
-                      <button
-                        type="button"
-                        onClick={() => setLimitModalOpen(true)}
-                        className="swt-apply-btn eligible"
-                      >
-                        🚀 Apply for Limit Increase
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled
-                        className="swt-apply-btn"
-                        style={{ opacity: 0.65, cursor: 'not-allowed', background: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1' }}
-                        title={`Complete ${requiredCount - completedCount} more approved withdrawals at current tier to unlock limit upgrade.`}
-                      >
-                        🔒 Locked ({completedCount}/{requiredCount} Payouts)
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Progress Bar towards next tier */}
-                <div className="swt-progress-wrap">
-                  <div className="swt-progress-labels">
-                    <span>
-                      <b>{completedCount}</b> of <b>{requiredCount}</b> Approved Withdrawals Completed ({progressPercent}%)
-                    </span>
-                    <span>Milestone Goal: <b>{requiredCount} Successful Payouts</b></span>
-                  </div>
-                  <div className="swt-progress-track">
-                    <div
-                      className={`swt-progress-fill ${isEligible ? 'fill-gold' : 'fill-blue'}`}
-                      style={{ width: `${Math.max(4, progressPercent)}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* ─── OFFER SLIP BOX (STEP 2: SELLER REVIEWS AND ACCEPTS TERMS) ─── */}
-                {isOffered && (
-                  <div style={{ background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: 10, padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 20 }}>📋</span>
-                        <div>
-                          <b style={{ fontSize: 14, color: '#166534' }}>Official Limit Upgrade Offer from Platform Admin</b>
-                          <p style={{ margin: '2px 0 0', fontSize: 12, color: '#15803d' }}>
-                            Admin has reviewed your store and quoted the following upgrade terms:
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, background: '#ffffff', padding: '10px 14px', borderRadius: 8, border: '1px solid #bbf7d0' }}>
-                      <div>
-                        <small style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Offered New Limit</small>
-                        <div style={{ fontSize: 16, fontWeight: 900, color: '#16a34a' }}>
-                          {formatMoney(pendingReq.offeredLimit || 0)}
-                        </div>
-                      </div>
-                      <div>
-                        <small style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Upgrade Processing Fee</small>
-                        <div style={{ fontSize: 16, fontWeight: 900, color: '#d97706' }}>
-                          {formatMoney(pendingReq.offeredFee !== undefined ? pendingReq.offeredFee : 50)}
-                        </div>
-                      </div>
-                      <div>
-                        <small style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Next Target Milestones</small>
-                        <div style={{ fontSize: 16, fontWeight: 900, color: '#2563eb' }}>
-                          {pendingReq.offeredNextCount || 15} Withdrawals
-                        </div>
-                      </div>
-                    </div>
-
-                    {pendingReq.adminNote && (
-                      <div style={{ fontSize: 12, color: '#334155', fontStyle: 'italic', background: '#f8fafc', padding: '6px 10px', borderRadius: 6 }}>
-                        <b>Admin Note:</b> "{pendingReq.adminNote}"
-                      </div>
-                    )}
-
-                    <div style={{ fontSize: 12, color: '#92400e', background: '#fffbeb', border: '1px solid #fef3c7', padding: '8px 12px', borderRadius: 6 }}>
-                      💡 <b>Payment Notice:</b> Accepting this offer agrees to the terms. <b>No money is deducted right now</b> — the {formatMoney(pendingReq.offeredFee || 50)} processing fee will only be deducted when Admin performs the final limit activation.
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
-                      <button
-                        type="button"
-                        onClick={() => handleLimitOfferResponse('accept')}
-                        disabled={respondingOffer}
-                        style={{
-                          padding: '8px 18px',
-                          background: '#16a34a',
-                          color: '#ffffff',
-                          border: 'none',
-                          borderRadius: 8,
-                          fontSize: 13,
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 6,
-                        }}
-                      >
-                        {respondingOffer ? 'Processing...' : '✅ Accept Terms & Agree to Upgrade'}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleLimitOfferResponse('decline')}
-                        disabled={respondingOffer}
-                        style={{
-                          padding: '8px 16px',
-                          background: '#f1f5f9',
-                          color: '#64748b',
-                          border: '1px solid #cbd5e1',
-                          borderRadius: 8,
-                          fontSize: 12.5,
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        ❌ Decline Offer (Keep Current Limit)
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* ─── WAITING FOR ADMIN ACTIVATION NOTICE (STEP 3) ─── */}
-                {isAccepted && (
-                  <div style={{ background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <span style={{ fontSize: 22 }}>🤝</span>
-                    <div>
-                      <b style={{ fontSize: 13.5, color: '#1e40af' }}>You have accepted the Limit Upgrade Offer Terms!</b>
-                      <p style={{ margin: '2px 0 0', fontSize: 12, color: '#1d4ed8' }}>
-                        Agreed Limit: <b>{formatMoney(pendingReq.offeredLimit)}</b> • Processing Fee upon activation: <b>{formatMoney(pendingReq.offeredFee)}</b>. Admin will perform the final activation shortly. <i>No fee has been deducted yet.</i>
-                      </p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Under Review Notice (Step 1 Pending) */}
-                {isPending && (
-                  <div className="swt-review-banner">
-                    <div className="flex items-center gap-2">
-                      <span style={{ fontSize: 16 }}>📋</span>
-                      <div>
-                        <b>Limit Increase Application Pending Admin Review</b>
-                        <p style={{ margin: '2px 0 0', fontSize: 12, color: '#92400e' }}>
-                          Requested Limit: <b>{formatMoney(pendingReq.requestedLimit)}</b>. Admin will review your store orders and send an official Offer Slip with custom terms.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* ─── WITHDRAWAL FORM CARD ─── */}
-          <div className="card form-card mb-4">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
-              <div>
-                <h3 style={{ margin: 0 }}>💸 Request Payout Transfer</h3>
-                <p className="muted-sm" style={{ margin: '2px 0 0' }}>
-                  Payouts are debited in USD ($) and transferred directly to your Indian Bank Account or UPI VPA Address.
-                </p>
-              </div>
-              <span className="swt-pill-limit-tag">
-                Max Allowed: <b>{formatMoney(withdrawalLimit?.maxAmount || 500)}</b>
-              </span>
+        <div className="wl-form-grid">
+          <section className="wl-card">
+            <div className="wl-card-head">
+              <div><h3>Withdraw</h3><p className="wl-sub">Payouts are sent from your available balance to your bank, UPI or USDT wallet.</p></div>
+              <span className="wl-pill">Limit {usd(maxLimit)} / request</span>
             </div>
 
-            {/* Unconfirmed Orders Blocker Notice */}
             {pendingOrdersCount > 0 && (
-              <div style={{ background: '#fef2f2', border: '1.5px solid #f87171', borderRadius: 10, padding: '14px 18px', marginBottom: 18 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <span style={{ fontSize: 26 }}>🚫</span>
-                  <div style={{ flex: 1 }}>
-                    <b style={{ color: '#991b1b', fontSize: 14 }}>Withdrawals Blocked — Unconfirmed Orders Pending</b>
-                    <p style={{ margin: '3px 0 8px', color: '#b91c1c', fontSize: 12.5, lineHeight: 1.4 }}>
-                      You currently have <b>{pendingOrdersCount} unconfirmed customer order(s)</b>. Marketplace compliance policy requires all pending customer orders to be confirmed and processed in order to request payout transfers.
-                    </p>
-                    <Link
-                      to="/seller/orders"
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        background: '#dc2626',
-                        color: '#ffffff',
-                        padding: '6px 14px',
-                        borderRadius: 6,
-                        fontSize: 12,
-                        fontWeight: 800,
-                        textDecoration: 'none',
+              <div className="wl-callout tone-red"><Ic name="alert" size={16} /><p><b>Payouts are paused</b> — confirm your {pendingOrdersCount} waiting order{pendingOrdersCount === 1 ? '' : 's'} first. <Link to="/seller/orders">Go to Orders →</Link></p></div>
+            )}
+            {openWithdrawal && (
+              <div className="wl-callout tone-violet"><Ic name="clock" size={16} /><p>Your payout of <b>{formatMoney(Math.abs(openWithdrawal.amount))}</b> is in progress. You can request the next one once it is done.</p></div>
+            )}
+
+            <SavedMethods wm={withdrawalMethods} activeKey={activeSavedKey} method={method} onPick={applySavedMethod} />
+
+            <form onSubmit={handleWithdraw} className="wl-form">
+              <AmountField
+                label="Amount"
+                value={wdForm.amount}
+                onChange={(v) => setWdForm((p) => ({ ...p, amount: v }))}
+                local={false}
+                rates={rates}
+                max={Math.min(bal, maxLimit)}
+                presetsPct
+              />
+
+              <div className="wl-field">
+                <span className="wl-label">Send to</span>
+                <div className="wl-options cols-3">
+                  {PAYOUT_METHODS.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className={method === m.id ? 'on' : ''}
+                      onClick={() => {
+                        setMethod(m.id);
+                        const saved = withdrawalMethods?.[m.saved];
+                        if (saved?.enabled) applySavedMethod(m.saved, saved);
+                        else {
+                          savedKeyRef.current = 'manual';
+                          setActiveSavedKey('');
+                        }
                       }}
                     >
-                      📦 View &amp; Confirm Pending Orders ({pendingOrdersCount}) →
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ─── 1-CLICK SAVED PAYMENT METHODS QUICK SELECT ─── */}
-            {(() => {
-              const wm = withdrawalMethods || {};
-              const hasAnySaved = Boolean(
-                (wm.bankTransfer?.enabled && wm.bankTransfer?.accountNumber) ||
-                (wm.upi?.enabled && wm.upi?.upiId) ||
-                (wm.paytm?.enabled && wm.paytm?.phone) ||
-                (wm.gpay?.enabled && (wm.gpay?.phone || wm.gpay?.upiId)) ||
-                (wm.phonepe?.enabled && (wm.phonepe?.phone || wm.phonepe?.upiId)) ||
-                (wm.usdt?.enabled && wm.usdt?.walletAddress)
-              );
-
-              if (hasAnySaved) {
-                return (
-                  <div className="saved-withdrawal-methods-box mb-4">
-                    <div className="swm-head">
-                      <div className="swm-head-left">
-                        <span className="swm-bolt-icon">⚡</span>
-                        <div>
-                          <b className="swm-head-title">Saved Payment Methods (1-Click Auto-Fill)</b>
-                          <small className="swm-head-sub">Click any of your configured payment coordinates to auto-populate all details instantly:</small>
-                        </div>
-                      </div>
-                      <Link to="/seller/settings" className="swm-edit-link">
-                        ⚙️ Edit Saved in Settings
-                      </Link>
-                    </div>
-
-                    <div className="swm-cards-grid">
-                      {wm.bankTransfer?.enabled && wm.bankTransfer?.accountNumber && (
-                        <div
-                          className={`swm-card ${activeSavedKey === 'bankTransfer' && method === 'bank' ? 'selected' : ''}`}
-                          onClick={() => applySavedMethod('bankTransfer', wm.bankTransfer)}
-                        >
-                          <div className="swm-card-top">
-                            <span className="swm-card-icon">🏦</span>
-                            <b className="swm-card-name">Indian Bank</b>
-                            {activeSavedKey === 'bankTransfer' && method === 'bank' && <span className="swm-selected-badge">✓ Active</span>}
-                          </div>
-                          <div className="swm-card-detail">{wm.bankTransfer.bankName || 'State Bank of India'}</div>
-                          <div className="swm-card-acc">A/C: •••• {String(wm.bankTransfer.accountNumber || '').slice(-4)} ({wm.bankTransfer.accountTitle || 'Account'})</div>
-                          <div className="swm-card-ifsc">IFSC: {wm.bankTransfer.ifscCode || '—'}</div>
-                        </div>
-                      )}
-
-                      {wm.upi?.enabled && wm.upi?.upiId && (
-                        <div
-                          className={`swm-card ${activeSavedKey === 'upi' && method === 'upi' ? 'selected' : ''}`}
-                          onClick={() => applySavedMethod('upi', wm.upi)}
-                        >
-                          <div className="swm-card-top">
-                            <span className="swm-card-icon">⚡</span>
-                            <b className="swm-card-name">UPI VPA</b>
-                            {activeSavedKey === 'upi' && method === 'upi' && <span className="swm-selected-badge">✓ Active</span>}
-                          </div>
-                          <div className="swm-card-detail">{wm.upi.upiId}</div>
-                          <div className="swm-card-acc">{wm.upi.holderName || 'Registered UPI Name'}</div>
-                        </div>
-                      )}
-
-                      {wm.paytm?.enabled && wm.paytm?.phone && (
-                        <div
-                          className={`swm-card ${activeSavedKey === 'paytm' && method === 'paytm' ? 'selected' : ''}`}
-                          onClick={() => applySavedMethod('paytm', wm.paytm)}
-                        >
-                          <div className="swm-card-top">
-                            <span className="swm-card-icon">📱</span>
-                            <b className="swm-card-name">Paytm</b>
-                            {activeSavedKey === 'paytm' && method === 'paytm' && <span className="swm-selected-badge">✓ Active</span>}
-                          </div>
-                          <div className="swm-card-detail">Mob: {wm.paytm.phone}</div>
-                          <div className="swm-card-acc">{wm.paytm.accountName || 'Paytm Wallet'}</div>
-                        </div>
-                      )}
-
-                      {wm.gpay?.enabled && (wm.gpay?.phone || wm.gpay?.upiId) && (
-                        <div
-                          className={`swm-card ${activeSavedKey === 'gpay' && method === 'gpay' ? 'selected' : ''}`}
-                          onClick={() => applySavedMethod('gpay', wm.gpay)}
-                        >
-                          <div className="swm-card-top">
-                            <span className="swm-card-icon">🔵</span>
-                            <b className="swm-card-name">Google Pay</b>
-                            {activeSavedKey === 'gpay' && method === 'gpay' && <span className="swm-selected-badge">✓ Active</span>}
-                          </div>
-                          <div className="swm-card-detail">{wm.gpay.phone || wm.gpay.upiId}</div>
-                          <div className="swm-card-acc">{wm.gpay.accountName || 'GPay Account'}</div>
-                        </div>
-                      )}
-
-                      {wm.phonepe?.enabled && (wm.phonepe?.phone || wm.phonepe?.upiId) && (
-                        <div
-                          className={`swm-card ${activeSavedKey === 'phonepe' && method === 'phonepe' ? 'selected' : ''}`}
-                          onClick={() => applySavedMethod('phonepe', wm.phonepe)}
-                        >
-                          <div className="swm-card-top">
-                            <span className="swm-card-icon">🟣</span>
-                            <b className="swm-card-name">PhonePe</b>
-                            {activeSavedKey === 'phonepe' && method === 'phonepe' && <span className="swm-selected-badge">✓ Active</span>}
-                          </div>
-                          <div className="swm-card-detail">{wm.phonepe.phone || wm.phonepe.upiId}</div>
-                          <div className="swm-card-acc">{wm.phonepe.accountName || 'PhonePe User'}</div>
-                        </div>
-                      )}
-
-                      {wm.usdt?.enabled && wm.usdt?.walletAddress && (
-                        <div
-                          className={`swm-card ${activeSavedKey === 'usdt' && method === 'usdt' ? 'selected' : ''}`}
-                          onClick={() => applySavedMethod('usdt', wm.usdt)}
-                        >
-                          <div className="swm-card-top">
-                            <span className="swm-card-icon">💎</span>
-                            <b className="swm-card-name">USDT ({wm.usdt.network || 'TRC-20'})</b>
-                            {activeSavedKey === 'usdt' && method === 'usdt' && <span className="swm-selected-badge">✓ Active</span>}
-                          </div>
-                          <div className="swm-card-detail" style={{ fontFamily: 'monospace', fontSize: 11 }}>
-                            {String(wm.usdt.walletAddress || '').slice(0, 8)}...{String(wm.usdt.walletAddress || '').slice(-6)}
-                          </div>
-                          <div className="swm-card-acc">{wm.usdt.network || 'TRC-20'} Crypto Payout</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              }
-
-              return (
-                <div className="no-saved-methods-callout mb-4">
-                  <span style={{ fontSize: 24 }}>💡</span>
-                  <div style={{ flex: 1 }}>
-                    <b style={{ color: '#0f172a', fontSize: 13.5, display: 'block' }}>Save Your Payment Coordinates for 1-Click Auto-Fill</b>
-                    <p style={{ margin: '2px 0 0', color: '#64748b', fontSize: 12.5 }}>
-                      You can save your Indian Bank Account, UPI ID, Paytm, GPay, or USDT wallet in Store Settings once. They will automatically appear here for instant 1-click withdrawals!
-                    </p>
-                  </div>
-                  <Link to="/seller/settings" className="seller-btn-pri btn-sm" style={{ whiteSpace: 'nowrap' }}>
-                    ⚙️ Setup in Settings
-                  </Link>
-                </div>
-              );
-            })()}
-
-            <form onSubmit={handleWithdraw} className="form-grid">
-              <div className="field field-full">
-                <CurrencyConverterWidget
-                  usdValue={wdForm.amount}
-                  onUsdChange={(val) => setWdForm((prev) => ({ ...prev, amount: val }))}
-                  title="Payout Currency Converter (USD to INR / EUR / GBP / AED)"
-                  mode="withdraw"
-                />
-              </div>
-
-              {/* Transfer Method Switcher Tabs */}
-              <div className="field field-full">
-                <label style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginBottom: 6 }}>
-                  Select Payout Transfer Method:
-                </label>
-                <div className="payment-method-selector-tabs-grid">
-                  <button
-                    type="button"
-                    className={`pms-tab-card ${method === 'bank' ? 'active' : ''}`}
-                    onClick={() => {
-                      setMethod('bank');
-                      if (withdrawalMethods?.bankTransfer?.enabled) {
-                        applySavedMethod('bankTransfer', withdrawalMethods.bankTransfer);
-                      }
-                    }}
-                  >
-                    <span className="pms-icon">🏦</span>
-                    <div className="pms-text">
-                      <b>Indian Bank Transfer</b>
-                      <small>NEFT / IMPS / RTGS</small>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    className={`pms-tab-card ${method === 'upi' ? 'active' : ''}`}
-                    onClick={() => {
-                      setMethod('upi');
-                      if (withdrawalMethods?.upi?.enabled) {
-                        applySavedMethod('upi', withdrawalMethods.upi);
-                      }
-                    }}
-                  >
-                    <span className="pms-icon">⚡</span>
-                    <div className="pms-text">
-                      <b>UPI (Instant VPA)</b>
-                      <small>GPay, PhonePe, BHIM</small>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    className={`pms-tab-card ${method === 'paytm' ? 'active' : ''}`}
-                    onClick={() => {
-                      setMethod('paytm');
-                      if (withdrawalMethods?.paytm?.enabled) {
-                        applySavedMethod('paytm', withdrawalMethods.paytm);
-                      }
-                    }}
-                  >
-                    <span className="pms-icon">📱</span>
-                    <div className="pms-text">
-                      <b>Paytm Wallet</b>
-                      <small>Mobile / Payments Bank</small>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    className={`pms-tab-card ${method === 'gpay' ? 'active' : ''}`}
-                    onClick={() => {
-                      setMethod('gpay');
-                      if (withdrawalMethods?.gpay?.enabled) {
-                        applySavedMethod('gpay', withdrawalMethods.gpay);
-                      }
-                    }}
-                  >
-                    <span className="pms-icon">🔵</span>
-                    <div className="pms-text">
-                      <b>Google Pay</b>
-                      <small>Phone / GPay UPI</small>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    className={`pms-tab-card ${method === 'phonepe' ? 'active' : ''}`}
-                    onClick={() => {
-                      setMethod('phonepe');
-                      if (withdrawalMethods?.phonepe?.enabled) {
-                        applySavedMethod('phonepe', withdrawalMethods.phonepe);
-                      }
-                    }}
-                  >
-                    <span className="pms-icon">🟣</span>
-                    <div className="pms-text">
-                      <b>PhonePe</b>
-                      <small>Mobile / @ybl handle</small>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    className={`pms-tab-card ${method === 'usdt' ? 'active' : ''}`}
-                    onClick={() => {
-                      setMethod('usdt');
-                      if (withdrawalMethods?.usdt?.enabled) {
-                        applySavedMethod('usdt', withdrawalMethods.usdt);
-                      }
-                    }}
-                  >
-                    <span className="pms-icon">💎</span>
-                    <div className="pms-text">
-                      <b>USDT Crypto</b>
-                      <small>TRC-20 / BEP-20</small>
-                    </div>
-                  </button>
+                      <b>{m.label}</b><small>{m.sub}</small>
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* ──────────────────────────────────────────────────
-                  MODE A: INDIAN BANK TRANSFER FIELDS
-                  ────────────────────────────────────────────────── */}
               {method === 'bank' && (
                 <>
-                  <div className="field">
-                    <label>
-                      Account Holder Full Name <span className="sig-req">*</span>
+                  <div className="wl-row-2">
+                    <label className="wl-field"><span className="wl-label">Account holder name <em>*</em></span><input className="wl-input" value={wdForm.accountTitle} onChange={setWd('accountTitle')} placeholder="As printed in the passbook" required /></label>
+                    <label className="wl-field"><span className="wl-label">Bank <em>*</em></span>
+                      <select className="wl-input" value={wdForm.bankName} onChange={setWd('bankName')} required>{INDIAN_BANKS.map((b) => <option key={b} value={b}>{b}</option>)}</select>
                     </label>
-                    <input
-                      value={wdForm.accountTitle}
-                      onChange={setWd('accountTitle')}
-                      placeholder="Full name as printed in bank passbook"
-                      required
-                    />
-                    <small className="muted-sm">Must match your verified merchant legal name.</small>
                   </div>
-
-                  <div className="field">
-                    <label>
-                      Select Indian Bank <span className="sig-req">*</span>
+                  <div className="wl-row-2">
+                    <label className="wl-field"><span className="wl-label">Account number <em>*</em></span><input className="wl-input mono" inputMode="numeric" value={wdForm.accountNumber} onChange={setWd('accountNumber')} placeholder="9–18 digits" required /></label>
+                    <label className="wl-field"><span className="wl-label">Confirm account number <em>*</em></span>
+                      <input className={`wl-input mono ${confirmAccountNumber && confirmAccountNumber !== wdForm.accountNumber ? 'bad' : ''}`} inputMode="numeric" value={confirmAccountNumber} onChange={(e) => setConfirmAccountNumber(e.target.value)} placeholder="Type it again" required />
+                      {confirmAccountNumber && <small className={confirmAccountNumber === wdForm.accountNumber ? 't-green' : 't-red'}>{confirmAccountNumber === wdForm.accountNumber ? '✓ Numbers match' : 'Numbers do not match'}</small>}
                     </label>
-                    <div className="bank-select-wrap">
-                      <select
-                        value={wdForm.bankName}
-                        onChange={setWd('bankName')}
-                        required
-                        className="sig-select"
-                      >
-                        {INDIAN_BANKS.map((b) => (
-                          <option key={b} value={b}>
-                            {b}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
                   </div>
-
-                  <div className="field">
-                    <label>
-                      Bank Account Number <span className="sig-req">*</span>
+                  <div className="wl-row-2">
+                    <label className="wl-field"><span className="wl-label">IFSC code <em>*</em></span><input className="wl-input mono upper" value={wdForm.ifscCode} onChange={setWd('ifscCode')} placeholder="SBIN0001234" maxLength={11} required /></label>
+                    <label className="wl-field"><span className="wl-label">Account type</span>
+                      <select className="wl-input" value={accountType} onChange={(e) => setAccountType(e.target.value)}><option value="Savings">Savings</option><option value="Current">Current / business</option></select>
                     </label>
-                    <input
-                      type="text"
-                      value={wdForm.accountNumber}
-                      onChange={setWd('accountNumber')}
-                      placeholder="Enter 9 to 18 digit account number"
-                      required
-                    />
-                  </div>
-
-                  <div className="field">
-                    <label>
-                      Confirm Bank Account Number <span className="sig-req">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={confirmAccountNumber}
-                      onChange={(e) => setConfirmAccountNumber(e.target.value)}
-                      placeholder="Re-enter bank account number"
-                      required
-                    />
-                    {confirmAccountNumber && confirmAccountNumber !== wdForm.accountNumber && (
-                      <small style={{ color: '#dc2626', fontWeight: 700, marginTop: 2 }}>
-                        ⚠️ Account numbers do not match!
-                      </small>
-                    )}
-                    {confirmAccountNumber && confirmAccountNumber === wdForm.accountNumber && (
-                      <small style={{ color: '#16a34a', fontWeight: 700, marginTop: 2 }}>
-                        ✓ Account numbers match perfectly
-                      </small>
-                    )}
-                  </div>
-
-                  <div className="field">
-                    <label>
-                      Bank IFSC Code (11 Characters) <span className="sig-req">*</span>
-                    </label>
-                    <input
-                      value={wdForm.ifscCode}
-                      onChange={setWd('ifscCode')}
-                      placeholder="e.g. SBIN0001234 / HDFC0000001"
-                      style={{ textTransform: 'uppercase', letterSpacing: 1 }}
-                      maxLength={11}
-                      required
-                    />
-                    <small className="muted-sm">11-character Indian Financial System Code.</small>
-                  </div>
-
-                  <div className="field">
-                    <label>Account Type</label>
-                    <select
-                      value={accountType}
-                      onChange={(e) => setAccountType(e.target.value)}
-                      className="sig-select"
-                    >
-                      <option value="Savings">Savings Account</option>
-                      <option value="Current">Current / Business Account</option>
-                    </select>
                   </div>
                 </>
               )}
-
-              {/* ──────────────────────────────────────────────────
-                  MODE B: UPI FIELDS
-                  ────────────────────────────────────────────────── */}
               {method === 'upi' && (
-                <>
-                  <div className="field field-full">
-                    <label style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
-                      Choose UPI App Provider:
-                    </label>
-                    <div className="upi-app-chips">
-                      {UPI_APPS.map((app) => (
-                        <button
-                          key={app.id}
-                          type="button"
-                          className={`upi-chip ${selectedUpiApp === app.id ? 'active' : ''}`}
-                          onClick={() => {
-                            setSelectedUpiApp(app.id);
-                            if (app.handle && !wdForm.upiId.includes('@')) {
-                              setWdForm((prev) => ({
-                                ...prev,
-                                upiId: prev.upiId ? `${prev.upiId}${app.handle}` : '',
-                              }));
-                            }
-                          }}
-                        >
-                          <span>{app.icon}</span>
-                          <b>{app.name}</b>
-                          {app.handle && <small>{app.handle}</small>}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="field">
-                    <label>
-                      UPI ID / VPA Address <span className="sig-req">*</span>
-                    </label>
-                    <input
-                      value={wdForm.upiId}
-                      onChange={setWd('upiId')}
-                      placeholder="e.g. yourname@okhdfcbank or 9876543210@paytm"
-                      required
-                    />
-                    <small className="muted-sm">Virtual Payment Address registered on GPay, PhonePe, Paytm, BHIM, etc.</small>
-                  </div>
-
-                  <div className="field">
-                    <label>
-                      Registered Name on UPI / Bank <span className="sig-req">*</span>
-                    </label>
-                    <input
-                      value={wdForm.accountTitle}
-                      onChange={setWd('accountTitle')}
-                      placeholder="Name registered with UPI app"
-                      required
-                    />
-                    <small className="muted-sm">Ensures instant NPCI name verification.</small>
-                  </div>
-                </>
+                <div className="wl-row-2">
+                  <label className="wl-field"><span className="wl-label">UPI ID <em>*</em></span><input className="wl-input" value={wdForm.upiId} onChange={setWd('upiId')} placeholder="name@okhdfcbank" required /></label>
+                  <label className="wl-field"><span className="wl-label">Name on the UPI account <em>*</em></span><input className="wl-input" value={wdForm.accountTitle} onChange={setWd('accountTitle')} placeholder="Registered name" required /></label>
+                </div>
               )}
-
-              {/* ──────────────────────────────────────────────────
-                  MODE C: PAYTM WALLET FIELDS
-                  ────────────────────────────────────────────────── */}
-              {method === 'paytm' && (
-                <>
-                  <div className="field">
-                    <label>
-                      Paytm Registered 10-Digit Mobile Number <span className="sig-req">*</span>
-                    </label>
+              {['paytm', 'gpay', 'phonepe'].includes(method) && (
+                <div className="wl-row-2">
+                  <label className="wl-field"><span className="wl-label">{method === 'paytm' ? 'Paytm mobile number' : 'Mobile number or UPI ID'} <em>*</em></span>
                     <input
-                      type="tel"
-                      value={wdForm.phone || upiPhone}
+                      className="wl-input"
+                      value={wdForm.upiId && wdForm.upiId.includes('@') && method !== 'paytm' ? wdForm.upiId : wdForm.phone}
                       onChange={(e) => {
-                        setWdForm((prev) => ({ ...prev, phone: e.target.value }));
-                        setUpiPhone(e.target.value);
+                        const v = e.target.value;
+                        setWdForm((p) => (method !== 'paytm' && v.includes('@') ? { ...p, upiId: v, phone: '' } : { ...p, phone: v, upiId: method === 'paytm' && v ? `${v}@paytm` : '' }));
                       }}
-                      placeholder="e.g. 9876543210"
-                      maxLength={10}
+                      placeholder={method === 'paytm' ? '9876543210' : '9876543210 or name@ybl'}
                       required
                     />
-                    <small className="muted-sm">Payout transferred to your linked Paytm wallet / Payments Bank.</small>
-                  </div>
-
-                  <div className="field">
-                    <label>Paytm Account Holder Full Name</label>
-                    <input
-                      value={wdForm.accountTitle}
-                      onChange={setWd('accountTitle')}
-                      placeholder="Name registered on Paytm"
-                    />
-                  </div>
-                </>
+                  </label>
+                  <label className="wl-field"><span className="wl-label">Registered name</span><input className="wl-input" value={wdForm.accountTitle} onChange={setWd('accountTitle')} placeholder="Name on the account" /></label>
+                </div>
               )}
-
-              {/* ──────────────────────────────────────────────────
-                  MODE D: GOOGLE PAY FIELDS
-                  ────────────────────────────────────────────────── */}
-              {method === 'gpay' && (
-                <>
-                  <div className="field">
-                    <label>
-                      GPay Mobile Number / UPI ID <span className="sig-req">*</span>
-                    </label>
-                    <input
-                      value={wdForm.phone || wdForm.upiId || upiPhone}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setWdForm((prev) => ({
-                          ...prev,
-                          phone: val,
-                          upiId: val.includes('@') ? val : '',
-                        }));
-                        setUpiPhone(val);
-                      }}
-                      placeholder="e.g. 9876543210 or yourname@oksbi"
-                      required
-                    />
-                    <small className="muted-sm">Google Pay linked phone number or @okhdfcbank / @oksbi handle.</small>
-                  </div>
-
-                  <div className="field">
-                    <label>Google Pay Registered Name</label>
-                    <input
-                      value={wdForm.accountTitle}
-                      onChange={setWd('accountTitle')}
-                      placeholder="Name registered on Google Pay"
-                    />
-                  </div>
-                </>
-              )}
-
-              {/* ──────────────────────────────────────────────────
-                  MODE E: PHONEPE FIELDS
-                  ────────────────────────────────────────────────── */}
-              {method === 'phonepe' && (
-                <>
-                  <div className="field">
-                    <label>
-                      PhonePe Mobile Number / UPI ID <span className="sig-req">*</span>
-                    </label>
-                    <input
-                      value={wdForm.phone || wdForm.upiId || upiPhone}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setWdForm((prev) => ({
-                          ...prev,
-                          phone: val,
-                          upiId: val.includes('@') ? val : '',
-                        }));
-                        setUpiPhone(val);
-                      }}
-                      placeholder="e.g. 9876543210 or yourname@ybl"
-                      required
-                    />
-                    <small className="muted-sm">PhonePe linked phone number or @ybl / @ibl UPI handle.</small>
-                  </div>
-
-                  <div className="field">
-                    <label>PhonePe Registered Full Name</label>
-                    <input
-                      value={wdForm.accountTitle}
-                      onChange={setWd('accountTitle')}
-                      placeholder="Name registered on PhonePe"
-                    />
-                  </div>
-                </>
-              )}
-
-              {/* ──────────────────────────────────────────────────
-                  MODE F: USDT CRYPTO FIELDS
-                  ────────────────────────────────────────────────── */}
               {method === 'usdt' && (
-                <>
-                  <div className="field">
-                    <label>
-                      USDT Receiving Wallet Address <span className="sig-req">*</span>
-                    </label>
-                    <input
-                      value={wdForm.walletAddress}
-                      onChange={(e) => setWdForm((prev) => ({ ...prev, walletAddress: e.target.value }))}
-                      placeholder="e.g. Txxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                      required
-                    />
-                    <small className="muted-sm">Make sure this address matches the selected blockchain network.</small>
-                  </div>
-
-                  <div className="field">
-                    <label>Blockchain Network <span className="sig-req">*</span></label>
-                    <select
-                      value={usdtNetwork}
-                      onChange={(e) => {
-                        setUsdtNetwork(e.target.value);
-                        setWdForm((prev) => ({ ...prev, network: e.target.value }));
-                      }}
-                      className="sig-select"
-                      required
-                    >
-                      <option value="TRC-20">TRON (TRC-20) — Recommended (Fastest &amp; Low Gas)</option>
+                <div className="wl-row-2">
+                  <label className="wl-field"><span className="wl-label">USDT wallet address <em>*</em></span><input className="wl-input mono" value={wdForm.walletAddress} onChange={setWd('walletAddress')} placeholder="T… / 0x…" required /></label>
+                  <label className="wl-field"><span className="wl-label">Network <em>*</em></span>
+                    <select className="wl-input" value={usdtNetwork} onChange={(e) => { setUsdtNetwork(e.target.value); setWdForm((p) => ({ ...p, network: e.target.value })); }}>
+                      <option value="TRC-20">TRON (TRC-20) — recommended</option>
                       <option value="BEP-20">BNB Smart Chain (BEP-20)</option>
                       <option value="ERC-20">Ethereum (ERC-20)</option>
                     </select>
-                  </div>
-                </>
-              )}
-
-              {/* Inline Alert Feedback inside Withdrawal Card */}
-              {err && (
-                <div className="field field-full">
-                  <div style={{ background: '#fef2f2', border: '1.5px solid #f87171', borderRadius: 8, padding: '12px 16px', color: '#991b1b', fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 18 }}>⚠️</span>
-                    <div>
-                      <b>Withdrawal Request Error:</b>
-                      <div style={{ marginTop: 2 }}>{err}</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {msg && (
-                <div className="field field-full">
-                  <div style={{ background: '#ecfdf5', border: '1.5px solid #34d399', borderRadius: 8, padding: '12px 16px', color: '#065f46', fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 18 }}>✅</span>
-                    <div>
-                      <b>Success:</b>
-                      <div style={{ marginTop: 2 }}>{msg}</div>
-                    </div>
-                  </div>
+                  </label>
                 </div>
               )}
 
-              {/* Submit Button & Validations */}
-              <div className="field field-full">
-                <button
-                  type="submit"
-                  className="seller-btn-pri"
-                  disabled={
-                    submitting ||
-                    bal < 1 ||
-                    !wdForm.amount ||
-                    Number(wdForm.amount) > bal ||
-                    Number(wdForm.amount) > (withdrawalLimit?.maxAmount || 500)
-                  }
-                >
-                  {submitting ? (
-                    'Submitting Withdrawal Request...'
-                  ) : (
-                    <>
-                      <Ic name="send" size={16} />
-                      <span>
-                        💸 Submit Payout via{' '}
-                        {method === 'bank'
-                          ? '🏦 Indian Bank Transfer'
-                          : method === 'upi'
-                          ? '⚡ UPI Instant VPA'
-                          : method === 'paytm'
-                          ? '📱 Paytm Wallet'
-                          : method === 'gpay'
-                          ? '🔵 Google Pay'
-                          : method === 'phonepe'
-                          ? '🟣 PhonePe'
-                          : '💎 USDT Crypto'}{' '}
-                        (${Number(wdForm.amount || 0).toFixed(2)} USD)
-                      </span>
-                    </>
-                  )}
-                </button>
-                {bal < 1 && <small className="muted-sm mt-1 block">Insufficient available balance to withdraw.</small>}
-                {Number(wdForm.amount) > (withdrawalLimit?.maxAmount || 500) && (
-                  <small className="muted-sm mt-1 block" style={{ color: '#dc2626', fontWeight: 700 }}>
-                    ⚠️ Amount exceeds current single withdrawal limit of {formatMoney(withdrawalLimit?.maxAmount || 500)}.
-                  </small>
-                )}
-                {Number(wdForm.amount) > bal && (
-                  <small className="muted-sm mt-1 block" style={{ color: '#dc2626' }}>
-                    Withdrawal amount cannot exceed available balance (${Number(bal).toFixed(2)} USD).
-                  </small>
-                )}
+              {NoticeBox}
+
+              <div className="wl-summary">
+                <div><span>Withdraw</span><b>{usd(wdForm.amount)}</b></div>
+                <div><span>Balance after</span><b className={Number(wdForm.amount) > bal ? 't-red' : ''}>{usd(Math.max(0, bal - (Number(wdForm.amount) || 0)))}</b></div>
+                {currentCurrency.code !== 'USD' && <div><span>≈ in {currentCurrency.code}</span><b>{formatMoney(Number(wdForm.amount) || 0)}</b></div>}
               </div>
+              <button
+                type="submit"
+                className="wl-btn wl-btn-primary lg"
+                disabled={submitting || pendingOrdersCount > 0 || Boolean(openWithdrawal) || !(Number(wdForm.amount) >= minLimit) || Number(wdForm.amount) > bal || Number(wdForm.amount) > maxLimit}
+              >
+                {submitting ? 'Sending…' : `Request payout${Number(wdForm.amount) > 0 ? ` · ${usd(wdForm.amount)}` : ''}`}
+              </button>
+              <p className="wl-fine">
+                Min {usd(minLimit)} · max {usd(maxLimit)} per request · one payout at a time.
+                {Number(wdForm.amount) > maxLimit && <span className="t-red"> Above your limit.</span>}
+                {Number(wdForm.amount) > bal && <span className="t-red"> Above your available balance.</span>}
+              </p>
             </form>
-          </div>
+          </section>
+
+          <aside className="wl-side-stack">
+            <LimitCard limit={limit} formatMoney={formatMoney} responding={respondingOffer} onApply={() => setLimitModalOpen(true)} onRespond={handleLimitOfferResponse} />
+            <section className="wl-card wl-side"><RecentList title="Recent payouts" rows={requests.filter((r) => r.type === 'withdrawal').slice(0, 5)} formatMoney={formatMoney} /></section>
+          </aside>
         </div>
       )}
 
-      {/* ─── LIMIT INCREASE APPLICATION MODAL ─── */}
       {limitModalOpen && (
-        <div className="admin-modal-overlay" onClick={() => setLimitModalOpen(false)}>
-          <div className="admin-modal-box" style={{ maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-top">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 8, background: '#eff6ff', color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Ic name="shield" size={20} />
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 16 }}>🚀 Apply for Withdrawal Limit Increase</h3>
-                  <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>
-                    Upgrade your store withdrawal tier for higher single payout volumes
-                  </p>
-                </div>
-              </div>
-              <button onClick={() => setLimitModalOpen(false)} className="btn-close-modal">✕</button>
+        <Modal onClose={() => !submittingLimitReq && setLimitModalOpen(false)} title="Ask for a higher payout limit">
+          <form onSubmit={handleLimitIncreaseSubmit} className="wl-form">
+            <div className="wl-summary">
+              <div><span>Current limit</span><b>{usd(maxLimit)}</b></div>
+              <div><span>Payouts done</span><b>{limit.successfulWithdrawalCount || 0} / {limit.requiredWithdrawalsForIncrease || 10}</b></div>
             </div>
-
-            <form onSubmit={handleLimitIncreaseSubmit} style={{ padding: '18px 22px' }}>
-              {/* Current Status Summary */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', background: '#f8fafc', padding: '12px 16px', borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 16 }}>
-                <div>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Current Single Limit</span>
-                  <div style={{ fontSize: 16, fontWeight: 900, color: '#0f172a' }}>
-                    {formatMoney(withdrawalLimit?.maxAmount || 500)}
-                  </div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Tier Progress</span>
-                  <div style={{ fontSize: 16, fontWeight: 900, color: '#16a34a' }}>
-                    {withdrawalLimit?.successfulWithdrawalCount || 0} / {withdrawalLimit?.requiredWithdrawalsForIncrease || 10} Completed
-                  </div>
-                </div>
-              </div>
-
-              {/* Requested Limit Input */}
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 6, color: '#1e293b' }}>
-                  Requested New Limit (USD $) *
-                </label>
-                <div style={{ position: 'relative' }}>
-                  <span style={{ position: 'absolute', left: 12, top: 9, fontWeight: 800, color: '#64748b' }}>$</span>
-                  <input
-                    type="number"
-                    min={(withdrawalLimit?.maxAmount || 500) + 1}
-                    value={reqLimitAmount}
-                    onChange={(e) => setReqLimitAmount(e.target.value)}
-                    placeholder={`e.g. 2000 (Must be > $${withdrawalLimit?.maxAmount || 500})`}
-                    style={{ width: '100%', padding: '9px 12px 9px 28px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 14, fontWeight: 700 }}
-                    required
-                  />
-                </div>
-                <small className="muted" style={{ fontSize: 11, marginTop: 4, display: 'block' }}>
-                  Enter your requested maximum ceiling for individual payout requests.
-                </small>
-              </div>
-
-              {/* Reason / Store Performance Notes */}
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 6, color: '#1e293b' }}>
-                  Business Justification / Reason *
-                </label>
-                <textarea
-                  rows="3"
-                  value={reqLimitReason}
-                  onChange={(e) => setReqLimitReason(e.target.value)}
-                  placeholder="e.g. Monthly store sales have grown significantly. Fulfilling customer orders reliably and need higher batch payout limits."
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, fontFamily: 'inherit' }}
-                  required
-                />
-              </div>
-
-              {/* Review Policy Notice */}
-              <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '10px 14px', marginBottom: 16 }}>
-                <div style={{ fontSize: 12, color: '#1e40af', lineHeight: 1.4 }}>
-                  <b>💡 Upgrade Process:</b> Platform administration will review your store metrics and send an Official Offer Slip with tailored limits and fee terms for your final confirmation.
-                </div>
-              </div>
-
-              <div className="modal-bottom-actions">
-                <button type="button" onClick={() => setLimitModalOpen(false)} className="btn-cancel">Cancel</button>
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  disabled={submittingLimitReq || !reqLimitAmount || Number(reqLimitAmount) <= (withdrawalLimit?.maxAmount || 500)}
-                >
-                  {submittingLimitReq ? 'Submitting Application...' : '🚀 Submit Upgrade Application'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <label className="wl-field"><span className="wl-label">New limit you need (USD) <em>*</em></span>
+              <div className="wl-amount"><em>$</em><input type="number" min={maxLimit + 1} value={reqLimitAmount} onChange={(e) => setReqLimitAmount(e.target.value)} placeholder={`More than ${maxLimit}`} required /></div>
+            </label>
+            <label className="wl-field"><span className="wl-label">Why do you need it? <em>*</em></span>
+              <textarea className="wl-input" rows={3} value={reqLimitReason} onChange={(e) => setReqLimitReason(e.target.value)} placeholder="e.g. Sales have grown and I need larger payouts." required />
+            </label>
+            <p className="wl-fine">The team reviews your store and sends you an offer with the new limit and its fee. Nothing is charged until you accept and it is activated.</p>
+            <div className="wl-modal-actions">
+              <button type="button" className="wl-btn wl-btn-ghost" onClick={() => setLimitModalOpen(false)} disabled={submittingLimitReq}>Cancel</button>
+              <button type="submit" className="wl-btn wl-btn-dark" disabled={submittingLimitReq || !(Number(reqLimitAmount) > maxLimit)}>{submittingLimitReq ? 'Sending…' : 'Send request'}</button>
+            </div>
+          </form>
+        </Modal>
       )}
 
-      {/* ─── REQUEST SUCCESS CONFIRMATION MODAL ─── */}
-      {requestSuccessModal && (
-        <div className="admin-modal-overlay" onClick={() => setRequestSuccessModal(null)}>
-          <div className="admin-modal-box" style={{ maxWidth: 520, textAlign: 'center', padding: '30px 24px', borderRadius: 16 }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ width: 72, height: 72, borderRadius: '50%', background: requestSuccessModal.type === 'deposit' ? '#ecfdf5' : '#eff6ff', color: requestSuccessModal.type === 'deposit' ? '#16a34a' : '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 34, boxShadow: '0 10px 25px -5px rgba(0,0,0,0.08)' }}>
-              {requestSuccessModal.type === 'deposit' ? '💰' : '💸'}
+      {successSlip && (
+        <Modal onClose={() => setSuccessSlip(null)}>
+          <div className="wl-success">
+            <span className={`wl-success-ico ${successSlip.type}`}><Ic name="checkCircle" size={28} /></span>
+            <h3>{successSlip.type === 'deposit' ? 'Deposit request sent' : 'Payout requested'}</h3>
+            <p>{successSlip.type === 'deposit' ? 'The team will verify your payment and add it to your available balance.' : 'The amount has moved out of your available balance and will be sent after the team approves it.'}</p>
+            <div className="wl-slip">
+              <div className="big"><span>Amount</span><b>{usd(successSlip.amount)}</b></div>
+              {successSlip.rows.map(([k, v]) => <div key={k}><span>{k}</span><b>{v}</b></div>)}
+              <div><span>Status</span><span className="wl-tag tone-amber">Waiting for approval</span></div>
             </div>
-
-            <h3 style={{ margin: '0 0 6px', fontSize: 20, color: '#0f172a', fontWeight: 800 }}>
-              {requestSuccessModal.title}
-            </h3>
-            <p style={{ color: '#64748b', fontSize: 13.5, margin: '0 0 18px', lineHeight: 1.5 }}>
-              {requestSuccessModal.message}
-            </p>
-
-            {/* Summary Slip */}
-            <div style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 12, padding: '16px 18px', textAlign: 'left', marginBottom: 22 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderBottom: '1px dashed #cbd5e1', paddingBottom: 10 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>Amount Requested</span>
-                <span style={{ fontSize: 18, fontWeight: 900, color: requestSuccessModal.type === 'deposit' ? '#16a34a' : '#2563eb' }}>
-                  ${Number(requestSuccessModal.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
-                </span>
-              </div>
-
-              {requestSuccessModal.ref && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: 13 }}>
-                  <span style={{ color: '#64748b', fontWeight: 600 }}>Payment Ref / UTR:</span>
-                  <b style={{ color: '#0f172a', fontFamily: 'monospace', background: '#e2e8f0', padding: '2px 6px', borderRadius: 4 }}>{requestSuccessModal.ref}</b>
-                </div>
-              )}
-
-              {requestSuccessModal.method && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: 13 }}>
-                  <span style={{ color: '#64748b', fontWeight: 600 }}>Payment Method:</span>
-                  <b style={{ color: '#0f172a', textTransform: 'uppercase' }}>{requestSuccessModal.method}</b>
-                </div>
-              )}
-
-              {requestSuccessModal.from && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: 13 }}>
-                  <span style={{ color: '#64748b', fontWeight: 600 }}>Sender Info:</span>
-                  <b style={{ color: '#0f172a' }}>{requestSuccessModal.from}</b>
-                </div>
-              )}
-
-              {requestSuccessModal.account && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: 13 }}>
-                  <span style={{ color: '#64748b', fontWeight: 600 }}>Account / Destination:</span>
-                  <b style={{ color: '#0f172a' }}>{requestSuccessModal.account}</b>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, borderTop: '1px solid #e2e8f0', paddingTop: 10 }}>
-                <span style={{ color: '#64748b', fontWeight: 600, fontSize: 13 }}>Status:</span>
-                <span className="chip-orange" style={{ fontWeight: 800, padding: '4px 10px', borderRadius: 20, fontSize: 11.5 }}>
-                  ⏳ PENDING ADMIN APPROVAL
-                </span>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setRequestSuccessModal(null);
-                  handleTabChange('ledger');
-                }}
-                className="btn-primary"
-                style={{ padding: '11px 22px', fontWeight: 800, fontSize: 13.5 }}
-              >
-                📋 View in Financial Ledger
-              </button>
-              <button
-                type="button"
-                onClick={() => setRequestSuccessModal(null)}
-                className="btn-cancel"
-                style={{ padding: '11px 18px', fontWeight: 700 }}
-              >
-                Done
-              </button>
+            <div className="wl-modal-actions">
+              <button type="button" className="wl-btn wl-btn-ghost" onClick={() => setSuccessSlip(null)}>Done</button>
+              <button type="button" className="wl-btn wl-btn-dark" onClick={() => { setSuccessSlip(null); changeTab('ledger'); }}>View transactions</button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
+  );
+}
+
+/* ───────────────────────── pieces ───────────────────────── */
+
+function LedgerRow({ r, formatMoney }) {
+  const d = describeLine(r);
+  const st = STATUS_LABEL[r.status] || { label: r.status || '—', tone: 'slate' };
+  const when = new Date(r.processedAt && (r.type === 'deposit' || r.type === 'withdrawal') ? r.processedAt : r.createdAt);
+  const rejected = r.status === 'rejected';
+  const partial = r.type === 'withdrawal' && (r.status === 'approved' || r.status === 'completed') && r.approvedAmount != null && Math.abs(r.approvedAmount) < Math.abs(r.amount);
+  const ref = r.orderNumber ? `#${r.orderNumber}` : r.depositRef ? `Ref ${r.depositRef}` : r.transactionRef ? `UTR ${r.transactionRef}` : '';
+  return (
+    <li className="wl-line">
+      <span className={`wl-line-ico tone-${d.tone}`}><Ic name={d.icon} size={16} /></span>
+      <div className="wl-line-main">
+        <b>{d.label}{r.profitRate >= 35 && r.type === 'order_delivered_release' ? ' 💎' : ''}</b>
+        <small>
+          {when.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })} · {when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {ref && <> · <span className="mono">{ref}</span></>}
+        </small>
+        {d.note && <small className="t-muted">{d.note}</small>}
+        {r.profitAmount > 0 && r.type === 'order_delivered_release' && <small className="t-green">includes +{formatMoney(r.profitAmount)} profit ({r.profitRate}%)</small>}
+        {rejected && r.adminNote && <small className="t-red">{r.adminNote}</small>}
+      </div>
+      <div className="wl-line-side">
+        <b className={`wl-amt ${rejected ? 'void' : d.sign === '+' ? 'in' : d.sign === '−' ? 'out' : ''}`}>{d.sign}{formatMoney(d.value)}</b>
+        {partial && <small className="t-green">+{formatMoney(Math.abs(r.amount) - Math.abs(r.approvedAmount))} returned</small>}
+        {rejected && (r.type === 'withdrawal') && <small className="t-green">returned to balance</small>}
+        <div className="wl-line-meta">
+          {r.balanceAfter != null && <small>Bal. {formatMoney(r.balanceAfter)}</small>}
+          {r.status !== 'completed' && <span className={`wl-tag tone-${st.tone}`}>{st.label}</span>}
+        </div>
+      </div>
+    </li>
+  );
+}
+
+function AmountField({ label, value, onChange, local, onToggleLocal, rates, presets, max, presetsPct }) {
+  const rate = Number(rates?.INR) > 0 ? Number(rates.INR) : 83.5;
+  const [localText, setLocalText] = useState('');
+  useEffect(() => {
+    if (!local) return;
+    const v = Number(value);
+    setLocalText(v > 0 ? String(Math.round(v * rate)) : '');
+  }, [local]); // eslint-disable-line react-hooks/exhaustive-deps
+  const usdNum = Number(value) || 0;
+  return (
+    <div className="wl-field">
+      <div className="wl-label-row">
+        <span className="wl-label">{label} <em>*</em></span>
+        {onToggleLocal && (
+          <button type="button" className="wl-link" onClick={onToggleLocal}>{local ? 'Enter in USD' : 'Enter in ₹ INR'}</button>
+        )}
+      </div>
+      {local ? (
+        <div className="wl-amount">
+          <em>₹</em>
+          <input
+            type="number" inputMode="decimal" min="0" step="any" value={localText}
+            onChange={(e) => {
+              setLocalText(e.target.value);
+              const n = Number(e.target.value);
+              onChange(n > 0 ? (n / rate).toFixed(2) : '');
+            }}
+            placeholder="0"
+          />
+          <span className="wl-amount-conv">= {usd(usdNum)}</span>
+        </div>
+      ) : (
+        <div className="wl-amount">
+          <em>$</em>
+          <input type="number" inputMode="decimal" min="0" step="0.01" value={value} onChange={(e) => onChange(e.target.value)} placeholder="0.00" />
+          {usdNum > 0 && <span className="wl-amount-conv">≈ ₹{Math.round(usdNum * rate).toLocaleString('en-IN')}</span>}
+        </div>
+      )}
+      <div className="wl-presets">
+        {presetsPct && max > 0
+          ? [0.25, 0.5, 1].map((p) => (
+              <button key={p} type="button" onClick={() => onChange((Math.floor(max * p * 100) / 100).toFixed(2))}>{p === 1 ? `Max ${usd(max)}` : `${p * 100}%`}</button>
+            ))
+          : (presets || []).map((p) => <button key={p} type="button" className={Number(value) === p ? 'on' : ''} onClick={() => onChange(String(p))}>${p.toLocaleString('en-US')}</button>)}
+      </div>
+    </div>
+  );
+}
+
+function SavedMethods({ wm = {}, activeKey, method, onPick }) {
+  const cards = [];
+  if (wm.bankTransfer?.enabled && wm.bankTransfer?.accountNumber) cards.push({ key: 'bankTransfer', m: 'bank', title: wm.bankTransfer.bankName || 'Bank account', line: `•••• ${String(wm.bankTransfer.accountNumber).slice(-4)} · ${wm.bankTransfer.accountTitle || ''}`, data: wm.bankTransfer });
+  if (wm.upi?.enabled && wm.upi?.upiId) cards.push({ key: 'upi', m: 'upi', title: 'UPI', line: wm.upi.upiId, data: wm.upi });
+  if (wm.paytm?.enabled && wm.paytm?.phone) cards.push({ key: 'paytm', m: 'paytm', title: 'Paytm', line: wm.paytm.phone, data: wm.paytm });
+  if (wm.gpay?.enabled && (wm.gpay?.phone || wm.gpay?.upiId)) cards.push({ key: 'gpay', m: 'gpay', title: 'Google Pay', line: wm.gpay.phone || wm.gpay.upiId, data: wm.gpay });
+  if (wm.phonepe?.enabled && (wm.phonepe?.phone || wm.phonepe?.upiId)) cards.push({ key: 'phonepe', m: 'phonepe', title: 'PhonePe', line: wm.phonepe.phone || wm.phonepe.upiId, data: wm.phonepe });
+  if (wm.usdt?.enabled && wm.usdt?.walletAddress) cards.push({ key: 'usdt', m: 'usdt', title: `USDT ${wm.usdt.network || 'TRC-20'}`, line: `${String(wm.usdt.walletAddress).slice(0, 6)}…${String(wm.usdt.walletAddress).slice(-4)}`, data: wm.usdt });
+
+  if (!cards.length) {
+    return (
+      <div className="wl-callout tone-slate"><Ic name="sparkle" size={16} /><p>Save your bank, UPI or USDT details once in <Link to="/seller/settings">Store Settings</Link> and pick them here in one tap.</p></div>
+    );
+  }
+  return (
+    <div className="wl-field">
+      <div className="wl-label-row"><span className="wl-label">Saved accounts</span><Link to="/seller/settings" className="wl-link">Edit</Link></div>
+      <div className="wl-saved">
+        {cards.map((c) => (
+          <button key={c.key} type="button" className={activeKey === c.key && method === c.m ? 'on' : ''} onClick={() => onPick(c.key, c.data)}>
+            <span className="wl-saved-check"><Ic name="check" size={12} /></span>
+            <b>{c.title}</b>
+            <small className="mono">{c.line}</small>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LimitMini({ limit, onApply, onOpen }) {
+  const done = limit.successfulWithdrawalCount || 0;
+  const need = limit.requiredWithdrawalsForIncrease || 10;
+  const pct = Math.min(100, Math.round((done / (need || 1)) * 100));
+  const R = 22;
+  const C = 2 * Math.PI * R;
+  const status = limit.pendingIncreaseRequest?.status || 'none';
+  return (
+    <div className="wl-limit-mini">
+      <svg viewBox="0 0 56 56" aria-hidden="true">
+        <circle cx="28" cy="28" r={R} fill="none" stroke="#eef2f7" strokeWidth="6" />
+        <circle cx="28" cy="28" r={R} fill="none" stroke={done >= need ? '#f59e0b' : '#3b82f6'} strokeWidth="6" strokeLinecap="round" strokeDasharray={`${(pct / 100) * C} ${C}`} transform="rotate(-90 28 28)" />
+      </svg>
+      <div className="wl-limit-mini-txt">
+        <b>Payout limit {usd(limit.maxAmount)}</b>
+        <small>{status === 'offered' ? 'You have a new limit offer' : status === 'pending' ? 'Increase request under review' : `${Math.min(done, need)} of ${need} payouts to a higher limit`}</small>
+      </div>
+      {status === 'offered' ? (
+        <button type="button" className="wl-btn wl-btn-dark sm" onClick={onOpen}>See offer</button>
+      ) : done >= need && status === 'none' ? (
+        <button type="button" className="wl-btn wl-btn-dark sm" onClick={onApply}>Apply</button>
+      ) : null}
+    </div>
+  );
+}
+
+function LimitCard({ limit, formatMoney, responding, onApply, onRespond }) {
+  const done = limit.successfulWithdrawalCount || 0;
+  const need = limit.requiredWithdrawalsForIncrease || 10;
+  const pct = Math.min(100, Math.round((done / (need || 1)) * 100));
+  const req = limit.pendingIncreaseRequest || { status: 'none' };
+  const eligible = done >= need;
+  return (
+    <section className="wl-card wl-limit">
+      <div className="wl-card-head">
+        <div><h3><Ic name="shield" size={16} /> Payout limit</h3><p className="wl-sub">{limit.currentTierName || 'Standard tier'}</p></div>
+        <b className="wl-limit-val">{usd(limit.maxAmount)}<small>/request</small></b>
+      </div>
+      <div className="wl-progress"><span className={eligible ? 'gold' : ''} style={{ width: `${Math.max(3, pct)}%` }} /></div>
+      <p className="wl-fine">{Math.min(done, need)} of {need} approved payouts done{eligible ? ' — you can ask for a higher limit.' : ` — ${need - done} more to unlock a higher limit.`}</p>
+
+      {req.status === 'pending' && <div className="wl-callout tone-amber"><Ic name="clock" size={16} /><p>Your request for <b>{usd(req.requestedLimit)}</b> is under review. You will get an offer with the terms.</p></div>}
+      {req.status === 'accepted_by_seller' && <div className="wl-callout tone-blue"><Ic name="checkCircle" size={16} /><p>You accepted <b>{usd(req.offeredLimit)}</b>. The fee of {usd(req.offeredFee)} is taken only when the team activates it.</p></div>}
+      {req.status === 'offered' && (
+        <div className="wl-offer">
+          <b>New limit offer</b>
+          <div className="wl-offer-grid">
+            <div><span>New limit</span><b className="t-green">{usd(req.offeredLimit)}</b></div>
+            <div><span>One-time fee</span><b>{usd(req.offeredFee ?? 50)}</b></div>
+            <div><span>Next milestone</span><b>{req.offeredNextCount || 15} payouts</b></div>
+          </div>
+          {req.adminNote && <p className="wl-fine">“{req.adminNote}”</p>}
+          <p className="wl-fine">Accepting agrees to the terms. Nothing is charged now — the fee is taken when the team activates the new limit.</p>
+          <div className="wl-modal-actions">
+            <button type="button" className="wl-btn wl-btn-ghost sm" disabled={responding} onClick={() => onRespond('decline')}>Decline</button>
+            <button type="button" className="wl-btn wl-btn-dark sm" disabled={responding} onClick={() => onRespond('accept')}>{responding ? 'Saving…' : 'Accept offer'}</button>
+          </div>
+        </div>
+      )}
+      {req.status !== 'pending' && req.status !== 'offered' && req.status !== 'accepted_by_seller' && (
+        <button type="button" className="wl-btn wl-btn-ghost full" onClick={onApply} disabled={!eligible} title={eligible ? '' : `Complete ${need - done} more approved payouts first`}>
+          {eligible ? 'Ask for a higher limit' : `Locked · ${done}/${need} payouts`}
+        </button>
+      )}
+    </section>
+  );
+}
+
+function RecentList({ title, rows, formatMoney }) {
+  return (
+    <div className="wl-recent">
+      <h4>{title}</h4>
+      {rows.length === 0 ? <p className="wl-fine">None yet.</p> : (
+        <ul>
+          {rows.map((r) => {
+            const d = describeLine(r);
+            const st = STATUS_LABEL[r.status] || { label: r.status, tone: 'slate' };
+            return (
+              <li key={r._id}>
+                <div><b>{formatMoney(d.value)}</b><small>{fmtDate(r.createdAt)}</small></div>
+                <span className={`wl-tag tone-${st.tone}`}>{st.label}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function Modal({ title, onClose, children }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return createPortal(
+    <div className="wl-modal-root" role="dialog" aria-modal="true" aria-label={title || 'Dialog'}>
+      <button type="button" className="wl-modal-bg" onClick={onClose} aria-label="Close" tabIndex={-1} />
+      <div className="wl-modal">
+        {title && (
+          <div className="wl-modal-head"><h3>{title}</h3><button type="button" className="wl-icon-btn" onClick={onClose} aria-label="Close"><Ic name="x" size={18} /></button></div>
+        )}
+        {children}
+      </div>
+    </div>,
+    document.body
   );
 }
