@@ -76,6 +76,12 @@ router.post('/tier/request-upgrade', authSeller, announceToAdmins('sellers', 'se
       return res.status(400).json({ message: 'Your store registration is still under review. You can request Diamond once it is approved.' });
     }
 
+    // the upgrade is already being approved (fee received, admin asked for approval): a new
+    // request must not reset it back to 'pending'
+    if (seller.tierRequest?.status === 'awaiting_approval') {
+      return res.json({ ok: true, already: true, message: 'Your Diamond upgrade is being approved now. Your store will switch to Diamond shortly.', tier: tierInfo(seller) });
+    }
+
     // one request a day: a second click only repeats the answer (no flood of chat messages)
     const last = seller.tierRequest?.requestedAt ? new Date(seller.tierRequest.requestedAt).getTime() : 0;
     if (seller.tierRequest?.status === 'pending' && Date.now() - last < 24 * 3600000) {

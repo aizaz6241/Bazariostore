@@ -12,7 +12,6 @@ import { useCurrency } from '../context/CurrencyContext.jsx';
 import { playNotificationSound } from '../utils/audio.js';
 import { enablePush, pushState } from '../utils/push.js';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
-import { getLiveStoreVisitors } from '../utils/liveMetrics.js';
 
 const SELLER_NAV = [
   { to: '/seller', icon: 'grid', label: 'Dashboard', end: true },
@@ -59,15 +58,6 @@ export default function SellerLayout() {
   useEffect(() => {
     if (pushState() === 'granted' && localStorage.getItem('ng_seller_token')) enablePush('seller').then(setPushPerm);
   }, []);
-  const [liveShoppers, setLiveShoppers] = useState(() => getLiveStoreVisitors(seller?._id, 14));
-
-  useEffect(() => {
-    setLiveShoppers(getLiveStoreVisitors(seller?._id, 14));
-    const timer = setInterval(() => {
-      setLiveShoppers(getLiveStoreVisitors(seller?._id, 10));
-    }, 4500);
-    return () => clearInterval(timer);
-  }, [seller?._id]);
 
   const addToast = (toast) => {
     const id = Date.now() + Math.random().toString(36).slice(2, 6);
@@ -275,6 +265,10 @@ export default function SellerLayout() {
   }
 
   const isVerified = Boolean(seller?.verified || seller?.status === 'active');
+  const isDiamondStore = seller?.tier === 'diamond';
+  const storeInitials = (seller?.storeName || 'My Store').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || 'S';
+  const statusKey = ['frozen', 'suspended', 'pending_approval', 'rejected'].includes(seller?.status) ? seller.status : 'active';
+  const statusText = { frozen: 'Frozen', suspended: 'Suspended', pending_approval: 'Under review', rejected: 'Rejected' }[statusKey] || 'Active';
 
   return (
     <div className="seller-portal-layout">
@@ -425,118 +419,101 @@ export default function SellerLayout() {
 
       {/* Main Content Area */}
       <div className="seller-main-wrap">
-        <header className="seller-top-bar">
-          <div className="seller-top-left">
+        <header className="stb">
+          <div className="stb-left">
             <button
               type="button"
-              className="mobile-hamburger-btn"
+              className="stb-burger"
               onClick={() => setMobileSidebarOpen(true)}
-              aria-label="Open Navigation Menu"
-              title="Open Navigation Menu"
+              aria-label="Open navigation menu"
             >
               <Ic name="menu" size={20} />
             </button>
 
-            {/* Mobile Brand Title */}
-            <div className="seller-mobile-brand show-on-mobile-flex">
-              <span className="smb-logo">BAZARIO</span>
-              <span className="smb-sub">SELLER</span>
-            </div>
-
-            {/* Prominent Store Display with Verified Badge */}
-            <div className="seller-topbar-store-display">
-              <span className="seller-topbar-store-name" title={seller?.storeName || 'My Store'}>
-                {seller?.storeName || 'My Store'}
-              </span>
-              {isVerified ? (
-                <VerifiedStoreBadge variant="pill" size={15} text="Verified Store" />
-              ) : (
-                <span className="seller-pending-badge">⏳ Under Review</span>
-              )}
-              {seller?.tier === 'diamond' && (
-                <Link to="/seller/diamond" className="diamond-pill" title="Diamond Store">💎 DIAMOND</Link>
-              )}
-            </div>
-
-            {/* Live Active Shoppers in Store */}
-            <div
-              className="seller-live-shoppers-pill"
-              title="Real-time estimated customers active in your store right now"
-            >
-              <span className="live-pulse-dot" />
-              <Ic name="eye" size={13} stroke={2.2} />
-              <b>{liveShoppers}</b>
-              <span className="live-lbl hide-on-mobile">Shoppers Live</span>
-            </div>
-
-            <span className="seller-sep hide-on-tablet">|</span>
-            <span className={`store-active-indicator hide-on-tablet ${seller?.status === 'frozen' || seller?.status === 'suspended' ? 'status-frozen' : ''}`}>
-              <span className="pulse-dot"></span> <b style={{ textTransform: 'uppercase' }}>{seller?.status || 'Active'}</b>
-            </span>
-            <span className="seller-sep hide-on-laptop">|</span>
-            <span className="seller-owner-name hide-on-laptop">Owner: <b>{seller?.ownerName}</b></span>
-          </div>
-
-          <div className="seller-top-right">
-            {/* Global Real-Time Currency Selector */}
-            <CurrencySelector compact className="seller-topbar-curr-select" />
-
-            {/* Live Account Health Pill */}
-            <div
-              className={`seller-topbar-health-pill health-tier-${healthTier}`}
-              title={`Account Health Score: ${healthScore}/100 (${healthLabel})`}
-            >
-              <div className="sthp-icon">
-                <Ic name="shield" size={14} />
-              </div>
-              <div className="sthp-body">
-                <span className="sthp-lbl hide-on-tablet">Health</span>
-                <b className="sthp-score">{healthScore}</b>
-                <span className="sthp-max hide-on-mobile">/100</span>
-              </div>
-              <span className={`sthp-tag health-tag-${healthTier} hide-on-mobile`}>{healthLabel}</span>
-            </div>
-
-            {/* Live Merchant Wallet Quick Pill */}
-            <Link to="/seller/wallet" className="seller-topbar-wallet-pill" title="Merchant Wallet & Financial Ledger">
-              <div className="stwp-icon"><Ic name="banknote" size={15} /></div>
-              <div className="stwp-body">
-                <span className="stwp-lbl hide-on-tablet">Wallet</span>
-                <b className="stwp-val">{formatMoney(seller?.wallet?.balance || 0)}</b>
-              </div>
-              {(seller?.wallet?.processingFund > 0) && (
-                <span className="stwp-proc hide-on-mobile" title="Locked in Order Processing">
-                  🔒 {formatMoney(seller.wallet.processingFund)}
+            <Link to="/seller" className="stb-store" title={seller?.storeName || 'My Store'}>
+              <span className={`stb-avatar ${isDiamondStore ? 'is-diamond' : ''}`}>{storeInitials}</span>
+              <span className="stb-store-text">
+                <span className="stb-store-name">
+                  <span className="stb-store-name-txt">{seller?.storeName || 'My Store'}</span>
+                  {isVerified && <VerifiedStoreBadge variant="icon" size={14} />}
                 </span>
-              )}
+                <span className="stb-store-sub">
+                  <i className={`stb-status-dot st-${statusKey}`} />
+                  {statusText}
+                  <span className="stb-sub-sep">·</span>
+                  {isDiamondStore ? 'Diamond plan' : 'Basic plan'}
+                </span>
+              </span>
             </Link>
 
-            {/* Install App Button */}
-            <button
-              type="button"
-              onClick={() => setAppModalOpen(true)}
-              className="seller-app-pill-btn hide-on-tablet"
-              title="Install Bazario App on Android / iOS"
-            >
-              <Ic name="download" size={13} />
-              <span>App</span>
-            </button>
+            {isDiamondStore ? (
+              <Link to="/seller/diamond" className="stb-diamond is-on" title="Your store is on the Diamond plan">
+                <span className="stb-gem" aria-hidden="true">💎</span>
+                <span className="stb-diamond-txt">Diamond</span>
+              </Link>
+            ) : ['pending', 'awaiting_approval'].includes(seller?.tierRequest?.status) ? (
+              <Link to="/seller/diamond" className="stb-diamond is-pending" title="Diamond upgrade request sent">
+                <span className="stb-gem" aria-hidden="true">💎</span>
+                <span className="stb-diamond-txt">Upgrade requested</span>
+              </Link>
+            ) : (
+              <Link to="/seller/diamond" className="stb-diamond" title="Upgrade to Diamond — earn 35% per order">
+                <span className="stb-gem" aria-hidden="true">💎</span>
+                <span className="stb-diamond-txt">Upgrade to Diamond</span>
+                <span className="stb-diamond-rate">35%</span>
+              </Link>
+            )}
+          </div>
 
-            {/* Desktop Quick Settings / Profile */}
+          <div className="stb-right">
+            <CurrencySelector compact className="stb-currency" />
+
+            <Link
+              to="/seller"
+              className={`stb-chip stb-health tone-${healthTier}`}
+              title={`Account health ${healthScore}/100 (${healthLabel})`}
+            >
+              <Ic name="shield" size={15} />
+              <span className="stb-chip-lbl">Health</span>
+              <b>{healthScore}</b>
+            </Link>
+
+            <Link to="/seller/wallet" className="stb-chip stb-wallet" title="Wallet balance">
+              <Ic name="wallet" size={15} />
+              <span className="stb-chip-col">
+                <span className="stb-chip-lbl">Balance</span>
+                <b>{formatMoney(seller?.wallet?.balance || 0)}</b>
+              </span>
+            </Link>
+
             {pushPerm !== 'granted' && pushPerm !== 'unsupported' && (
               <button
                 type="button"
+                className={`stb-icon-btn ${pushPerm === 'denied' ? 'is-blocked' : 'is-attn'}`}
                 onClick={async () => setPushPerm(await enablePush('seller', { ask: true }))}
-                title={pushPerm === 'denied' ? 'Notifications are blocked in this browser/phone settings' : 'Get phone notifications'}
-                style={{ border: '1px solid #f59e0b', background: '#fffbeb', color: '#92400e', borderRadius: 999, padding: '4px 10px', fontSize: 12, fontWeight: 700, marginRight: 6 }}
+                title={pushPerm === 'denied' ? 'Notifications are blocked in this browser / phone settings' : 'Turn on order alerts'}
+                aria-label="Order alerts"
               >
-                🔔 {pushPerm === 'denied' ? 'Alerts blocked' : 'Enable alerts'}
+                <Ic name="bell" size={17} />
               </button>
             )}
-            <Link to="/seller/settings" className="seller-user-pill" title="Store & Account Settings">
-              <span className="seller-user-initial">{seller?.ownerName?.[0] || 'U'}</span>
-              <span className="seller-user-email-text hide-on-laptop">{seller?.ownerName || seller?.email}</span>
-              <Ic name="gear" size={14} className="hide-on-mobile" />
+
+            <button
+              type="button"
+              className="stb-icon-btn stb-hide-sm"
+              onClick={() => setAppModalOpen(true)}
+              title="Install the Bazario seller app"
+              aria-label="Install app"
+            >
+              <Ic name="download" size={17} />
+            </button>
+
+            <Link to="/seller/settings" className="stb-user" title="Store & account settings">
+              <span className="stb-user-initial">{(seller?.ownerName || seller?.email || 'U')[0].toUpperCase()}</span>
+              <span className="stb-user-text">
+                <b>{seller?.ownerName || 'Store owner'}</b>
+                <small>Settings</small>
+              </span>
             </Link>
           </div>
         </header>

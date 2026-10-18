@@ -438,3 +438,78 @@
 @media (max-width: 380px) {
   .sd-kpis { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ── Diamond upgrade banner ── */
+.sd-dia {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 22px 24px;
+  border-radius: 16px;
+  color: #fff;
+  background:
+    radial-gradient(120% 140% at 100% 0%, rgba(34, 211, 238, 0.35) 0%, rgba(34, 211, 238, 0) 55%),
+    linear-gradient(135deg, #04212b 0%, #083344 45%, #0e7490 100%);
+  box-shadow: 0 10px 30px rgba(8, 51, 68, 0.25);
+}
+.sd-dia::before {
+  content: '';
+  position: absolute;
+  right: -40px; top: -60px;
+  width: 260px; height: 260px;
+  background: conic-gradient(from 200deg, rgba(255, 255, 255, 0.0), rgba(165, 243, 252, 0.18), rgba(255, 255, 255, 0));
+  transform: rotate(45deg);
+  border-radius: 40px;
+  pointer-events: none;
+}
+.sd-dia > * { position: relative; }
+.sd-dia-gem {
+  flex: 0 0 64px; width: 64px; height: 64px; border-radius: 18px;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 32px;
+  background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(165, 243, 252, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+.sd-dia-body { flex: 1; min-width: 0; }
+.sd-dia-kicker { margin: 0; font-size: 11.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #67e8f9; }
+.sd-dia h2 { margin: 4px 0 10px; font-size: 20px; font-weight: 750; letter-spacing: -0.02em; line-height: 1.25; color: #fff; }
+.sd-dia-text { margin: 0; font-size: 13px; color: #cffafe; line-height: 1.5; max-width: 620px; }
+.sd-dia-perks { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.sd-dia-perks li {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 550; color: #ecfeff;
+  background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(165, 243, 252, 0.22);
+}
+.sd-dia-perks svg { color: #67e8f9; }
+.sd-dia-side { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; flex: 0 0 auto; }
+.sd-dia-stat { text-align: right; }
+.sd-dia-stat span { display: block; font-size: 11.5px; color: #a5f3fc; }
+.sd-dia-stat b { font-size: 24px; font-weight: 750; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: #fff; }
+.sd-dia-btn {
+  display: inline-flex; align-items: center; gap: 8px; height: 42px; padding: 0 18px; border-radius: 11px;
+  font-size: 13.5px; font-weight: 700; white-space: nowrap;
+  background: #fff; color: #083344 !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.sd-dia-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.24); }
+.sd-dia-btn.ghost { background: rgba(255, 255, 255, 0.1); color: #fff !important; border: 1px solid rgba(255, 255, 255, 0.3); box-shadow: none; }
+.sd-dia.is-pending { background: linear-gradient(135deg, #083344 0%, #0e7490 100%); }
+
+@media (max-width: 900px) {
+  .sd-dia { flex-wrap: wrap; }
+  .sd-dia-side { flex-direction: row; align-items: center; justify-content: space-between; width: 100%; padding-top: 4px; border-top: 1px solid rgba(165, 243, 252, 0.18); padding-top: 14px; }
+  .sd-dia-stat { text-align: left; }
+}
+@media (max-width: 640px) {
+  .sd-dia { padding: 18px 16px; gap: 14px; border-radius: 14px; }
+  .sd-dia-gem { flex-basis: 48px; width: 48px; height: 48px; font-size: 24px; border-radius: 14px; }
+  .sd-dia-body { flex-basis: calc(100% - 62px); }
+  .sd-dia h2 { font-size: 17px; }
+  .sd-dia-perks { gap: 6px; }
+  .sd-dia-perks li { font-size: 11.5px; padding: 4px 9px; }
+  .sd-dia-side { flex-direction: column; align-items: stretch; }
+  .sd-dia-btn { justify-content: center; }
+  .sd-dia-stat b { font-size: 20px; }
+}

@@ -178,6 +178,10 @@ export default function SellerDashboard() {
   const targets = Array.isArray(seller.targets) ? seller.targets : [];
   const activeTargets = targets;
   const awaiting = stats.awaitingConfirmation || 0;
+  const tierStatus = me?.tierRequest?.status;
+  const diamondPending = ['pending', 'awaiting_approval'].includes(tierStatus);
+  const showDiamond = !isDiamond && (me?.status || seller.status) !== 'pending_approval';
+  const diamondExtra = (windows.sales * (35 - 20)) / 100;
   const firstName = (seller.ownerName || '').split(' ')[0];
   const hour = new Date().getHours();
   const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -220,8 +224,42 @@ export default function SellerDashboard() {
         </div>
       </header>
 
+      {/* ── Diamond upgrade (Basic stores) ── */}
+      {showDiamond && (
+        <section className={`sd-dia ${diamondPending ? 'is-pending' : ''}`} aria-label="Diamond plan">
+          <div className="sd-dia-gem" aria-hidden="true">💎</div>
+          <div className="sd-dia-body">
+            <p className="sd-dia-kicker">{diamondPending ? 'Upgrade in progress' : 'Diamond plan'}</p>
+            <h2>{diamondPending ? 'Your Diamond upgrade request is with our team' : 'Earn 35% on every order — not 20%'}</h2>
+            {diamondPending ? (
+              <p className="sd-dia-text">Our support team will contact you in chat with the next step. Your new rate starts on the orders placed after the upgrade.</p>
+            ) : (
+              <ul className="sd-dia-perks">
+                <li><Ic name="check" size={13} /> 35% profit per order</li>
+                <li><Ic name="check" size={13} /> 72 hours to confirm</li>
+                <li><Ic name="check" size={13} /> Fast 3–5 day delivery</li>
+                <li><Ic name="check" size={13} /> Remove products anytime</li>
+              </ul>
+            )}
+          </div>
+          <div className="sd-dia-side">
+            {!diamondPending && windows.sales > 0 && (
+              <div className="sd-dia-stat">
+                <span>Extra on your last 30 days</span>
+                <b>+{formatMoney(diamondExtra)}</b>
+              </div>
+            )}
+            {diamondPending ? (
+              <Link to="/seller/support" className="sd-dia-btn ghost">Open support chat</Link>
+            ) : (
+              <Link to="/seller/diamond" className="sd-dia-btn">Upgrade to Diamond <Ic name="arrowRight" size={15} /></Link>
+            )}
+          </div>
+        </section>
+      )}
+
       {/* ── Things that need attention ── */}
-      {(awaiting > 0 || lowStockProducts.length > 0 || (me && !isDiamond && me.status !== 'pending_approval')) && (
+      {(awaiting > 0 || lowStockProducts.length > 0) && (
         <div className="sd-alerts">
           {awaiting > 0 && (
             <Link to="/seller/orders" className="sd-alert tone-amber">
@@ -235,15 +273,6 @@ export default function SellerDashboard() {
               <Ic name="alert" size={16} />
               <span><b>{stats.lowStockCount || lowStockProducts.length} product{(stats.lowStockCount || lowStockProducts.length) === 1 ? '' : 's'}</b> running low on stock</span>
               <em>Restock →</em>
-            </Link>
-          )}
-          {me && !isDiamond && me.status !== 'pending_approval' && (
-            <Link to="/seller/diamond" className="sd-alert tone-diamond">
-              <span className="sd-alert-emoji">💎</span>
-              {['pending', 'awaiting_approval'].includes(me?.tierRequest?.status)
-                ? <span>Your <b>Diamond upgrade</b> request is with support — they will contact you in chat.</span>
-                : <span><b>Diamond</b>: 35% profit per order (vs 20%), 72h to confirm, 3–5 day delivery</span>}
-              <em>See Diamond →</em>
             </Link>
           )}
         </div>
