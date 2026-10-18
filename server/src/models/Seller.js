@@ -125,6 +125,12 @@ const sellerSchema = new mongoose.Schema(
     rating: { type: Number, default: null },
     numReviews: { type: Number, default: 0 },
     verified: { type: Boolean, default: false },
+    // the Seller Terms & Conditions accepted at registration (version + when + from where)
+    terms: {
+      version: { type: String, default: '' },
+      acceptedAt: { type: Date, default: null },
+      ip: { type: String, default: '' },
+    },
     // first-time help: which guided tours the store finished and whether it closed the welcome
     // box / getting-started checklist (kept on the account so it follows the store to every device)
     onboarding: {

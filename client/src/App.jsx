@@ -14,6 +14,7 @@ import { Login, Register, Forgot, Reset } from './pages/AuthPages.jsx';
 
 // ─── Seller Central ───────────────────────────────────────────
 import SellerLogin from './seller/SellerLogin.jsx';
+import SellerTerms from './seller/SellerTerms.jsx';
 
 // ─── Super Admin ──────────────────────────────────────────────
 import AdminLogin from './admin/AdminLogin.jsx';
@@ -82,14 +83,13 @@ export default function App() {
         <Route path="/forgot-password" element={<Forgot />} />
         <Route path="/reset-password" element={<Reset />} />
         <Route path="/account" element={<Account />} />
+        <Route path="/seller/login" element={<SellerLogin />} />
+        <Route path="/seller/terms" element={<SellerTerms />} />
         <Route path="/seller/register" element={<Navigate to="/seller/login?mode=register" replace />} />
         <Route path="/sellers/register" element={<Navigate to="/seller/login?mode=register" replace />} />
         <Route path="/become-seller" element={<Navigate to="/seller/login?mode=register" replace />} />
         <Route path="/admin/login" element={<AdminLogin />} />
       </Route>
-
-      {/* ─── Seller sign in / registration: its own full page ─── */}
-      <Route path="/seller/login" element={<SellerLogin />} />
 
       {/* ─── Seller Central Portal ───────────────────────────── */}
       <Route path="/seller/*" element={<PortalBoundary><SellerRoutes /></PortalBoundary>} />

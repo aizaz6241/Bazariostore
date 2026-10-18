@@ -3,6 +3,7 @@ import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import Ic from '../components/Icons.jsx';
+import { TERMS_VERSION } from './sellerTerms.js';
 
 export default function SellerLogin() {
   const navigate = useNavigate();
@@ -62,6 +63,9 @@ export default function SellerLogin() {
   const [forgotBusy, setForgotBusy] = useState(false);
   const [forgotErr, setForgotErr] = useState('');
   const [forgotSuccess, setForgotSuccess] = useState('');
+
+  // the Seller Terms & Conditions box on the registration form
+  const [acceptTerms, setAcceptTerms] = useState(false);
 
   // Register State
   const [regForm, setRegForm] = useState({
@@ -254,6 +258,10 @@ export default function SellerLogin() {
       setErr('Please wait a moment: the photos are still being prepared.');
       return;
     }
+    if (!acceptTerms) {
+      setErr('Please read and accept the Seller Terms & Conditions to register.');
+      return;
+    }
     // everything together must stay under what the server accepts (5 MB)
     if (JSON.stringify(regForm).length > 4.6 * 1024 * 1024) {
       setErr('The documents are too large together. Please upload smaller photos (or photos instead of PDFs).');
@@ -281,7 +289,7 @@ export default function SellerLogin() {
       // documents on a slow mobile connection: up to 2 minutes
       const res = await api('/sellers/register', {
         method: 'POST',
-        body: regForm,
+        body: { ...regForm, acceptTerms: true, termsVersion: TERMS_VERSION },
         timeout: 120000,
       });
 
@@ -392,232 +400,222 @@ export default function SellerLogin() {
 
   return (
     <div className="sl">
-      {/* ── Left: what selling on Bazario means (desktop) ── */}
-      <aside className="sl-side">
-        <Link to="/" className="sl-brand">
+      <div className={`sl-card ${isReg ? 'wide' : ''}`}>
+        {/* Brand */}
+        <div className="sl-brand">
           <span className="sl-logo">B</span>
-          <span><b>Bazario</b> <em>Seller Hub</em></span>
-        </Link>
-
-        <div className="sl-side-body">
-          <h1>{isReg ? 'Start selling on Bazario' : 'Welcome back to your store'}</h1>
-          <p>{isReg ? 'Open your online store in a few minutes. We hold the stock and deliver every order — you choose the products and earn on each sale.' : 'Sign in to manage your products, confirm orders and follow your earnings.'}</p>
-
-          <ul className="sl-perks">
-            <li><span><Ic name="sparkle" size={16} /></span><div><b>No stock to buy</b><small>Pick ready products from the Product Treasury.</small></div></li>
-            <li><span><Ic name="truck" size={16} /></span><div><b>We pack and deliver</b><small>Bazario ships every order to your customers.</small></div></li>
-            <li><span><Ic name="wallet" size={16} /></span><div><b>Earn on every order</b><small>20% profit per order — 35% on the Diamond plan.</small></div></li>
-          </ul>
-
-          <ol className="sl-steps">
-            <li><i>1</i><span>Create your seller account</span></li>
-            <li><i>2</i><span>We verify your documents</span></li>
-            <li><i>3</i><span>Add products and start selling</span></li>
-          </ol>
+          <span className="sl-brand-txt"><b>Bazario</b> <em>Seller Hub</em></span>
         </div>
 
-        <Link to="/login" className="sl-side-foot">Shopping on Bazario? <b>Customer sign in</b> <Ic name="arrowRight" size={14} /></Link>
-      </aside>
+        {/* Who is signing in: customer or seller (admins use the link at the bottom) */}
+        <div className="sl-roles" role="tablist" aria-label="Account type">
+          <Link to="/login" role="tab" aria-selected="false"><Ic name="user" size={15} /> Customer</Link>
+          <span role="tab" aria-selected="true" className="on"><Ic name="tag" size={15} /> Seller</span>
+        </div>
 
-      {/* ── Right: the form ── */}
-      <main className="sl-main">
-        <div className={`sl-card ${isReg ? 'wide' : ''}`}>
-          <Link to="/" className="sl-brand sl-brand-m">
-            <span className="sl-logo">B</span>
-            <span><b>Bazario</b> <em>Seller Hub</em></span>
-          </Link>
+        {mode !== 'submitted' && (
+          <>
+            <div className="sl-head">
+              <h2>{isReg ? 'Create your seller account' : 'Sign in to your store'}</h2>
+              <p>{isReg ? 'Open your store in a few minutes. Keep your Aadhaar and PAN card ready.' : 'Manage your products, orders and earnings.'}</p>
+            </div>
+            <div className="sl-seg" role="tablist">
+              <button type="button" role="tab" aria-selected={!isReg} className={!isReg ? 'on' : ''} onClick={() => switchMode('login')}>Sign in</button>
+              <button type="button" role="tab" aria-selected={isReg} className={isReg ? 'on' : ''} onClick={() => switchMode('register')}>Register as seller</button>
+            </div>
+          </>
+        )}
 
-          {mode !== 'submitted' && (
-            <>
-              <div className="sl-head">
-                <h2>{isReg ? 'Create your seller account' : 'Seller sign in'}</h2>
-                <p>{isReg ? 'Takes about 3 minutes. Keep your Aadhaar and PAN card ready.' : 'Use the email and password of your store.'}</p>
+        {isPendingApprovalErr && (
+          <div className="sl-alert warn">
+            <Ic name="clock" size={18} />
+            <div>
+              <b>Your application is under review</b>
+              <p>Sign in opens as soon as our team approves your store. Use the same email and password then.</p>
+            </div>
+          </div>
+        )}
+        {successMsg && !isPendingApprovalErr && mode !== 'submitted' && (
+          <div className="sl-alert ok"><Ic name="checkCircle" size={18} /><div><p>{successMsg}</p></div></div>
+        )}
+        {err && !isPendingApprovalErr && (
+          <div className="sl-alert err"><Ic name="alert" size={18} /><div><p>{err}</p></div></div>
+        )}
+
+        {mode === 'submitted' ? (
+          <div className="sl-done">
+            <span className="sl-done-ico"><Ic name="checkCircle" size={30} /></span>
+            <h2>{submittedInfo?.already ? 'You have already applied' : 'Application received!'}</h2>
+            <p>
+              {submittedInfo?.already
+                ? `An application with this email${submittedInfo.submittedOn ? ` was sent on ${submittedInfo.submittedOn}` : ' already exists'} and is waiting for approval.`
+                : 'Thank you. Our team will check your details and documents.'}
+            </p>
+            {submittedInfo && (
+              <dl className="sl-summary">
+                <div><dt>Store</dt><dd>{submittedInfo.storeName || '—'}</dd></div>
+                <div><dt>Owner</dt><dd>{submittedInfo.ownerName || '—'}</dd></div>
+                <div className="full"><dt>Email</dt><dd>{submittedInfo.email}</dd></div>
+                <div className="full"><dt>Status</dt><dd><span className="sl-pill">Under review</span></dd></div>
+              </dl>
+            )}
+            <ol className="sl-next">
+              <li className="done"><i><Ic name="check" size={12} /></i><span>Application sent</span></li>
+              <li className="now"><i>2</i><span>Document check by our team</span></li>
+              <li><i>3</i><span>Store approved — sign in and start selling</span></li>
+            </ol>
+            <p className="sl-fine">You can sign in once the store is approved. Please do not register again with the same email.</p>
+            <button type="button" className="sl-btn primary" onClick={() => switchMode('login')}>Go to sign in</button>
+            <button type="button" className="sl-btn ghost" onClick={() => switchMode('register')}>Register a different store</button>
+          </div>
+        ) : !isReg ? (
+          <form onSubmit={submit} className="sl-form">
+            <label className="sl-field">
+              <span>Email</span>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@yourstore.com" required autoFocus autoComplete="email" />
+            </label>
+            <label className="sl-field">
+              <span>Password</span>
+              <div className="sl-pw">
+                <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Your password" required autoComplete="current-password" />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'}><Ic name="eye" size={17} /></button>
               </div>
-              <div className="sl-seg" role="tablist">
-                <button type="button" role="tab" aria-selected={!isReg} className={!isReg ? 'on' : ''} onClick={() => switchMode('login')}>Sign in</button>
-                <button type="button" role="tab" aria-selected={isReg} className={isReg ? 'on' : ''} onClick={() => switchMode('register')}>Create account</button>
-              </div>
-            </>
-          )}
+            </label>
+            <button type="submit" className="sl-btn primary" disabled={loading}>{loading ? 'Signing in…' : 'Sign in'}</button>
+            <p className="sl-fine center">Forgot your password? Contact Bazario support and we will reset it for you.</p>
 
-          {isPendingApprovalErr && (
-            <div className="sl-alert warn">
-              <Ic name="clock" size={18} />
+            <div className="sl-become">
               <div>
-                <b>Your application is under review</b>
-                <p>Sign in opens as soon as our team approves your store. You will be able to sign in here with the same email and password.</p>
+                <b>New to Bazario?</b>
+                <small>Open your own store — no stock to buy, we deliver every order.</small>
               </div>
+              <button type="button" onClick={() => switchMode('register')}>Register as seller <Ic name="arrowRight" size={14} /></button>
             </div>
-          )}
-          {successMsg && !isPendingApprovalErr && mode !== 'submitted' && (
-            <div className="sl-alert ok"><Ic name="checkCircle" size={18} /><div><p>{successMsg}</p></div></div>
-          )}
-          {err && !isPendingApprovalErr && (
-            <div className="sl-alert err"><Ic name="alert" size={18} /><div><p>{err}</p></div></div>
-          )}
-
-          {mode === 'submitted' ? (
-            <div className="sl-done">
-              <span className="sl-done-ico"><Ic name="checkCircle" size={30} /></span>
-              <h2>{submittedInfo?.already ? 'You have already applied' : 'Application received!'}</h2>
-              <p>
-                {submittedInfo?.already
-                  ? `An application with this email${submittedInfo.submittedOn ? ` was sent on ${submittedInfo.submittedOn}` : ' already exists'} and is waiting for approval.`
-                  : 'Thank you. Our team will check your details and documents.'}
-              </p>
-
-              {submittedInfo && (
-                <dl className="sl-summary">
-                  <div><dt>Store</dt><dd>{submittedInfo.storeName || '—'}</dd></div>
-                  <div><dt>Owner</dt><dd>{submittedInfo.ownerName || '—'}</dd></div>
-                  <div className="full"><dt>Email</dt><dd>{submittedInfo.email}</dd></div>
-                  <div className="full"><dt>Status</dt><dd><span className="sl-pill">Under review</span></dd></div>
-                </dl>
-              )}
-
-              <ol className="sl-next">
-                <li className="done"><i><Ic name="check" size={12} /></i><span>Application sent</span></li>
-                <li className="now"><i>2</i><span>Document check by our team</span></li>
-                <li><i>3</i><span>Store approved — sign in and start selling</span></li>
-              </ol>
-              <p className="sl-fine">You cannot sign in until the store is approved. Please do not register again with the same email.</p>
-
-              <button type="button" className="sl-btn primary" onClick={() => switchMode('login')}>Go to sign in</button>
-              <button type="button" className="sl-btn ghost" onClick={() => switchMode('register')}>Register a different store</button>
-            </div>
-          ) : !isReg ? (
-            <form onSubmit={submit} className="sl-form">
-              <label className="sl-field">
-                <span>Email</span>
-                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@yourstore.com" required autoFocus autoComplete="email" />
-              </label>
-              <label className="sl-field">
-                <span>Password</span>
-                <div className="sl-pw">
-                  <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Your password" required autoComplete="current-password" />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'}><Ic name="eye" size={17} /></button>
-                </div>
-              </label>
-              <button type="submit" className="sl-btn primary" disabled={loading}>{loading ? 'Signing in…' : 'Sign in'}</button>
-              <p className="sl-fine center">Forgot your password? Contact Bazario support and we will reset it for you.</p>
-
-              <div className="sl-switch">
-                <span>New to Bazario?</span>
-                <button type="button" onClick={() => switchMode('register')}>Create a seller account <Ic name="arrowRight" size={14} /></button>
+          </form>
+        ) : (
+          <form onSubmit={handleRegister} className="sl-form">
+            <section className="sl-sec">
+              <h3><i>1</i> Your store</h3>
+              <div className="sl-grid">
+                <label className="sl-field">
+                  <span>Store name</span>
+                  <input type="text" value={regForm.storeName} onChange={(e) => setRegForm({ ...regForm, storeName: e.target.value })} placeholder="e.g. Apex Electronics" required />
+                </label>
+                <label className="sl-field">
+                  <span>Owner full name</span>
+                  <input type="text" value={regForm.ownerName} onChange={(e) => setRegForm({ ...regForm, ownerName: e.target.value })} placeholder="As on your Aadhaar card" required />
+                </label>
               </div>
-            </form>
-          ) : (
-            <form onSubmit={handleRegister} className="sl-form">
-              <section className="sl-sec">
-                <h3><i>1</i> Your store</h3>
-                <div className="sl-grid">
-                  <label className="sl-field">
-                    <span>Store name</span>
-                    <input type="text" value={regForm.storeName} onChange={(e) => setRegForm({ ...regForm, storeName: e.target.value })} placeholder="e.g. Apex Electronics" required />
-                  </label>
-                  <label className="sl-field">
-                    <span>Owner full name</span>
-                    <input type="text" value={regForm.ownerName} onChange={(e) => setRegForm({ ...regForm, ownerName: e.target.value })} placeholder="As on your Aadhaar card" required />
-                  </label>
-                </div>
-              </section>
+            </section>
 
-              <section className="sl-sec">
-                <h3><i>2</i> Your account</h3>
-                <div className="sl-grid">
-                  <label className="sl-field">
-                    <span>Email</span>
-                    <input
-                      type="email"
-                      value={regForm.email}
-                      onChange={(e) => {
-                        setRegForm({ ...regForm, email: e.target.value });
-                        if (emailNotice) setEmailNotice(null);
-                      }}
-                      onBlur={onRegEmailBlur}
-                      placeholder="you@email.com"
-                      required
-                    />
-                  </label>
-                  <label className="sl-field">
-                    <span>Phone / WhatsApp</span>
-                    <input type="tel" value={regForm.phone} onChange={(e) => setRegForm({ ...regForm, phone: e.target.value })} placeholder="+91 98765 43210" required />
-                  </label>
-                </div>
-                {emailNotice && (
-                  <div className={`sl-alert ${emailNotice.code === 'APPLICATION_REJECTED' ? 'err' : 'warn'} tight`}>
-                    <Ic name="alert" size={16} />
-                    <div>
-                      <p>{emailNotice.message}</p>
-                      {emailNotice.code === 'APPLICATION_PENDING' && (
-                        <button type="button" className="sl-link" onClick={() => showAlreadyApplied(emailNotice, regForm.email)}>See my application status</button>
-                      )}
-                      {emailNotice.code === 'ALREADY_REGISTERED' && (
-                        <button type="button" className="sl-link" onClick={() => { setEmail(regForm.email); setMode('login'); setEmailNotice(null); setErr(''); }}>Go to sign in</button>
-                      )}
-                    </div>
-                  </div>
-                )}
-                <div className="sl-grid">
-                  <label className="sl-field">
-                    <span>Create a password</span>
-                    <input type="password" value={regForm.password} onChange={(e) => setRegForm({ ...regForm, password: e.target.value })} placeholder="At least 6 characters" minLength={6} required autoComplete="new-password" />
-                  </label>
-                  <label className="sl-field">
-                    <span>Affiliate code <em>(optional)</em></span>
-                    <input
-                      type="text"
-                      className={affCheck.state === 'valid' ? 'is-ok' : affCheck.state === 'invalid' ? 'is-bad' : ''}
-                      value={regForm.referralCode}
-                      onChange={(e) => setRegForm({ ...regForm, referralCode: e.target.value.replace(/\s+/g, '').toUpperCase() })}
-                      placeholder="If someone gave you a code"
-                      maxLength={32}
-                      aria-invalid={affCheck.state === 'invalid'}
-                    />
-                    {affCheck.state !== 'idle' && (
-                      <small role="status" className={affCheck.state === 'valid' ? 't-ok' : affCheck.state === 'invalid' ? 't-bad' : ''}>
-                        {affCheck.state === 'checking' ? 'Checking code…' : affCheck.state === 'valid' ? `✓ ${affCheck.message}` : affCheck.state === 'invalid' ? `✕ ${affCheck.message}` : affCheck.message}
-                      </small>
+            <section className="sl-sec">
+              <h3><i>2</i> Your account</h3>
+              <div className="sl-grid">
+                <label className="sl-field">
+                  <span>Email</span>
+                  <input
+                    type="email"
+                    value={regForm.email}
+                    onChange={(e) => {
+                      setRegForm({ ...regForm, email: e.target.value });
+                      if (emailNotice) setEmailNotice(null);
+                    }}
+                    onBlur={onRegEmailBlur}
+                    placeholder="you@email.com"
+                    required
+                  />
+                </label>
+                <label className="sl-field">
+                  <span>Phone / WhatsApp</span>
+                  <input type="tel" value={regForm.phone} onChange={(e) => setRegForm({ ...regForm, phone: e.target.value })} placeholder="+91 98765 43210" required />
+                </label>
+              </div>
+              {emailNotice && (
+                <div className={`sl-alert ${emailNotice.code === 'APPLICATION_REJECTED' ? 'err' : 'warn'} tight`}>
+                  <Ic name="alert" size={16} />
+                  <div>
+                    <p>{emailNotice.message}</p>
+                    {emailNotice.code === 'APPLICATION_PENDING' && (
+                      <button type="button" className="sl-link" onClick={() => showAlreadyApplied(emailNotice, regForm.email)}>See my application status</button>
                     )}
-                  </label>
+                    {emailNotice.code === 'ALREADY_REGISTERED' && (
+                      <button type="button" className="sl-link" onClick={() => { setEmail(regForm.email); setMode('login'); setEmailNotice(null); setErr(''); }}>Go to sign in</button>
+                    )}
+                  </div>
                 </div>
-              </section>
-
-              <section className="sl-sec">
-                <h3><i>3</i> Identity documents <span className="sl-count">{docsDone}/4</span></h3>
-                <p className="sl-fine">Clear photos of both sides of your Aadhaar and PAN card. Only our verification team sees them.</p>
-                <div className="sl-docs">
-                  {DOCS.map((d) => {
-                    const has = Boolean(regForm[d.field]);
-                    const busy = preparing === d.field;
-                    return (
-                      <label key={d.field} className={`sl-doc ${has ? 'has' : ''} ${busy ? 'busy' : ''}`}>
-                        <input type="file" accept="image/*,.pdf" onChange={handleFileUpload(d.field)} required={!has} />
-                        <span className="sl-doc-ico">{has ? <Ic name="check" size={18} /> : <Ic name="image" size={18} />}</span>
-                        <span className="sl-doc-txt">
-                          <b>{d.label}</b>
-                          <small>{busy ? 'Preparing photo…' : has ? `${d.side} added · tap to change` : `${d.side} side · tap to upload`}</small>
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </section>
-
-              <button type="submit" className="sl-btn primary" disabled={loading || !!preparing}>
-                {loading ? 'Sending… please keep this page open' : preparing ? 'Preparing photos…' : 'Submit application'}
-              </button>
-              <p className="sl-fine center">After you submit, our team checks your details. You can sign in once your store is approved.</p>
-
-              <div className="sl-switch">
-                <span>Already have a seller account?</span>
-                <button type="button" onClick={() => switchMode('login')}>Sign in <Ic name="arrowRight" size={14} /></button>
+              )}
+              <div className="sl-grid">
+                <label className="sl-field">
+                  <span>Create a password</span>
+                  <input type="password" value={regForm.password} onChange={(e) => setRegForm({ ...regForm, password: e.target.value })} placeholder="At least 6 characters" minLength={6} required autoComplete="new-password" />
+                </label>
+                <label className="sl-field">
+                  <span>Affiliate code <em>(optional)</em></span>
+                  <input
+                    type="text"
+                    className={affCheck.state === 'valid' ? 'is-ok' : affCheck.state === 'invalid' ? 'is-bad' : ''}
+                    value={regForm.referralCode}
+                    onChange={(e) => setRegForm({ ...regForm, referralCode: e.target.value.replace(/\s+/g, '').toUpperCase() })}
+                    placeholder="If someone gave you a code"
+                    maxLength={32}
+                    aria-invalid={affCheck.state === 'invalid'}
+                  />
+                  {affCheck.state !== 'idle' && (
+                    <small role="status" className={affCheck.state === 'valid' ? 't-ok' : affCheck.state === 'invalid' ? 't-bad' : ''}>
+                      {affCheck.state === 'checking' ? 'Checking code…' : affCheck.state === 'valid' ? `✓ ${affCheck.message}` : affCheck.state === 'invalid' ? `✕ ${affCheck.message}` : affCheck.message}
+                    </small>
+                  )}
+                </label>
               </div>
-            </form>
-          )}
+            </section>
+
+            <section className="sl-sec">
+              <h3><i>3</i> Identity documents <span className="sl-count">{docsDone}/4</span></h3>
+              <p className="sl-fine">Clear photos of both sides of your Aadhaar and PAN card. Only our verification team sees them.</p>
+              <div className="sl-docs">
+                {DOCS.map((d) => {
+                  const has = Boolean(regForm[d.field]);
+                  const busy = preparing === d.field;
+                  return (
+                    <label key={d.field} className={`sl-doc ${has ? 'has' : ''} ${busy ? 'busy' : ''}`}>
+                      <input type="file" accept="image/*,.pdf" onChange={handleFileUpload(d.field)} required={!has} />
+                      <span className="sl-doc-ico">{has ? <Ic name="check" size={18} /> : <Ic name="image" size={18} />}</span>
+                      <span className="sl-doc-txt">
+                        <b>{d.label}</b>
+                        <small>{busy ? 'Preparing photo…' : has ? `${d.side} added · tap to change` : `${d.side} side · tap to upload`}</small>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </section>
+
+            {/* Seller Terms & Conditions */}
+            <label className={`sl-terms ${acceptTerms ? 'on' : ''}`}>
+              <input type="checkbox" checked={acceptTerms} onChange={(e) => { setAcceptTerms(e.target.checked); if (e.target.checked && /terms/i.test(err)) setErr(''); }} required />
+              <span>
+                I have read and accept the{' '}
+                <a href="/seller/terms" target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>Seller Terms &amp; Conditions</a>
+              </span>
+            </label>
+
+            <button type="submit" className="sl-btn primary" disabled={loading || !!preparing}>
+              {loading ? 'Sending… please keep this page open' : preparing ? 'Preparing photos…' : 'Submit application'}
+            </button>
+            <p className="sl-fine center">After you submit, our team checks your details. You can sign in once your store is approved.</p>
+
+            <div className="sl-switch">
+              <span>Already have a seller account?</span>
+              <button type="button" onClick={() => switchMode('login')}>Sign in <Ic name="arrowRight" size={14} /></button>
+            </div>
+          </form>
+        )}
+
+        {/* Admin access: small, but always here (admins also use it to switch to test stores) */}
+        <div className="sl-foot">
+          <Link to="/admin/login"><Ic name="shield" size={14} /> Admin login</Link>
         </div>
-        <Link to="/login" className="sl-cust-m">Shopping on Bazario? <b>Customer sign in</b></Link>
-      </main>
+      </div>
 
       {/* Password reset (opened from the reset email link) */}
       {forgotModalOpen && (

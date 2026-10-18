@@ -134,6 +134,9 @@ export function Login() {
           <Link to="/seller/login" className="aqp-pill seller-pill">
             <Ic name="tag" size={13} /> Seller Hub
           </Link>
+          <Link to="/admin/login" className="aqp-pill admin-pill">
+            <Ic name="shield" size={13} /> Admin
+          </Link>
         </div>
       </div>
     </AuthShell>

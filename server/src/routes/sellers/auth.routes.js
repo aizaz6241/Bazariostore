@@ -155,6 +155,8 @@ router.post('/register', registerLimit, async (req, res) => {
       bankStatementDocument,
       bankStatementUrl,
       otp,
+      acceptTerms,
+      termsVersion,
     } = req.body || {};
 
     if (!storeName || !ownerName || !email || !password) {
@@ -165,6 +167,10 @@ router.post('/register', registerLimit, async (req, res) => {
     }
     if (password.length < 6) {
       return res.status(400).json({ message: 'Password must be at least 6 characters long' });
+    }
+    // the Seller Terms & Conditions must be accepted (the box on the form; checked here too)
+    if (acceptTerms !== true) {
+      return res.status(400).json({ code: 'TERMS_REQUIRED', field: 'acceptTerms', message: 'Please read and accept the Seller Terms & Conditions to register.' });
     }
 
     // An affiliate code is optional, but when one is given it must exist and be active:
@@ -225,6 +231,7 @@ router.post('/register', registerLimit, async (req, res) => {
       isEmailVerified,
       address: { city: city || 'New York', country: 'United States' },
       status: 'pending_approval',
+      terms: { version: String(termsVersion || '1.0').slice(0, 20), acceptedAt: new Date(), ip: String(req.headers['x-forwarded-for'] || req.ip || '').split(',')[0].trim().slice(0, 64) },
       kycDocuments: {
         aadhaarFront: finalAadhaarFront,
         aadhaarBack: finalAadhaarBack,
