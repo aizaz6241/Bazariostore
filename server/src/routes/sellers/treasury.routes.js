@@ -104,7 +104,11 @@ router.get('/treasury', authSeller, async (req, res) => {
     else if (sort === 'price-high') sortBy = { price: -1 };
     else if (sort === 'newest') sortBy = { createdAt: -1 };
 
+    // perf: the whole catalog is sent, so only what the cards show (no descriptions, specs or the
+    // full image list — one image is enough for a card)
     const items = await TreasuryProduct.find(filter)
+      .select('name slug brand category price oldPrice stock reservedStock lowStockThreshold sku image images sold createdAt active')
+      .slice('images', 1)
       .populate('category', 'name slug')
       .sort(sortBy || { createdAt: -1 })
       .lean();
@@ -115,7 +119,7 @@ router.get('/treasury', authSeller, async (req, res) => {
     const sellerExistingListings = await Product.find({
       seller: req.seller.id,
       treasuryProduct: { $in: itemIds },
-    }).select('_id treasuryProduct price stock active sold');
+    }).select('_id treasuryProduct price stock active sold').lean();
 
     const myListingMap = {};
     sellerExistingListings.forEach((p) => {

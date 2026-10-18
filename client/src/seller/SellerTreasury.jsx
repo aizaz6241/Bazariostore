@@ -1,515 +1,349 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { sapi, money } from '../api.js';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useOutletContext } from 'react-router-dom';
+import { sapi } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
-import '../styles/seller/treasury.css';
 import useLiveReload from '../useLiveReload.js';
+
+const SORTS = [
+  { id: 'mixed', label: 'Recommended' },
+  { id: 'newest', label: 'Newest first' },
+  { id: 'price-low', label: 'Price: low to high' },
+  { id: 'price-high', label: 'Price: high to low' },
+  { id: 'stock', label: 'Most stock' },
+  { id: 'popular', label: 'Most stores selling' },
+];
+const VIEWS = [
+  { id: 'all', label: 'All' },
+  { id: 'not_added', label: 'Not in my store' },
+  { id: 'added', label: 'In my store' },
+];
+const PAGE = 48;
 
 export default function SellerTreasury() {
   const { formatMoney } = useCurrency();
-  const navigate = useNavigate();
+  const { seller, isFrozen } = useOutletContext() || {};
+  const isDiamond = seller?.tier === 'diamond';
+  const rate = isDiamond ? 35 : 20; // what a store earns on each order (see server/src/utils/sellerTier.js)
 
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedCat, setSelectedCat] = useState('');
+  const [loadErr, setLoadErr] = useState('');
+  const [cat, setCat] = useState('');
+  const [qInput, setQInput] = useState('');
   const [q, setQ] = useState('');
-  const [sort, setSort] = useState('mixed'); // 'mixed' | 'price-low' | 'price-high' | 'stock' | 'newest'
-  const [storeFilter, setStoreFilter] = useState('all'); // 'all' | 'not_added' | 'added'
-  const [visibleCount, setVisibleCount] = useState(48);
-  const [actionLoadingIds, setActionLoadingIds] = useState(() => new Set());
-  const [toastMessage, setToastMessage] = useState('');
+  const [sort, setSort] = useState('mixed');
+  const [view, setView] = useState('all');
+  const [visible, setVisible] = useState(PAGE);
+  const [busy, setBusy] = useState(() => new Set());
+  const [toast, setToast] = useState(null); // { ok, text }
+  const inFlight = useRef(new Set());
+  const sentinel = useRef(null);
 
-  const sentinelRef = useRef(null);
-  const inFlightRef = useRef(new Set());
-
-  const showToast = (msg) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(''), 4000);
-  };
-
-  const loadTreasury = (opts) => {
-    if (opts?.silent !== true) setLoading(true);
-    let url = '/sellers/treasury?';
-    const params = new URLSearchParams();
-    if (selectedCat) params.append('category', selectedCat);
-    if (q.trim()) params.append('q', q.trim());
-    if (sort) params.append('sort', sort);
-    url += params.toString();
-
-    sapi(url)
-      .then((data) => setProducts(Array.isArray(data) ? data : []))
-      .catch((err) => console.error(err))
+  // the whole catalog comes once; search, category, sort and view are applied here instantly
+  const load = useCallback((silent = false) => {
+    if (!silent) setLoading(true);
+    return sapi('/sellers/treasury?sort=mixed')
+      .then((data) => {
+        setProducts(Array.isArray(data) ? data : []);
+        setLoadErr('');
+      })
+      .catch((e) => setLoadErr(e.message || 'Could not load the Product Treasury'))
       .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    sapi('/categories')
-      .then((data) => setCategories(Array.isArray(data) ? data : []))
-      .catch(() => {});
   }, []);
 
   useEffect(() => {
-    loadTreasury();
-  }, [selectedCat, sort]); // eslint-disable-line react-hooks/exhaustive-deps
+    load();
+    sapi('/categories').then((d) => setCategories(Array.isArray(d) ? d : [])).catch(() => {});
+  }, [load]);
+  // central stock changed / a product paused: refresh quietly
+  useLiveReload(['products:changed'], () => load(true), 1500);
 
-  // the platform changed central stock or paused / resumed a product: refresh without a spinner
-  useLiveReload(['products:changed'], () => loadTreasury({ silent: true }), 1500);
-
-  // Reset pagination window whenever filters or sort change
   useEffect(() => {
-    setVisibleCount(48);
-  }, [selectedCat, storeFilter, q, sort]);
+    const t = setTimeout(() => setQ(qInput.trim().toLowerCase()), 200);
+    return () => clearTimeout(t);
+  }, [qInput]);
+  useEffect(() => setVisible(PAGE), [cat, q, sort, view]);
+  useEffect(() => {
+    if (!toast) return undefined;
+    const t = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
-  const handleSearchSubmit = (e) => {
-    e.preventDefault();
-    loadTreasury();
-  };
+  const catId = (p) => String(p.category?._id || p.category || '');
 
-  // 1-Click Add to Store with synchronous lock
-  const handleAddToStore = async (p, e) => {
-    if (e) e.stopPropagation();
-    if (inFlightRef.current.has(p._id)) return; // Immediate lock against spam/double clicks
-    inFlightRef.current.add(p._id);
-    setActionLoadingIds((prev) => new Set(prev).add(p._id));
+  // products matching the search + view (before the category), for the category counts
+  const base = useMemo(() => products.filter((p) => {
+    if (view === 'added' && !p.isAddedToStore) return false;
+    if (view === 'not_added' && p.isAddedToStore) return false;
+    if (!q) return true;
+    return [p.name, p.brand, p.sku, p.category?.name].some((x) => String(x || '').toLowerCase().includes(q));
+  }), [products, q, view]);
 
+  const catCounts = useMemo(() => {
+    const m = new Map();
+    for (const p of base) m.set(catId(p), (m.get(catId(p)) || 0) + 1);
+    return m;
+  }, [base]);
+
+  const list = useMemo(() => {
+    let l = cat ? base.filter((p) => catId(p) === cat) : base;
+    const by = {
+      'price-low': (a, b) => (a.price || 0) - (b.price || 0),
+      'price-high': (a, b) => (b.price || 0) - (a.price || 0),
+      stock: (a, b) => (b.stock || 0) - (a.stock || 0),
+      newest: (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0),
+      popular: (a, b) => (b.totalSellersCarrying || 0) - (a.totalSellersCarrying || 0),
+    }[sort];
+    if (by) l = [...l].sort(by);
+    return l;
+  }, [base, cat, sort]);
+
+  const shown = list.slice(0, visible);
+
+  useEffect(() => {
+    const el = sentinel.current;
+    if (!el) return undefined;
+    const io = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) setVisible((v) => (v < list.length ? v + PAGE : v));
+    }, { rootMargin: '600px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [list.length, shown.length]);
+
+  const stats = useMemo(() => {
+    const added = products.filter((p) => p.isAddedToStore).length;
+    const inStock = products.filter((p) => (p.stock || 0) > 0).length;
+    return { total: products.length, added, available: products.length - added, inStock };
+  }, [products]);
+
+  const setBusyFor = (id, on) => setBusy((prev) => {
+    const n = new Set(prev);
+    if (on) n.add(id);
+    else n.delete(id);
+    return n;
+  });
+
+  const addToStore = async (p) => {
+    if (inFlight.current.has(p._id)) return;
+    inFlight.current.add(p._id);
+    setBusyFor(p._id, true);
     try {
       const res = await sapi(`/sellers/treasury/${p._id}/add`, { method: 'POST' });
-      setProducts((prev) =>
-        prev.map((item) =>
-          item._id === p._id
-            ? {
-                ...item,
-                isAddedToStore: true,
-                sellerProductId: res.product?._id,
-                totalSellersCarrying: (item.totalSellersCarrying || 0) + (item.isAddedToStore ? 0 : 1),
-              }
-            : item
-        )
-      );
-      showToast(`🎉 "${p.name}" has been added to your store!`);
+      setProducts((prev) => prev.map((it) => (it._id === p._id ? { ...it, isAddedToStore: true, sellerProductId: res.product?._id, totalSellersCarrying: (it.totalSellersCarrying || 0) + (it.isAddedToStore || res.alreadyExisted ? 0 : 1) } : it)));
+      setToast({ ok: true, text: `“${p.name}” is now in your store.` });
     } catch (err) {
-      alert('Could not add to store: ' + err.message);
+      setToast({ ok: false, text: `Could not add “${p.name}”: ${err.message}` });
     } finally {
-      inFlightRef.current.delete(p._id);
-      setActionLoadingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(p._id);
-        return next;
-      });
+      inFlight.current.delete(p._id);
+      setBusyFor(p._id, false);
     }
   };
 
-
-
-  // Filter products by search and store status; preserve balanced mix without artificial segregation
-  const filteredProducts = useMemo(() => {
-    let list = products.filter((p) => {
-      if (q.trim()) {
-        const matchQ =
-          p.name?.toLowerCase().includes(q.toLowerCase()) ||
-          p.brand?.toLowerCase().includes(q.toLowerCase()) ||
-          p.sku?.toLowerCase().includes(q.toLowerCase());
-        if (!matchQ) return false;
-      }
-      if (storeFilter === 'added') return p.isAddedToStore;
-      if (storeFilter === 'not_added') return !p.isAddedToStore;
-      return true;
-    });
-
-    if (sort === 'price-low') {
-      list = [...list].sort((a, b) => (a.price || 0) - (b.price || 0));
-    } else if (sort === 'price-high') {
-      list = [...list].sort((a, b) => (b.price || 0) - (a.price || 0));
-    } else if (sort === 'stock') {
-      list = [...list].sort((a, b) => (b.stock || 0) - (a.stock || 0));
-    } else if (sort === 'newest') {
-      list = [...list].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  const removeFromStore = async (p) => {
+    if (inFlight.current.has(p._id)) return;
+    inFlight.current.add(p._id);
+    setBusyFor(p._id, true);
+    try {
+      const res = await sapi(`/sellers/treasury/${p._id}/remove`, { method: 'POST' });
+      setProducts((prev) => prev.map((it) => (it._id === p._id ? { ...it, isAddedToStore: false, sellerProductId: null, totalSellersCarrying: Math.max(0, (it.totalSellersCarrying || 1) - 1) } : it)));
+      setToast({ ok: true, text: res?.message || `“${p.name}” was removed from your store.` });
+    } catch (err) {
+      setToast({ ok: false, text: err.message });
+    } finally {
+      inFlight.current.delete(p._id);
+      setBusyFor(p._id, false);
     }
+  };
 
-    return list;
-  }, [products, q, storeFilter, sort]);
-
-  // Sliced items for progressive DOM rendering (prevents mobile/laptop browser tile freezing)
-  const visibleProducts = useMemo(() => {
-    return filteredProducts.slice(0, visibleCount);
-  }, [filteredProducts, visibleCount]);
-
-  // Auto-load next batch as user scrolls near bottom
-  useEffect(() => {
-    if (!sentinelRef.current) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && visibleCount < filteredProducts.length) {
-          setVisibleCount((prev) => Math.min(filteredProducts.length, prev + 36));
-        }
-      },
-      { rootMargin: '450px' }
-    );
-    observer.observe(sentinelRef.current);
-    return () => observer.disconnect();
-  }, [visibleCount, filteredProducts.length]);
-
-  // Fallback scroll listener on the actual layout scrolling container (.seller-main-wrap)
-  useEffect(() => {
-    const scroller = document.querySelector('.seller-main-wrap') || window;
-    const onScroll = () => {
-      const target = scroller === window ? document.documentElement : scroller;
-      if (target.scrollTop + target.clientHeight >= target.scrollHeight - 700) {
-        if (visibleCount < filteredProducts.length) {
-          setVisibleCount((prev) => Math.min(filteredProducts.length, prev + 36));
-        }
-      }
-    };
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    return () => scroller.removeEventListener('scroll', onScroll);
-  }, [visibleCount, filteredProducts.length]);
-
-  const totalInTreasury = products.length;
-  const inMyStoreCount = products.filter((p) => p.isAddedToStore).length;
+  const resetFilters = () => {
+    setCat('');
+    setQInput('');
+    setView('all');
+    setSort('mixed');
+  };
+  const pctAdded = stats.total ? Math.round((stats.added / stats.total) * 100) : 0;
+  const catsWithItems = categories.filter((c) => catCounts.get(String(c._id)));
 
   return (
-    <div className="seller-treasury-page">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="treasury-toast-banner">
-          <span>{toastMessage}</span>
-          <button
-            onClick={() => setToastMessage('')}
-            className="treasury-toast-close"
-          >
-            ✕
-          </button>
+    <div className="tr">
+      <header className="tr-head">
+        <div>
+          <p className="tr-eyebrow">Catalog</p>
+          <h1>Product Treasury</h1>
+          <p className="tr-sub">Products stocked in the Bazario warehouse. Add one to list it in your store — stock, packing and delivery are handled for you.</p>
         </div>
+        <Link to="/seller/products" className="tr-btn tr-btn-ghost"><Ic name="tag" size={15} /> My store products</Link>
+      </header>
+
+      {isFrozen && (
+        <div className="tr-banner"><Ic name="lock" size={17} /><span><b>Your store is frozen</b> — adding products is paused until support lifts it.</span><Link to="/seller/support">Contact support →</Link></div>
       )}
 
-      {/* Header Banner */}
-      <div className="seller-page-header treasury-hero-banner">
-        <div className="treasury-hero-left">
-          <div className="treasury-hero-badge">
-            ✨ MASTER PRODUCT TREASURY
-          </div>
-          <h2 className="treasury-hero-title">
-            Browse & Import Products to Your Store
-          </h2>
-          <p className="treasury-hero-desc">
-            All products are stocked centrally in Bazario warehouse. Click <b>"Add to Store"</b> to instantly list them in your catalog. Central stock automatically syncs across all orders!
-          </p>
+      <div className="tr-stats">
+        <div className="tr-stat">
+          <span>In the Treasury</span>
+          <b>{stats.total.toLocaleString()}</b>
+          <small>{stats.inStock.toLocaleString()} in stock now</small>
         </div>
-
-        <div className="treasury-hero-stats">
-          <div className="treasury-stat-box">
-            <div className="treasury-stat-lbl">Master Catalog</div>
-            <div className="treasury-stat-val val-blue">{totalInTreasury} Items</div>
-          </div>
-
-          <div className="treasury-stat-box">
-            <div className="treasury-stat-lbl">In Your Store</div>
-            <div className="treasury-stat-val val-green">{inMyStoreCount} Items</div>
-          </div>
-
-          <Link to="/seller/products" className="treasury-my-prods-link">
-            My Products →
-          </Link>
+        <div className="tr-stat">
+          <span>In your store</span>
+          <b>{stats.added.toLocaleString()}</b>
+          <div className="tr-meter"><i style={{ width: `${Math.max(pctAdded ? 3 : 0, pctAdded)}%` }} /></div>
+          <small>{pctAdded}% of the catalog</small>
+        </div>
+        <div className="tr-stat">
+          <span>Ready to add</span>
+          <b>{stats.available.toLocaleString()}</b>
+          <small><button type="button" className="tr-link" onClick={() => setView('not_added')}>Show them →</button></small>
+        </div>
+        <div className={`tr-stat ${isDiamond ? 'is-diamond' : 'is-rate'}`}>
+          <span>You earn per order</span>
+          <b>{rate}%</b>
+          <small>{isDiamond ? '💎 Diamond rate' : <Link to="/seller/diamond" className="tr-link">35% with Diamond →</Link>}</small>
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="seller-treasury-toolbar">
-        <div className="treasury-search-row">
-          <form onSubmit={handleSearchSubmit} className="treasury-search-form">
-            <div className="treasury-input-wrap">
-              <span className="search-icon"><Ic name="search" size={16} /></span>
-              <input
-                type="text"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search title, brand, or SKU…"
-              />
-              {q && (
-                <button
-                  type="button"
-                  onClick={() => setQ('')}
-                  className="treasury-clear-search-btn"
-                  title="Clear search"
-                  aria-label="Clear search"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-            <button type="submit" className="treasury-search-btn">
-              <Ic name="search" size={15} />
-              <span>Search</span>
-            </button>
-          </form>
-
-          {/* Sort Selector */}
-          <div className="treasury-sort-select-wrap">
-            <label htmlFor="treasury-sort">
-              <Ic name="sparkle" size={13} />
-              <span>Sort:</span>
-            </label>
-            <select
-              id="treasury-sort"
-              value={sort}
-              onChange={(e) => setSort(e.target.value)}
-              className="treasury-sort-select"
-            >
-              <option value="mixed">🔀 Balanced Mix (Low & High Mixed)</option>
-              <option value="price-low">💵 Price: Low to High</option>
-              <option value="price-high">💎 Price: High to Low</option>
-              <option value="stock">📦 Central Stock (Highest First)</option>
-              <option value="newest">✨ Newest First</option>
-            </select>
-          </div>
-
-          {/* Store Filter Tabs */}
-          <div className="treasury-store-filter-tabs">
-            <button
-              type="button"
-              onClick={() => setStoreFilter('not_added')}
-              className={`treasury-store-tab ${storeFilter === 'not_added' ? 'active' : ''}`}
-            >
-              <span className="tab-label-full">Available to Add</span>
-              <span className="tab-label-short">Available</span>
-              <span className="tab-count-badge">({products.filter((p) => !p.isAddedToStore).length})</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setStoreFilter('all')}
-              className={`treasury-store-tab ${storeFilter === 'all' ? 'active' : ''}`}
-            >
-              <span className="tab-label-full">All Products</span>
-              <span className="tab-label-short">All</span>
-              <span className="tab-count-badge">({products.length})</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setStoreFilter('added')}
-              className={`treasury-store-tab ${storeFilter === 'added' ? 'active' : ''}`}
-            >
-              <span className="tab-label-full">In My Store</span>
-              <span className="tab-label-short">In Store</span>
-              <span className="tab-count-badge">({inMyStoreCount})</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Category Pills Bar */}
-        <div className="treasury-category-pills">
-          <button
-            onClick={() => setSelectedCat('')}
-            className={`treasury-cat-pill ${selectedCat === '' ? 'active' : ''}`}
-          >
-            All Categories
-          </button>
-          {categories.map((c) => (
-            <button
-              key={c._id}
-              onClick={() => setSelectedCat(c._id)}
-              className={`treasury-cat-pill ${selectedCat === c._id ? 'active' : ''}`}
-            >
-              {c.name}
+      <div className="tr-toolbar">
+        <label className="tr-search">
+          <Ic name="search" size={16} />
+          <input type="search" value={qInput} onChange={(e) => setQInput(e.target.value)} placeholder="Search name, brand or SKU" aria-label="Search the Treasury" />
+          {qInput && <button type="button" onClick={() => setQInput('')} aria-label="Clear search"><Ic name="x" size={14} /></button>}
+        </label>
+        <div className="tr-seg" role="tablist" aria-label="Show">
+          {VIEWS.map((v) => (
+            <button key={v.id} type="button" role="tab" aria-selected={view === v.id} className={view === v.id ? 'on' : ''} onClick={() => setView(v.id)}>
+              {v.label}
             </button>
           ))}
         </div>
+        <label className="tr-sort">
+          <span>Sort</span>
+          <select value={sort} onChange={(e) => setSort(e.target.value)}>
+            {SORTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
+        </label>
       </div>
 
-      {/* Master Products Cards Grid */}
-      {loading ? (
-        <div style={{ textAlign: 'center', padding: '60px 20px', color: '#64748b' }}>
-          <p style={{ fontSize: '15px', fontWeight: 600 }}>Loading products from Product Treasury…</p>
+      {catsWithItems.length > 0 && (
+        <div className="tr-cats" role="tablist" aria-label="Categories">
+          <button type="button" className={cat === '' ? 'on' : ''} onClick={() => setCat('')}>All <span>{base.length}</span></button>
+          {catsWithItems.map((c) => (
+            <button key={c._id} type="button" className={cat === String(c._id) ? 'on' : ''} onClick={() => setCat(String(c._id))}>
+              {c.name} <span>{catCounts.get(String(c._id))}</span>
+            </button>
+          ))}
         </div>
-      ) : filteredProducts.length === 0 ? (
-        <div className="card" style={{ textAlign: 'center', padding: '60px 24px', borderRadius: '12px' }}>
-          <div style={{ fontSize: '48px', marginBottom: '14px' }}>🔍</div>
-          <h3 style={{ margin: '0 0 8px', color: '#0f172a' }}>No products found</h3>
-          <p className="muted" style={{ margin: '0 0 16px' }}>
-            Try changing the category, search keywords, or filter tab.
-          </p>
-          <button
-            onClick={() => {
-              setSelectedCat('');
-              setQ('');
-              setStoreFilter('all');
-            }}
-            className="seller-btn-pri"
-          >
-            Reset All Filters
-          </button>
+      )}
+
+      {loadErr && !loading && (
+        <div className="tr-banner err"><Ic name="alert" size={17} /><span>{loadErr}</span><button type="button" className="tr-link" onClick={() => load()}>Retry</button></div>
+      )}
+
+      {loading ? (
+        <div className="tr-grid">{Array.from({ length: 8 }).map((_, i) => <div key={i} className="tr-skel" />)}</div>
+      ) : list.length === 0 ? (
+        <div className="tr-empty">
+          <span className="tr-empty-ico"><Ic name="search" size={22} /></span>
+          <b>No products match</b>
+          <p>Try another search, category or view.</p>
+          <button type="button" className="tr-btn tr-btn-dark" onClick={resetFilters}>Reset filters</button>
         </div>
       ) : (
         <>
-          <div className="seller-treasury-grid">
-            {visibleProducts.map((p) => {
-            const isAdded = p.isAddedToStore;
-            const isLoading = actionLoadingIds.has(p._id);
-            const stockQty = p.stock || 0;
-            const isOutOfStock = stockQty <= 0;
-            const margin =
-              p.price > 0 && p.costPrice > 0
-                ? Math.round(((p.price - p.costPrice) / p.price) * 100)
-                : 20;
-            const estProfit = Math.max(0, (p.price || 0) - (p.costPrice || 0));
-
-            return (
-              <div
+          <p className="tr-count">Showing <b>{shown.length.toLocaleString()}</b> of <b>{list.length.toLocaleString()}</b> products</p>
+          <div className="tr-grid">
+            {shown.map((p) => (
+              <ProductCard
                 key={p._id}
-                className={`seller-treasury-card ${isAdded ? 'is-added' : ''}`}
-              >
-                {/* Image & Badges Container */}
-                <div className="treasury-card-img-box">
-                  <img
-                    src={p.image || p.images?.[0]?.url || '/img/products/serum.svg'}
-                    alt={p.name}
-                    loading="lazy"
-                  />
+                p={p}
+                rate={rate}
+                isDiamond={isDiamond}
+                frozen={isFrozen}
+                busy={busy.has(p._id)}
+                formatMoney={formatMoney}
+                onAdd={() => addToStore(p)}
+                onRemove={() => removeFromStore(p)}
+              />
+            ))}
+          </div>
+          <div ref={sentinel} className="tr-sentinel" />
+          {visible < list.length ? (
+            <div className="tr-more">
+              <button type="button" className="tr-btn tr-btn-ghost" onClick={() => setVisible((v) => v + PAGE)}>Load more</button>
+            </div>
+          ) : (
+            <p className="tr-count center">That’s everything — {list.length.toLocaleString()} products.</p>
+          )}
+        </>
+      )}
 
-                  {/* Stock Pill */}
-                  <div className="treasury-stock-pill">
-                    📦 {stockQty.toLocaleString()}
-                  </div>
-
-                  {/* Top Action Button or In-Store Badge */}
-                  <div className="treasury-top-action-wrap">
-                    {!isAdded ? (
-                      <button
-                        type="button"
-                        className="treasury-top-add-btn"
-                        onClick={(e) => handleAddToStore(p, e)}
-                        disabled={isLoading || isOutOfStock}
-                        title="Add to Store"
-                      >
-                        <Ic name="plus" size={13} />
-                        <span>{isLoading ? 'Adding…' : 'Add to Store'}</span>
-                      </button>
-                    ) : (
-                      <div className="treasury-in-store-tag">
-                        ✓ In Store
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Desktop Hover Overlay */}
-                  <div className="treasury-hover-action-overlay">
-                    {!isAdded ? (
-                      <button
-                        type="button"
-                        className="btn-hover-add-store"
-                        onClick={(e) => handleAddToStore(p, e)}
-                        disabled={isLoading || isOutOfStock}
-                      >
-                        <Ic name="plus" size={17} />
-                        {isLoading ? 'Adding…' : 'Add to Store'}
-                      </button>
-                    ) : (
-                      <Link
-                        to="/seller/products"
-                        className="btn-hover-view-store"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        ✓ View in Store
-                      </Link>
-                    )}
-                  </div>
-                </div>
-
-                {/* Card Body Details */}
-                <div className="treasury-card-body">
-                  <div className="treasury-card-meta">
-                    <span className="treasury-card-brand">{p.brand || p.category?.name || 'General'}</span>
-                    <span className="treasury-sku-text">SKU: {p.sku || 'N/A'}</span>
-                  </div>
-
-                  <h3 className="treasury-card-title" title={p.name}>
-                    {p.name}
-                  </h3>
-
-                  <div className="treasury-card-pricing">
-                    <div className="treasury-price-box">
-                      <span className="treasury-retail-price">{formatMoney(p.price)}</span>
-                      <span className="treasury-cost-price">Cost: {formatMoney(p.costPrice || 0)}</span>
-                    </div>
-                    <div className="treasury-margin-badge">
-                      +{formatMoney(estProfit)} ({margin}%)
-                    </div>
-                  </div>
-                </div>
-
-                {/* Bottom Action Button Bar */}
-                <div className="treasury-card-bottom-actions">
-                  {!isAdded ? (
-                    <button
-                      type="button"
-                      className="treasury-btn-bottom-add"
-                      onClick={(e) => handleAddToStore(p, e)}
-                      disabled={isLoading || isOutOfStock}
-                    >
-                      <Ic name="plus" size={15} />
-                      {isLoading ? 'Adding…' : 'Add to Store'}
-                    </button>
-                  ) : (
-                    <div className="treasury-bottom-added-group">
-                      <Link
-                        to="/seller/products"
-                        className="treasury-btn-bottom-view"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        ✓ In Store
-                      </Link>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+      {toast && (
+        <div className={`tr-toast ${toast.ok ? 'ok' : 'err'}`} role="status">
+          <Ic name={toast.ok ? 'checkCircle' : 'alert'} size={17} />
+          <span>{toast.text}</span>
+          {toast.ok && <Link to="/seller/products" onClick={() => setToast(null)}>View</Link>}
+          <button type="button" onClick={() => setToast(null)} aria-label="Dismiss"><Ic name="x" size={14} /></button>
         </div>
-
-        {/* Infinite Scroll Sentinel (auto-loads next chunk when scrolled into view) */}
-        <div ref={sentinelRef} style={{ height: '24px', width: '100%', margin: '10px 0' }} />
-
-        {/* Progressive Load Status & Batch Controls */}
-        {filteredProducts.length > visibleCount ? (
-          <div className="treasury-load-more-section">
-            <div className="treasury-load-progress">
-              <span>
-                Showing <b>{visibleCount}</b> of <b>{filteredProducts.length}</b> products in Treasury
-              </span>
-              <div className="treasury-progress-bar-track">
-                <div
-                  className="treasury-progress-bar-fill"
-                  style={{ width: `${Math.min(100, Math.round((visibleCount / filteredProducts.length) * 100))}%` }}
-                />
-              </div>
-            </div>
-            <div className="treasury-load-actions">
-              <button
-                type="button"
-                className="treasury-load-more-btn"
-                onClick={() => setVisibleCount((prev) => Math.min(filteredProducts.length, prev + 48))}
-              >
-                <Ic name="refresh" size={15} /> Load More Products (+48)
-              </button>
-              <button
-                type="button"
-                className="treasury-load-all-btn"
-                onClick={() => setVisibleCount(filteredProducts.length)}
-              >
-                ⚡ Show All ({filteredProducts.length}) Products
-              </button>
-            </div>
-          </div>
-        ) : filteredProducts.length > 0 ? (
-          <div className="treasury-all-loaded-banner">
-            <span>✓ All <b>{filteredProducts.length}</b> products loaded and visible</span>
-          </div>
-        ) : null}
-      </>
       )}
     </div>
+  );
+}
+
+function ProductCard({ p, rate, isDiamond, frozen, busy, formatMoney, onAdd, onRemove }) {
+  const stock = Math.max(0, Number(p.stock) || 0);
+  const low = stock > 0 && stock <= (p.lowStockThreshold || 10);
+  const out = stock <= 0;
+  const earn = ((Number(p.price) || 0) * rate) / 100;
+  const img = p.image || p.images?.[0]?.url || '/img/products/serum.svg';
+  const off = p.oldPrice && p.oldPrice > p.price ? Math.round(((p.oldPrice - p.price) / p.oldPrice) * 100) : 0;
+  const [confirmRemove, setConfirmRemove] = useState(false);
+
+  return (
+    <article className={`tr-card ${p.isAddedToStore ? 'is-added' : ''} ${out ? 'is-out' : ''}`}>
+      <div className="tr-media">
+        <img src={img} alt="" loading="lazy" />
+        {p.isAddedToStore && <span className="tr-added"><Ic name="check" size={12} /> In your store</span>}
+        {off > 0 && <span className="tr-off">−{off}%</span>}
+        <span className={`tr-stock ${out ? 'out' : low ? 'low' : ''}`}>{out ? 'Out of stock' : low ? `Only ${stock} left` : `${stock.toLocaleString()} in stock`}</span>
+      </div>
+      <div className="tr-body">
+        <span className="tr-meta">{p.category?.name || p.brand || 'General'}{p.brand && p.category?.name ? ` · ${p.brand}` : ''}</span>
+        <h3 title={p.name}>{p.name}</h3>
+        <div className="tr-price">
+          <b>{formatMoney(p.price)}</b>
+          {off > 0 && <s>{formatMoney(p.oldPrice)}</s>}
+        </div>
+        <div className="tr-earn">
+          <span>You earn</span>
+          <b>+{formatMoney(earn)} <small>({rate}%)</small></b>
+        </div>
+        <div className="tr-foot-meta">
+          <span title="Stores already selling this product"><Ic name="users" size={12} /> {p.totalSellersCarrying || 0} store{(p.totalSellersCarrying || 0) === 1 ? '' : 's'}</span>
+          {p.sku && <span className="mono" title="SKU">{p.sku}</span>}
+        </div>
+      </div>
+      <div className="tr-actions">
+        {!p.isAddedToStore ? (
+          <button type="button" className="tr-btn tr-btn-primary full" onClick={onAdd} disabled={busy || out || frozen} title={out ? 'Out of stock in the warehouse' : frozen ? 'Paused while your store is frozen' : ''}>
+            {busy ? 'Adding…' : out ? 'Out of stock' : <><Ic name="plus" size={15} /> Add to store</>}
+          </button>
+        ) : confirmRemove ? (
+          <div className="tr-confirm">
+            <span>Remove?</span>
+            <button type="button" className="tr-btn tr-btn-ghost sm" onClick={() => setConfirmRemove(false)} disabled={busy}>No</button>
+            <button type="button" className="tr-btn tr-btn-danger sm" onClick={async () => { await onRemove(); setConfirmRemove(false); }} disabled={busy}>{busy ? '…' : 'Remove'}</button>
+          </div>
+        ) : (
+          <div className="tr-added-actions">
+            <Link to="/seller/products" className="tr-btn tr-btn-ghost full"><Ic name="checkCircle" size={15} /> In your store</Link>
+            {isDiamond && !frozen && (
+              <button type="button" className="tr-icon-btn" onClick={() => setConfirmRemove(true)} title="Remove from my store (Diamond)" aria-label="Remove from my store"><Ic name="trash" size={15} /></button>
+            )}
+          </div>
+        )}
+      </div>
+    </article>
   );
 }
