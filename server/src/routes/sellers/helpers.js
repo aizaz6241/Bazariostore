@@ -43,3 +43,25 @@ export function blockWhenFrozen(what) {
     }
   };
 }
+
+/**
+ * Which products belong to a store. Ownership is the product's `seller` id. Very old products
+ * saved before that field existed are matched by the store's name / slug, but ONLY when no
+ * seller is set on them and only when no other store has the same name. (Matching by name alone
+ * let a store with the same name — or a missing slug, which matched every product without one —
+ * take over another store's products: the products page even re-saved them under the new owner.)
+ */
+export async function ownProductFilter(seller) {
+  const id = seller?._id || seller?.id;
+  const or = [{ seller: id }];
+  const name = String(seller?.storeName || '').trim();
+  if (name) {
+    const sameName = await Seller.countDocuments({ storeName: name });
+    if (sameName === 1) {
+      const keys = [{ sellerName: name }];
+      if (seller.storeSlug) keys.push({ sellerSlug: seller.storeSlug });
+      or.push({ $and: [{ $or: [{ seller: null }, { seller: { $exists: false } }] }, { $or: keys }] });
+    }
+  }
+  return { $or: or };
+}

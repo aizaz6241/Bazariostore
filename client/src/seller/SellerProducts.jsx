@@ -1,849 +1,563 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useOutletContext, Link } from 'react-router-dom';
 import { sapi } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
-import { getLiveStoreVisitors, getProductLiveViewers } from '../utils/liveMetrics.js';
 import useLiveReload from '../useLiveReload.js';
 
+const STATUS_FILTERS = [
+  { id: 'all', label: 'All' },
+  { id: 'active', label: 'Active' },
+  { id: 'hidden', label: 'Hidden' },
+  { id: 'low', label: 'Low stock' },
+  { id: 'out', label: 'Out of stock' },
+];
+const SOURCES = [
+  { id: 'all', label: 'All sources' },
+  { id: 'treasury', label: 'From Treasury' },
+  { id: 'custom', label: 'My own products' },
+];
+const SORTS = [
+  { id: 'newest', label: 'Newest first' },
+  { id: 'sold', label: 'Best selling' },
+  { id: 'stock-low', label: 'Lowest stock' },
+  { id: 'price-high', label: 'Price: high to low' },
+  { id: 'price-low', label: 'Price: low to high' },
+  { id: 'name', label: 'Name A–Z' },
+];
+const EMPTY_FORM = { name: '', brand: '', category: '', price: '', oldPrice: '', costPrice: '', stock: 20, lowStockThreshold: 5, sku: '', active: true, shortDescription: '', description: '', images: [] };
+const usd = (n) => `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const stockState = (p) => {
+  const s = Number(p.stock) || 0;
+  if (s <= 0) return 'out';
+  if (s <= (p.lowStockThreshold || 5)) return 'low';
+  return 'ok';
+};
+
 export default function SellerProducts() {
-  const { seller } = useOutletContext() || {};
+  const { seller, isFrozen } = useOutletContext() || {};
   const isDiamond = seller?.tier === 'diamond';
-  const { formatMoney, currentCurrency } = useCurrency();
+  const rate = isDiamond ? 35 : 20; // a store's earning on each delivered order
+  const { formatMoney } = useCurrency();
+
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState('');
+  const [qInput, setQInput] = useState('');
   const [q, setQ] = useState('');
-  const [stockFilter, setStockFilter] = useState('all');
-  const [liveShoppers, setLiveShoppers] = useState(() => getLiveStoreVisitors(seller?._id, 10));
-  const [, setViewersTick] = useState(0);
+  const [status, setStatus] = useState('all');
+  const [source, setSource] = useState('all');
+  const [sort, setSort] = useState('newest');
+  const [toast, setToast] = useState(null);
+  const [editor, setEditor] = useState(null); // null | { product?: object }
+  const [removing, setRemoving] = useState(null); // product being confirmed for removal
+  const [busy, setBusy] = useState(() => new Set());
 
-  useEffect(() => {
-    setLiveShoppers(getLiveStoreVisitors(seller?._id, products.length || 10));
-    const timer = setInterval(() => {
-      setLiveShoppers(getLiveStoreVisitors(seller?._id, products.length || 10));
-      setViewersTick((t) => t + 1);
-    }, 4500);
-    return () => clearInterval(timer);
-  }, [seller?._id, products.length]);
-
-  // Add / Edit Modal state
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingProd, setEditingProd] = useState(null);
-  const [urlInput, setUrlInput] = useState('');
-  const [form, setForm] = useState({
-    name: '',
-    brand: '',
-    category: '',
-    price: '',
-    oldPrice: '',
-    costPrice: '',
-    stock: 15,
-    lowStockThreshold: 5,
-    sku: '',
-    active: true,
-    shortDescription: '',
-    description: '',
-    images: [],
-  });
-  const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [modalErr, setModalErr] = useState('');
-  const fileInputRef = useRef(null);
-
-  const loadProducts = (opts) => {
-    if (opts?.silent !== true) setLoading(true);
-    sapi('/sellers/products')
-      .then((data) => setProducts(data || []))
-      .catch((e) => console.error(e))
+  const loadProducts = useCallback((silent = false) => {
+    if (!silent) setLoading(true);
+    return sapi('/sellers/products')
+      .then((data) => {
+        setProducts(Array.isArray(data) ? data : []);
+        setLoadErr('');
+      })
+      .catch((e) => setLoadErr(e.message || 'Could not load your products'))
       .finally(() => setLoading(false));
-  };
-
-  // stock sold through orders, or a Treasury product paused / changed by the platform, shows by itself
-  useLiveReload(['products:changed', 'order:new', 'order:update'], () => loadProducts({ silent: true }), 1500);
+  }, []);
 
   useEffect(() => {
     loadProducts();
-    sapi('/categories')
-      .then((data) => setCategories(data || []))
-      .catch(() => {});
-  }, []);
+    sapi('/categories').then((d) => setCategories(Array.isArray(d) ? d : [])).catch(() => {});
+  }, [loadProducts]);
+  // stock sold through orders, or a Treasury product paused by the platform, shows by itself
+  useLiveReload(['products:changed', 'order:new', 'order:update'], () => loadProducts(true), 1500);
 
-  const openAdd = () => {
-    setEditingProd(null);
-    setUrlInput('');
-    setForm({
-      name: '',
-      brand: '',
-      category: categories[0]?._id || '',
-      price: '',
-      oldPrice: '',
-      costPrice: '',
-      stock: 20,
-      lowStockThreshold: 5,
-      sku: `SKU-${Date.now().toString(36).toUpperCase()}`,
-      active: true,
-      shortDescription: '',
-      description: '',
-      images: [
-        { url: 'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=600&auto=format&fit=crop&q=80' },
-      ],
+  useEffect(() => {
+    const t = setTimeout(() => setQ(qInput.trim().toLowerCase()), 200);
+    return () => clearTimeout(t);
+  }, [qInput]);
+  useEffect(() => {
+    if (!toast) return undefined;
+    const t = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const stats = useMemo(() => {
+    let active = 0, low = 0, out = 0, sold = 0, units = 0, value = 0, treasury = 0;
+    for (const p of products) {
+      if (p.active !== false) active++;
+      const st = stockState(p);
+      if (st === 'low') low++;
+      if (st === 'out') out++;
+      sold += Number(p.sold) || 0;
+      if (!p.treasuryProduct) { units += Number(p.stock) || 0; value += (Number(p.stock) || 0) * (Number(p.price) || 0); }
+      if (p.treasuryProduct) treasury++;
+    }
+    return { total: products.length, active, hidden: products.length - active, low, out, sold, units, value, treasury };
+  }, [products]);
+
+  const counts = useMemo(() => ({ all: stats.total, active: stats.active, hidden: stats.hidden, low: stats.low, out: stats.out }), [stats]);
+
+  const list = useMemo(() => {
+    let l = products.filter((p) => {
+      if (source === 'treasury' && !p.treasuryProduct) return false;
+      if (source === 'custom' && p.treasuryProduct) return false;
+      if (status === 'active' && p.active === false) return false;
+      if (status === 'hidden' && p.active !== false) return false;
+      if (status === 'low' && stockState(p) !== 'low') return false;
+      if (status === 'out' && stockState(p) !== 'out') return false;
+      if (!q) return true;
+      return [p.name, p.sku, p.brand, p.category?.name].some((x) => String(x || '').toLowerCase().includes(q));
     });
-    setModalErr('');
-    setModalOpen(true);
+    const by = {
+      newest: (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0),
+      sold: (a, b) => (b.sold || 0) - (a.sold || 0),
+      'stock-low': (a, b) => (a.stock || 0) - (b.stock || 0),
+      'price-high': (a, b) => (b.price || 0) - (a.price || 0),
+      'price-low': (a, b) => (a.price || 0) - (b.price || 0),
+      name: (a, b) => String(a.name || '').localeCompare(String(b.name || '')),
+    }[sort];
+    return by ? [...l].sort(by) : l;
+  }, [products, q, status, source, sort]);
+
+  const setBusyFor = (id, on) => setBusy((prev) => {
+    const n = new Set(prev);
+    if (on) n.add(id);
+    else n.delete(id);
+    return n;
+  });
+
+  const toggleActive = async (p) => {
+    if (busy.has(p._id)) return;
+    const next = p.active === false;
+    if (next && p.pausedByTreasury) {
+      setToast({ ok: false, text: 'This Treasury product is paused by the platform and cannot be switched on right now.' });
+      return;
+    }
+    setBusyFor(p._id, true);
+    setProducts((prev) => prev.map((x) => (x._id === p._id ? { ...x, active: next } : x)));
+    try {
+      await sapi(`/sellers/products/${p._id}`, { method: 'PUT', body: { active: next } });
+      setToast({ ok: true, text: next ? `“${p.name}” is visible in your store again.` : `“${p.name}” is hidden from customers.` });
+    } catch (err) {
+      setProducts((prev) => prev.map((x) => (x._id === p._id ? { ...x, active: !next } : x)));
+      setToast({ ok: false, text: err.message });
+    } finally {
+      setBusyFor(p._id, false);
+    }
   };
 
-  const openEdit = (p) => {
-    setEditingProd(p);
-    setUrlInput('');
-    setForm({
-      name: p.name || '',
-      brand: p.brand || '',
-      category: p.category?._id || p.category || '',
-      price: p.price || '',
-      oldPrice: p.oldPrice || '',
-      costPrice: p.costs?.purchase || '',
-      stock: p.stock ?? 0,
-      lowStockThreshold: p.lowStockThreshold || 5,
-      sku: p.sku || '',
-      active: p.active !== false,
-      shortDescription: p.shortDescription || '',
-      description: p.description || '',
-      images: p.images?.length ? p.images : (p.image ? [{ url: p.image }] : []),
-    });
-    setModalErr('');
-    setModalOpen(true);
+  const confirmRemove = async () => {
+    const p = removing;
+    if (!p) return;
+    setBusyFor(p._id, true);
+    try {
+      await sapi(`/sellers/products/${p._id}`, { method: 'DELETE' });
+      setProducts((prev) => prev.filter((x) => x._id !== p._id));
+      setToast({ ok: true, text: `“${p.name}” was removed from your store.` });
+      setRemoving(null);
+    } catch (err) {
+      setToast({ ok: false, text: err.message });
+      setRemoving(null);
+    } finally {
+      setBusyFor(p._id, false);
+    }
   };
 
-  const handleFileUpload = async (e) => {
+  const canRemove = (p) => !p.treasuryProduct || isDiamond;
+  const resetFilters = () => { setQInput(''); setStatus('all'); setSource('all'); setSort('newest'); };
+
+  return (
+    <div className="pp">
+      <header className="pp-head">
+        <div>
+          <p className="pp-eyebrow">Catalog</p>
+          <h1>My Store Products</h1>
+          <p className="pp-sub">Everything customers can buy from your store. Add more from the Product Treasury or list your own products.</p>
+        </div>
+        <div className="pp-head-actions">
+          <Link to="/seller/treasury" className="pp-btn pp-btn-ghost"><Ic name="sparkle" size={15} /> Browse Treasury</Link>
+          <button type="button" className="pp-btn pp-btn-dark" onClick={() => setEditor({})} disabled={isFrozen}><Ic name="plus" size={15} /> Add own product</button>
+        </div>
+      </header>
+
+      {isFrozen && <div className="pp-banner"><Ic name="lock" size={17} /><span><b>Your store is frozen</b> — product changes are paused until support lifts it.</span><Link to="/seller/support">Contact support →</Link></div>}
+
+      <div className="pp-stats">
+        <div className="pp-stat"><span>Products</span><b>{stats.total}</b><small>{stats.treasury} from Treasury · {stats.total - stats.treasury} own</small></div>
+        <div className="pp-stat"><span>Live in store</span><b className="t-green">{stats.active}</b><small>{stats.hidden ? `${stats.hidden} hidden` : 'All visible'}</small></div>
+        <button type="button" className={`pp-stat ${stats.low + stats.out ? 'attn' : ''}`} onClick={() => setStatus(stats.out ? 'out' : 'low')}>
+          <span>Need stock</span><b className={stats.low + stats.out ? 't-amber' : ''}>{stats.low + stats.out}</b><small>{stats.low} low · {stats.out} out of stock</small>
+        </button>
+        <div className="pp-stat"><span>Units sold</span><b>{stats.sold.toLocaleString()}</b><small>All time</small></div>
+        <div className="pp-stat rate"><span>You earn per sale</span><b>{rate}%</b><small>{isDiamond ? '💎 Diamond rate' : <Link to="/seller/diamond">35% with Diamond →</Link>}</small></div>
+      </div>
+
+      <div className="pp-toolbar">
+        <label className="pp-search">
+          <Ic name="search" size={16} />
+          <input type="search" value={qInput} onChange={(e) => setQInput(e.target.value)} placeholder="Search name, SKU, brand or category" aria-label="Search products" />
+          {qInput && <button type="button" onClick={() => setQInput('')} aria-label="Clear"><Ic name="x" size={14} /></button>}
+        </label>
+        <select className="pp-select" value={source} onChange={(e) => setSource(e.target.value)} aria-label="Source">{SOURCES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select>
+        <select className="pp-select" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort">{SORTS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select>
+      </div>
+      <div className="pp-chips" role="tablist" aria-label="Filter">
+        {STATUS_FILTERS.map((f) => (
+          <button key={f.id} type="button" role="tab" aria-selected={status === f.id} className={`${status === f.id ? 'on' : ''} ${(f.id === 'low' || f.id === 'out') && counts[f.id] ? 'warn' : ''}`} onClick={() => setStatus(f.id)}>
+            {f.label} <span>{counts[f.id]}</span>
+          </button>
+        ))}
+      </div>
+
+      {loadErr && !loading && <div className="pp-banner err"><Ic name="alert" size={17} /><span>{loadErr}</span><button type="button" className="pp-link" onClick={() => loadProducts()}>Retry</button></div>}
+
+      <section className="pp-card">
+        {loading ? (
+          <div className="pp-skel-list">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="pp-skel" />)}</div>
+        ) : products.length === 0 ? (
+          <div className="pp-empty">
+            <span className="pp-empty-ico"><Ic name="package" size={22} /></span>
+            <b>Your store has no products yet</b>
+            <p>Add products from the Product Treasury in one tap, or list your own.</p>
+            <div className="pp-empty-actions">
+              <Link to="/seller/treasury" className="pp-btn pp-btn-primary"><Ic name="sparkle" size={15} /> Browse Treasury</Link>
+              <button type="button" className="pp-btn pp-btn-ghost" onClick={() => setEditor({})}>Add own product</button>
+            </div>
+          </div>
+        ) : list.length === 0 ? (
+          <div className="pp-empty">
+            <span className="pp-empty-ico"><Ic name="search" size={22} /></span>
+            <b>No products match</b>
+            <p>Try another search or filter.</p>
+            <button type="button" className="pp-btn pp-btn-ghost" onClick={resetFilters}>Reset filters</button>
+          </div>
+        ) : (
+          <>
+            <table className="pp-table">
+              <thead>
+                <tr><th>Product</th><th className="r">Price</th><th className="r">You earn</th><th>Stock</th><th className="r">Sold</th><th>Visible</th><th className="r" aria-label="Actions" /></tr>
+              </thead>
+              <tbody>
+                {list.map((p) => (
+                  <tr key={p._id} className={p.active === false ? 'is-hidden' : ''}>
+                    <td><ProductCell p={p} /></td>
+                    <td className="r"><b>{formatMoney(p.price)}</b>{p.oldPrice > p.price && <s className="pp-old">{formatMoney(p.oldPrice)}</s>}</td>
+                    <td className="r"><span className="pp-earn">+{formatMoney(((Number(p.price) || 0) * rate) / 100)}</span></td>
+                    <td><StockBadge p={p} /></td>
+                    <td className="r tabular">{(p.sold || 0).toLocaleString()}</td>
+                    <td><Toggle on={p.active !== false} disabled={busy.has(p._id) || isFrozen} onChange={() => toggleActive(p)} label={p.active !== false ? 'Visible' : 'Hidden'} /></td>
+                    <td className="r">
+                      <div className="pp-actions">
+                        <button type="button" className="pp-btn pp-btn-ghost sm" onClick={() => setEditor({ product: p })} disabled={isFrozen}><Ic name="edit" size={14} /> Edit</button>
+                        {canRemove(p) ? (
+                          <button type="button" className="pp-icon-btn danger" onClick={() => setRemoving(p)} disabled={isFrozen || busy.has(p._id)} title={p.treasuryProduct ? 'Remove from my store (Diamond)' : 'Delete product'} aria-label="Remove"><Ic name="trash" size={15} /></button>
+                        ) : (
+                          <Link to="/seller/diamond" className="pp-icon-btn" title="Only Diamond stores can remove Treasury products" aria-label="Diamond only"><Ic name="lock" size={14} /></Link>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <ul className="pp-cards">
+              {list.map((p) => (
+                <li key={p._id} className={p.active === false ? 'is-hidden' : ''}>
+                  <ProductCell p={p} />
+                  <div className="pp-c-grid">
+                    <div><span>Price</span><b>{formatMoney(p.price)}</b></div>
+                    <div><span>You earn</span><b className="t-green">+{formatMoney(((Number(p.price) || 0) * rate) / 100)}</b></div>
+                    <div><span>Sold</span><b>{(p.sold || 0).toLocaleString()}</b></div>
+                  </div>
+                  <div className="pp-c-foot">
+                    <StockBadge p={p} />
+                    <Toggle on={p.active !== false} disabled={busy.has(p._id) || isFrozen} onChange={() => toggleActive(p)} label={p.active !== false ? 'Visible' : 'Hidden'} />
+                  </div>
+                  <div className="pp-c-actions">
+                    <button type="button" className="pp-btn pp-btn-ghost sm" onClick={() => setEditor({ product: p })} disabled={isFrozen}><Ic name="edit" size={14} /> Edit</button>
+                    {canRemove(p) ? (
+                      <button type="button" className="pp-btn pp-btn-ghost sm danger" onClick={() => setRemoving(p)} disabled={isFrozen}><Ic name="trash" size={14} /> Remove</button>
+                    ) : (
+                      <Link to="/seller/diamond" className="pp-btn pp-btn-ghost sm"><Ic name="lock" size={13} /> Diamond to remove</Link>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <p className="pp-count">Showing {list.length} of {products.length} products</p>
+          </>
+        )}
+      </section>
+
+      {editor && (
+        <ProductEditor
+          product={editor.product}
+          categories={categories}
+          rate={rate}
+          formatMoney={formatMoney}
+          onClose={() => setEditor(null)}
+          onSaved={(msg) => { setEditor(null); setToast({ ok: true, text: msg }); loadProducts(true); }}
+        />
+      )}
+
+      {removing && (
+        <Dialog onClose={() => setRemoving(null)}>
+          <div className="pp-confirm">
+            <span className="pp-confirm-ico"><Ic name="trash" size={22} /></span>
+            <h3>Remove “{removing.name}”?</h3>
+            <p>{removing.treasuryProduct ? 'It will no longer be listed in your store. You can add it again from the Product Treasury any time.' : 'This deletes your product listing. This cannot be undone.'} Products with orders still running cannot be removed until those orders are finished.</p>
+            <div className="pp-dialog-actions">
+              <button type="button" className="pp-btn pp-btn-ghost" onClick={() => setRemoving(null)} disabled={busy.has(removing._id)}>Cancel</button>
+              <button type="button" className="pp-btn pp-btn-danger" onClick={confirmRemove} disabled={busy.has(removing._id)}>{busy.has(removing._id) ? 'Removing…' : 'Remove'}</button>
+            </div>
+          </div>
+        </Dialog>
+      )}
+
+      {toast && (
+        <div className={`pp-toast ${toast.ok ? 'ok' : 'err'}`} role="status">
+          <Ic name={toast.ok ? 'checkCircle' : 'alert'} size={17} />
+          <span>{toast.text}</span>
+          <button type="button" onClick={() => setToast(null)} aria-label="Dismiss"><Ic name="x" size={14} /></button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProductCell({ p }) {
+  const img = p.images?.[0]?.url || p.image || '/img/products/serum.svg';
+  return (
+    <div className="pp-prod">
+      <img src={img} alt="" loading="lazy" />
+      <div className="pp-prod-txt">
+        <b title={p.name}>{p.name}</b>
+        <small>{p.category?.name || 'Uncategorized'}{p.sku ? <> · <span className="mono">{p.sku}</span></> : null}</small>
+        <div className="pp-tags">
+          {p.treasuryProduct ? <span className="pp-tag blue">Treasury</span> : <span className="pp-tag slate">Own product</span>}
+          {p.pausedByTreasury && <span className="pp-tag amber">Paused by platform</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StockBadge({ p }) {
+  const st = stockState(p);
+  const n = Number(p.stock) || 0;
+  return (
+    <div className="pp-stock">
+      <span className={`pp-stock-badge ${st}`}>{st === 'out' ? 'Out of stock' : `${n.toLocaleString()} ${st === 'low' ? 'left' : 'in stock'}`}</span>
+      {p.treasuryProduct && <small>Central warehouse</small>}
+    </div>
+  );
+}
+
+function Toggle({ on, disabled, onChange, label }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} className={`pp-toggle ${on ? 'on' : ''}`} onClick={onChange} disabled={disabled}>
+      <span className="pp-toggle-track"><i /></span>
+      <span className="pp-toggle-lbl">{label}</span>
+    </button>
+  );
+}
+
+function Dialog({ onClose, children, wide }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return createPortal(
+    <div className="pp-dialog-root" role="dialog" aria-modal="true">
+      <button type="button" className="pp-dialog-bg" onClick={onClose} aria-label="Close" tabIndex={-1} />
+      <div className={`pp-dialog ${wide ? 'wide' : ''}`}>{children}</div>
+    </div>,
+    document.body
+  );
+}
+
+/** Add / edit drawer. Prices are US dollars (the store's wallet currency). */
+function ProductEditor({ product, categories, rate, formatMoney, onClose, onSaved }) {
+  const isTreasury = Boolean(product?.treasuryProduct);
+  const [form, setForm] = useState(() => (product
+    ? {
+        name: product.name || '', brand: product.brand || '', category: product.category?._id || product.category || '', price: product.price ?? '', oldPrice: product.oldPrice || '',
+        costPrice: product.costs?.purchase || '', stock: product.stock ?? 0, lowStockThreshold: product.lowStockThreshold || 5, sku: product.sku || '', active: product.active !== false,
+        shortDescription: product.shortDescription || '', description: product.description || '', images: product.images?.length ? product.images : product.image ? [{ url: product.image }] : [],
+      }
+    : { ...EMPTY_FORM, category: categories[0]?._id || '', sku: `SKU-${Date.now().toString(36).toUpperCase()}` }));
+  const [err, setErr] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
+  const [shown, setShown] = useState(false);
+  const fileRef = useRef(null);
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
+
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setShown(true));
+    const onKey = (e) => { if (e.key === 'Escape' && !saving) onClose(); };
+    document.addEventListener('keydown', onKey);
+    const before = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { cancelAnimationFrame(id); document.removeEventListener('keydown', onKey); document.body.style.overflow = before; };
+  }, [onClose, saving]);
+
+  const price = Number(form.price) || 0;
+  const old = Number(form.oldPrice) || 0;
+  const discount = old > price && price > 0 ? Math.round(((old - price) / old) * 100) : 0;
+  const earn = (price * rate) / 100;
+
+  const upload = async (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
     setUploading(true);
+    setErr('');
     try {
       const fd = new FormData();
       files.forEach((f) => fd.append('files', f));
       const res = await sapi('/uploads', { method: 'POST', body: fd });
-      const uploadedList = Array.isArray(res) ? res : [res];
-
-      setForm((prev) => ({
-        ...prev,
-        images: [
-          ...prev.images,
-          ...uploadedList.map((item) => ({ url: item.url, key: item.key })),
-        ],
-      }));
-    } catch (err) {
-      alert('Upload failed: ' + err.message);
+      const list = Array.isArray(res) ? res : [res];
+      setForm((f) => ({ ...f, images: [...f.images, ...list.filter((x) => x?.url).map((x) => ({ url: x.url, key: x.key }))] }));
+    } catch (er) {
+      setErr(`Upload failed: ${er.message}`);
     } finally {
       setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (fileRef.current) fileRef.current.value = '';
     }
   };
-
-  const addImageUrl = () => {
-    if (!urlInput.trim()) return;
-    setForm((prev) => ({
-      ...prev,
-      images: [...prev.images, { url: urlInput.trim() }],
-    }));
+  const addUrl = () => {
+    const u = urlInput.trim();
+    if (!/^https?:\/\//i.test(u)) { setErr('Paste a full image link starting with https://'); return; }
+    setForm((f) => ({ ...f, images: [...f.images, { url: u }] }));
     setUrlInput('');
+    setErr('');
   };
+  const moveCover = (i) => setForm((f) => { const c = [...f.images]; const [x] = c.splice(i, 1); return { ...f, images: [x, ...c] }; });
+  const dropImg = (i) => setForm((f) => ({ ...f, images: f.images.filter((_, j) => j !== i) }));
 
-  const removeImage = (idx) => {
-    setForm((prev) => ({
-      ...prev,
-      images: prev.images.filter((_, i) => i !== idx),
-    }));
-  };
-
-  const setCoverImage = (idx) => {
-    if (idx === 0) return;
-    setForm((prev) => {
-      const copy = [...prev.images];
-      const [chosen] = copy.splice(idx, 1);
-      return { ...prev, images: [chosen, ...copy] };
-    });
-  };
-
-  const generateSku = () => {
-    const prefix = (form.brand || form.name || 'PRD').slice(0, 3).toUpperCase().replace(/[^A-Z]/g, 'X');
-    const random = Math.floor(1000 + Math.random() * 9000);
-    setForm((prev) => ({ ...prev, sku: `${prefix}-${Date.now().toString(36).toUpperCase()}-${random}` }));
-  };
-
-  const handleSave = async (e) => {
+  const save = async (e) => {
     e.preventDefault();
-    if (!form.name.trim()) return setModalErr('Product title is required');
-    if (!form.category) return setModalErr('Please select a category');
-    if (!form.price || Number(form.price) <= 0) return setModalErr('Valid selling price is required');
-
+    if (!form.name.trim()) return setErr('Enter a product name.');
+    if (!form.category) return setErr('Choose a category.');
+    if (!(price > 0)) return setErr('Enter a selling price above $0.');
+    if (old && old <= price) return setErr('The compare-at price must be higher than the selling price (or leave it empty).');
+    if (!isTreasury && !(Number(form.stock) >= 0)) return setErr('Enter a stock number (0 or more).');
+    if (!form.images.length) return setErr('Add at least one photo.');
     setSaving(true);
-    setModalErr('');
-
+    setErr('');
     try {
       const payload = {
-        ...form,
-        price: Number(form.price),
-        oldPrice: form.oldPrice ? Number(form.oldPrice) : undefined,
-        costPrice: Number(form.costPrice || 0),
-        stock: Number(form.stock || 0),
-        lowStockThreshold: Number(form.lowStockThreshold || 5),
-        image: form.images[0]?.url || '',
+        name: form.name.trim(), brand: form.brand.trim(), category: form.category, sku: form.sku.trim(), active: form.active,
+        shortDescription: form.shortDescription, description: form.description,
+        price, oldPrice: old > price ? old : '', costPrice: Number(form.costPrice) || 0,
+        lowStockThreshold: Number(form.lowStockThreshold) || 5,
+        images: form.images, image: form.images[0]?.url || '',
       };
-      // a Treasury product's stock is the platform's central stock: never sent from here
-      if (editingProd?.treasuryProduct) delete payload.stock;
-
-      if (editingProd) {
-        await sapi(`/sellers/products/${editingProd._id}`, {
-          method: 'PUT',
-          body: payload,
-        });
-      } else {
-        await sapi('/sellers/products', {
-          method: 'POST',
-          body: payload,
-        });
-      }
-      setModalOpen(false);
-      loadProducts();
-    } catch (err) {
-      setModalErr(err.message);
+      // a Treasury product's stock is the warehouse's: never sent from here
+      if (!isTreasury) payload.stock = Math.max(0, Math.floor(Number(form.stock) || 0));
+      if (product) await sapi(`/sellers/products/${product._id}`, { method: 'PUT', body: payload });
+      else await sapi('/sellers/products', { method: 'POST', body: payload });
+      onSaved(product ? `“${payload.name}” was saved.` : `“${payload.name}” is now listed in your store.`);
+    } catch (er) {
+      setErr(er.message || 'Could not save the product');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDelete = async (id, name) => {
-    const prod = products.find((p) => p._id === id);
-    if (prod?.treasuryProduct && !isDiamond) {
-      alert('Products imported from Product Treasury cannot be removed from your store. Upgrade to 💎 Diamond to remove products.');
-      return;
-    }
-    if (!confirm(`Are you sure you want to remove "${name}" from your store?`)) return;
-    try {
-      await sapi(`/sellers/products/${id}`, { method: 'DELETE' });
-      loadProducts();
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
-  const filtered = products.filter((p) => {
-    const matchQ = !q || p.name?.toLowerCase().includes(q.toLowerCase()) || p.sku?.toLowerCase().includes(q.toLowerCase());
-    if (!matchQ) return false;
-    if (stockFilter === 'low') return (p.stock || 0) <= (p.lowStockThreshold || 5) && (p.stock || 0) > 0;
-    if (stockFilter === 'out') return (p.stock || 0) === 0;
-    if (stockFilter === 'in') return (p.stock || 0) > (p.lowStockThreshold || 5);
-    return true;
-  });
-
-  // Calculate live margin & profit preview in the form
-  const curPrice = Number(form.price || 0);
-  const curCost = Number(form.costPrice || 0);
-  const curOldPrice = Number(form.oldPrice || 0);
-  const commRate = seller?.commissionRate || 10;
-  const platformFee = (curPrice * commRate) / 100;
-  const netProfit = curPrice > 0 ? (curPrice - curCost - platformFee) : 0;
-  const profitMargin = curPrice > 0 ? Math.round((netProfit / curPrice) * 100) : 0;
-  const discountPercent = curOldPrice > curPrice ? Math.round(((curOldPrice - curPrice) / curOldPrice) * 100) : 0;
-
-  return (
-    <div className="seller-products-page">
-      <div className="seller-page-header">
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <h2 style={{ margin: 0 }}>📦 My Store Products</h2>
-            <span className="live-store-traffic-badge" title="Estimated live shoppers browsing your store right now">
-              <span className="live-pulse-dot" />
-              <Ic name="eye" size={13} stroke={2.2} />
-              <b>{liveShoppers}</b> Active Store Shoppers
-            </span>
+  return createPortal(
+    <div className="pp-drawer-root" role="dialog" aria-modal="true" aria-label={product ? 'Edit product' : 'Add product'}>
+      <button type="button" className={`pp-drawer-bg ${shown ? 'on' : ''}`} onClick={() => !saving && onClose()} aria-label="Close" tabIndex={-1} />
+      <form className={`pp-drawer ${shown ? 'on' : ''}`} onSubmit={save}>
+        <header className="pp-dr-head">
+          <div>
+            <p className="pp-eyebrow">{product ? (isTreasury ? 'Treasury product' : 'Your product') : 'New product'}</p>
+            <h2>{product ? 'Edit product' : 'Add your own product'}</h2>
           </div>
-          <p>Products currently active in your store. To add more products from the master warehouse catalog, browse the Product Treasury.</p>
-        </div>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <Link
-            to="/seller/treasury"
-            className="seller-btn-pri"
-            style={{
-              background: '#2563eb',
-              textDecoration: 'none',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '10px 18px',
-            }}
-          >
-            <Ic name="sparkle" size={17} /> Browse Product Treasury
-          </Link>
-          <button onClick={openAdd} className="btn-sec" style={{ padding: '9px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
-            <Ic name="plus" size={15} /> Custom Product
-          </button>
-        </div>
-      </div>
+          <button type="button" className="pp-icon-btn plain" onClick={onClose} aria-label="Close" disabled={saving}><Ic name="x" size={18} /></button>
+        </header>
 
-      {/* Filter and Search Bar */}
-      <div className="seller-filter-bar">
-        <div className="search-input-wrap">
-          <Ic name="search" size={17} />
-          <input
-            type="text"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search products by title, SKU, or brand..."
-          />
-        </div>
+        <div className="pp-dr-body">
+          {isTreasury && <div className="pp-note"><Ic name="sparkle" size={15} /><p>This product comes from the Product Treasury. Its stock is the central warehouse stock and updates by itself.</p></div>}
 
-        <div className="filter-chips">
-          <button className={stockFilter === 'all' ? 'active' : ''} onClick={() => setStockFilter('all')}>
-            All ({products.length})
-          </button>
-          <button className={stockFilter === 'in' ? 'active' : ''} onClick={() => setStockFilter('in')}>
-            In Stock ({products.filter((p) => (p.stock || 0) > (p.lowStockThreshold || 5)).length})
-          </button>
-          <button className={stockFilter === 'low' ? 'active' : ''} onClick={() => setStockFilter('low')}>
-            Low Stock ({products.filter((p) => (p.stock || 0) <= (p.lowStockThreshold || 5) && (p.stock || 0) > 0).length})
-          </button>
-          <button className={stockFilter === 'out' ? 'active' : ''} onClick={() => setStockFilter('out')}>
-            Out of Stock ({products.filter((p) => (p.stock || 0) === 0).length})
-          </button>
-        </div>
-      </div>
-
-      {/* Products Table */}
-      <div className="seller-card">
-        <div className="seller-table-wrap">
-          <table className="seller-table">
-            <thead>
-              <tr>
-                <th>Product</th>
-                <th>Category</th>
-                <th>Selling Price</th>
-                <th>Wholesale Cost</th>
-                <th>Est. Profit / Unit</th>
-                <th>Inventory Stock</th>
-                <th style={{ textAlign: 'center' }}>Live Viewers</th>
-                <th>Total Sold</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && (
-                <tr>
-                  <td colSpan="10" className="text-center py-8 muted">Loading products catalog...</td>
-                </tr>
-              )}
-              {!loading && filtered.length === 0 && (
-                <tr>
-                  <td colSpan="10">
-                    <div className="table-empty-box">
-                      <div className="empty-icon-circle">📦</div>
-                      <h4>No products found</h4>
-                      <p>No products match your current search or filter criteria. Create your first product listing to start selling!</p>
-                      <button type="button" onClick={openAdd} className="seller-btn-pri btn-sm" style={{ marginTop: 8 }}>
-                        <Ic name="plus" size={15} /> Add New Product
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              )}
-              {filtered.map((p) => {
-                const cost = p.costs?.purchase || 0;
-                const fee = (p.price * (seller?.commissionRate || 10)) / 100;
-                const profit = p.price - cost - fee;
-                const isLow = (p.stock || 0) <= (p.lowStockThreshold || 5) && (p.stock || 0) > 0;
-                const isOut = (p.stock || 0) === 0;
-
-                return (
-                  <tr key={p._id}>
-                    <td>
-                      <div className="prod-cell">
-                        <img
-                          src={p.images?.[0]?.url || p.image || '/img/products/serum.svg'}
-                          alt={p.name}
-                          className="prod-thumb"
-                        />
-                        <div className="prod-meta-box">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                            <b className="prod-name-title" title={p.name}>{p.name}</b>
-                            {p.treasuryProduct && (
-                              <span
-                                style={{
-                                  background: '#eff6ff',
-                                  color: '#1d4ed8',
-                                  border: '1px solid #bfdbfe',
-                                  fontSize: '10px',
-                                  fontWeight: 700,
-                                  padding: '1px 6px',
-                                  borderRadius: '10px',
-                                }}
-                              >
-                                ⚡ Treasury Synced
-                              </span>
-                            )}
-                          </div>
-                          <small className="muted block">SKU: {p.sku || 'N/A'} • {p.brand || 'Generic'}</small>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
-                            <span className="prod-live-viewers-tag-sm" title="Shoppers currently viewing this product">
-                              <Ic name="eye" size={11} stroke={2.2} /> <b>{getProductLiveViewers(p._id, p.price)}</b> viewing now
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </td>
-                    <td>{p.category?.name || 'Uncategorized'}</td>
-                    <td>
-                      <b>{formatMoney(p.price)}</b>
-                      {p.oldPrice > p.price && <small className="old-price-del block">{formatMoney(p.oldPrice)}</small>}
-                    </td>
-                    <td>{formatMoney(cost)}</td>
-                    <td>
-                      <b className={profit >= 0 ? 'text-green' : 'text-red'}>{formatMoney(profit)}</b>
-                    </td>
-                    <td>
-                      <span className={`stock-badge ${isOut ? 'out' : isLow ? 'low' : 'ok'}`}>
-                        {p.stock || 0} units
-                      </span>
-                      {p.treasuryProduct && (
-                        <div style={{ fontSize: '10px', color: '#059669', fontWeight: 600, marginTop: '2px' }}>
-                          Central Pool
-                        </div>
-                      )}
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <span className="seller-viewers-pill" title="Estimated live customers viewing this product right now">
-                        <Ic name="eye" size={13} stroke={2.2} /> <b>{getProductLiveViewers(p._id, p.price)}</b>
-                      </span>
-                    </td>
-                    <td>{p.sold || 0}</td>
-                    <td>
-                      <span className={`status-tag ${p.active !== false ? 'status-delivered' : 'status-cancelled'}`}>
-                        {p.active !== false ? 'Active' : 'Draft'}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="row-actions">
-                        <button type="button" onClick={() => openEdit(p)} className="btn-action-edit" title="Edit Product">
-                          <Ic name="sparkle" size={13} /> Edit
-                        </button>
-                        {p.treasuryProduct && !isDiamond ? (
-                          <Link
-                            to="/seller/diamond"
-                            className="btn-action-locked"
-                            title="Only 💎 Diamond stores can remove Product Treasury items. Tap to see Diamond."
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              color: '#64748b',
-                              padding: '5px 8px',
-                              background: '#f1f5f9',
-                              border: '1px solid #e2e8f0',
-                              borderRadius: '6px',
-                              cursor: 'pointer',
-                              userSelect: 'none',
-                              textDecoration: 'none',
-                            }}
-                          >
-                            🔒 Diamond only
-                          </Link>
-                        ) : (
-                          <button type="button" onClick={() => handleDelete(p._id, p.name)} className="btn-action-delete" title={p.treasuryProduct ? 'Remove from My Store (💎 Diamond)' : 'Delete Product'}>
-                            <Ic name="x" size={13} /> {p.treasuryProduct ? 'Remove' : 'Delete'}
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* ========================================================
-          ADD / EDIT PRODUCT MODAL (HIGHLY STYLED)
-         ======================================================== */}
-      {modalOpen && (
-        <div className="seller-modal-overlay" onClick={() => setModalOpen(false)}>
-          <div className="seller-modal-dialog" onClick={(e) => e.stopPropagation()}>
-            {/* Modal Header */}
-            <div className="modal-header-styled">
-              <div className="modal-title-wrap">
-                <div className="modal-icon-badge">
-                  <Ic name={editingProd ? 'sparkle' : 'tag'} size={22} />
+          <section className="pp-sec">
+            <h3>Photos</h3>
+            <div className="pp-gallery">
+              {form.images.map((img, i) => (
+                <div key={`${img.url}-${i}`} className={`pp-ph ${i === 0 ? 'cover' : ''}`}>
+                  <img src={img.url} alt="" />
+                  {i === 0 ? <span className="pp-ph-cover">Cover</span> : <button type="button" className="pp-ph-set" onClick={() => moveCover(i)}>Make cover</button>}
+                  <button type="button" className="pp-ph-x" onClick={() => dropImg(i)} aria-label="Remove photo"><Ic name="x" size={12} /></button>
                 </div>
-                <div>
-                  <h3 className="modal-heading-text">
-                    {editingProd ? `Edit Product: ${editingProd.name}` : 'Add New Product to Store'}
-                  </h3>
-                  <p className="modal-subheading-text">
-                    Fill in the product details, set wholesale pricing, and upload high-resolution images.
-                  </p>
-                </div>
-              </div>
-
-              <div className="modal-header-right">
-                <label className="toggle-switch-wrap" title="Product active status">
-                  <input
-                    type="checkbox"
-                    checked={form.active}
-                    onChange={(e) => setForm({ ...form, active: e.target.checked })}
-                  />
-                  <span className="toggle-slider"></span>
-                  <span className="toggle-label">{form.active ? 'Active' : 'Draft'}</span>
-                </label>
-                <button onClick={() => setModalOpen(false)} className="modal-close-icon-btn" title="Close modal">
-                  <Ic name="x" size={20} />
-                </button>
-              </div>
+              ))}
+              <button type="button" className="pp-ph-add" onClick={() => fileRef.current?.click()} disabled={uploading}>
+                <Ic name="image" size={20} /><span>{uploading ? 'Uploading…' : 'Upload'}</span>
+              </button>
             </div>
+            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden onChange={upload} />
+            <div className="pp-url">
+              <input className="pp-input" type="url" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} placeholder="…or paste an image link (https://…)" />
+              <button type="button" className="pp-btn pp-btn-ghost" onClick={addUrl} disabled={!urlInput.trim()}>Add</button>
+            </div>
+          </section>
 
-            {modalErr && (
-              <div className="modal-alert-error">
-                <Ic name="shield" size={18} />
-                <span>{modalErr}</span>
-              </div>
+          <section className="pp-sec">
+            <h3>Details</h3>
+            <label className="pp-field"><span>Product name <em>*</em></span><input className="pp-input" value={form.name} onChange={set('name')} placeholder="What customers will search for" /></label>
+            <div className="pp-row">
+              <label className="pp-field"><span>Category <em>*</em></span>
+                <select className="pp-input" value={form.category} onChange={set('category')}><option value="">Choose…</option>{categories.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}</select>
+              </label>
+              <label className="pp-field"><span>Brand</span><input className="pp-input" value={form.brand} onChange={set('brand')} placeholder="Optional" /></label>
+            </div>
+            <label className="pp-field"><span>Short highlight</span><input className="pp-input" value={form.shortDescription} onChange={set('shortDescription')} placeholder="One line shown under the name" maxLength={160} /></label>
+            <label className="pp-field"><span>Description</span><textarea className="pp-input" rows={5} value={form.description} onChange={set('description')} placeholder="Features, what is in the box, sizes, care…" /></label>
+          </section>
+
+          <section className="pp-sec">
+            <h3>Price <small>in US dollars</small></h3>
+            <div className="pp-row">
+              <label className="pp-field"><span>Selling price <em>*</em></span><div className="pp-money"><em>$</em><input type="number" step="0.01" min="0" value={form.price} onChange={set('price')} placeholder="0.00" /></div></label>
+              <label className="pp-field"><span>Compare-at price {discount > 0 && <b className="pp-off">−{discount}%</b>}</span><div className="pp-money"><em>$</em><input type="number" step="0.01" min="0" value={form.oldPrice} onChange={set('oldPrice')} placeholder="Optional" /></div></label>
+            </div>
+            <div className="pp-earnbox">
+              <div><span>Customer pays</span><b>{usd(price)}</b><small>{formatMoney(price)}</small></div>
+              <div><span>You earn per sale ({rate}%)</span><b className="t-green">+{usd(earn)}</b><small>paid with the order amount on delivery</small></div>
+            </div>
+            {!isTreasury && (
+              <label className="pp-field"><span>Your cost per unit <small>(private, optional — for your own records)</small></span><div className="pp-money"><em>$</em><input type="number" step="0.01" min="0" value={form.costPrice} onChange={set('costPrice')} placeholder="0.00" /></div></label>
             )}
+          </section>
 
-            <form onSubmit={handleSave} className="seller-product-form">
-              {/* SECTION 1: BASIC INFORMATION */}
-              <div className="form-section-card">
-                <div className="form-section-title">
-                  <Ic name="box" size={18} />
-                  <span>1. Basic Product Information</span>
-                </div>
-
-                <div className="form-grid-layout">
-                  <div className="form-field full-width">
-                    <label className="field-label">Product Title / Name *</label>
-                    <input
-                      type="text"
-                      className="styled-input"
-                      value={form.name}
-                      onChange={(e) => setForm({ ...form, name: e.target.value })}
-                      placeholder="e.g. Wireless Noise-Cancelling Headphones Pro"
-                      required
-                    />
-                    <small className="field-hint">Use a descriptive title that customers search for.</small>
-                  </div>
-
-                  <div className="form-field">
-                    <label className="field-label">Brand Name</label>
-                    <input
-                      type="text"
-                      className="styled-input"
-                      value={form.brand}
-                      onChange={(e) => setForm({ ...form, brand: e.target.value })}
-                      placeholder="e.g. Sony, Apple, Nike"
-                    />
-                  </div>
-
-                  <div className="form-field">
-                    <label className="field-label">Store Category *</label>
-                    <select
-                      className="styled-select"
-                      value={form.category}
-                      onChange={(e) => setForm({ ...form, category: e.target.value })}
-                      required
-                    >
-                      <option value="">Select Category</option>
-                      {categories.map((c) => (
-                        <option key={c._id} value={c._id}>{c.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="form-field">
-                    <div className="flex justify-between items-center">
-                      <label className="field-label">SKU / Product Code</label>
-                      <button type="button" onClick={generateSku} className="sku-gen-btn">
-                        ⚡ Auto-Generate
-                      </button>
-                    </div>
-                    <input
-                      type="text"
-                      className="styled-input"
-                      value={form.sku}
-                      onChange={(e) => setForm({ ...form, sku: e.target.value })}
-                      placeholder="e.g. SKU-HP100-PRO"
-                    />
-                  </div>
-
-                  <div className="form-field">
-                    <label className="field-label">Short Punchy Tagline / Highlight</label>
-                    <input
-                      type="text"
-                      className="styled-input"
-                      value={form.shortDescription}
-                      onChange={(e) => setForm({ ...form, shortDescription: e.target.value })}
-                      placeholder="e.g. 40-hour battery life with immersive spatial audio"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* SECTION 2: PRICING & PROFIT CALCULATOR */}
-              <div className="form-section-card">
-                <div className="form-section-title">
-                  <Ic name="banknote" size={18} />
-                  <span>2. Pricing, Cost & Live Profit Calculation</span>
-                </div>
-
-                <div className="form-grid-layout">
-                  <div className="form-field">
-                    <label className="field-label">Customer Selling Price ({currentCurrency.symbol}) *</label>
-                    <div className="currency-input-wrap">
-                      <span className="currency-symbol">{currentCurrency.symbol}</span>
-                      <input
-                        type="number"
-                        step="any"
-                        min="1"
-                        className="styled-input with-prefix"
-                        value={form.price}
-                        onChange={(e) => setForm({ ...form, price: e.target.value })}
-                        placeholder="0.00"
-                        required
-                      />
-                    </div>
-                    <small className="field-hint">Actual price the customer will pay at checkout.</small>
-                  </div>
-
-                  <div className="form-field">
-                    <div className="flex justify-between items-center">
-                      <label className="field-label">Original / Compare Price ({currentCurrency.symbol})</label>
-                      {discountPercent > 0 && (
-                        <span className="discount-live-badge">-{discountPercent}% OFF</span>
-                      )}
-                    </div>
-                    <div className="currency-input-wrap">
-                      <span className="currency-symbol">{currentCurrency.symbol}</span>
-                      <input
-                        type="number"
-                        step="any"
-                        min="0"
-                        className="styled-input with-prefix"
-                        value={form.oldPrice}
-                        onChange={(e) => setForm({ ...form, oldPrice: e.target.value })}
-                        placeholder="0.00"
-                      />
-                    </div>
-                    <small className="field-hint">Optional higher price to show a strikethrough sale badge.</small>
-                  </div>
-
-                  <div className="form-field">
-                    <label className="field-label">Your Wholesale Cost Price ({currentCurrency.symbol}) *</label>
-                    <div className="currency-input-wrap">
-                      <span className="currency-symbol">{currentCurrency.symbol}</span>
-                      <input
-                        type="number"
-                        step="any"
-                        min="0"
-                        className="styled-input with-prefix"
-                        value={form.costPrice}
-                        onChange={(e) => setForm({ ...form, costPrice: e.target.value })}
-                        placeholder="0.00"
-                        required
-                      />
-                    </div>
-                    <small className="field-hint">Your manufacturing or purchase cost per unit.</small>
-                  </div>
-
-                  <div className="form-field">
-                    <label className="field-label">Platform Commission Fee</label>
-                    <div className="readonly-box">
-                      <b>{commRate}%</b>
-                      <span className="muted-sm">({curPrice > 0 ? formatMoney(platformFee) : formatMoney(0)} per unit)</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* LIVE PROFIT PREVIEW BOX */}
-                <div className={`live-profit-card ${netProfit < 0 ? 'loss' : profitMargin >= 25 ? 'great' : 'ok'}`}>
-                  <div className="profit-col">
-                    <span className="profit-title">Estimated Net Profit / Unit</span>
-                    <b className="profit-value">{curPrice > 0 ? formatMoney(netProfit) : formatMoney(0)}</b>
-                  </div>
-                  <div className="profit-col">
-                    <span className="profit-title">Estimated Profit Margin</span>
-                    <b className="profit-value">{curPrice > 0 ? `${profitMargin}%` : '0%'}</b>
-                  </div>
-                  <div className="profit-badge-col">
-                    {netProfit < 0 ? (
-                      <span className="badge-loss">⚠️ Selling Below Cost Price</span>
-                    ) : profitMargin >= 30 ? (
-                      <span className="badge-great">🔥 High Profit Margin</span>
-                    ) : (
-                      <span className="badge-standard">✅ Healthy Profit</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* SECTION 3: INVENTORY & STOCK */}
-              <div className="form-section-card">
-                <div className="form-section-title">
-                  <Ic name="package" size={18} />
-                  <span>3. Inventory & Stock Control</span>
-                </div>
-
-                <div className="form-grid-layout">
-                  <div className="form-field">
-                    <label className="field-label">Stock Quantity in Warehouse *</label>
-                    <input
-                      type="number"
-                      min="0"
-                      className="styled-input"
-                      value={form.stock}
-                      onChange={(e) => setForm({ ...form, stock: e.target.value })}
-                      required
-                      disabled={Boolean(editingProd?.treasuryProduct)}
-                    />
-                    <small className="field-hint">
-                      {editingProd?.treasuryProduct
-                        ? 'Central Treasury stock, managed by the platform (shared by all sellers of this product).'
-                        : 'Available units ready to be dispatched.'}
-                    </small>
-                  </div>
-
-                  <div className="form-field">
-                    <label className="field-label">Low Stock Alert Threshold</label>
-                    <input
-                      type="number"
-                      min="1"
-                      className="styled-input"
-                      value={form.lowStockThreshold}
-                      onChange={(e) => setForm({ ...form, lowStockThreshold: e.target.value })}
-                    />
-                    <small className="field-hint">You will be notified when stock dips below this.</small>
-                  </div>
-                </div>
-              </div>
-
-              {/* SECTION 4: PRODUCT GALLERY & PHOTOS */}
-              <div className="form-section-card">
-                <div className="form-section-title">
-                  <Ic name="image" size={18} />
-                  <span>4. Product Media & Photo Gallery</span>
-                </div>
-
-                {/* Upload & Add URL Toolbar */}
-                <div className="gallery-toolbar">
-                  <div className="url-add-box">
-                    <input
-                      type="url"
-                      className="styled-input"
-                      value={urlInput}
-                      onChange={(e) => setUrlInput(e.target.value)}
-                      placeholder="Paste Image URL (https://...)"
-                    />
-                    <button type="button" onClick={addImageUrl} className="btn-secondary-sm" disabled={!urlInput.trim()}>
-                      + Add URL
-                    </button>
-                  </div>
-
-                  <div className="upload-trigger-wrap">
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleFileUpload}
-                      accept="image/png,image/jpeg,image/webp,image/gif"
-                      multiple
-                      style={{ display: 'none' }}
-                    />
-                    <button
-                      type="button"
-                      className="upload-dropzone-btn"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploading}
-                    >
-                      <Ic name="paperclip" size={17} />
-                      <span>{uploading ? 'Uploading Photo...' : 'Upload Photos from Device'}</span>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Image Thumbnails Gallery */}
-                <div className="image-thumbs-grid">
-                  {form.images.map((img, idx) => (
-                    <div key={idx} className="thumb-item-card">
-                      <img src={img.url} alt={`Product photo ${idx + 1}`} className="thumb-preview-img" />
-                      {idx === 0 && <span className="cover-badge">⭐️ Cover Image</span>}
-                      <div className="thumb-actions-overlay">
-                        {idx !== 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setCoverImage(idx)}
-                            className="thumb-set-cover-btn"
-                            title="Set as Main Cover Photo"
-                          >
-                            Set Cover
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => removeImage(idx)}
-                          className="thumb-delete-btn"
-                          title="Delete photo"
-                        >
-                          <Ic name="x" size={15} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-
-                  {form.images.length === 0 && (
-                    <div className="no-images-placeholder" onClick={() => fileInputRef.current?.click()}>
-                      <Ic name="image" size={32} />
-                      <p>No photos added yet. Click to upload high-quality product images.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* SECTION 5: DETAILED DESCRIPTION */}
-              <div className="form-section-card">
-                <div className="form-section-title">
-                  <Ic name="fileText" size={18} />
-                  <span>5. Detailed Description & Specifications</span>
-                </div>
-
-                <div className="form-field full-width">
-                  <label className="field-label">Full Product Description</label>
-                  <textarea
-                    rows={5}
-                    className="styled-textarea"
-                    value={form.description}
-                    onChange={(e) => setForm({ ...form, description: e.target.value })}
-                    placeholder="Write detailed product features, box contents, specifications, and warranty details..."
-                  />
-                  <small className="field-hint">Detailed descriptions increase conversion rates and build customer trust.</small>
-                </div>
-              </div>
-
-              {/* MODAL FOOTER ACTIONS */}
-              <div className="modal-sticky-footer">
-                <button type="button" onClick={() => setModalOpen(false)} className="modal-btn-cancel">
-                  Cancel
-                </button>
-                <button type="submit" className="modal-btn-submit" disabled={saving || uploading}>
-                  {saving ? (
-                    'Saving Listing...'
-                  ) : editingProd ? (
-                    <><Ic name="check" size={18} /> Save & Update Product</>
-                  ) : (
-                    <><Ic name="plus" size={18} /> Publish Product to Storefront</>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
+          <section className="pp-sec">
+            <h3>Stock</h3>
+            <div className="pp-row">
+              <label className="pp-field"><span>{isTreasury ? 'Warehouse stock' : 'Units in stock'} {!isTreasury && <em>*</em>}</span><input className="pp-input" type="number" min="0" value={form.stock} onChange={set('stock')} disabled={isTreasury} /></label>
+              <label className="pp-field"><span>Low-stock alert at</span><input className="pp-input" type="number" min="1" value={form.lowStockThreshold} onChange={set('lowStockThreshold')} /></label>
+            </div>
+            <div className="pp-row">
+              <label className="pp-field"><span>SKU</span><input className="pp-input mono" value={form.sku} onChange={set('sku')} placeholder="Your product code" /></label>
+              <label className="pp-field pp-visible"><span>Visible in store</span>
+                <span className="pp-switch-row"><input type="checkbox" checked={form.active} onChange={set('active')} disabled={product?.pausedByTreasury} /> {form.active ? 'Customers can see and buy it' : 'Hidden from customers'}</span>
+              </label>
+            </div>
+          </section>
         </div>
-      )}
-    </div>
+
+        <footer className="pp-dr-foot">
+          {err && <div className="pp-err"><Ic name="alert" size={15} /><span>{err}</span></div>}
+          <div className="pp-dr-btns">
+            <button type="button" className="pp-btn pp-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+            <button type="submit" className="pp-btn pp-btn-primary" disabled={saving || uploading}>{saving ? 'Saving…' : product ? 'Save changes' : 'Publish product'}</button>
+          </div>
+        </footer>
+      </form>
+    </div>,
+    document.body
   );
 }

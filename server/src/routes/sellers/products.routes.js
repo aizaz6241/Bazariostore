@@ -4,29 +4,27 @@ import Product from '../../models/Product.js';
 import Order from '../../models/Order.js';
 import { isDiamond } from '../../utils/sellerTier.js';
 import { authSeller } from '../../middleware/auth.js';
-import { slugify, blockWhenFrozen } from './helpers.js';
+import { slugify, blockWhenFrozen, ownProductFilter } from './helpers.js';
 
 const router = express.Router();
 
 // GET /api/sellers/products
 router.get('/products', authSeller, async (req, res) => {
   try {
-    const products = await Product.find({
-      $or: [
-        { seller: req.seller.id },
-        { sellerName: req.seller.storeName },
-        { sellerSlug: req.seller.storeSlug || slugify(req.seller.storeName) },
-      ],
-    })
+    // the store's name / slug are read fresh (the login token keeps the ones from login time)
+    const me = await Seller.findById(req.seller.id).select('storeName storeSlug').lean();
+    if (!me) return res.status(404).json({ message: 'Seller not found' });
+    const products = await Product.find(await ownProductFilter(me))
       .populate('category', 'name slug')
       .sort({ createdAt: -1 });
 
-    // Auto-link seller field if missing
+    // very old products without an owner (matched above only when the store name is unique) are
+    // linked to this store once
     for (const p of products) {
-      if (!p.seller || p.seller.toString() !== req.seller.id.toString()) {
-        p.seller = req.seller.id;
-        p.sellerName = req.seller.storeName;
-        p.sellerSlug = req.seller.storeSlug || slugify(req.seller.storeName);
+      if (!p.seller) {
+        p.seller = me._id;
+        p.sellerName = me.storeName;
+        p.sellerSlug = me.storeSlug || slugify(me.storeName);
         await p.save().catch(() => {});
       }
     }
@@ -116,7 +114,10 @@ router.put('/products/:id', authSeller, blockWhenFrozen('editing products'), asy
     if (data.name !== undefined) product.name = String(data.name).trim();
     if (data.description !== undefined) product.description = String(data.description);
     if (data.price !== undefined) product.price = Number(data.price);
-    if (data.compareAtPrice !== undefined) product.compareAtPrice = Number(data.compareAtPrice);
+    // the "compare at" price is stored as oldPrice (compareAtPrice is not a field, so edits were lost)
+    const compare = data.oldPrice !== undefined ? data.oldPrice : data.compareAtPrice;
+    if (compare !== undefined) product.oldPrice = compare === null || compare === '' || Number(compare) <= 0 ? undefined : Number(compare);
+    if (data.shortDescription !== undefined) product.shortDescription = String(data.shortDescription);
     // a Central Treasury listing shows the master's stock: a seller cannot change it (a higher
     // number here let the listing sell more than the Treasury holds)
     if (data.stock !== undefined && !product.treasuryProduct) {

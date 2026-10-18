@@ -15,7 +15,7 @@ import { walletApply, walletNow, sellerIsRestricted, walletReleaseFrozen } from 
 import { restockOrder, settleDeliveredStock } from '../../utils/orderStock.js';
 import { adminRoom } from '../../utils/permissions.js';
 import { toAdmins } from '../../utils/realtime.js';
-import { blockWhenFrozen } from './helpers.js';
+import { blockWhenFrozen, ownProductFilter } from './helpers.js';
 import { profitRateFor, confirmHoursFor, warnHoursFor, tierOf } from '../../utils/sellerTier.js';
 import { sellerSafeOrder, sellerOrderPing, maskName } from '../../utils/orderPrivacy.js';
 
@@ -601,13 +601,7 @@ router.get('/orders', authSellerOrAdmin, async (req, res) => {
     if (!seller) return res.status(404).json({ message: 'Seller not found. Please log in again.' });
 
     const sellerId = seller._id.toString();
-    const sellerProducts = await Product.find({
-      $or: [
-        { seller: seller._id },
-        { sellerName: seller.storeName },
-        { sellerSlug: seller.storeSlug },
-      ],
-    }, '_id');
+    const sellerProducts = await Product.find(await ownProductFilter(seller), '_id');
     const sellerProdIds = sellerProducts.map((p) => p._id);
 
     const orders = await Order.find({
@@ -726,13 +720,7 @@ router.post('/orders/:id/confirm', authSellerOrAdmin, async (req, res) => {
     const order = await Order.findById(req.params.id).populate('items.product');
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
-    const sellerProducts = await Product.find({
-      $or: [
-        { seller: seller._id },
-        { sellerName: seller.storeName },
-        { sellerSlug: seller.storeSlug },
-      ],
-    }, '_id');
+    const sellerProducts = await Product.find(await ownProductFilter(seller), '_id');
     const sellerProdIds = sellerProducts.map((p) => p._id.toString());
 
     // Idempotency: If this seller's items are already confirmed/locked, return cleanly without duplicate fund actions
@@ -865,13 +853,7 @@ export const handleStatusUpdate = async (req, res) => {
 
     let sellerProducts = [];
     if (seller) {
-      sellerProducts = await Product.find({
-        $or: [
-          { seller: seller._id },
-          { sellerName: seller.storeName },
-          { sellerSlug: seller.storeSlug },
-        ],
-      }, '_id');
+      sellerProducts = await Product.find(await ownProductFilter(seller), '_id');
     }
     const sellerProdIds = sellerProducts.map((p) => p._id.toString());
 
