@@ -7,7 +7,7 @@ import Ic from '../components/Icons.jsx';
 export default function SellerLogin() {
   const navigate = useNavigate();
   const { loginSeller } = useAuth();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const urlResetToken = params.get('resetToken') || '';
   const urlEmail = params.get('email') || '';
   const urlAffiliate = (params.get('affiliate') || params.get('ref') || params.get('affiliateCode') || params.get('code') || '').trim();
@@ -20,6 +20,25 @@ export default function SellerLogin() {
       setMode('register');
     }
   }, [urlMode, urlAffiliate]);
+
+  // The address follows the tab: "Create account" is /seller/login?mode=register, so a reload
+  // (or a link someone shares) opens the same tab. It used to fall back to Sign in on reload.
+  useEffect(() => {
+    if (mode !== 'login' && mode !== 'register') return;
+    const next = new URLSearchParams(params);
+    if (mode === 'register') next.set('mode', 'register');
+    else next.delete('mode');
+    next.delete('tab');
+    if (next.toString() !== params.toString()) setParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
+  const switchMode = (m) => {
+    setMode(m);
+    setErr('');
+    setIsPendingApprovalErr(false);
+    try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
+  };
 
   // Registration Submitted State
   const [submittedInfo, setSubmittedInfo] = useState(null);
@@ -362,708 +381,293 @@ export default function SellerLogin() {
     }
   };
 
+  const DOCS = [
+    { field: 'aadhaarFront', label: 'Aadhaar card', side: 'Front' },
+    { field: 'aadhaarBack', label: 'Aadhaar card', side: 'Back' },
+    { field: 'panFront', label: 'PAN card', side: 'Front' },
+    { field: 'panBack', label: 'PAN card', side: 'Back' },
+  ];
+  const docsDone = DOCS.filter((d) => regForm[d.field]).length;
+  const isReg = mode === 'register';
+
   return (
-    <div className="auth-page">
-      <div className="card auth-card" style={{ maxWidth: mode === 'register' ? 560 : mode === 'submitted' ? 500 : 440 }}>
-        {/* Brand & Badge */}
-        <div className="seller-auth-brand">
-          <div className="amazon-logo-seller">
-            <span className="brand-prime" style={{ fontWeight: 900, letterSpacing: '-1px', color: '#0f172a' }}>Bazario</span>
-            <span className="brand-hub" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}>Seller Hub</span>
-          </div>
-          <p className="seller-auth-sub">Manage your products, orders, payouts &amp; store growth</p>
+    <div className="sl">
+      {/* ── Left: what selling on Bazario means (desktop) ── */}
+      <aside className="sl-side">
+        <Link to="/" className="sl-brand">
+          <span className="sl-logo">B</span>
+          <span><b>Bazario</b> <em>Seller Hub</em></span>
+        </Link>
+
+        <div className="sl-side-body">
+          <h1>{isReg ? 'Start selling on Bazario' : 'Welcome back to your store'}</h1>
+          <p>{isReg ? 'Open your online store in a few minutes. We hold the stock and deliver every order — you choose the products and earn on each sale.' : 'Sign in to manage your products, confirm orders and follow your earnings.'}</p>
+
+          <ul className="sl-perks">
+            <li><span><Ic name="sparkle" size={16} /></span><div><b>No stock to buy</b><small>Pick ready products from the Product Treasury.</small></div></li>
+            <li><span><Ic name="truck" size={16} /></span><div><b>We pack and deliver</b><small>Bazario ships every order to your customers.</small></div></li>
+            <li><span><Ic name="wallet" size={16} /></span><div><b>Earn on every order</b><small>20% profit per order — 35% on the Diamond plan.</small></div></li>
+          </ul>
+
+          <ol className="sl-steps">
+            <li><i>1</i><span>Create your seller account</span></li>
+            <li><i>2</i><span>We verify your documents</span></li>
+            <li><i>3</i><span>Add products and start selling</span></li>
+          </ol>
         </div>
 
-        {/* Role / Portal Switcher Tabs */}
-        <div className="login-portal-tabs">
-          <Link to="/login" className="portal-tab">
-            <Ic name="user" size={15} /> Customer
-          </Link>
-          <Link to="/seller/login" className="portal-tab active">
-            <Ic name="tag" size={15} /> Seller Hub
-          </Link>
-          <Link to="/admin/login" className="portal-tab">
-            <Ic name="shield" size={15} /> Super Admin
-          </Link>
-        </div>
+        <Link to="/login" className="sl-side-foot">Shopping on Bazario? <b>Customer sign in</b> <Ic name="arrowRight" size={14} /></Link>
+      </aside>
 
-        {/* Login / Register Toggle */}
-        <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: 8, padding: 3, marginBottom: 16 }}>
-          <button
-            type="button"
-            onClick={() => { setMode('login'); setErr(''); setIsPendingApprovalErr(false); }}
-            style={{
-              flex: 1,
-              padding: '8px 12px',
-              border: 'none',
-              borderRadius: 6,
-              fontSize: 13,
-              fontWeight: 800,
-              cursor: 'pointer',
-              background: mode === 'login' ? '#ffffff' : 'transparent',
-              color: mode === 'login' ? '#0f172a' : '#64748b',
-              boxShadow: mode === 'login' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-            }}
-          >
-            🔑 Merchant Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => { setMode('register'); setErr(''); setIsPendingApprovalErr(false); }}
-            style={{
-              flex: 1,
-              padding: '8px 12px',
-              border: 'none',
-              borderRadius: 6,
-              fontSize: 13,
-              fontWeight: 800,
-              cursor: 'pointer',
-              background: mode === 'register' ? '#ffffff' : 'transparent',
-              color: mode === 'register' ? '#0f172a' : '#64748b',
-              boxShadow: mode === 'register' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-            }}
-          >
-            📝 Register as Seller
-          </button>
-          {mode === 'submitted' && (
-            <button
-              type="button"
-              style={{
-                flex: 1,
-                padding: '8px 12px',
-                border: 'none',
-                borderRadius: 6,
-                fontSize: 13,
-                fontWeight: 800,
-                cursor: 'default',
-                background: '#ffffff',
-                color: '#b45309',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-              }}
-            >
-              ⏳ Review Status
-            </button>
+      {/* ── Right: the form ── */}
+      <main className="sl-main">
+        <div className={`sl-card ${isReg ? 'wide' : ''}`}>
+          <Link to="/" className="sl-brand sl-brand-m">
+            <span className="sl-logo">B</span>
+            <span><b>Bazario</b> <em>Seller Hub</em></span>
+          </Link>
+
+          {mode !== 'submitted' && (
+            <>
+              <div className="sl-head">
+                <h2>{isReg ? 'Create your seller account' : 'Seller sign in'}</h2>
+                <p>{isReg ? 'Takes about 3 minutes. Keep your Aadhaar and PAN card ready.' : 'Use the email and password of your store.'}</p>
+              </div>
+              <div className="sl-seg" role="tablist">
+                <button type="button" role="tab" aria-selected={!isReg} className={!isReg ? 'on' : ''} onClick={() => switchMode('login')}>Sign in</button>
+                <button type="button" role="tab" aria-selected={isReg} className={isReg ? 'on' : ''} onClick={() => switchMode('register')}>Create account</button>
+              </div>
+            </>
           )}
-        </div>
 
-        {/* Pending Approval Error Notice when attempting to log in */}
-        {isPendingApprovalErr && (
-          <div style={{
-            background: '#fffbeb',
-            border: '1.5px solid #fde68a',
-            borderRadius: 8,
-            padding: '14px 16px',
-            marginBottom: 16,
-            color: '#92400e',
-            textAlign: 'left',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-              <span style={{ fontSize: 22 }}>⏳</span>
+          {isPendingApprovalErr && (
+            <div className="sl-alert warn">
+              <Ic name="clock" size={18} />
               <div>
-                <b style={{ display: 'block', fontSize: 13.5, marginBottom: 4, color: '#b45309' }}>
-                  Account Under Review
-                </b>
-                <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: '#78350f' }}>
-                  Your merchant application is currently pending review and verification by the Super Admin team. Direct sign-in is not active yet. Once the Platform Admin approves your account, you will be able to log in.
-                </p>
+                <b>Your application is under review</b>
+                <p>Sign in opens as soon as our team approves your store. You will be able to sign in here with the same email and password.</p>
               </div>
             </div>
-          </div>
-        )}
+          )}
+          {successMsg && !isPendingApprovalErr && mode !== 'submitted' && (
+            <div className="sl-alert ok"><Ic name="checkCircle" size={18} /><div><p>{successMsg}</p></div></div>
+          )}
+          {err && !isPendingApprovalErr && (
+            <div className="sl-alert err"><Ic name="alert" size={18} /><div><p>{err}</p></div></div>
+          )}
 
-        {successMsg && !isPendingApprovalErr && mode !== 'submitted' && (
-          <div className="alert-success" style={{ marginBottom: 16 }}>
-            <Ic name="checkCircle" size={16} />
-            <span>{successMsg}</span>
-          </div>
-        )}
-
-        {err && !isPendingApprovalErr && (
-          <div className="alert-error" style={{ marginBottom: 16 }}>
-            <Ic name="shield" size={16} />
-            <span>{err}</span>
-          </div>
-        )}
-
-        {mode === 'submitted' ? (
-          <div className="seller-submitted-view" style={{ textAlign: 'center', padding: '6px 2px' }}>
-            <div style={{
-              width: 68,
-              height: 68,
-              borderRadius: '50%',
-              background: '#fef3c7',
-              color: '#d97706',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 34,
-              margin: '0 auto 16px',
-              border: '2px solid #fde68a',
-              boxShadow: '0 4px 14px rgba(217, 119, 6, 0.15)',
-            }}>
-              📋
-            </div>
-
-            <h3 style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', marginBottom: 6 }}>
-              {submittedInfo?.already ? 'Application Already Submitted' : 'Application Successfully Submitted!'}
-            </h3>
-            <p style={{ fontSize: 13.5, color: '#64748b', marginBottom: 18, lineHeight: 1.5 }}>
-              {submittedInfo?.already
-                ? `You have already applied with this email${submittedInfo.submittedOn ? ` on ${submittedInfo.submittedOn}` : ''}. Your application was received and is waiting for admin approval — there is no need to register again.`
-                : 'Your merchant registration request has been forwarded to the Super Admin team.'}
-            </p>
-
-            {/* Crucial Notice: Direct Sign-in Not Active */}
-            <div style={{
-              background: '#fffbeb',
-              border: '1.5px solid #fde68a',
-              borderRadius: 10,
-              padding: '14px 16px',
-              textAlign: 'left',
-              marginBottom: 18,
-            }}>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                <span style={{ fontSize: 22 }}>⚠️</span>
-                <div>
-                  <b style={{ color: '#b45309', fontSize: 13.5, display: 'block', marginBottom: 4 }}>
-                    Direct Sign-In Is Not Active Yet!
-                  </b>
-                  <p style={{ margin: 0, fontSize: 12.5, color: '#78350f', lineHeight: 1.5 }}>
-                    Your account is currently under <b>Review &amp; Verification</b>. The Platform Admin will review your KYC documents (Aadhaar Card Front &amp; Back, PAN Card Front &amp; Back). Once approved, your account will be activated and you will be able to sign in using your registered business email and password.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Application Summary Box */}
-            {submittedInfo && (
-              <div style={{
-                background: '#f8fafc',
-                border: '1px solid #e2e8f0',
-                borderRadius: 10,
-                padding: '14px 16px',
-                textAlign: 'left',
-                marginBottom: 18,
-                fontSize: 13,
-              }}>
-                <div style={{ fontWeight: 800, color: '#334155', marginBottom: 10, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  📑 Registration Details
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, color: '#475569', fontSize: 12.5 }}>
-                  <div><b>Store Name:</b> <span style={{ color: '#0f172a', fontWeight: 600 }}>{submittedInfo.storeName}</span></div>
-                  <div><b>Owner:</b> <span style={{ color: '#0f172a', fontWeight: 600 }}>{submittedInfo.ownerName}</span></div>
-                  <div style={{ gridColumn: 'span 2' }}><b>Email:</b> <span style={{ color: '#0f172a', fontWeight: 600 }}>{submittedInfo.email}</span></div>
-                  <div style={{ gridColumn: 'span 2', marginTop: 4 }}>
-                    <b>Current Status:</b>{' '}
-                    <span style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      background: '#fef3c7',
-                      color: '#b45309',
-                      padding: '3px 10px',
-                      borderRadius: 12,
-                      fontWeight: 800,
-                      fontSize: 11.5,
-                      border: '1px solid #fde68a',
-                    }}>
-                      ⏳ Under Review (Pending Admin Approval)
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Next Steps Guide */}
-            <div style={{
-              background: '#f0fdf4',
-              border: '1px solid #bbf7d0',
-              borderRadius: 10,
-              padding: '12px 14px',
-              textAlign: 'left',
-              marginBottom: 20,
-              fontSize: 12.5,
-              color: '#166534',
-            }}>
-              <b style={{ display: 'block', marginBottom: 4 }}>✨ What Happens Next?</b>
-              <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.5 }}>
-                <li>Compliance team will verify your KYC documents.</li>
-                <li>Your account will be activated once approved by the Super Admin.</li>
-                <li>After approval, you can sign in directly through this portal.</li>
-              </ul>
-            </div>
-
-            {/* Action Buttons */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <button
-                type="button"
-                className="btn-primary btn-block"
-                style={{ padding: '12px', fontSize: 13.5, fontWeight: 800 }}
-                onClick={() => {
-                  setMode('login');
-                  setErr('');
-                  setIsPendingApprovalErr(false);
-                }}
-              >
-                Go to Sign In Portal →
-              </button>
-              <button
-                type="button"
-                className="btn-outline btn-block"
-                style={{ padding: '10px', fontSize: 13 }}
-                onClick={() => {
-                  setMode('register');
-                  setErr('');
-                  setIsPendingApprovalErr(false);
-                }}
-              >
-                Submit Another Application
-              </button>
-            </div>
-          </div>
-        ) : mode === 'login' ? (
-          <form onSubmit={submit} className="auth-form-clean">
-            <div className="field">
-              <label>Business Email Address</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="seller@yourstore.com"
-                required
-                autoFocus
-                autoComplete="email"
-              />
-            </div>
-
-            <div className="field">
-              <label style={{ marginBottom: 4 }}>Password</label>
-              <div className="pw-wrap" style={{ position: 'relative' }}>
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  autoComplete="current-password"
-                  style={{ paddingRight: 40 }}
-                />
-                <button
-                  type="button"
-                  className="pw-eye"
-                  onClick={() => setShowPassword(!showPassword)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  <Ic name="eye" size={16} />
-                </button>
-              </div>
-            </div>
-
-            <button type="submit" className="btn-primary btn-block btn-auth-submit" disabled={loading}>
-              {loading ? 'Signing in…' : 'SIGN IN TO SELLER CENTRAL →'}
-            </button>
-
-            {/* Customer Support Password Reset Guidance */}
-            <div style={{ marginTop: 14, padding: '10px 14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12, color: '#64748b', textAlign: 'center', lineHeight: 1.45 }}>
-              🔒 <b>Forgot password?</b> Please contact <b>Customer Support</b>. Our team will verify your merchant account and reset your password for you.
-            </div>
-          </form>
-        ) : (
-          <form onSubmit={handleRegister} className="auth-form-clean">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div className="field">
-                <label>Store / Business Name *</label>
-                <input
-                  type="text"
-                  value={regForm.storeName}
-                  onChange={(e) => setRegForm({ ...regForm, storeName: e.target.value })}
-                  placeholder="e.g. Apex Electronics"
-                  required
-                />
-              </div>
-              <div className="field">
-                <label>Owner Full Name *</label>
-                <input
-                  type="text"
-                  value={regForm.ownerName}
-                  onChange={(e) => setRegForm({ ...regForm, ownerName: e.target.value })}
-                  placeholder="e.g. John Doe"
-                  required
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div className="field">
-                <label>Business Email *</label>
-                <input
-                  type="email"
-                  value={regForm.email}
-                  onChange={(e) => {
-                    setRegForm({ ...regForm, email: e.target.value });
-                    if (emailNotice) setEmailNotice(null);
-                  }}
-                  onBlur={onRegEmailBlur}
-                  placeholder="owner@domain.com"
-                  required
-                />
-                {emailNotice && (
-                  <div
-                    style={{
-                      marginTop: 6,
-                      padding: '9px 11px',
-                      borderRadius: 8,
-                      fontSize: 12,
-                      lineHeight: 1.45,
-                      background: emailNotice.code === 'APPLICATION_REJECTED' ? '#fef2f2' : '#fffbeb',
-                      border: `1px solid ${emailNotice.code === 'APPLICATION_REJECTED' ? '#fecaca' : '#fde68a'}`,
-                      color: emailNotice.code === 'APPLICATION_REJECTED' ? '#991b1b' : '#92400e',
-                    }}
-                  >
-                    {emailNotice.message}
-                    {emailNotice.code === 'APPLICATION_PENDING' && (
-                      <button
-                        type="button"
-                        onClick={() => showAlreadyApplied(emailNotice, regForm.email)}
-                        style={{ display: 'block', marginTop: 6, background: 'none', border: 'none', padding: 0, color: '#b45309', fontWeight: 800, textDecoration: 'underline', cursor: 'pointer', fontSize: 12 }}
-                      >
-                        See my application status →
-                      </button>
-                    )}
-                    {emailNotice.code === 'ALREADY_REGISTERED' && (
-                      <button
-                        type="button"
-                        onClick={() => { setEmail(regForm.email); setMode('login'); setEmailNotice(null); setErr(''); }}
-                        style={{ display: 'block', marginTop: 6, background: 'none', border: 'none', padding: 0, color: '#b45309', fontWeight: 800, textDecoration: 'underline', cursor: 'pointer', fontSize: 12 }}
-                      >
-                        Go to Sign In →
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="field">
-                <label>Phone / WhatsApp *</label>
-                <input
-                  type="text"
-                  value={regForm.phone}
-                  onChange={(e) => setRegForm({ ...regForm, phone: e.target.value })}
-                  placeholder=""
-                  required
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <div className="field">
-                <label>Account Password *</label>
-                <input
-                  type="password"
-                  value={regForm.password}
-                  onChange={(e) => setRegForm({ ...regForm, password: e.target.value })}
-                  placeholder="Min 6 characters"
-                  minLength={6}
-                  required
-                />
-              </div>
-              <div className="field">
-                <label>Admin Affiliate Code (Optional)</label>
-                <input
-                  type="text"
-                  value={regForm.referralCode}
-                  onChange={(e) => setRegForm({ ...regForm, referralCode: e.target.value.replace(/\s+/g, '').toUpperCase() })}
-                  placeholder="e.g. BAZARIO2026"
-                  maxLength={32}
-                  aria-invalid={affCheck.state === 'invalid'}
-                  style={{
-                    borderColor: affCheck.state === 'valid' ? '#16a34a' : affCheck.state === 'invalid' ? '#dc2626' : undefined,
-                    boxShadow: affCheck.state === 'valid' ? '0 0 0 3px rgba(22,163,74,.12)' : affCheck.state === 'invalid' ? '0 0 0 3px rgba(220,38,38,.12)' : undefined,
-                  }}
-                />
-                {affCheck.state !== 'idle' && (
-                  <small
-                    role="status"
-                    style={{
-                      display: 'block',
-                      marginTop: 4,
-                      fontSize: 11.5,
-                      fontWeight: 700,
-                      color: affCheck.state === 'valid' ? '#15803d' : affCheck.state === 'invalid' ? '#b91c1c' : '#64748b',
-                    }}
-                  >
-                    {affCheck.state === 'checking' ? 'Checking code…' : affCheck.state === 'valid' ? '✓ ' + affCheck.message : affCheck.state === 'invalid' ? '✕ ' + affCheck.message : affCheck.message}
-                  </small>
-                )}
-              </div>
-            </div>
-
-            {/* Mandatory KYC Documents Upload: Aadhaar Card & PAN Card (Front & Back) */}
-            <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
-                <b style={{ fontSize: 13, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span>🪪</span> Merchant KYC Documents (Aadhaar &amp; PAN Card)
-                </b>
-                <span style={{ fontSize: 10.5, fontWeight: 800, background: '#eff6ff', color: '#1d4ed8', padding: '2px 8px', borderRadius: 999, border: '1px solid #bfdbfe' }}>
-                  Front &amp; Back Required
-                </span>
-              </div>
-              <p style={{ margin: '0 0 12px', fontSize: 11.5, color: '#64748b', lineHeight: 1.4 }}>
-                Please upload clear photos or scans of your Aadhaar Card (Front &amp; Back) and PAN Card (Front &amp; Back) for verification.
+          {mode === 'submitted' ? (
+            <div className="sl-done">
+              <span className="sl-done-ico"><Ic name="checkCircle" size={30} /></span>
+              <h2>{submittedInfo?.already ? 'You have already applied' : 'Application received!'}</h2>
+              <p>
+                {submittedInfo?.already
+                  ? `An application with this email${submittedInfo.submittedOn ? ` was sent on ${submittedInfo.submittedOn}` : ' already exists'} and is waiting for approval.`
+                  : 'Thank you. Our team will check your details and documents.'}
               </p>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                {/* 1. Aadhaar Card Front */}
-                <div style={{ background: '#ffffff', border: '1.5px dashed #cbd5e1', borderRadius: 8, padding: '10px 12px' }}>
-                  <label style={{ fontSize: 11.5, color: '#1e293b', display: 'block', marginBottom: 4, fontWeight: 800 }}>
-                    1. Aadhaar Card (Front) *
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={handleFileUpload('aadhaarFront')}
-                    style={{ fontSize: 11, width: '100%' }}
-                    required
-                  />
-                  {preparing === 'aadhaarFront' && (
-                    <small style={{ color: '#64748b', display: 'block', fontWeight: 700, marginTop: 4 }}>⏳ Preparing photo…</small>
-                  )}
-                  {regForm.aadhaarFront && preparing !== 'aadhaarFront' && (
-                    <small style={{ color: '#16a34a', display: 'block', fontWeight: 800, marginTop: 4 }}>
-                      ✓ Front Attached
-                    </small>
-                  )}
-                </div>
+              {submittedInfo && (
+                <dl className="sl-summary">
+                  <div><dt>Store</dt><dd>{submittedInfo.storeName || '—'}</dd></div>
+                  <div><dt>Owner</dt><dd>{submittedInfo.ownerName || '—'}</dd></div>
+                  <div className="full"><dt>Email</dt><dd>{submittedInfo.email}</dd></div>
+                  <div className="full"><dt>Status</dt><dd><span className="sl-pill">Under review</span></dd></div>
+                </dl>
+              )}
 
-                {/* 2. Aadhaar Card Back */}
-                <div style={{ background: '#ffffff', border: '1.5px dashed #cbd5e1', borderRadius: 8, padding: '10px 12px' }}>
-                  <label style={{ fontSize: 11.5, color: '#1e293b', display: 'block', marginBottom: 4, fontWeight: 800 }}>
-                    2. Aadhaar Card (Back) *
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={handleFileUpload('aadhaarBack')}
-                    style={{ fontSize: 11, width: '100%' }}
-                    required
-                  />
-                  {preparing === 'aadhaarBack' && (
-                    <small style={{ color: '#64748b', display: 'block', fontWeight: 700, marginTop: 4 }}>⏳ Preparing photo…</small>
-                  )}
-                  {regForm.aadhaarBack && preparing !== 'aadhaarBack' && (
-                    <small style={{ color: '#16a34a', display: 'block', fontWeight: 800, marginTop: 4 }}>
-                      ✓ Back Attached
-                    </small>
-                  )}
-                </div>
+              <ol className="sl-next">
+                <li className="done"><i><Ic name="check" size={12} /></i><span>Application sent</span></li>
+                <li className="now"><i>2</i><span>Document check by our team</span></li>
+                <li><i>3</i><span>Store approved — sign in and start selling</span></li>
+              </ol>
+              <p className="sl-fine">You cannot sign in until the store is approved. Please do not register again with the same email.</p>
 
-                {/* 3. PAN Card Front */}
-                <div style={{ background: '#ffffff', border: '1.5px dashed #cbd5e1', borderRadius: 8, padding: '10px 12px' }}>
-                  <label style={{ fontSize: 11.5, color: '#1e293b', display: 'block', marginBottom: 4, fontWeight: 800 }}>
-                    3. PAN Card (Front) *
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={handleFileUpload('panFront')}
-                    style={{ fontSize: 11, width: '100%' }}
-                    required
-                  />
-                  {preparing === 'panFront' && (
-                    <small style={{ color: '#64748b', display: 'block', fontWeight: 700, marginTop: 4 }}>⏳ Preparing photo…</small>
-                  )}
-                  {regForm.panFront && preparing !== 'panFront' && (
-                    <small style={{ color: '#16a34a', display: 'block', fontWeight: 800, marginTop: 4 }}>
-                      ✓ Front Attached
-                    </small>
-                  )}
-                </div>
-
-                {/* 4. PAN Card Back */}
-                <div style={{ background: '#ffffff', border: '1.5px dashed #cbd5e1', borderRadius: 8, padding: '10px 12px' }}>
-                  <label style={{ fontSize: 11.5, color: '#1e293b', display: 'block', marginBottom: 4, fontWeight: 800 }}>
-                    4. PAN Card (Back) *
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={handleFileUpload('panBack')}
-                    style={{ fontSize: 11, width: '100%' }}
-                    required
-                  />
-                  {preparing === 'panBack' && (
-                    <small style={{ color: '#64748b', display: 'block', fontWeight: 700, marginTop: 4 }}>⏳ Preparing photo…</small>
-                  )}
-                  {regForm.panBack && preparing !== 'panBack' && (
-                    <small style={{ color: '#16a34a', display: 'block', fontWeight: 800, marginTop: 4 }}>
-                      ✓ Back Attached
-                    </small>
-                  )}
-                </div>
-              </div>
+              <button type="button" className="sl-btn primary" onClick={() => switchMode('login')}>Go to sign in</button>
+              <button type="button" className="sl-btn ghost" onClick={() => switchMode('register')}>Register a different store</button>
             </div>
+          ) : !isReg ? (
+            <form onSubmit={submit} className="sl-form">
+              <label className="sl-field">
+                <span>Email</span>
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@yourstore.com" required autoFocus autoComplete="email" />
+              </label>
+              <label className="sl-field">
+                <span>Password</span>
+                <div className="sl-pw">
+                  <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Your password" required autoComplete="current-password" />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'}><Ic name="eye" size={17} /></button>
+                </div>
+              </label>
+              <button type="submit" className="sl-btn primary" disabled={loading}>{loading ? 'Signing in…' : 'Sign in'}</button>
+              <p className="sl-fine center">Forgot your password? Contact Bazario support and we will reset it for you.</p>
 
-            <button type="submit" className="btn-primary btn-block btn-auth-submit" disabled={loading || !!preparing}>
-              {loading ? 'Uploading documents… please keep this page open' : preparing ? 'Preparing photos…' : 'SUBMIT SELLER REGISTRATION →'}
-            </button>
-          </form>
-        )}
-
-        <div className="auth-links" style={{ justifyContent: 'center', marginTop: 16, textAlign: 'center' }}>
-          <span style={{ fontSize: 12.5, color: '#64748b', lineHeight: 1.4 }}>
-            Questions about onboarding? Chat with our 24/7 Support.
-          </span>
-        </div>
-
-        {/* Compact Quick Portal Links */}
-        <div className="auth-quick-portals">
-          <span className="aqp-label">Looking for other portals?</span>
-          <div className="aqp-links">
-            <Link to="/login" className="aqp-pill customer-pill">
-              <Ic name="user" size={13} /> Customer Sign In
-            </Link>
-            <Link to="/admin/login" className="aqp-pill admin-pill">
-              <Ic name="shield" size={13} /> Super Admin
-            </Link>
-          </div>
-        </div>
-      </div>
-
-      {/* Interactive Seller Password Recovery Modal */}
-      {forgotModalOpen && (
-        <div className="seller-modal-overlay" onClick={() => setForgotModalOpen(false)} style={{ zIndex: 9999 }}>
-          <div className="seller-modal-box" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460, padding: '24px 26px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, paddingBottom: 12, borderBottom: '1.5px solid #f1f5f9' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 22 }}>🔑</span>
-                <h3 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: '#0f172a' }}>
-                  {forgotStep === 'request' ? 'Seller Password Recovery' : 'Set New Seller Password'}
-                </h3>
+              <div className="sl-switch">
+                <span>New to Bazario?</span>
+                <button type="button" onClick={() => switchMode('register')}>Create a seller account <Ic name="arrowRight" size={14} /></button>
               </div>
-              <button
-                type="button"
-                onClick={() => setForgotModalOpen(false)}
-                style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: 4 }}
-              >
-                <Ic name="x" size={18} />
+            </form>
+          ) : (
+            <form onSubmit={handleRegister} className="sl-form">
+              <section className="sl-sec">
+                <h3><i>1</i> Your store</h3>
+                <div className="sl-grid">
+                  <label className="sl-field">
+                    <span>Store name</span>
+                    <input type="text" value={regForm.storeName} onChange={(e) => setRegForm({ ...regForm, storeName: e.target.value })} placeholder="e.g. Apex Electronics" required />
+                  </label>
+                  <label className="sl-field">
+                    <span>Owner full name</span>
+                    <input type="text" value={regForm.ownerName} onChange={(e) => setRegForm({ ...regForm, ownerName: e.target.value })} placeholder="As on your Aadhaar card" required />
+                  </label>
+                </div>
+              </section>
+
+              <section className="sl-sec">
+                <h3><i>2</i> Your account</h3>
+                <div className="sl-grid">
+                  <label className="sl-field">
+                    <span>Email</span>
+                    <input
+                      type="email"
+                      value={regForm.email}
+                      onChange={(e) => {
+                        setRegForm({ ...regForm, email: e.target.value });
+                        if (emailNotice) setEmailNotice(null);
+                      }}
+                      onBlur={onRegEmailBlur}
+                      placeholder="you@email.com"
+                      required
+                    />
+                  </label>
+                  <label className="sl-field">
+                    <span>Phone / WhatsApp</span>
+                    <input type="tel" value={regForm.phone} onChange={(e) => setRegForm({ ...regForm, phone: e.target.value })} placeholder="+91 98765 43210" required />
+                  </label>
+                </div>
+                {emailNotice && (
+                  <div className={`sl-alert ${emailNotice.code === 'APPLICATION_REJECTED' ? 'err' : 'warn'} tight`}>
+                    <Ic name="alert" size={16} />
+                    <div>
+                      <p>{emailNotice.message}</p>
+                      {emailNotice.code === 'APPLICATION_PENDING' && (
+                        <button type="button" className="sl-link" onClick={() => showAlreadyApplied(emailNotice, regForm.email)}>See my application status</button>
+                      )}
+                      {emailNotice.code === 'ALREADY_REGISTERED' && (
+                        <button type="button" className="sl-link" onClick={() => { setEmail(regForm.email); setMode('login'); setEmailNotice(null); setErr(''); }}>Go to sign in</button>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <div className="sl-grid">
+                  <label className="sl-field">
+                    <span>Create a password</span>
+                    <input type="password" value={regForm.password} onChange={(e) => setRegForm({ ...regForm, password: e.target.value })} placeholder="At least 6 characters" minLength={6} required autoComplete="new-password" />
+                  </label>
+                  <label className="sl-field">
+                    <span>Affiliate code <em>(optional)</em></span>
+                    <input
+                      type="text"
+                      className={affCheck.state === 'valid' ? 'is-ok' : affCheck.state === 'invalid' ? 'is-bad' : ''}
+                      value={regForm.referralCode}
+                      onChange={(e) => setRegForm({ ...regForm, referralCode: e.target.value.replace(/\s+/g, '').toUpperCase() })}
+                      placeholder="If someone gave you a code"
+                      maxLength={32}
+                      aria-invalid={affCheck.state === 'invalid'}
+                    />
+                    {affCheck.state !== 'idle' && (
+                      <small role="status" className={affCheck.state === 'valid' ? 't-ok' : affCheck.state === 'invalid' ? 't-bad' : ''}>
+                        {affCheck.state === 'checking' ? 'Checking code…' : affCheck.state === 'valid' ? `✓ ${affCheck.message}` : affCheck.state === 'invalid' ? `✕ ${affCheck.message}` : affCheck.message}
+                      </small>
+                    )}
+                  </label>
+                </div>
+              </section>
+
+              <section className="sl-sec">
+                <h3><i>3</i> Identity documents <span className="sl-count">{docsDone}/4</span></h3>
+                <p className="sl-fine">Clear photos of both sides of your Aadhaar and PAN card. Only our verification team sees them.</p>
+                <div className="sl-docs">
+                  {DOCS.map((d) => {
+                    const has = Boolean(regForm[d.field]);
+                    const busy = preparing === d.field;
+                    return (
+                      <label key={d.field} className={`sl-doc ${has ? 'has' : ''} ${busy ? 'busy' : ''}`}>
+                        <input type="file" accept="image/*,.pdf" onChange={handleFileUpload(d.field)} required={!has} />
+                        <span className="sl-doc-ico">{has ? <Ic name="check" size={18} /> : <Ic name="image" size={18} />}</span>
+                        <span className="sl-doc-txt">
+                          <b>{d.label}</b>
+                          <small>{busy ? 'Preparing photo…' : has ? `${d.side} added · tap to change` : `${d.side} side · tap to upload`}</small>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <button type="submit" className="sl-btn primary" disabled={loading || !!preparing}>
+                {loading ? 'Sending… please keep this page open' : preparing ? 'Preparing photos…' : 'Submit application'}
               </button>
+              <p className="sl-fine center">After you submit, our team checks your details. You can sign in once your store is approved.</p>
+
+              <div className="sl-switch">
+                <span>Already have a seller account?</span>
+                <button type="button" onClick={() => switchMode('login')}>Sign in <Ic name="arrowRight" size={14} /></button>
+              </div>
+            </form>
+          )}
+        </div>
+        <Link to="/login" className="sl-cust-m">Shopping on Bazario? <b>Customer sign in</b></Link>
+      </main>
+
+      {/* Password reset (opened from the reset email link) */}
+      {forgotModalOpen && (
+        <div className="sl-modal-root" onClick={() => setForgotModalOpen(false)}>
+          <div className="sl-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="sl-modal-head">
+              <h3>{forgotStep === 'request' ? 'Reset your password' : 'Set a new password'}</h3>
+              <button type="button" onClick={() => setForgotModalOpen(false)} aria-label="Close"><Ic name="x" size={18} /></button>
             </div>
-
-            {forgotErr && (
-              <div className="alert-error" style={{ marginBottom: 14 }}>
-                <Ic name="shield" size={15} />
-                <span>{forgotErr}</span>
-              </div>
-            )}
-
-            {forgotSuccess && (
-              <div className="alert-success" style={{ marginBottom: 14 }}>
-                <Ic name="checkCircle" size={15} />
-                <span>{forgotSuccess}</span>
-              </div>
-            )}
-
+            {forgotErr && <div className="sl-alert err tight"><Ic name="alert" size={16} /><div><p>{forgotErr}</p></div></div>}
+            {forgotSuccess && <div className="sl-alert ok tight"><Ic name="checkCircle" size={16} /><div><p>{forgotSuccess}</p></div></div>}
             {forgotStep === 'request' ? (
-              <form onSubmit={handleSendRecoveryEmail} className="auth-form-clean">
-                <p style={{ fontSize: 13, color: '#475569', marginTop: 0, lineHeight: 1.5 }}>
-                  Enter your registered business email address. We will send a secure 6-digit recovery code and reset link.
-                </p>
-                <div className="field">
-                  <label>Business Email Address *</label>
-                  <input
-                    type="email"
-                    value={forgotEmail}
-                    onChange={(e) => setForgotEmail(e.target.value)}
-                    placeholder="seller@yourstore.com"
-                    required
-                    autoFocus
-                  />
-                </div>
-                <button type="submit" className="btn-primary btn-block btn-auth-submit" disabled={forgotBusy}>
-                  {forgotBusy ? 'Sending Recovery Email…' : 'SEND 6-DIGIT RECOVERY CODE →'}
-                </button>
-                <div style={{ textAlign: 'center', marginTop: 12 }}>
-                  <button
-                    type="button"
-                    onClick={() => setForgotStep('reset')}
-                    style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
-                  >
-                    Already have a 6-digit code? Click here to reset →
-                  </button>
-                </div>
+              <form onSubmit={handleSendRecoveryEmail} className="sl-form">
+                <p className="sl-fine">Enter the email of your store. We will send you a 6-digit code.</p>
+                <label className="sl-field">
+                  <span>Email</span>
+                  <input type="email" value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} placeholder="you@yourstore.com" required autoFocus />
+                </label>
+                <button type="submit" className="sl-btn primary" disabled={forgotBusy}>{forgotBusy ? 'Sending…' : 'Send code'}</button>
+                <button type="button" className="sl-link center" onClick={() => setForgotStep('reset')}>I already have a code</button>
               </form>
             ) : (
-              <form onSubmit={handleResetPasswordSubmit} className="auth-form-clean">
+              <form onSubmit={handleResetPasswordSubmit} className="sl-form">
                 {!urlResetToken && (
                   <>
-                    <div className="field">
-                      <label>Business Email Address *</label>
-                      <input
-                        type="email"
-                        value={forgotEmail}
-                        onChange={(e) => setForgotEmail(e.target.value)}
-                        placeholder="seller@yourstore.com"
-                        required
-                      />
-                    </div>
-                    <div className="field">
-                      <label>6-Digit Verification Code (From Email) *</label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={6}
-                        value={forgotOtp}
-                        onChange={(e) => setForgotOtp(e.target.value)}
-                        placeholder="e.g. 849201"
-                        required
-                        autoFocus
-                      />
-                    </div>
+                    <label className="sl-field">
+                      <span>Email</span>
+                      <input type="email" value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} placeholder="you@yourstore.com" required />
+                    </label>
+                    <label className="sl-field">
+                      <span>6-digit code from the email</span>
+                      <input type="text" inputMode="numeric" maxLength={6} value={forgotOtp} onChange={(e) => setForgotOtp(e.target.value)} placeholder="e.g. 849201" required autoFocus />
+                    </label>
                   </>
                 )}
-
-                <div className="field">
-                  <label>New Password *</label>
-                  <input
-                    type="password"
-                    value={forgotNewPassword}
-                    onChange={(e) => setForgotNewPassword(e.target.value)}
-                    placeholder="Min 6 characters"
-                    minLength={6}
-                    required
-                  />
-                </div>
-
-                <div className="field">
-                  <label>Confirm New Password *</label>
-                  <input
-                    type="password"
-                    value={forgotConfirmPassword}
-                    onChange={(e) => setForgotConfirmPassword(e.target.value)}
-                    placeholder="Re-enter new password"
-                    minLength={6}
-                    required
-                  />
-                </div>
-
-                <button type="submit" className="btn-primary btn-block btn-auth-submit" disabled={forgotBusy}>
-                  {forgotBusy ? 'Updating Password…' : 'RESET SELLER PASSWORD & SIGN IN →'}
-                </button>
-
-                <div style={{ textAlign: 'center', marginTop: 12 }}>
-                  <button
-                    type="button"
-                    onClick={() => setForgotStep('request')}
-                    style={{ background: 'none', border: 'none', color: '#64748b', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
-                  >
-                    ← Back to request code
-                  </button>
-                </div>
+                <label className="sl-field">
+                  <span>New password</span>
+                  <input type="password" value={forgotNewPassword} onChange={(e) => setForgotNewPassword(e.target.value)} placeholder="At least 6 characters" minLength={6} required />
+                </label>
+                <label className="sl-field">
+                  <span>Repeat new password</span>
+                  <input type="password" value={forgotConfirmPassword} onChange={(e) => setForgotConfirmPassword(e.target.value)} placeholder="Type it again" minLength={6} required />
+                </label>
+                <button type="submit" className="sl-btn primary" disabled={forgotBusy}>{forgotBusy ? 'Saving…' : 'Save new password'}</button>
+                <button type="button" className="sl-link center" onClick={() => setForgotStep('request')}>Back</button>
               </form>
             )}
           </div>
         </div>
       )}
-
     </div>
   );
 }

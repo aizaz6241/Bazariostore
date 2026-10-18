@@ -23,10 +23,7 @@ function AuthShell({ title, sub, children }) {
             <Ic name="user" size={15} /> Customer
           </Link>
           <Link to="/seller/login" className="portal-tab">
-            <Ic name="tag" size={15} /> Seller Hub
-          </Link>
-          <Link to="/admin/login" className="portal-tab">
-            <Ic name="shield" size={15} /> Super Admin
+            <Ic name="tag" size={15} /> Seller
           </Link>
         </div>
 
@@ -136,9 +133,6 @@ export function Login() {
           </Link>
           <Link to="/seller/login" className="aqp-pill seller-pill">
             <Ic name="tag" size={13} /> Seller Hub
-          </Link>
-          <Link to="/admin/login" className="aqp-pill admin-pill">
-            <Ic name="shield" size={13} /> Super Admin
           </Link>
         </div>
       </div>

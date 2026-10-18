@@ -59,7 +59,7 @@ function Hero() {
             <Link to="/shop" className="btn-primary btn-shopnow">
               {hero.button || 'EXPLORE MARKETPLACE DEALS'} <Ic name="arrowRight" size={17} />
             </Link>
-            <Link to="/seller/login" className="btn-outline">
+            <Link to="/seller/login?mode=register" className="btn-outline">
               Sell on Bazario →
             </Link>
           </div>

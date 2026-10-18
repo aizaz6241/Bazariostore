@@ -305,7 +305,6 @@ function Header() {
                   </Link>
                   <Link to="/track-order"><Ic name="truck" size={14} /> Track Orders</Link>
                   <Link to="/seller/login"><Ic name="tag" size={14} /> Seller Central Login</Link>
-                  <Link to="/admin/login"><Ic name="shield" size={14} /> Admin Control Center</Link>
                 </>
               )}
             </div>
