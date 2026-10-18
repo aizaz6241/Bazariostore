@@ -312,7 +312,6 @@ export default function SellerSupport() {
   };
 
   const st = STATUS[conv?.status] || STATUS.open;
-  const agent = conv?.assignedStaffName;
 
   let lastDay = '';
   return (
@@ -337,7 +336,7 @@ export default function SellerSupport() {
               <span className="sp-avatar"><Ic name="headset" size={20} /></span>
               <div>
                 <b>Bazario Support</b>
-                <small>{agent ? `${agent} is helping you` : 'The Bazario team'}</small>
+                <small>The Bazario team</small>
               </div>
             </div>
             <div className="sp-head-right">
@@ -406,7 +405,7 @@ export default function SellerSupport() {
               <div className="sp-pending">
                 <i className="bar" />
                 <div className="sp-pending-txt">
-                  <b>Replying to {replyingTo.sender === 'seller' ? 'yourself' : replyingTo.senderName || 'Support'}</b>
+                  <b>Replying to {replyingTo.sender === 'seller' ? 'yourself' : 'Bazario Support'}</b>
                   <span>{quoteText(replyingTo)}</span>
                 </div>
                 <button type="button" className="sp-icon-btn" onClick={() => setReplyingTo(null)} aria-label="Cancel reply"><Ic name="x" size={15} /></button>

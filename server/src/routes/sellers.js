@@ -9,6 +9,7 @@ import orderRoutes, {
   releaseSellerOrderCancelled,
 } from './sellers/orders.routes.js';
 import refundRoutes from './sellers/refunds.routes.js';
+import onboardingRoutes from './sellers/onboarding.routes.js';
 import couponRoutes from './sellers/coupons.routes.js';
 import shippingRoutes from './sellers/shipping.routes.js';
 import walletRoutes from './sellers/wallet.routes.js';
@@ -26,6 +27,7 @@ router.use(productRoutes);
 router.use(treasuryRoutes);
 router.use(orderRoutes);
 router.use(refundRoutes);
+router.use(onboardingRoutes); // before adminRoutes, whose '/:id' would catch '/onboarding'
 router.use(couponRoutes);
 router.use(shippingRoutes);
 router.use(walletRoutes);

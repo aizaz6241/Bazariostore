@@ -8,6 +8,7 @@ import Ic from '../components/Icons.jsx';
 import SellerAppModal from '../components/SellerAppModal.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 import { getSocket } from '../socket.js';
+import GettingStarted from './onboarding/GettingStarted.jsx';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
 import { getLiveStoreVisitors } from '../utils/liveMetrics.js';
 import SellerCalendar from './dashboard/SellerCalendar.jsx';
@@ -223,6 +224,9 @@ export default function SellerDashboard() {
           <Link to="/seller/support" className="sd-btn sd-btn-ghost"><Ic name="headset" size={15} /> Support</Link>
         </div>
       </header>
+
+      {/* ── First steps for new stores (hides itself when done) ── */}
+      <GettingStarted />
 
       {/* ── Diamond upgrade (Basic stores) ── */}
       {showDiamond && (

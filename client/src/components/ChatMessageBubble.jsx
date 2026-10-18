@@ -60,10 +60,11 @@ export default function ChatMessageBubble({ msg, isMe, myRole = 'seller', onRepl
   const quotedSenderIsMe = msg.replyTo?.sender === (myRole === 'seller' ? 'seller' : 'admin');
   const quotedAuthor = quotedSenderIsMe
     ? 'You'
-    : (msg.replyTo?.senderName || (myRole === 'seller' ? 'Super Admin' : 'Seller'));
+    : myRole === 'seller' ? 'Bazario Support' : (msg.replyTo?.senderName || 'Seller');
 
   // Sender label for incoming messages only
-  const incomingSenderLabel = !isMe ? (msg.senderName || (myRole === 'seller' ? 'Super Admin' : 'Seller Store')) : null;
+  // a store never sees which admin wrote: every team message shows as Bazario Support
+  const incomingSenderLabel = !isMe ? (myRole === 'seller' ? (msg.isAutoReply ? 'Bazario Support (auto-reply)' : 'Bazario Support') : (msg.senderName || 'Seller Store')) : null;
 
   return (
     <div

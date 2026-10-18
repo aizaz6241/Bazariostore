@@ -12,6 +12,7 @@ import { useCurrency } from '../context/CurrencyContext.jsx';
 import { playNotificationSound } from '../utils/audio.js';
 import { enablePush, pushState } from '../utils/push.js';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
+import { TourProvider, HelpButton } from './onboarding/TourProvider.jsx';
 
 const SELLER_NAV = [
   { to: '/seller', icon: 'grid', label: 'Dashboard', end: true },
@@ -274,6 +275,7 @@ export default function SellerLayout() {
   const statusText = { frozen: 'Frozen', suspended: 'Suspended', pending_approval: 'Under review', rejected: 'Rejected' }[statusKey] || 'Active';
 
   return (
+    <TourProvider seller={seller}>
     <div className="seller-portal-layout">
       {/* Mobile Backdrop */}
       {mobileSidebarOpen && (
@@ -336,7 +338,7 @@ export default function SellerLayout() {
         </div>
 
         {/* Navigation Menu */}
-        <nav className="seller-nav">
+        <nav className="seller-nav" data-tour="nav">
           {SELLER_NAV.map((n) => {
             let badge = null;
             if (seller?.status === 'suspended' && n.to !== '/seller/support') {
@@ -373,6 +375,7 @@ export default function SellerLayout() {
                 key={n.to}
                 to={n.to}
                 end={n.end}
+                data-tour={`nav-${n.to.split('/').pop()}`}
                 onClick={() => setMobileSidebarOpen(false)}
                 className={({ isActive }) => (isActive ? 'active' : '')}
               >
@@ -427,6 +430,7 @@ export default function SellerLayout() {
             <button
               type="button"
               className="stb-burger"
+              data-tour="menu-btn"
               onClick={() => setMobileSidebarOpen(true)}
               aria-label="Open navigation menu"
             >
@@ -474,6 +478,7 @@ export default function SellerLayout() {
             <Link
               to="/seller"
               className={`stb-chip stb-health tone-${healthTier}`}
+              data-tour="topbar-health"
               title={`Account health ${healthScore}/100 (${healthLabel})`}
             >
               <Ic name="shield" size={15} />
@@ -481,7 +486,7 @@ export default function SellerLayout() {
               <b>{healthScore}</b>
             </Link>
 
-            <Link to="/seller/wallet" className="stb-chip stb-wallet" title="Wallet balance">
+            <Link to="/seller/wallet" className="stb-chip stb-wallet" title="Wallet balance" data-tour="topbar-wallet">
               <Ic name="wallet" size={15} />
               <span className="stb-chip-col">
                 <span className="stb-chip-lbl">Balance</span>
@@ -510,6 +515,8 @@ export default function SellerLayout() {
             >
               <Ic name="download" size={17} />
             </button>
+
+            <HelpButton />
 
             <Link to="/seller/settings" className="stb-user" title="Store & account settings">
               <span className="stb-user-initial">{(seller?.ownerName || seller?.email || 'U')[0].toUpperCase()}</span>
@@ -623,5 +630,6 @@ export default function SellerLayout() {
       {/* Seller App Setup & APK Installer Modal */}
       <SellerAppModal isOpen={appModalOpen} onClose={() => setAppModalOpen(false)} />
     </div>
+    </TourProvider>
   );
 }

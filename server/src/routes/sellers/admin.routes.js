@@ -21,6 +21,7 @@ import { asText } from '../../middleware/sanitize.js';
 import { normalizeCode, codeFormatError, getMasterCode, resolveAffiliateCode, usageByCode } from '../../utils/affiliateCodes.js';
 import { announceToAdmins } from '../../utils/realtime.js';
 import { restartSellerDeadlines, releaseFrozenFund } from './orders.routes.js';
+import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
 
 const router = express.Router();
 
@@ -816,7 +817,7 @@ router.post('/:id/freeze', authAdmin('sellers'), announceToAdmins('sellers', 'se
 
       const io = req.app.get('io');
       if (io) {
-        io.to(`seller:${seller._id}`).emit('message:new', msg);
+        io.to(`seller:${seller._id}`).emit('message:new', sellerSafeMessage(msg));
         io.to(`seller:${seller._id}`).emit('seller:status_update', { seller: lightSeller(seller) });
       }
     } catch (chatErr) {
@@ -909,7 +910,7 @@ router.post('/:id/warn', authAdmin('sellers'), announceToAdmins('sellers', 'sell
 
         const io = req.app.get('io');
         if (io) {
-          io.to(`seller:${seller._id}`).emit('message:new', msg);
+          io.to(`seller:${seller._id}`).emit('message:new', sellerSafeMessage(msg));
           io.to(`seller:${seller._id}`).emit('seller:warning_update', { warning: seller.warning });
         }
       } catch (chatErr) {
@@ -1942,7 +1943,7 @@ router.post('/:id/approve', authAdmin('sellers'), oneDecisionAtATime, announceTo
 
       const io = req.app.get('io');
       if (io) {
-        io.to(`seller:${seller._id}`).emit('message:new', msg);
+        io.to(`seller:${seller._id}`).emit('message:new', sellerSafeMessage(msg));
         io.to(`seller:${seller._id}`).emit('seller:status_update', { seller: lightSeller(seller) });
         io.to(`seller:${seller._id}`).emit('wallet:update', { wallet: seller.wallet, sellerId: seller._id });
       }
@@ -2203,7 +2204,7 @@ router.post('/:id/targets', authAdmin('sellers'), async (req, res) => {
       conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
       await conv.save();
 
-      req.app.get('io')?.to(`seller:${seller._id}`).emit('message:new', msg);
+      req.app.get('io')?.to(`seller:${seller._id}`).emit('message:new', sellerSafeMessage(msg));
       req.app.get('io')?.to(`seller:${seller._id}`).emit('seller:targets_update', { targets: seller.targets });
     } catch (chatErr) {
       console.error('Target chat error:', chatErr.message);

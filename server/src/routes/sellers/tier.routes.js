@@ -11,6 +11,7 @@ import { adminRoom } from '../../utils/permissions.js';
 import { announceToAdmins } from '../../utils/realtime.js';
 import { asText } from '../../middleware/sanitize.js';
 import { TIERS, DIAMOND_UPGRADE_FEE_USD, isDiamond, tierInfo } from '../../utils/sellerTier.js';
+import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
 
 /**
  * Seller account tiers — Basic / 💎 Diamond (rules in utils/sellerTier.js).
@@ -121,7 +122,7 @@ router.post('/tier/request-upgrade', authSeller, announceToAdmins('sellers', 'se
 
     const io = req.app.get('io');
     if (io) {
-      io.to(`seller:${seller._id}`).emit('message:new', msg);
+      io.to(`seller:${seller._id}`).emit('message:new', sellerSafeMessage(msg));
       io.to(adminRoom('chat')).emit('message:new', msg);
       io.to(adminRoom('chat')).emit('chat:notification', { conversationId: conv._id, storeName: seller.storeName, text: conv.lastMessage });
     }
@@ -275,7 +276,7 @@ async function makeDiamond(req, seller, { by, note }) {
     conv.lastAt = new Date();
     conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
     await conv.save();
-    req.app.get('io')?.to(`seller:${seller._id}`).emit('message:new', msg);
+    req.app.get('io')?.to(`seller:${seller._id}`).emit('message:new', sellerSafeMessage(msg));
   } catch (chatErr) {
     console.error('[tier] welcome message:', chatErr.message);
   }

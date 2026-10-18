@@ -125,6 +125,13 @@ const sellerSchema = new mongoose.Schema(
     rating: { type: Number, default: null },
     numReviews: { type: Number, default: 0 },
     verified: { type: Boolean, default: false },
+    // first-time help: which guided tours the store finished and whether it closed the welcome
+    // box / getting-started checklist (kept on the account so it follows the store to every device)
+    onboarding: {
+      toursDone: { type: [String], default: [] },
+      welcomeSeen: { type: Boolean, default: false },
+      checklistHidden: { type: Boolean, default: false },
+    },
     isEmailVerified: { type: Boolean, default: false },
     emailOtp: {
       code: String,

@@ -11,6 +11,7 @@ import { deleteAttachmentFiles, attachmentLocation, isStoredUpload } from '../se
 import { asText } from '../middleware/sanitize.js';
 import { limit } from '../utils/rateLimit.js';
 import { adminRoom } from '../utils/permissions.js';
+import { sellerSafeMessage, sellerSafeConversation } from '../utils/sellerChatPrivacy.js';
 
 // A guest chat is opened with the random id the storefront keeps in the browser (36 characters).
 // Knowing that id is what gives access to that one chat, so it must be real text of a sensible
@@ -83,7 +84,7 @@ export async function handleAutoReply(app, conv) {
         const io = app.get('io');
         if (io) {
           if (sId) {
-            io.to(`seller:${sId}`).emit('message:new', replyMsg);
+            io.to(`seller:${sId}`).emit('message:new', sellerSafeMessage(replyMsg));
           }
           if (gId) {
             io.to(`guest:${gId}`).emit('message:new', replyMsg);
@@ -179,7 +180,8 @@ router.get('/seller/thread', authSeller, async (req, res) => {
       { limit, before }
     );
 
-    res.json({ conversation: conv, messages, hasMore });
+    // the store never sees which admin wrote (every team message shows as Bazario Support)
+    res.json({ conversation: sellerSafeConversation(conv), messages: messages.map(sellerSafeMessage), hasMore });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -244,7 +246,7 @@ router.post('/seller/send', authSeller, sellerSendLimit, async (req, res) => {
         quoted = {
           messageId: q._id,
           sender: q.sender || '',
-          senderName: q.sender === 'seller' ? (seller.storeName || 'Seller') : q.senderName || 'Support',
+          senderName: q.sender === 'seller' ? (seller.storeName || 'Seller') : ['admin', 'staff'].includes(q.sender) ? 'Bazario Support' : q.senderName || 'Support',
           text: String(q.text || (q.attachmentType === 'pdf' ? `📄 ${q.attachmentName || 'PDF Document'}` : q.attachmentType ? '📷 Image Attachment' : '')).slice(0, 300),
           attachmentType: q.attachmentType || null,
           attachmentName: q.attachmentName || '',
@@ -287,7 +289,7 @@ router.post('/seller/send', authSeller, sellerSendLimit, async (req, res) => {
     // Broadcast via socket.io
     const io = req.app.get('io');
     if (io) {
-      io.to(`seller:${sellerId}`).emit('message:new', message);
+      io.to(`seller:${sellerId}`).emit('message:new', sellerSafeMessage(message));
       io.to(adminRoom('chat')).emit('message:new', message);
       io.to(adminRoom('chat')).emit('chat:notification', {
         conversationId: conv._id,
@@ -486,7 +488,7 @@ router.post('/admin/conversations/:id/reply', authAdmin('chat'), async (req, res
     const io = req.app.get('io');
     if (io) {
       if (conv.seller) {
-        io.to(`seller:${conv.seller}`).emit('message:new', message);
+        io.to(`seller:${conv.seller}`).emit('message:new', sellerSafeMessage(message));
       }
       if (conv.guestId) {
         io.to(`guest:${conv.guestId}`).emit('message:new', message);

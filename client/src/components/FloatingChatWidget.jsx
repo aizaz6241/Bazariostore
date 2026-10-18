@@ -529,7 +529,7 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
         sender: replyingTo.sender,
         senderName: replyingTo.sender === (role === 'seller' ? 'seller' : 'admin')
           ? 'You'
-          : (replyingTo.senderName || (role === 'seller' ? 'Super Admin' : 'Seller')),
+          : (role === 'seller' ? 'Bazario Support' : (replyingTo.senderName || 'Seller')),
         text: replyingTo.text || (replyingTo.attachmentType === 'pdf' ? `📄 ${replyingTo.attachmentName || 'PDF Document'}` : '📷 Image Attachment'),
         attachmentType: replyingTo.attachmentType || null,
         attachmentName: replyingTo.attachmentName || '',
@@ -758,7 +758,7 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
                 <div className="crb-indicator"></div>
                 <div className="crb-info">
                   <span className="crb-title">
-                    Replying to <b>{replyingTo.sender === (role === 'seller' ? 'seller' : 'admin') ? 'You' : (replyingTo.senderName || (role === 'seller' ? 'Super Admin' : 'Seller'))}</b>
+                    Replying to <b>{replyingTo.sender === (role === 'seller' ? 'seller' : 'admin') ? 'You' : (role === 'seller' ? 'Bazario Support' : (replyingTo.senderName || 'Seller'))}</b>
                   </span>
                   <span className="crb-snippet">
                     {replyingTo.text || (replyingTo.attachmentType === 'pdf' ? `📄 ${replyingTo.attachmentName || 'PDF Document'}` : '📷 Image Attachment')}

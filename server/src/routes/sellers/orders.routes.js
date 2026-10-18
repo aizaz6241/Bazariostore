@@ -18,6 +18,7 @@ import { toAdmins } from '../../utils/realtime.js';
 import { blockWhenFrozen, ownProductFilter } from './helpers.js';
 import { profitRateFor, confirmHoursFor, warnHoursFor, tierOf } from '../../utils/sellerTier.js';
 import { sellerSafeOrder, sellerOrderPing, maskName } from '../../utils/orderPrivacy.js';
+import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
 
 const router = express.Router();
 
@@ -284,7 +285,7 @@ async function advanceSellerTargets(app, sellerId) {
         conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
         await conv.save();
 
-        app?.get('io')?.to(`seller:${seller._id}`).emit('message:new', msg);
+        app?.get('io')?.to(`seller:${seller._id}`).emit('message:new', sellerSafeMessage(msg));
       }
     } catch (targetChatErr) {
       console.error('Target bonus chat error:', targetChatErr.message);
@@ -1314,7 +1315,7 @@ export async function processOrderPenalties(app) {
             conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
             await conv.save();
 
-            app?.get('io')?.to(`seller:${seller._id}`).emit('message:new', msg);
+            app?.get('io')?.to(`seller:${seller._id}`).emit('message:new', sellerSafeMessage(msg));
           }
         } catch (chatErr) {}
       }
@@ -1409,7 +1410,7 @@ export async function processOrderPenalties(app) {
             conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
             await conv.save();
 
-            app?.get('io')?.to(`seller:${seller._id}`).emit('message:new', msg);
+            app?.get('io')?.to(`seller:${seller._id}`).emit('message:new', sellerSafeMessage(msg));
             app?.get('io')?.to(`seller:${seller._id}`).emit('seller:health_update', {
               accountHealth: seller.accountHealth,
               status: seller.status,
