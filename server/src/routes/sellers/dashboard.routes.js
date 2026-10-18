@@ -8,99 +8,119 @@ import { authSeller } from '../../middleware/auth.js';
 
 const router = express.Router();
 
+// What one order means for this store (only the store's own items count)
+const ACTIVE_STATUSES = ['pending', 'confirmed', 'processing', 'packed'];
+const sameId = (a, b) => Boolean(a) && Boolean(b) && a.toString() === b.toString();
+function storeSideOf(ord, sellerId) {
+  const items = (ord.items || []).filter((it) => sameId(it.seller, sellerId));
+  let total = 0;
+  let profit = 0;
+  let qty = 0;
+  for (const it of items) {
+    const q = it.qty || 1;
+    const line = (it.price || 0) * q;
+    total += line;
+    qty += q;
+    profit += it.profitAmount > 0 ? it.profitAmount : (line * (it.profitRate || 20)) / 100;
+  }
+  const status = items[0]?.itemStatus || ord.status || 'pending';
+  return { items, total, profit, qty, status };
+}
+
+// the order fields the dashboard needs (full orders carry a lot more)
+const ORDER_FIELDS = 'orderNumber status createdAt items.seller items.product items.name items.image items.price items.qty items.costPrice items.itemStatus items.profitAmount items.profitRate shippingAddress.fullName shippingAddress.city';
+
 // GET /api/sellers/dashboard
 router.get('/dashboard', authSeller, async (req, res) => {
   try {
     const sellerId = req.seller.id;
-    // perf: run the independent reads in parallel and skip the heavy KYC images
-    const [seller, products, orders, refunds] = await Promise.all([
-      Seller.findById(sellerId),
-      Product.find({ seller: sellerId }),
-      Order.find({ 'items.seller': sellerId }).sort({ createdAt: -1 }),
-      Refund.find({ seller: sellerId }),
+    // perf: the independent reads run in parallel, as plain objects, with only the fields used
+    // (the KYC pictures are never selected by default, see models/Seller.js)
+    const [seller, products, orders, refundCount] = await Promise.all([
+      Seller.findById(sellerId).lean(),
+      Product.find({ seller: sellerId }).select('name image stock lowStockThreshold').lean(),
+      Order.find({ 'items.seller': sellerId }).select(ORDER_FIELDS).sort({ createdAt: -1 }).lean(),
+      Refund.countDocuments({ seller: sellerId }),
     ]);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
-    // Products by this seller
     const totalProducts = products.length;
-    const lowStockProducts = products.filter((p) => (p.stock || 0) <= (p.lowStockThreshold || 5));
-
-    // Orders containing items from this seller (loaded above)
+    const lowStockProducts = products.filter((p) => (p.stock || 0) <= (p.lowStockThreshold ?? 5));
 
     let grossRevenue = 0;
     let totalCost = 0;
     let totalItemsSold = 0;
-    let pendingOrdersCount = 0;
-
+    let pendingOrdersCount = 0; // orders (not item lines) still waiting to be fulfilled
+    let awaitingConfirmation = 0; // orders the store has not confirmed yet
+    const statusCounts = { delivered: 0, inTransit: 0, preparing: 0, pending: 0, cancelled: 0, refunded: 0 };
     const productSalesMap = {};
 
-    orders.forEach((ord) => {
-      const sellerItems = ord.items.filter((it) => it.seller && it.seller.toString() === sellerId.toString());
-      sellerItems.forEach((item) => {
-        const itemTotal = (item.price || 0) * (item.qty || 1);
-        const itemCost = (item.costPrice || 0) * (item.qty || 1);
+    for (const ord of orders) {
+      const side = storeSideOf(ord, sellerId);
+      if (!side.items.length) continue;
+      const st = side.status;
+      const closed = st === 'cancelled' || st === 'refunded' || ord.status === 'cancelled' || ord.status === 'refunded';
 
-        if (ord.status !== 'cancelled' && ord.status !== 'refunded') {
-          grossRevenue += itemTotal;
-          totalCost += itemCost;
-          totalItemsSold += item.qty || 1;
-
+      if (!closed) {
+        for (const item of side.items) {
+          const q = item.qty || 1;
+          const line = (item.price || 0) * q;
+          grossRevenue += line;
+          totalCost += (item.costPrice || 0) * q;
+          totalItemsSold += q;
           const prodId = item.product?.toString() || item.name;
-          if (!productSalesMap[prodId]) {
-            productSalesMap[prodId] = { id: prodId, name: item.name, image: item.image, qty: 0, revenue: 0 };
-          }
-          productSalesMap[prodId].qty += item.qty || 1;
-          productSalesMap[prodId].revenue += itemTotal;
+          if (!productSalesMap[prodId]) productSalesMap[prodId] = { id: prodId, name: item.name, image: item.image, qty: 0, revenue: 0 };
+          productSalesMap[prodId].qty += q;
+          productSalesMap[prodId].revenue += line;
         }
+      }
 
-        if (['pending', 'confirmed', 'processing', 'packed'].includes(item.itemStatus || ord.status)) {
-          pendingOrdersCount++;
-        }
-      });
-    });
+      if (ACTIVE_STATUSES.includes(st)) pendingOrdersCount++;
+      if (st === 'pending') awaitingConfirmation++;
 
-    // Commission deducted
+      if (st === 'delivered') statusCounts.delivered++;
+      else if (st === 'cancelled') statusCounts.cancelled++;
+      else if (st === 'refunded') statusCounts.refunded++;
+      else if (st === 'pending') statusCounts.pending++;
+      else if (['confirmed', 'processing', 'packed'].includes(st)) statusCounts.preparing++;
+      else statusCounts.inTransit++;
+    }
+
     const commissionPercent = seller.commissionRate || 10;
     const platformCommission = (grossRevenue * commissionPercent) / 100;
     const netProfit = grossRevenue - totalCost - platformCommission;
 
-    // Refunds for this seller
-    const refundCount = refunds.length;
-
-    // Top selling products
     const topProducts = Object.values(productSalesMap)
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, 5);
 
-    // Daily sales breakdown (last 14 days)
-    const salesByDay = [];
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
-      const displayDate = d.toLocaleDateString('en-PK', { month: 'short', day: 'numeric' });
-
-      let dayRevenue = 0;
-      let dayOrders = 0;
-
-      orders.forEach((ord) => {
-        const ordDate = ord.createdAt ? new Date(ord.createdAt).toISOString().split('T')[0] : '';
-        if (ordDate === dateStr && ord.status !== 'cancelled') {
-          const sellerItems = ord.items.filter((it) => it.seller && it.seller.toString() === sellerId.toString());
-          if (sellerItems.length) {
-            dayOrders++;
-            sellerItems.forEach((it) => {
-              dayRevenue += (it.price || 0) * (it.qty || 1);
-            });
-          }
-        }
-      });
-
-      salesByDay.push({ date: displayDate, rawDate: dateStr, revenue: dayRevenue, orders: dayOrders });
+    // Daily sales, last 14 days (kept for older app builds; the web dashboard draws its charts
+    // from /dashboard/activity in the store's own time zone)
+    const since14 = new Date();
+    since14.setUTCHours(0, 0, 0, 0);
+    since14.setUTCDate(since14.getUTCDate() - 13);
+    const dayMap = {};
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(since14);
+      d.setUTCDate(d.getUTCDate() + i);
+      const key = d.toISOString().split('T')[0];
+      dayMap[key] = { date: d.toLocaleDateString('en-PK', { timeZone: 'UTC', month: 'short', day: 'numeric' }), rawDate: key, revenue: 0, orders: 0 };
     }
+    for (const ord of orders) {
+      if (!ord.createdAt || new Date(ord.createdAt) < since14) continue;
+      const side = storeSideOf(ord, sellerId);
+      // same rule as the totals above: cancelled AND refunded orders are not sales
+      if (!side.items.length || ['cancelled', 'refunded'].includes(side.status) || ['cancelled', 'refunded'].includes(ord.status)) continue;
+      const key = new Date(ord.createdAt).toISOString().split('T')[0];
+      if (!dayMap[key]) continue;
+      dayMap[key].orders++;
+      dayMap[key].revenue += side.total;
+    }
+    const salesByDay = Object.values(dayMap);
 
     const securityDepositAmt = seller.securityDeposit?.amount || seller.wallet?.securityDeposit || 0;
     const isSecurityPaid = Boolean(seller.securityDeposit?.paid || securityDepositAmt > 0);
+    const wallet = seller.wallet || {};
 
     res.json({
       seller: {
@@ -110,11 +130,21 @@ router.get('/dashboard', authSeller, async (req, res) => {
         email: seller.email,
         phone: seller.phone,
         commissionRate: seller.commissionRate,
-        rating: seller.rating,
+        rating: seller.rating ?? null,
         status: seller.status,
+        tier: seller.tier || 'basic',
+        createdAt: seller.createdAt,
         verified: Boolean(seller.verified || seller.status === 'active'),
         wallet: {
-          ...(seller.wallet ? (seller.wallet.toObject ? seller.wallet.toObject() : seller.wallet) : {}),
+          balance: wallet.balance || 0,
+          processingFund: wallet.processingFund || 0,
+          frozenFund: wallet.frozenFund || 0,
+          totalProfitEarned: wallet.totalProfitEarned || 0,
+          totalEarned: wallet.totalEarned || 0,
+          totalDeposited: wallet.totalDeposited || 0,
+          totalWithdrawn: wallet.totalWithdrawn || 0,
+          pendingDeposit: wallet.pendingDeposit || 0,
+          pendingWithdrawal: wallet.pendingWithdrawal || 0,
           securityDeposit: securityDepositAmt,
         },
         securityDeposit: {
@@ -125,6 +155,8 @@ router.get('/dashboard', authSeller, async (req, res) => {
           note: seller.securityDeposit?.note || '',
         },
         accountHealth: seller.accountHealth || { score: 100, status: 'healthy', history: [] },
+        // the targets card on the dashboard reads these (they were never sent before)
+        targets: seller.targets || [],
       },
       stats: {
         grossRevenue,
@@ -134,23 +166,93 @@ router.get('/dashboard', authSeller, async (req, res) => {
         totalOrders: orders.length,
         totalItemsSold,
         pendingOrders: pendingOrdersCount,
+        awaitingConfirmation,
         totalProducts,
         lowStockCount: lowStockProducts.length,
         refundCount,
-        availableBalance: seller.wallet?.balance || 0,
-        processingFund: seller.wallet?.processingFund || 0,
-        totalProfitEarned: seller.wallet?.totalProfitEarned || 0,
-        totalEarned: seller.wallet?.totalEarned || 0,
+        availableBalance: wallet.balance || 0,
+        processingFund: wallet.processingFund || 0,
+        frozenFund: wallet.frozenFund || 0,
+        pendingWithdrawal: wallet.pendingWithdrawal || 0,
+        pendingDeposit: wallet.pendingDeposit || 0,
+        totalProfitEarned: wallet.totalProfitEarned || 0,
+        totalEarned: wallet.totalEarned || 0,
+        totalWithdrawn: wallet.totalWithdrawn || 0,
         securityDeposit: securityDepositAmt,
         securityDepositPaid: isSecurityPaid,
         securityDepositDate: seller.securityDeposit?.paidAt || null,
         referralCode: seller.securityDeposit?.referralCode || '',
       },
+      statusCounts,
       salesByDay,
       topProducts,
       recentOrders: orders.slice(0, 6),
       lowStockProducts: lowStockProducts.slice(0, 5),
     });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/sellers/dashboard/activity?from=ISO&to=ISO
+// Everything that happened to the store in a time window, one compact line per event, for the
+// dashboard charts and calendar. The browser groups the lines into days in the store's own time
+// zone, so a day on the calendar is the seller's day (not a UTC day).
+router.get('/dashboard/activity', authSeller, async (req, res) => {
+  try {
+    const sellerId = req.seller.id;
+    const to = req.query.to ? new Date(req.query.to) : new Date();
+    const from = req.query.from ? new Date(req.query.from) : new Date(to.getTime() - 90 * 86400000);
+    if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from > to) {
+      return res.status(400).json({ message: 'Invalid date range' });
+    }
+    if (to - from > 400 * 86400000) return res.status(400).json({ message: 'Date range is too long (max 400 days)' });
+
+    const [orders, moves] = await Promise.all([
+      Order.find({ 'items.seller': sellerId, createdAt: { $gte: from, $lte: to } })
+        .select('orderNumber status createdAt items.seller items.name items.price items.qty items.itemStatus items.profitAmount items.profitRate shippingAddress.city')
+        .sort({ createdAt: 1 })
+        .lean(),
+      // money that really moved: approved deposits / payouts and the order payouts (with profit)
+      Withdrawal.find({
+        seller: sellerId,
+        $or: [
+          { type: { $in: ['deposit', 'withdrawal'] }, status: { $in: ['approved', 'completed'] }, purpose: { $nin: ['diamond_fee'] } },
+          { type: 'order_delivered_release' },
+        ],
+        $and: [{ $or: [{ processedAt: { $gte: from, $lte: to } }, { processedAt: null, createdAt: { $gte: from, $lte: to } }, { processedAt: { $exists: false }, createdAt: { $gte: from, $lte: to } }] }],
+      })
+        .select('type amount approvedAmount profitAmount orderNumber status createdAt processedAt')
+        .lean(),
+    ]);
+
+    const orderLines = [];
+    for (const ord of orders) {
+      const side = storeSideOf(ord, sellerId);
+      if (!side.items.length) continue;
+      orderLines.push({
+        id: ord._id,
+        n: ord.orderNumber || '',
+        t: ord.createdAt,
+        total: side.total,
+        profit: side.profit,
+        qty: side.qty,
+        status: side.status === 'pending' && ord.status === 'cancelled' ? 'cancelled' : side.status,
+        city: ord.shippingAddress?.city || '',
+        items: side.items.slice(0, 3).map((it) => `${it.qty || 1}× ${it.name || 'Item'}`),
+      });
+    }
+
+    const moneyLines = moves
+      .map((m) => {
+        const t = m.type === 'order_delivered_release' ? m.createdAt : m.processedAt || m.createdAt;
+        const amount = m.approvedAmount != null && m.type !== 'order_delivered_release' ? m.approvedAmount : m.amount;
+        return { id: m._id, type: m.type, t, amount: Number(amount) || 0, profit: Number(m.profitAmount) || 0, n: m.orderNumber || '' };
+      })
+      .filter((m) => m.t && new Date(m.t) >= from && new Date(m.t) <= to)
+      .sort((a, b) => new Date(a.t) - new Date(b.t));
+
+    res.json({ from, to, orders: orderLines, money: moneyLines });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

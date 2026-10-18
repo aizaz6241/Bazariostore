@@ -1395,8 +1395,21 @@ router.get('/:id', authAdmin('sellers'), async (req, res, next) => {
     let pendingOrders = 0;
     let deliveredOrders = 0;
     let cancelledOrders = 0;
+    // orders still waiting for THIS store to confirm: how many, and how much the store needs in its
+    // available balance to confirm them all
+    let unconfirmedOrders = 0;
+    let unconfirmedAmount = 0;
+    const sid = seller._id.toString();
+    const mineItem = (ord, it) => (it.seller && it.seller.toString() === sid) || (!it.seller && ord.seller && ord.seller.toString() === sid);
 
     orders.forEach((ord) => {
+      if (ord.status === 'pending') {
+        const waiting = (ord.items || []).filter((it) => mineItem(ord, it) && (!it.itemStatus || it.itemStatus === 'pending'));
+        if (waiting.length) {
+          unconfirmedOrders += 1;
+          unconfirmedAmount += waiting.reduce((t, it) => t + (Number(it.price) || 0) * (Number(it.qty) || 1), 0);
+        }
+      }
       const st = (ord.status || '').toLowerCase();
       if (!['delivered', 'cancelled', 'refunded'].includes(st)) {
         pendingOrders += 1;
@@ -1435,6 +1448,9 @@ router.get('/:id', authAdmin('sellers'), async (req, res, next) => {
         totalCost,
         totalOrders: orders.length,
         pendingOrders,
+        unconfirmedOrders,
+        unconfirmedAmount: Math.round(unconfirmedAmount * 100) / 100,
+        frozenFund: Number(seller.wallet?.frozenFund) || 0,
         deliveredOrders,
         cancelledOrders,
         totalItemsSold,

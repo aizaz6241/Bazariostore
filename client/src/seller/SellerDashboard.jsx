@@ -1,663 +1,576 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useOutletContext } from 'react-router-dom';
+import {
+  ResponsiveContainer, ComposedChart, Area, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell,
+} from 'recharts';
 import { sapi, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import SellerAppModal from '../components/SellerAppModal.jsx';
-import CurrencySelector from '../components/CurrencySelector.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 import { getSocket } from '../socket.js';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
-import { getLiveStoreVisitors, getProductLiveViewers } from '../utils/liveMetrics.js';
+import { getLiveStoreVisitors } from '../utils/liveMetrics.js';
+import SellerCalendar from './dashboard/SellerCalendar.jsx';
+import { dayKey, startOfDay, addDays, shortDay, makeCompact, statusMeta, isClosed } from './dashboard/dashUtils.js';
+
+const RANGES = [
+  { id: 7, label: '7D' },
+  { id: 30, label: '30D' },
+  { id: 90, label: '90D' },
+];
+const C = { sales: '#2563eb', profit: '#10b981', orders: '#f59e0b', grid: '#eef2f7', axis: '#94a3b8' };
+const STATUS_SLICES = [
+  { key: 'delivered', name: 'Delivered', color: '#10b981' },
+  { key: 'inTransit', name: 'In transit', color: '#6366f1' },
+  { key: 'preparing', name: 'Preparing', color: '#3b82f6' },
+  { key: 'pending', name: 'Awaiting confirmation', color: '#f59e0b' },
+  { key: 'cancelled', name: 'Cancelled', color: '#94a3b8' },
+  { key: 'refunded', name: 'Refunded', color: '#ef4444' },
+];
+
+function healthOf(score) {
+  if (score >= 80) return { tier: 'healthy', label: 'Healthy', desc: 'Excellent standing — full listing and fast withdrawal privileges.' };
+  if (score >= 31) return { tier: 'warning', label: 'At risk', desc: 'Below 80. Dispatch on time and keep customers happy to avoid restrictions.' };
+  if (score > 20) return { tier: 'freeze', label: 'Freeze warning', desc: 'Close to the 30 freeze threshold. Contact platform compliance now.' };
+  return { tier: 'suspended', label: 'Suspension warning', desc: 'At the 20 suspension threshold. Admin review is pending.' };
+}
+
+const pctChange = (now, before) => {
+  if (!before) return now > 0 ? null : 0;
+  return Math.round(((now - before) / before) * 100);
+};
 
 export default function SellerDashboard() {
-  const { formatMoney, currentCurrency } = useCurrency();
+  const { formatMoney, convert, currentCurrency } = useCurrency();
+  const compact = useMemo(() => makeCompact(convert, currentCurrency.symbol), [convert, currentCurrency.symbol]);
   const { seller: me } = useOutletContext() || {};
-  const isDiamond = me?.tier === 'diamond';
-  const profitPct = isDiamond ? 35 : 20;
   const [data, setData] = useState(null);
+  const [activity, setActivity] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
+  const [range, setRange] = useState(30);
   const [appModalOpen, setAppModalOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [liveShoppers, setLiveShoppers] = useState(() => getLiveStoreVisitors());
+  const timer = useRef(null);
 
-  const loadData = () => {
+  const loadData = useCallback(() => {
     sapi('/sellers/dashboard')
-      .then((res) => {
-        setData(res);
-        setErr('');
-      })
+      .then((res) => { setData(res); setErr(''); })
       .catch((e) => setErr(e.message))
       .finally(() => setLoading(false));
-  };
+  }, []);
+
+  // last 90 days of activity (two 30-day windows for the comparisons + the 90D chart)
+  const loadActivity = useCallback(() => {
+    const today = startOfDay(new Date());
+    const from = addDays(today, -89);
+    const to = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1, 0, 0, 0, -1);
+    sapi(`/sellers/dashboard/activity?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`)
+      .then(setActivity)
+      .catch(() => setActivity((a) => a || { orders: [], money: [] }));
+  }, []);
 
   useEffect(() => {
     loadData();
-
-    // Gentle organic fluctuation timer for live shoppers in real time
-    const shopperTimer = setInterval(() => {
-      setLiveShoppers(getLiveStoreVisitors(data?.seller?._id, data?.stats?.totalProducts || 10));
-    }, 4500);
-
+    loadActivity();
     const socket = getSocket();
-    const onSync = () => loadData();
-    socket.on('order:new', onSync);
-    socket.on('wallet:update', onSync);
-    socket.on('seller:health_update', onSync);
-    socket.on('seller:status_update', onSync);
-    socket.on('seller:targets_update', onSync);
-
-    return () => {
-      clearInterval(shopperTimer);
-      socket.off('order:new', onSync);
-      socket.off('wallet:update', onSync);
-      socket.off('seller:health_update', onSync);
-      socket.off('seller:status_update', onSync);
-      socket.off('seller:targets_update', onSync);
+    // several events often arrive together (order + wallet): one refresh for the burst
+    const onSync = () => {
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => {
+        loadData();
+        loadActivity();
+        setRefreshKey((k) => k + 1);
+      }, 700);
     };
-  }, [data?.seller?._id, data?.stats?.totalProducts]);
+    const events = ['order:new', 'order:update', 'wallet:update', 'seller:health_update', 'seller:status_update', 'seller:targets_update'];
+    events.forEach((e) => socket.on(e, onSync));
+    return () => {
+      clearTimeout(timer.current);
+      events.forEach((e) => socket.off(e, onSync));
+    };
+  }, [loadData, loadActivity]);
+
+  const sellerId = data?.seller?._id;
+  const productCount = data?.stats?.totalProducts || 10;
+  useEffect(() => {
+    const id = setInterval(() => setLiveShoppers(getLiveStoreVisitors(sellerId, productCount)), 4500);
+    return () => clearInterval(id);
+  }, [sellerId, productCount]);
+
+  // ── activity grouped into the seller's own days ──
+  const daily = useMemo(() => {
+    const today = startOfDay(new Date());
+    const map = new Map();
+    for (let i = 89; i >= 0; i--) {
+      const k = dayKey(addDays(today, -i));
+      map.set(k, { key: k, label: shortDay(k), sales: 0, profit: 0, orders: 0 });
+    }
+    for (const o of activity?.orders || []) {
+      const row = map.get(dayKey(o.t));
+      if (!row || isClosed(o.status)) continue;
+      row.sales += o.total;
+      row.profit += o.profit;
+      row.orders += 1;
+    }
+    return [...map.values()];
+  }, [activity]);
+
+  const chartData = useMemo(
+    () => daily.slice(-range).map((r) => ({ ...r, salesC: convert(r.sales), profitC: convert(r.profit) })),
+    [daily, range, convert]
+  );
+
+  const windows = useMemo(() => {
+    const sum = (rows, f) => rows.reduce((a, r) => a + r[f], 0);
+    const cur = daily.slice(-30);
+    const prev = daily.slice(-60, -30);
+    return {
+      sales: sum(cur, 'sales'), salesPrev: sum(prev, 'sales'),
+      profit: sum(cur, 'profit'), profitPrev: sum(prev, 'profit'),
+      orders: sum(cur, 'orders'), ordersPrev: sum(prev, 'orders'),
+      spark: daily.slice(-14),
+    };
+  }, [daily]);
+
+  const rangeTotals = useMemo(() => ({
+    sales: chartData.reduce((a, r) => a + r.sales, 0),
+    profit: chartData.reduce((a, r) => a + r.profit, 0),
+    orders: chartData.reduce((a, r) => a + r.orders, 0),
+  }), [chartData]);
 
   if (loading && !data) {
-    return <div className="seller-loading-state"><div className="spinner"></div><p>Loading your seller analytics...</p></div>;
+    return (
+      <div className="sd">
+        <div className="sd-skel-head" />
+        <div className="sd-kpis">{[0, 1, 2, 3].map((i) => <div key={i} className="sd-card sd-skel" />)}</div>
+        <div className="sd-row-main"><div className="sd-card sd-skel tall" /><div className="sd-card sd-skel tall" /></div>
+      </div>
+    );
+  }
+  if (err && !data) {
+    return (
+      <div className="sd">
+        <div className="sd-card sd-error-card">
+          <Ic name="alert" size={22} />
+          <div><b>Dashboard could not load</b><p>{err}</p></div>
+          <button type="button" className="sd-btn sd-btn-dark" onClick={() => { setLoading(true); loadData(); loadActivity(); }}>Retry</button>
+        </div>
+      </div>
+    );
   }
 
-  if (err) {
-    return <div className="seller-error-card"><Ic name="shield" size={20} /> <p>{err}</p><button onClick={loadData}>Retry</button></div>;
-  }
+  const { stats = {}, topProducts = [], recentOrders = [], lowStockProducts = [], statusCounts = {} } = data || {};
+  const seller = data?.seller || {};
+  const isDiamond = (me?.tier || seller.tier) === 'diamond';
+  const profitPct = isDiamond ? 35 : 20;
+  const isVerified = Boolean(seller.verified || seller.status === 'active');
+  const wallet = seller.wallet || {};
+  const balance = stats.availableBalance ?? wallet.balance ?? 0;
+  const processing = stats.processingFund ?? wallet.processingFund ?? 0;
+  const frozen = stats.frozenFund ?? wallet.frozenFund ?? 0;
+  const pendingPayout = stats.pendingWithdrawal ?? wallet.pendingWithdrawal ?? 0;
+  const security = stats.securityDeposit || seller.securityDeposit?.amount || 0;
+  const health = seller.accountHealth || {};
+  const score = Number.isFinite(health.score) ? health.score : 100;
+  const h = healthOf(score);
+  const targets = Array.isArray(seller.targets) ? seller.targets : [];
+  const activeTargets = targets;
+  const awaiting = stats.awaitingConfirmation || 0;
+  const firstName = (seller.ownerName || '').split(' ')[0];
+  const hour = new Date().getHours();
+  const greet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const statusData = STATUS_SLICES.map((s) => ({ ...s, value: statusCounts[s.key] || 0 })).filter((s) => s.value > 0);
+  const statusTotal = statusData.reduce((a, s) => a + s.value, 0);
+  const walletParts = [
+    { key: 'Available', v: balance, c: '#10b981' },
+    { key: 'Processing', v: processing, c: '#3b82f6' },
+    { key: 'Pending payout', v: pendingPayout, c: '#8b5cf6' },
+    { key: 'Frozen', v: frozen, c: '#94a3b8' },
+  ];
+  const walletTotal = walletParts.reduce((a, p) => a + Math.max(0, p.v), 0);
+  const topMax = Math.max(1, ...topProducts.map((p) => p.revenue || 0));
 
-  const { stats, salesByDay = [], topProducts = [], recentOrders = [], lowStockProducts = [] } = data || {};
-  const maxDayRev = Math.max(...salesByDay.map((d) => d.revenue), 1000);
-  const isVerified = Boolean(data?.seller?.verified || data?.seller?.status === 'active');
+  const kpis = [
+    { label: 'Available balance', value: formatMoney(balance), icon: 'wallet', tone: 'green', sub: <Link to="/seller/wallet?tab=withdraw">Request payout →</Link> },
+    { label: 'Sales · last 30 days', value: formatMoney(windows.sales), icon: 'trend', tone: 'blue', change: pctChange(windows.sales, windows.salesPrev), spark: 'sales', color: C.sales },
+    { label: `Expected profit · 30 days`, value: formatMoney(windows.profit), icon: 'sparkle', tone: 'emerald', change: pctChange(windows.profit, windows.profitPrev), spark: 'profit', color: C.profit },
+    { label: 'Orders · last 30 days', value: windows.orders.toLocaleString(), icon: 'package', tone: 'amber', change: pctChange(windows.orders, windows.ordersPrev), spark: 'orders', color: C.orders, sub: <span>{stats.pendingOrders || 0} to fulfil</span> },
+  ];
 
   return (
-    <div className="seller-dash">
-      {/* Welcome Banner */}
-      <div className="seller-dash-welcome">
-        <div className="sdw-heading">
-          <div className="sdw-title-flex">
-            <h2>Seller Business Hub 🚀</h2>
-            {isVerified && (
-              <VerifiedStoreBadge variant="pill" size={15} text="Verified Store" />
-            )}
-            <Link to="/seller/diamond" className={isDiamond ? 'diamond-pill' : 'basic-pill'} style={{ fontSize: 12, padding: '4px 10px' }}>
-              {isDiamond ? '💎 DIAMOND STORE' : 'BASIC PLAN'}
-            </Link>
+    <div className="sd">
+      {/* ── Header ── */}
+      <header className="sd-head">
+        <div className="sd-head-text">
+          <p className="sd-eyebrow">{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
+          <h1>{greet}{firstName ? `, ${firstName}` : ''}</h1>
+          <div className="sd-head-meta">
+            <span className="sd-store">{seller.storeName}</span>
+            {isVerified && <VerifiedStoreBadge variant="pill" size={13} text="Verified" />}
+            <Link to="/seller/diamond" className={`sd-plan ${isDiamond ? 'diamond' : ''}`}>{isDiamond ? '💎 Diamond' : 'Basic plan'}</Link>
+            <span className="sd-live" title="Shoppers browsing your catalog right now"><i />{liveShoppers} browsing now</span>
           </div>
-          <p>
-            Welcome back, <b className="sdw-store-name">{data?.seller?.storeName}</b>
-            {isVerified && (
-              <VerifiedStoreBadge variant="icon" size={15} style={{ marginLeft: 5 }} />
+        </div>
+        <div className="sd-head-actions">
+          <Link to="/seller/products" className="sd-btn sd-btn-primary"><Ic name="plus" size={15} /> Add product</Link>
+          <Link to="/seller/wallet?tab=deposit" className="sd-btn sd-btn-ghost"><Ic name="banknote" size={15} /> Deposit</Link>
+          <Link to="/seller/support" className="sd-btn sd-btn-ghost"><Ic name="headset" size={15} /> Support</Link>
+        </div>
+      </header>
+
+      {/* ── Things that need attention ── */}
+      {(awaiting > 0 || lowStockProducts.length > 0 || (me && !isDiamond && me.status !== 'pending_approval')) && (
+        <div className="sd-alerts">
+          {awaiting > 0 && (
+            <Link to="/seller/orders" className="sd-alert tone-amber">
+              <Ic name="clock" size={16} />
+              <span><b>{awaiting} order{awaiting === 1 ? '' : 's'}</b> waiting for your confirmation</span>
+              <em>Confirm →</em>
+            </Link>
+          )}
+          {lowStockProducts.length > 0 && (
+            <Link to="/seller/products" className="sd-alert tone-red">
+              <Ic name="alert" size={16} />
+              <span><b>{stats.lowStockCount || lowStockProducts.length} product{(stats.lowStockCount || lowStockProducts.length) === 1 ? '' : 's'}</b> running low on stock</span>
+              <em>Restock →</em>
+            </Link>
+          )}
+          {me && !isDiamond && me.status !== 'pending_approval' && (
+            <Link to="/seller/diamond" className="sd-alert tone-diamond">
+              <span className="sd-alert-emoji">💎</span>
+              {['pending', 'awaiting_approval'].includes(me?.tierRequest?.status)
+                ? <span>Your <b>Diamond upgrade</b> request is with support — they will contact you in chat.</span>
+                : <span><b>Diamond</b>: 35% profit per order (vs 20%), 72h to confirm, 3–5 day delivery</span>}
+              <em>See Diamond →</em>
+            </Link>
+          )}
+        </div>
+      )}
+
+      {/* ── KPIs ── */}
+      <div className="sd-kpis">
+        {kpis.map((k) => (
+          <div key={k.label} className="sd-card sd-kpi">
+            <div className="sd-kpi-top">
+              <span className="sd-kpi-label">{k.label}</span>
+              <span className={`sd-kpi-icon tone-${k.tone}`}><Ic name={k.icon} size={16} /></span>
+            </div>
+            <div className="sd-kpi-value">{k.value}</div>
+            <div className="sd-kpi-foot">
+              {k.change !== undefined && (
+                k.change === null
+                  ? <span className="sd-delta up">New</span>
+                  : <span className={`sd-delta ${k.change > 0 ? 'up' : k.change < 0 ? 'down' : ''}`}>{k.change > 0 ? '▲' : k.change < 0 ? '▼' : '•'} {Math.abs(k.change)}%</span>
+              )}
+              {k.change !== undefined && <span className="sd-kpi-vs">vs prev. 30d</span>}
+              {k.sub && <span className="sd-kpi-sub">{k.sub}</span>}
+            </div>
+            {k.spark && (
+              <div className="sd-spark" aria-hidden="true">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={windows.spark} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
+                    {k.spark === 'orders'
+                      ? <Bar dataKey="orders" fill={k.color} radius={[2, 2, 0, 0]} isAnimationActive={false} />
+                      : <Area type="monotone" dataKey={k.spark} stroke={k.color} strokeWidth={1.75} fill={k.color} fillOpacity={0.12} isAnimationActive={false} />}
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
             )}
-            ! Here is your real-time performance summary.
+          </div>
+        ))}
+      </div>
+
+      {/* ── Performance chart + account health ── */}
+      <div className="sd-row-main">
+        <section className="sd-card sd-chart-card">
+          <div className="sd-card-head">
+            <div>
+              <h3 className="sd-card-title"><Ic name="chart" size={16} /> Sales performance</h3>
+              <div className="sd-legend-inline">
+                <span><i style={{ background: C.sales }} /> Sales <b>{formatMoney(rangeTotals.sales)}</b></span>
+                <span><i style={{ background: C.profit }} /> Profit <b>{formatMoney(rangeTotals.profit)}</b></span>
+                <span><i style={{ background: C.orders }} /> Orders <b>{rangeTotals.orders}</b></span>
+              </div>
+            </div>
+            <div className="sd-seg" role="tablist" aria-label="Chart range">
+              {RANGES.map((r) => (
+                <button key={r.id} type="button" role="tab" aria-selected={range === r.id} className={range === r.id ? 'on' : ''} onClick={() => setRange(r.id)}>{r.label}</button>
+              ))}
+            </div>
+          </div>
+          <div className="sd-chart">
+            {!activity ? <div className="sd-skel fill" /> : (
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={chartData} margin={{ top: 10, right: 4, bottom: 0, left: 0 }}>
+                  <defs>
+                    <linearGradient id="sdSales" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={C.sales} stopOpacity={0.22} />
+                      <stop offset="100%" stopColor={C.sales} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid vertical={false} stroke={C.grid} />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: C.axis }} interval="preserveStartEnd" minTickGap={18} />
+                  <YAxis yAxisId="m" tickLine={false} axisLine={false} width={52} tick={{ fontSize: 11, fill: C.axis }} tickFormatter={(v) => compact(v / (convert(1) || 1))} />
+                  <YAxis yAxisId="o" orientation="right" hide allowDecimals={false} domain={[0, (max) => Math.max(4, max * 3)]} />
+                  <Tooltip content={<ChartTip formatMoney={formatMoney} />} cursor={{ stroke: '#cbd5e1', strokeDasharray: '3 3' }} />
+                  <Bar yAxisId="o" dataKey="orders" fill={C.orders} fillOpacity={0.55} radius={[3, 3, 0, 0]} maxBarSize={14} />
+                  <Area yAxisId="m" type="monotone" dataKey="salesC" stroke={C.sales} strokeWidth={2.25} fill="url(#sdSales)" activeDot={{ r: 4, strokeWidth: 0 }} />
+                  <Area yAxisId="m" type="monotone" dataKey="profitC" stroke={C.profit} strokeWidth={2} fill="none" activeDot={{ r: 4, strokeWidth: 0 }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </section>
+
+        <section className={`sd-card sd-health tier-${h.tier}`}>
+          <div className="sd-card-head">
+            <div>
+              <h3 className="sd-card-title"><Ic name="shield" size={16} /> Account health</h3>
+              <p className="sd-card-sub">Compliance score</p>
+            </div>
+            <span className={`sd-tag tone-${h.tier === 'healthy' ? 'green' : h.tier === 'warning' ? 'amber' : 'red'}`}>{h.label}</span>
+          </div>
+          <Gauge score={score} tier={h.tier} />
+          <p className="sd-health-desc">{h.desc}</p>
+          <dl className="sd-health-stats">
+            <div><dt>Policy notices</dt><dd>{health.policyViolations || 0}</dd></div>
+            <div><dt>Defect rate</dt><dd>{((health.orderDefectRate || 0) * 100).toFixed(1)}%</dd></div>
+            <div><dt>Rating</dt><dd>{seller.rating ? `★ ${Number(seller.rating).toFixed(1)}` : '—'}</dd></div>
+            <div><dt>Refunds</dt><dd>{stats.refundCount || 0}</dd></div>
+          </dl>
+          {Array.isArray(health.history) && health.history.length > 0 && (
+            <ul className="sd-health-log">
+              {health.history.slice(0, 2).map((x, i) => (
+                <li key={i}>
+                  <span className={`sd-delta ${x.delta >= 0 ? 'up' : 'down'}`}>{x.delta >= 0 ? `+${x.delta}` : x.delta}</span>
+                  <span className="sd-health-reason" title={x.reason}>{x.reason || 'Routine evaluation'}</span>
+                  <small>{fmtDate(x.createdAt)}</small>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="sd-health-foot">
+            {health.lastEvaluatedAt ? `Evaluated ${fmtDate(health.lastEvaluatedAt)}` : 'Score scale: 80+ healthy · 31–79 at risk · ≤30 freeze · ≤20 suspension'}
           </p>
-        </div>
-        <div className="seller-quick-actions">
-          <Link to="/seller/products" className="seller-btn-pri"><Ic name="plus" size={16} /> Add Product</Link>
-          <Link to="/seller/support" className="seller-btn-sec"><Ic name="chat" size={16} /> Support &amp; Helpline</Link>
-          <Link to="/seller/wallet" className="seller-btn-wallet hide-on-mobile">
-            <Ic name="banknote" size={16} /> My Wallet ({formatMoney(stats?.availableBalance || data?.seller?.wallet?.balance)})
-          </Link>
-        </div>
+        </section>
       </div>
 
-      {/* ─── ACCOUNT PLAN: Basic stores see what Diamond gives ─── */}
-      {me && !isDiamond && me.status !== 'pending_approval' && (
-        <div className="sdm-upsell">
-          <span style={{ fontSize: 22 }}>💎</span>
-          <div>
-            {['pending', 'awaiting_approval'].includes(me?.tierRequest?.status) ? (
-              <>Your <b>Diamond upgrade request</b> is with our support team — they will contact you in chat.</>
-            ) : (
-              <>Upgrade to <b>Diamond</b>: earn <b>35% profit</b> per order instead of 20%, get <b>72 hours</b> to confirm orders, remove products from My Store and fast 3–5 day delivery.</>
-            )}
-          </div>
-          <Link to="/seller/diamond" className="sdm-btn sdm-btn-diamond">See Diamond</Link>
-        </div>
-      )}
+      {/* ── Calendar + wallet & order mix ── */}
+      <div className="sd-row-main">
+        <SellerCalendar refreshKey={refreshKey} storeSince={seller.createdAt} />
 
-      {/* ─── OFFICIAL VERIFIED STORE STATUS BANNER ─── */}
-      {isVerified && (
-        <VerifiedStoreBadge variant="banner" />
-      )}
-
-      {/* ─── LIVE MERCHANT WALLET HERO & QUICK PAYOUT ACTIONS ─── */}
-      <div className="seller-wallet-hero-card">
-        <div className="swh-left">
-          <div className="swh-icon-box">
-            <Ic name="banknote" size={26} />
-          </div>
-          <div className="swh-info">
-            <span className="swh-title">Available Merchant Wallet Balance</span>
-            <div className="swh-balance-row">
-              <span className="swh-amount">{formatMoney(stats?.availableBalance || data?.seller?.wallet?.balance)}</span>
-              {(stats?.securityDeposit > 0 || data?.seller?.securityDeposit?.amount > 0 || data?.seller?.wallet?.securityDeposit > 0) && (
-                <span className="swh-security-badge" title="Verified Registration Security Deposit Collateral">
-                  🛡️ {formatMoney(stats?.securityDeposit || data?.seller?.securityDeposit?.amount || data?.seller?.wallet?.securityDeposit || 0)} Security Deposit
-                </span>
-              )}
-              {(stats?.processingFund > 0 || data?.seller?.wallet?.processingFund > 0) && (
-                <span className="swh-proc-badge" title="Funds locked in active order processing">
-                  🔒 {formatMoney(stats?.processingFund || data?.seller?.wallet?.processingFund)} Processing
-                </span>
-              )}
-              {(stats?.totalProfitEarned > 0 || data?.seller?.wallet?.totalProfitEarned > 0) && (
-                <span className="swh-profit-badge" title="Cumulative order profits earned">
-                  +{formatMoney(stats?.totalProfitEarned || data?.seller?.wallet?.totalProfitEarned)} Profit Earned
-                </span>
-              )}
-            </div>
-            <span className="swh-sub">Ready for withdrawal or used for order fulfillment fund locking.</span>
-          </div>
-        </div>
-
-        <div className="swh-actions">
-          <Link to="/seller/wallet?tab=deposit" className="swh-btn swh-btn-deposit">
-            <Ic name="plus" size={15} /> 💰 Add Deposit
-          </Link>
-          <Link to="/seller/wallet?tab=withdraw" className="swh-btn swh-btn-withdraw">
-            <Ic name="banknote" size={15} /> 💸 Request Payout
-          </Link>
-          <Link to="/seller/wallet?tab=ledger" className="swh-btn swh-btn-ledger">
-            <Ic name="eye" size={15} /> 📜 Financial Ledger
-          </Link>
-        </div>
-      </div>
-
-      {/* ─── SELLER ACCOUNT HEALTH & COMPLIANCE RATING HERO CARD ─── */}
-      {(() => {
-        const health = data?.seller?.accountHealth || {};
-        const score = health.score !== undefined ? health.score : 100;
-        const tier = score >= 80 ? 'healthy' : score >= 31 ? 'warning' : score > 20 ? 'freeze' : 'suspended';
-        const tierLabel = score >= 80 ? 'Good / Healthy Standing' : score >= 31 ? 'At Risk / Needs Attention' : score > 20 ? 'Critical (Freeze Warning)' : 'Critical (Suspension Warning)';
-        const tierDesc = score >= 80
-          ? 'Your merchant store is in excellent standing. You enjoy uninterrupted product listings and fast withdrawal processing.'
-          : score >= 31
-          ? 'Your account health has dropped below 80. Improve dispatch timeliness and customer satisfaction to avoid account restrictions.'
-          : score > 20
-          ? 'Urgent attention required: Your score is near the 30% freeze threshold. Contact Platform Compliance immediately.'
-          : 'High Risk Notice: Your account is at the 20% suspension threshold. Platform Admin review is pending.';
-
-        return (
-          <div className={`seller-health-hero-card health-card-tier-${tier}`}>
-            <div className="shh-top">
-              <div className="shh-left">
-                <div className={`shh-score-badge tier-badge-${tier}`}>
-                  <Ic name="shield" size={26} />
-                  <div className="shh-score-val-wrap">
-                    <span className="shh-score-num">{score}</span>
-                    <span className="shh-score-total">/100</span>
-                  </div>
-                </div>
-                <div className="shh-title-box">
-                  <div className="shh-title-row">
-                    <b className="shh-main-title">Account Health &amp; Compliance Rating</b>
-                    <span className={`shh-status-pill tier-pill-${tier}`}>{tierLabel}</span>
-                  </div>
-                  <p className="shh-desc">{tierDesc}</p>
-                </div>
-              </div>
-
-              <div className="shh-actions">
-                <Link to="/seller/support" className="shh-support-btn">
-                  <Ic name="chat" size={15} /> 🎧 Merchant Helpline
-                </Link>
-              </div>
-            </div>
-
-            {/* Visual Range Progress Bar Gauge */}
-            <div className="shh-gauge-wrap">
-              <div className="shh-gauge-track">
-                <div
-                  className={`shh-gauge-fill fill-${tier}`}
-                  style={{ width: `${Math.max(4, Math.min(100, score))}%` }}
-                >
-                  <span className="shh-gauge-glow-cap" />
-                </div>
-              </div>
-              <div className="shh-gauge-scale-grid">
-                <div className="scale-pill pill-red">
-                  <span className="scale-dot red" />
-                  <span className="scale-lbl">0–20 (Suspension)</span>
-                </div>
-                <div className="scale-pill pill-orange">
-                  <span className="scale-dot orange" />
-                  <span className="scale-lbl">21–30 (Freeze)</span>
-                </div>
-                <div className="scale-pill pill-yellow">
-                  <span className="scale-dot yellow" />
-                  <span className="scale-lbl">31–79 (At Risk)</span>
-                </div>
-                <div className="scale-pill pill-green">
-                  <span className="scale-dot green" />
-                  <span className="scale-lbl">80–100 (Healthy)</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Policy Metric Breakdown Grid */}
-            <div className="shh-metrics-grid">
-              <div className="shh-metric-item">
-                <span className="smi-lbl">Account Privileges</span>
-                <b className={`smi-val ${tier === 'healthy' ? 'text-green' : tier === 'warning' ? 'text-yellow' : 'text-red'}`}>
-                  {tier === 'healthy' ? '✅ Full Privileges' : tier === 'warning' ? '⚠️ At Risk' : tier === 'freeze' ? '❄️ Freeze Alert' : '⛔ Suspension Alert'}
-                </b>
-              </div>
-              <div className="shh-metric-item">
-                <span className="smi-lbl">Policy Violations</span>
-                <b className="smi-val text-green">{health.policyViolations || 0} Active Notices</b>
-              </div>
-              <div className="shh-metric-item">
-                <span className="smi-lbl">Order Defect Rate</span>
-                <b className="smi-val text-green">{((health.orderDefectRate || 0) * 100).toFixed(1)}% (Target &lt; 1%)</b>
-              </div>
-              <div className="shh-metric-item">
-                <span className="smi-lbl">Latest Evaluation</span>
-                <b className="smi-val">{health.lastEvaluatedAt ? fmtDate(health.lastEvaluatedAt) : 'Recently Validated'}</b>
-              </div>
-            </div>
-
-            {/* Recent Adjustments History (if available) */}
-            {Array.isArray(health.history) && health.history.length > 0 && (
-              <div className="shh-history-box">
-                <span className="shh-hist-title">Recent Compliance Log:</span>
-                <div className="shh-hist-list">
-                  {health.history.slice(0, 2).map((h, i) => (
-                    <div key={i} className="shh-hist-row">
-                      <span className={`hist-delta ${h.delta >= 0 ? 'plus' : 'minus'}`}>
-                        {h.delta >= 0 ? `+${h.delta}` : h.delta} pts
-                      </span>
-                      <span className="hist-reason">"{h.reason || 'Routine Policy Evaluation'}"</span>
-                      <small className="hist-meta">• {h.changedBy || 'Admin'} ({fmtDate(h.createdAt)})</small>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })()}
-
-      {/* Featured Mobile App Card Banner */}
-      <div className="seller-app-dashboard-banner">
-        <div className="sadb-left">
-          <div className="sadb-icon-badge">📱</div>
-          <div className="sadb-text">
-            <b>Bazario Merchant Mobile App (Android &amp; iOS)</b>
-            <p>Get instant sound alerts on every new order, fulfill shipments faster, and chat with Admin on the go.</p>
-          </div>
-        </div>
-        <div className="sadb-actions">
-          <button type="button" className="btn-sadb-install" onClick={() => setAppModalOpen(true)}>
-            <Ic name="download" size={15} /> ⚡ 1-Click Install App
-          </button>
-          <a
-            href="/downloads/bazario-seller.apk"
-            download="bazario-seller.apk"
-            className="btn-sadb-apk"
-          >
-            <Ic name="package" size={15} /> Download APK
-          </a>
-        </div>
-      </div>
-
-      {/* Low Stock Warning Alert */}
-      {lowStockProducts.length > 0 && (
-        <div className="seller-low-stock-alert">
-          <div className="alert-icon">⚠️</div>
-          <div className="alert-text">
-            <b>Low Inventory Notice ({lowStockProducts.length} items):</b> Some of your products are running low on stock. Please restock soon to prevent missed sales.
-          </div>
-          <Link to="/seller/products" className="alert-action">Manage Stock →</Link>
-        </div>
-      )}
-
-      {/* KPI Metric Cards */}
-      <div className="seller-kpi-grid">
-        {/* Active Store Visitors (Real-Time Traffic) */}
-        <div className="seller-kpi-card visitors-card">
-          <div className="kpi-header">
-            <span className="kpi-title">Active Store Visitors</span>
-            <span className="kpi-icon-wrap emerald">
-              <span className="live-pulse-dot" />
-              <Ic name="eye" size={20} />
-            </span>
-          </div>
-          <div className="kpi-value text-emerald" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>{liveShoppers}</span>
-            <span className="live-pill-tag">● LIVE NOW</span>
-          </div>
-          <div className="kpi-footer text-emerald">
-            <span>Customers currently browsing your catalog</span>
-          </div>
-        </div>
-
-        {/* Available Wallet Balance */}
-        <div className="seller-kpi-card revenue-card">
-          <div className="kpi-header">
-            <span className="kpi-title">Available Wallet Balance</span>
-            <span className="kpi-icon-wrap green"><Ic name="banknote" size={20} /></span>
-          </div>
-          <div className="kpi-value">{formatMoney(stats?.availableBalance || data?.seller?.wallet?.balance)}</div>
-          <div className="kpi-footer text-green">
-            <Link to="/seller/wallet" style={{ color: 'inherit', textDecoration: 'none', fontWeight: 600 }}>
-              Withdraw / View Wallet →
-            </Link>
-          </div>
-        </div>
-
-        {/* Security Deposit Fund (Collateral) */}
-        {(stats?.securityDeposit > 0 || data?.seller?.securityDeposit?.amount > 0 || data?.seller?.wallet?.securityDeposit > 0 || data?.seller?.securityDeposit?.paid) && (
-          <div className="seller-kpi-card security-card">
-            <div className="kpi-header">
-              <span className="kpi-title">Security Deposit Fund</span>
-              <span className="kpi-icon-wrap indigo"><Ic name="shield" size={20} /></span>
-            </div>
-            <div className="kpi-value text-indigo">
-              {formatMoney(stats?.securityDeposit || data?.seller?.securityDeposit?.amount || data?.seller?.wallet?.securityDeposit || 0)}
-            </div>
-            <div className="kpi-footer text-indigo">
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <Ic name="badgeCheck" size={13} /> Active Merchant Collateral
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Processing Funds Locked */}
-        <div className="seller-kpi-card pending-card">
-          <div className="kpi-header">
-            <span className="kpi-title">In-Flight Processing Funds</span>
-            <span className="kpi-icon-wrap orange"><Ic name="lock" size={20} /></span>
-          </div>
-          <div className="kpi-value text-amber">{formatMoney(stats?.processingFund || data?.seller?.wallet?.processingFund)}</div>
-          <div className="kpi-footer text-orange">
-            <span>Locked for confirmed active orders</span>
-          </div>
-        </div>
-
-        {/* 20% Profit Earned */}
-        <div className="seller-kpi-card profit-card">
-          <div className="kpi-header">
-            <span className="kpi-title">Order Profit Earned ({profitPct}%)</span>
-            <span className="kpi-icon-wrap blue"><Ic name="sparkle" size={20} /></span>
-          </div>
-          <div className="kpi-value text-green">+{formatMoney(stats?.totalProfitEarned || data?.seller?.wallet?.totalProfitEarned)}</div>
-          <div className="kpi-footer text-blue">
-            <span>{isDiamond ? '💎 Diamond: 35% on new orders' : 'Basic: 20% per order'}</span>
-          </div>
-        </div>
-
-        {/* Total Orders */}
-        <div className="seller-kpi-card orders-card">
-          <div className="kpi-header">
-            <span className="kpi-title">Total Orders</span>
-            <span className="kpi-icon-wrap purple"><Ic name="package" size={20} /></span>
-          </div>
-          <div className="kpi-value">{stats?.totalOrders || 0}</div>
-          <div className="kpi-footer">
-            <span>{stats?.pendingOrders || 0} pending fulfillment</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Secondary Metrics Bar */}
-      <div className="seller-secondary-metrics">
-        <div className="sec-metric">
-          <span className="sec-lbl">Active Shoppers Now</span>
-          <b className="sec-val text-green" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-            <span className="live-pulse-dot" /> {liveShoppers} Live
-          </b>
-        </div>
-        <div className="sec-metric">
-          <span className="sec-lbl">Gross Store Sales</span>
-          <b className="sec-val">{formatMoney(stats?.grossRevenue)}</b>
-        </div>
-        <div className="sec-metric">
-          <span className="sec-lbl">Active Products Listed</span>
-          <b className="sec-val">{stats?.totalProducts || 0}</b>
-        </div>
-        {(stats?.securityDeposit > 0 || data?.seller?.securityDeposit?.amount > 0) && (
-          <div className="sec-metric">
-            <span className="sec-lbl">Security Collateral</span>
-            <b className="sec-val text-indigo">🛡️ {formatMoney(stats?.securityDeposit || data?.seller?.securityDeposit?.amount)}</b>
-          </div>
-        )}
-        <div className="sec-metric">
-          <span className="sec-lbl">Customer Rating</span>
-          <b className="sec-val text-yellow">⭐ {data?.seller?.rating || '4.9'} / 5.0</b>
-        </div>
-        <div className="sec-metric">
-          <span className="sec-lbl">Units Dispatched</span>
-          <b className="sec-val">{stats?.totalItemsSold || 0}</b>
-        </div>
-        <div className="sec-metric">
-          <span className="sec-lbl">Customer Refunds</span>
-          <b className="sec-val">{stats?.refundCount || 0}</b>
-        </div>
-      </div>
-
-      {/* ─── PERFORMANCE TARGETS & CASH BONUSES WIDGET ─── */}
-      {Array.isArray(data?.seller?.targets) && data.seller.targets.length > 0 && (
-        <div className="seller-card" style={{ marginBottom: 20, borderLeft: '4px solid #f59e0b' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 24 }}>🎯</span>
+        <div className="sd-stack">
+          <section className="sd-card">
+            <div className="sd-card-head">
               <div>
-                <h3 style={{ margin: 0, fontSize: 16 }}>Store Performance Targets &amp; Cash Bonuses</h3>
-                <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>
-                  Complete assigned delivery order volume milestones to unlock instant wallet cash bonuses.
-                </p>
+                <h3 className="sd-card-title"><Ic name="wallet" size={16} /> Wallet</h3>
+                <p className="sd-card-sub">Where your money is right now</p>
+              </div>
+              <Link to="/seller/wallet" className="sd-link">Open →</Link>
+            </div>
+            <div className="sd-wallet-total">
+              <span>Available to withdraw</span>
+              <b>{formatMoney(balance)}</b>
+            </div>
+            <div className="sd-stackbar" role="img" aria-label="Wallet breakdown">
+              {walletTotal > 0
+                ? walletParts.filter((p) => p.v > 0).map((p) => <span key={p.key} style={{ flexGrow: p.v, background: p.c }} title={`${p.key}: ${formatMoney(p.v)}`} />)
+                : <span style={{ flexGrow: 1, background: '#e2e8f0' }} />}
+            </div>
+            <ul className="sd-wallet-list">
+              {walletParts.map((p) => (
+                <li key={p.key}><i style={{ background: p.c }} /><span>{p.key}</span><b>{formatMoney(p.v)}</b></li>
+              ))}
+              <li className="sep"><i className="ring" /><span>Security deposit</span><b>{formatMoney(security)}</b></li>
+              <li><i style={{ background: '#10b981' }} /><span>Profit earned ({profitPct}%) · lifetime</span><b className="t-green">+{formatMoney(stats.totalProfitEarned || 0)}</b></li>
+            </ul>
+            <div className="sd-wallet-actions">
+              <Link to="/seller/wallet?tab=deposit" className="sd-btn sd-btn-ghost sm">Add deposit</Link>
+              <Link to="/seller/wallet?tab=withdraw" className="sd-btn sd-btn-dark sm">Request payout</Link>
+            </div>
+          </section>
+
+          <section className="sd-card">
+            <div className="sd-card-head">
+              <div>
+                <h3 className="sd-card-title"><Ic name="layers" size={16} /> Order status</h3>
+                <p className="sd-card-sub">All {stats.totalOrders || 0} orders</p>
               </div>
             </div>
+            {statusTotal === 0 ? <p className="sd-empty">No orders yet.</p> : (
+              <div className="sd-donut-wrap">
+                <div className="sd-donut">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={statusData} dataKey="value" nameKey="name" innerRadius="68%" outerRadius="100%" paddingAngle={statusData.length > 1 ? 2 : 0} stroke="none" isAnimationActive={false}>
+                        {statusData.map((s) => <Cell key={s.key} fill={s.color} />)}
+                      </Pie>
+                      <Tooltip formatter={(v, n) => [`${v} orders`, n]} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="sd-donut-center"><b>{statusTotal}</b><span>orders</span></div>
+                </div>
+                <ul className="sd-donut-legend">
+                  {statusData.map((s) => (
+                    <li key={s.key}><i style={{ background: s.color }} /><span>{s.name}</span><b>{s.value}</b><small>{Math.round((s.value / statusTotal) * 100)}%</small></li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+
+      {/* ── Targets ── */}
+      {activeTargets.length > 0 && (
+        <section className="sd-card">
+          <div className="sd-card-head">
+            <div>
+              <h3 className="sd-card-title"><Ic name="gift" size={16} /> Targets &amp; bonuses</h3>
+              <p className="sd-card-sub">Deliver the order count to get the cash bonus in your wallet</p>
+            </div>
           </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
-            {data.seller.targets.map((tgt) => {
-              const current = tgt.currentOrders ?? tgt.currentOrderCount ?? 0;
-              const target = tgt.targetOrders || tgt.targetOrderCount || 1;
-              const pct = Math.min(100, Math.round((current / target) * 100));
-              const isCompleted = tgt.status === 'completed' || tgt.status === 'claimed' || current >= target;
-              const isExpired = !isCompleted && (tgt.status === 'expired' || (tgt.expiresAt && new Date(tgt.expiresAt) < new Date()));
-              const note = tgt.description || tgt.adminNote;
-
+          <div className="sd-targets">
+            {activeTargets.map((t) => {
+              const cur = t.currentOrders ?? t.currentOrderCount ?? 0;
+              const goal = t.targetOrders || t.targetOrderCount || 1;
+              const pct = Math.min(100, Math.round((cur / goal) * 100));
+              const done = t.status === 'completed' || t.status === 'claimed' || cur >= goal;
+              const expired = !done && (t.status === 'expired' || (t.expiresAt && new Date(t.expiresAt) < new Date()));
               return (
-                <div
-                  key={tgt._id || tgt.title}
-                  style={{
-                    background: isCompleted ? '#f0fdf4' : '#f8fafc',
-                    border: `1.5px solid ${isCompleted ? '#86efac' : '#e2e8f0'}`,
-                    borderRadius: 10,
-                    padding: '14px 16px',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                    <div>
-                      <b style={{ fontSize: 14, color: '#0f172a' }}>{tgt.title}</b>
-                      {note && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>{note}</p>}
-                      {tgt.expiresAt && !isCompleted && (
-                        <p style={{ margin: '2px 0 0', fontSize: 11.5, color: isExpired ? '#64748b' : '#b45309', fontWeight: 600 }}>
-                          {isExpired ? 'Ended' : 'Ends'} {new Date(tgt.expiresAt).toLocaleDateString()}
-                        </p>
-                      )}
-                    </div>
-                    <span
-                      style={{
-                        padding: '3px 8px',
-                        borderRadius: 6,
-                        fontSize: 11,
-                        fontWeight: 800,
-                        background: isCompleted ? '#dcfce7' : isExpired ? '#f1f5f9' : '#fef3c7',
-                        color: isCompleted ? '#166534' : isExpired ? '#475569' : '#92400e',
-                      }}
-                    >
-                      {isCompleted ? '🎉 COMPLETED' : isExpired ? 'EXPIRED' : 'IN PROGRESS'}
-                    </span>
+                <div key={t._id || t.title} className={`sd-target ${done ? 'done' : expired ? 'expired' : ''}`}>
+                  <div className="sd-target-top">
+                    <b>{t.title}</b>
+                    <span className={`sd-tag tone-${done ? 'green' : expired ? 'slate' : 'amber'}`}>{done ? 'Completed' : expired ? 'Expired' : 'In progress'}</span>
                   </div>
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '8px 0 4px', fontSize: 12.5 }}>
-                    <span><b>{current}</b> / {target} Delivered Orders</span>
-                    <b style={{ color: '#16a34a', fontSize: 13 }}>Bonus: +{formatMoney(tgt.bonusAmount || 0)}</b>
+                  {(t.description || t.adminNote) && <p>{t.description || t.adminNote}</p>}
+                  <div className="sd-progress"><span style={{ width: `${pct}%` }} /></div>
+                  <div className="sd-target-foot">
+                    <span><b>{cur}</b> / {goal} delivered</span>
+                    <b className="t-green">+{formatMoney(t.bonusAmount || 0)}</b>
                   </div>
-
-                  <div style={{ height: 8, background: '#e2e8f0', borderRadius: 4, overflow: 'hidden' }}>
-                    <div
-                      style={{
-                        height: '100%',
-                        width: `${pct}%`,
-                        background: isCompleted ? '#16a34a' : '#f59e0b',
-                        transition: 'width 0.3s ease',
-                      }}
-                    />
-                  </div>
-                  {/* the bonus is paid in the same step that marks the target completed */}
-                  {tgt.status === 'completed' && (
-                    <small style={{ display: 'block', marginTop: 6, color: '#166534', fontWeight: 700, fontSize: 11 }}>
-                      ✅ Bonus {formatMoney(tgt.bonusAmount)} credited directly to Merchant Wallet!
-                    </small>
-                  )}
+                  {t.expiresAt && !done && <small className={expired ? 't-muted' : 't-amber'}>{expired ? 'Ended' : 'Ends'} {new Date(t.expiresAt).toLocaleDateString()}</small>}
+                  {t.status === 'completed' && <small className="t-green">Bonus credited to your wallet</small>}
                 </div>
               );
             })}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* Sales Trend Chart & Top Selling Products */}
-      <div className="seller-charts-row">
-        {/* Sales Chart */}
-        <div className="seller-card chart-card">
-          <div className="seller-card-head">
-            <div className="sch-title-box">
-              <h3>📈 Daily Sales Revenue Trend (Last 14 Days)</h3>
-              <span className="sch-subtitle">Store revenue progression and customer order volume</span>
+      {/* ── Recent orders + top products ── */}
+      <div className="sd-row-main">
+        <section className="sd-card sd-orders">
+          <div className="sd-card-head">
+            <div>
+              <h3 className="sd-card-title"><Ic name="package" size={16} /> Recent orders</h3>
+              <p className="sd-card-sub">Latest orders for your store</p>
             </div>
-            <span className="badge-pill">{currentCurrency.code} ({currentCurrency.symbol})</span>
+            <Link to="/seller/orders" className="sd-link">View all ({stats.totalOrders || 0}) →</Link>
           </div>
-          <div className="sales-chart-outer-wrap">
-            <div className="sales-bar-chart">
-              {salesByDay.map((day, idx) => {
-                const heightPercent = Math.max(8, Math.round((day.revenue / maxDayRev) * 100));
-                return (
-                  <div key={idx} className="chart-bar-col" title={`${day.rawDate}: ${formatMoney(day.revenue)} (${day.orders} orders)`}>
-                    <div className="bar-hover-val">{day.revenue > 0 ? formatMoney(day.revenue) : ''}</div>
-                    <div className="bar-track">
-                      <div
-                        className="bar-fill"
-                        style={{ height: `${heightPercent}%`, backgroundColor: day.revenue > 0 ? '#ff9900' : '#e2e8f0' }}
-                      ></div>
-                    </div>
-                    <span className="bar-label">{day.date}</span>
-                  </div>
-                );
-              })}
+          {recentOrders.length === 0 ? <p className="sd-empty">No orders placed yet.</p> : (
+            <div className="sd-table-wrap">
+              <table className="sd-table">
+                <thead>
+                  <tr><th>Order</th><th>Items</th><th>Customer</th><th className="r">Amount</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                  {recentOrders.map((ord) => {
+                    const items = (ord.items || []).filter((it) => String(it.seller) === String(sellerId));
+                    const total = items.reduce((a, b) => a + (b.price || 0) * (b.qty || 1), 0);
+                    const st = statusMeta(items[0]?.itemStatus || ord.status);
+                    return (
+                      <tr key={ord._id}>
+                        <td><Link to="/seller/orders" className="sd-order-no">#{ord.orderNumber}</Link><small>{fmtDate(ord.createdAt)}</small></td>
+                        <td className="sd-td-items">{items.map((it, i) => <span key={i}><em>{it.qty || 1}×</em> {it.name}</span>)}</td>
+                        <td>{ord.shippingAddress?.fullName || 'Customer'}<small>{ord.shippingAddress?.city || ''}</small></td>
+                        <td className="r"><b>{formatMoney(total)}</b></td>
+                        <td><span className={`sd-tag tone-${st.tone}`}>{st.label}</span></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          </div>
-        </div>
+          )}
+        </section>
 
-        {/* Top Selling Products */}
-        <div className="seller-card top-prods-card">
-          <div className="seller-card-head">
-            <div className="sch-title-box">
-              <h3>🔥 Top Selling Products</h3>
-              <span className="sch-subtitle">Highest volume merchandise</span>
+        <section className="sd-card">
+          <div className="sd-card-head">
+            <div>
+              <h3 className="sd-card-title"><Ic name="star" size={16} /> Top products</h3>
+              <p className="sd-card-sub">By revenue, all time</p>
             </div>
-            <Link to="/seller/products" className="seller-view-all-pill">View All Catalog →</Link>
+            <Link to="/seller/products" className="sd-link">Catalog →</Link>
           </div>
-          <div className="top-prods-list">
-            {topProducts.length === 0 && (
-              <div className="top-prods-empty">
-                <span className="empty-emoji">📦</span>
-                <p>No sales recorded yet. Publish active products to track performance.</p>
-              </div>
-            )}
-            {topProducts.map((p, i) => (
-              <div key={i} className="top-prod-item">
-                <span className={`top-rank rank-${i + 1}`}>#{i + 1}</span>
-                <img src={p.image || '/img/products/serum.svg'} alt={p.name} className="top-prod-img" />
-                <div className="top-prod-info">
-                  <b className="top-prod-name" title={p.name}>{p.name}</b>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <small className="top-prod-meta">{p.qty} units sold</small>
-                    <span className="prod-live-viewers-tag-sm" title="Live shoppers currently viewing this product">
-                      <Ic name="eye" size={11} stroke={2.2} /> {getProductLiveViewers(p.id || p._id || p.name, p.revenue)} viewing
-                    </span>
+          {topProducts.length === 0 ? <p className="sd-empty">No sales yet. Publish products to start tracking.</p> : (
+            <ul className="sd-top">
+              {topProducts.map((p, i) => (
+                <li key={p.id || i}>
+                  <span className="sd-rank">{i + 1}</span>
+                  <img src={p.image || '/img/products/serum.svg'} alt="" loading="lazy" />
+                  <div className="sd-top-info">
+                    <div className="sd-top-row"><b title={p.name}>{p.name}</b><span>{formatMoney(p.revenue)}</span></div>
+                    <div className="sd-progress thin"><span style={{ width: `${Math.max(4, (p.revenue / topMax) * 100)}%` }} /></div>
+                    <small>{p.qty} units sold</small>
                   </div>
-                </div>
-                <div className="top-prod-rev">{formatMoney(p.revenue)}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+                </li>
+              ))}
+            </ul>
+          )}
+          <dl className="sd-mini-stats">
+            <div><dt>Gross sales</dt><dd>{formatMoney(stats.grossRevenue || 0)}</dd></div>
+            <div><dt>Units sold</dt><dd>{(stats.totalItemsSold || 0).toLocaleString()}</dd></div>
+            <div><dt>Products</dt><dd>{stats.totalProducts || 0}</dd></div>
+          </dl>
+        </section>
       </div>
 
-      {/* Recent Orders Table */}
-      <div className="seller-card recent-orders-card">
-        <div className="seller-card-head">
-          <div className="sch-title-box">
-            <h3>📦 Recent Orders for Your Store</h3>
-            <span className="sch-subtitle">Latest incoming orders requiring dispatch and fulfillment</span>
-          </div>
-          <Link to="/seller/orders" className="seller-view-all-btn">
-            View All Orders ({stats?.totalOrders || 0}) →
-          </Link>
+      {/* ── Mobile app ── */}
+      <section className="sd-card sd-app">
+        <span className="sd-app-icon"><Ic name="phone" size={20} /></span>
+        <div>
+          <b>Bazario Merchant app</b>
+          <p>Sound alerts on every new order, faster fulfilment and admin chat on the go.</p>
         </div>
-        <div className="seller-table-wrap">
-          <table className="seller-table">
-            <thead>
-              <tr>
-                <th>Order #</th>
-                <th>Date</th>
-                <th>Items Ordered</th>
-                <th>Customer / City</th>
-                <th>Seller Total</th>
-                <th>Status</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentOrders.length === 0 && (
-                <tr>
-                  <td colSpan="7" className="text-center py-6 muted">No orders placed yet.</td>
-                </tr>
-              )}
-              {recentOrders.map((ord) => {
-                const sellerItems = ord.items.filter((it) => it.seller?.toString() === data?.seller?._id?.toString());
-                const sellerTot = sellerItems.reduce((a, b) => a + (b.price || 0) * (b.qty || 1), 0);
-                const status = sellerItems[0]?.itemStatus || ord.status;
-
-                return (
-                  <tr key={ord._id}>
-                    <td><b>{ord.orderNumber}</b></td>
-                    <td>{fmtDate(ord.createdAt)}</td>
-                    <td>
-                      <div className="order-items-preview">
-                        {sellerItems.map((it, idx) => (
-                          <div key={idx} className="preview-line">
-                            <span className="item-qty-badge">{it.qty}x</span> {it.name}
-                          </div>
-                        ))}
-                      </div>
-                    </td>
-                    <td>
-                      <span>{ord.shippingAddress?.fullName || 'Customer'}</span>
-                      <small className="muted block">{ord.shippingAddress?.city || ''}</small>
-                    </td>
-                    <td><b>{formatMoney(sellerTot)}</b></td>
-                    <td>
-                      <span className={`status-tag status-${status}`}>{status.replace(/_/g, ' ')}</span>
-                    </td>
-                    <td>
-                      <Link to="/seller/orders" className="btn-sm-action">Fulfill →</Link>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="sd-app-actions">
+          <button type="button" className="sd-btn sd-btn-dark sm" onClick={() => setAppModalOpen(true)}><Ic name="download" size={14} /> Install app</button>
+          <a href="/downloads/bazario-seller.apk" download="bazario-seller.apk" className="sd-btn sd-btn-ghost sm">Download APK</a>
         </div>
-      </div>
+      </section>
 
-      {/* Seller Central App Setup & APK Installer Modal */}
       <SellerAppModal isOpen={appModalOpen} onClose={() => setAppModalOpen(false)} />
+    </div>
+  );
+}
+
+function ChartTip({ active, payload, formatMoney }) {
+  if (!active || !payload?.length) return null;
+  const r = payload[0].payload;
+  return (
+    <div className="sd-tip">
+      <b>{r.label}</b>
+      <div><i style={{ background: C.sales }} />Sales<span>{formatMoney(r.sales)}</span></div>
+      <div><i style={{ background: C.profit }} />Profit<span>{formatMoney(r.profit)}</span></div>
+      <div><i style={{ background: C.orders }} />Orders<span>{r.orders}</span></div>
+    </div>
+  );
+}
+
+// semicircle score gauge, 0–100
+function Gauge({ score, tier }) {
+  const s = Math.max(0, Math.min(100, score));
+  const R = 70;
+  const len = Math.PI * R;
+  return (
+    <div className="sd-gauge">
+      <svg viewBox="0 0 180 100" role="img" aria-label={`Health score ${s} out of 100`}>
+        <path d="M20 90 A70 70 0 0 1 160 90" fill="none" stroke="#eef2f7" strokeWidth="14" strokeLinecap="round" />
+        <path d="M20 90 A70 70 0 0 1 160 90" fill="none" className={`sd-gauge-arc tier-${tier}`} strokeWidth="14" strokeLinecap="round" strokeDasharray={`${(s / 100) * len} ${len}`} />
+      </svg>
+      <div className="sd-gauge-val"><b>{s}</b><span>/100</span></div>
     </div>
   );
 }

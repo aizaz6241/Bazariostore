@@ -1270,6 +1270,11 @@ export default function Sellers() {
               const hScore = ps.accountHealth?.score !== undefined ? ps.accountHealth.score : 100;
               const hTier = hScore >= 80 ? 'good' : hScore >= 31 ? 'watch' : hScore > 20 ? 'risk' : 'critical';
               const pendingCount = profileData?.stats?.pendingOrders ?? ps.pendingOrders ?? 0;
+              const unconfirmedCount = profileData?.stats?.unconfirmedOrders;
+              const unconfirmedAmount = profileData?.stats?.unconfirmedAmount;
+              const frozenAmt = profileData?.stats?.frozenFund ?? ps.wallet?.frozenFund ?? 0;
+              const available = Number(ps.wallet?.balance) || 0;
+              const shortBy = unconfirmedAmount !== undefined ? Math.max(0, unconfirmedAmount - available) : 0;
               return (
                 <div className="spm-hero">
                   <div className="spm-hero-top">
@@ -1307,7 +1312,20 @@ export default function Sellers() {
                     <div>
                       <span>Wallet</span>
                       <b>{money(ps.wallet?.balance || 0)}</b>
-                      {ps.wallet?.frozenFund > 0 && <small style={{ display: 'block', fontSize: 10, color: '#1d4ed8', fontWeight: 700 }}>🔒 {money(ps.wallet.frozenFund)} held until unfrozen</small>}
+                    </div>
+                    <div title="Order payouts held while the store was frozen / suspended. Added to the wallet when it is made active again.">
+                      <span>Frozen amount</span>
+                      <b style={{ color: frozenAmt > 0 ? '#93c5fd' : undefined }}>{money(frozenAmt)}</b>
+                      {frozenAmt > 0 && <small style={{ display: 'block', fontSize: 10, color: '#93c5fd', fontWeight: 700 }}>🔒 released on unfreeze</small>}
+                    </div>
+                    <div title="Orders still waiting for this store to confirm, and their total value">
+                      <span>Pending orders amount</span>
+                      <b style={{ color: unconfirmedAmount > 0 ? '#fdba74' : undefined }}>{unconfirmedAmount !== undefined ? money(unconfirmedAmount) : '…'}</b>
+                      {unconfirmedCount !== undefined && (
+                        <small style={{ display: 'block', fontSize: 10, color: shortBy > 0 ? '#fca5a5' : '#94a3b8', fontWeight: 700 }}>
+                          {unconfirmedCount} to confirm{shortBy > 0 ? ` · needs ${money(shortBy)} more` : unconfirmedCount ? ' · balance covers it' : ''}
+                        </small>
+                      )}
                     </div>
                     <div>
                       <span>Locked</span>
