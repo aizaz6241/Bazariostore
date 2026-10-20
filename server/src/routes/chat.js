@@ -260,7 +260,20 @@ router.post('/seller/send', authSeller, sellerSendLimit, async (req, res) => {
     conv.lastAt = new Date();
     conv.unreadForAdmin = (conv.unreadForAdmin || 0) + 1;
     conv.status = 'open';
+    // A seller who writes in the chat has seen everything support sent before (like WhatsApp:
+    // a reply turns the earlier ticks blue). "Seen" used to be set only while the chat window was
+    // open and on screen at the right moment, so a reply often arrived while the support
+    // message above it still showed as not seen.
+    conv.unreadForSeller = 0;
     await conv.save();
+    const seenNow = new Date();
+    const seenUpd = await Message.updateMany(
+      { $or: [{ conversation: conv._id }, { seller: seller._id }], sender: { $in: ['admin', 'staff'] }, isSeen: { $ne: true } },
+      { $set: { isSeen: true, seenAt: seenNow, seenBy: 'seller' } }
+    );
+    if (seenUpd.modifiedCount) {
+      req.app.get('io')?.to(adminRoom('chat')).emit('messages:seen', { conversationId: conv._id, sellerId: seller._id, seenAt: seenNow, seenBy: 'seller' });
+    }
 
     const message = new Message({
       conversation: conv._id,
@@ -284,6 +297,7 @@ router.post('/seller/send', authSeller, sellerSendLimit, async (req, res) => {
       body: cleanText ? cleanText.slice(0, 140) : (attachment ? '📎 Sent an attachment' : 'New message'),
       url: `/admin/chat?c=${conv._id}`,
       tag: `chat-${conv._id}`,
+      skipActiveAdmins: true,
     });
 
     // Broadcast via socket.io
@@ -298,11 +312,13 @@ router.post('/seller/send', authSeller, sellerSendLimit, async (req, res) => {
       });
     }
 
+    // the bell only: the push for this message was sent above (it used to arrive twice on phones)
     notify(req.app, {
       type: 'chat',
       title: `Message from ${seller.storeName}`,
       body: previewMsg.slice(0, 70),
       link: '/admin/chat',
+      push: false,
     });
 
     // Handle Auto-Reply if enabled

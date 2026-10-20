@@ -132,8 +132,10 @@ router.post('/tier/request-upgrade', authSeller, announceToAdmins('sellers', 'se
       body: `Diamond upgrade request (one-time fee ${usd(DIAMOND_UPGRADE_FEE_USD)}). Reply in chat.`,
       url: `/admin/chat?c=${conv._id}`,
       tag: `chat-${conv._id}`,
+      skipActiveAdmins: true,
     });
     notify(req.app, {
+      push: false, // pushed just above
       type: 'chat',
       title: `💎 Diamond request: ${seller.storeName}`,
       body: `${seller.storeName} asked to upgrade to Diamond (${usd(DIAMOND_UPGRADE_FEE_USD)} one-time).`,

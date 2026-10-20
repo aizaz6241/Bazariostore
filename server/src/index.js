@@ -1,5 +1,6 @@
 // First: makes a failed async route answer with an error instead of hanging (see the file)
 import { guardErrorDetails, finalErrorHandler } from './utils/asyncErrors.js';
+import { markAdminActive, markAdminIdle } from './utils/adminPresence.js';
 import dns from 'dns';
 try { dns.setServers(['8.8.8.8', '1.1.1.1']); } catch (_) {}
 import dotenv from 'dotenv';
@@ -506,7 +507,18 @@ io.on('connection', (socket) => {
       conv.lastAt = new Date();
       conv.unreadForAdmin = (conv.unreadForAdmin || 0) + 1;
       conv.status = 'open';
+      // a seller writing in the chat has seen support's earlier messages (only when the seller
+      // writes, not when an admin sends through this path)
+      if (socket.data?.isSeller && !socket.data?.isAdmin) conv.unreadForSeller = 0;
       await conv.save();
+      if (socket.data?.isSeller && !socket.data?.isAdmin) {
+        const seenNow = new Date();
+        const seenUpd = await Message.updateMany(
+          { $or: [{ conversation: conv._id }, { seller: seller._id }], sender: { $in: ['admin', 'staff'] }, isSeen: { $ne: true } },
+          { $set: { isSeen: true, seenAt: seenNow, seenBy: 'seller' } }
+        );
+        if (seenUpd.modifiedCount) io.to(adminRoom('chat')).emit('messages:seen', { conversationId: conv._id, sellerId: seller._id, seenAt: seenNow, seenBy: 'seller' });
+      }
 
       const msg = new Message({
         conversation: conv._id,
@@ -635,6 +647,13 @@ io.on('connection', (socket) => {
   });
 
   // Real-time Seen / Read status update from seller
+  // the admin panel says it is on screen and in use (every ~20 s), or that it was left
+  socket.on('admin:active', ({ active } = {}) => {
+    if (!socket.data?.isAdmin || !socket.data?.adminId) return;
+    if (active === false) markAdminIdle(socket.data.adminId);
+    else markAdminActive(socket.data.adminId);
+  });
+
   socket.on('seller:read', async ({ sellerId } = {}) => {
     try {
       const now = new Date();

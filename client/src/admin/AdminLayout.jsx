@@ -123,6 +123,41 @@ export default function AdminLayout() {
 
   const loadNotif = () => api('/notifications').then(setNotif).catch(() => {});
 
+  // WhatsApp-style: while this panel is on screen and in use, tell the server, so chat pushes are
+  // not sent to this admin's other devices (phone / laptop) at the same time
+  useEffect(() => {
+    if (!token) return undefined;
+    const socket = getSocket();
+    let lastInput = Date.now();
+    const onInput = () => { lastInput = Date.now(); };
+    const isActive = () =>
+      document.visibilityState === 'visible' && (typeof document.hasFocus !== 'function' || document.hasFocus()) && Date.now() - lastInput < 2 * 60 * 1000;
+    let lastSent = null;
+    const beat = (force) => {
+      const active = isActive();
+      if (!force && active === false && lastSent === false) return; // already said "away"
+      lastSent = active;
+      try { socket.emit('admin:active', { active }); } catch {}
+    };
+    const onChange = () => { if (document.visibilityState === 'visible') onInput(); beat(true); };
+    const inputEvents = ['pointerdown', 'keydown', 'touchstart', 'wheel', 'mousemove'];
+    inputEvents.forEach((e) => window.addEventListener(e, onInput, { passive: true }));
+    document.addEventListener('visibilitychange', onChange);
+    window.addEventListener('focus', onChange);
+    window.addEventListener('blur', onChange);
+    socket.on('connect', onChange);
+    beat(true);
+    const t = setInterval(() => beat(false), 20000);
+    return () => {
+      clearInterval(t);
+      inputEvents.forEach((e) => window.removeEventListener(e, onInput));
+      document.removeEventListener('visibilitychange', onChange);
+      window.removeEventListener('focus', onChange);
+      window.removeEventListener('blur', onChange);
+      socket.off('connect', onChange);
+    };
+  }, [token]);
+
   useEffect(() => {
     if (!token) {
       navigate('/admin/login');
@@ -150,7 +185,7 @@ export default function AdminLayout() {
     };
 
     const onMessage = (msg) => {
-      if (msg.sender === 'seller') {
+      if (msg.sender === 'seller' || msg.sender === 'guest' || msg.sender === 'customer') {
         playNotificationSound('chat');
         addToast({
           type: 'chat',
@@ -162,6 +197,12 @@ export default function AdminLayout() {
     };
 
     const onNotify = (n) => {
+      // a chat message already showed its own toast and sound (onMessage): the bell only
+      // (every seller message used to ring twice and show two toasts)
+      if (n.type === 'chat') {
+        loadNotif();
+        return;
+      }
       const soundType = n.type === 'deposit' ? 'deposit' : n.type === 'withdrawal' ? 'withdrawal' : n.type === 'approval' ? 'approval' : n.type === 'order' ? 'order' : 'default';
       playNotificationSound(soundType);
       addToast({

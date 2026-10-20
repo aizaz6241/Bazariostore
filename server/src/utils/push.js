@@ -2,6 +2,7 @@ import webpush from 'web-push';
 import mongoose from 'mongoose';
 import PushSub from '../models/PushSub.js';
 import { permsFor } from './permissions.js';
+import { isAdminActive } from './adminPresence.js';
 
 // Phone / desktop push for the store app. Needs VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY in the env;
 // without them push is simply switched off (nothing else breaks).
@@ -55,15 +56,18 @@ async function allowedAdminSubs(subs, perms) {
 /**
  * Push to every admin device, or to one seller's devices.
  * `perms` (admin only): send only to admins who hold one of these permissions.
- * @param {{ to: 'admin'|'seller', sellerId?: any, title: string, body?: string, url?: string, tag?: string, perms?: string[]|null }} p
+ * `skipActiveAdmins` (admin only): leave out the devices of an admin who is using the panel
+ * right now on some device (chat pushes, WhatsApp-style).
+ * @param {{ to: 'admin'|'seller', sellerId?: any, title: string, body?: string, url?: string, tag?: string, perms?: string[]|null, skipActiveAdmins?: boolean }} p
  */
-export async function sendPush({ to, sellerId = null, title, body = '', url = '/', tag = '', perms = null }) {
+export async function sendPush({ to, sellerId = null, title, body = '', url = '/', tag = '', perms = null, skipActiveAdmins = false }) {
   if (!init()) return;
   try {
     const q = to === 'seller' ? { kind: 'seller', seller: sellerId } : { kind: 'admin' };
     if (to === 'seller' && !sellerId) return;
     let subs = await PushSub.find(q).lean();
     if (to === 'admin' && perms?.length) subs = await allowedAdminSubs(subs, perms);
+    if (to === 'admin' && skipActiveAdmins) subs = subs.filter((s) => !(s.admin && isAdminActive(s.admin)));
     if (!subs.length) return;
     await sendTo(subs, { title, body, url, tag: tag || undefined, icon: '/icon-192.svg' });
   } catch (e) {
