@@ -1853,3 +1853,63 @@
   color: #1d4ed8;
 }
 
+
+/* ── Another admin is typing in this seller / guest chat (admins only) ── */
+.peer-typing-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #047857;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  width: fit-content;
+  max-width: calc(100% - 24px);
+  box-sizing: border-box;
+  animation: peerTypingIn 0.18s ease-out;
+}
+.peer-typing-bar > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.floating-peer-typing {
+  margin: 4px 10px;
+  font-size: 12px;
+}
+.peer-typing-dots {
+  display: inline-flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.peer-typing-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #10b981;
+  animation: peerTypingDot 1.2s infinite ease-in-out;
+}
+.peer-typing-dots i:nth-child(2) { animation-delay: 0.15s; }
+.peer-typing-dots i:nth-child(3) { animation-delay: 0.3s; }
+.convo-peer-typing {
+  color: #059669 !important;
+  font-style: italic;
+  font-weight: 600;
+}
+@keyframes peerTypingDot {
+  0%, 80%, 100% { opacity: 0.3; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+@keyframes peerTypingIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .peer-typing-dots i, .peer-typing-bar { animation: none; }
+}

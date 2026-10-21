@@ -12,6 +12,7 @@ import { asText } from '../middleware/sanitize.js';
 import { limit } from '../utils/rateLimit.js';
 import { adminRoom } from '../utils/permissions.js';
 import { sellerSafeMessage, sellerSafeConversation } from '../utils/sellerChatPrivacy.js';
+import { clearAdminTyping } from '../realtime/adminTyping.js';
 
 // A guest chat is opened with the random id the storefront keeps in the browser (36 characters).
 // Knowing that id is what gives access to that one chat, so it must be real text of a sensible
@@ -513,6 +514,8 @@ router.post('/admin/conversations/:id/reply', authAdmin('chat'), async (req, res
       io.to(`conversation:${conv._id}`).emit('message:new', message);
       io.to(adminRoom('chat')).emit('message:new', message);
     }
+    // the reply is sent: this admin is no longer "typing" in this chat (on any device)
+    clearAdminTyping(req.admin.id, conv._id);
 
     res.status(201).json(message);
   } catch (err) {

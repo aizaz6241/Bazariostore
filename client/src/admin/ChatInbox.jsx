@@ -6,6 +6,7 @@ import ChatMessageBubble from '../components/ChatMessageBubble.jsx';
 import AiRewriteBox from '../components/AiRewriteBox.jsx';
 import ClearChatModal from './ClearChatModal.jsx';
 import VoiceRecordButton from '../components/VoiceRecordButton.jsx';
+import { useAdminTyping, typingLabel } from './useAdminTyping.js';
 
 const ROLE_LABELS = {
   super_admin: '👑 Super Admin',
@@ -76,6 +77,14 @@ export default function ChatInbox() {
   openThreadRef.current = activeTab === 'sellers' ? `sellers:${selectedSellerId || ''}` : `team:${selectedTeamId || ''}`;
   // Blocks a second send while one is still going (fast double Enter / double click)
   const sendingRef = useRef(false);
+
+  // "Steve is typing…" between admins (seller / guest chats only, never shown to the seller)
+  const peerTyping = useAdminTyping(true);
+  const noteSellerTyping = (value) => {
+    if (activeTab === 'sellers' && selectedSellerId) peerTyping.noteTyping(selectedSellerId, value);
+  };
+  // switching chat or tab = no longer typing in the old chat
+  useEffect(() => () => peerTyping.stopTyping(), [activeTab, selectedSellerId]);
 
   // Load current admin info & auto-reply settings
   useEffect(() => {
@@ -462,6 +471,7 @@ export default function ChatInbox() {
     if (activeTab === 'sellers' && !selectedSellerId) return;
     if (activeTab === 'team' && !selectedTeamId) return;
     if (sendingRef.current) return;
+    if (activeTab === 'sellers') peerTyping.stopTyping();
 
     sendingRef.current = true;
     setSending(true);
@@ -814,6 +824,7 @@ export default function ChatInbox() {
                 const hasUnread = unreadCount > 0;
                 const isGuestConvo = c.isGuest || c.type === 'guest';
                 const storeTitle = c.storeName || c.seller?.storeName || (isGuestConvo ? 'Guest Visitor' : 'Unknown Store');
+                const typingHere = peerTyping.typersIn(c._id);
 
                 return (
                   <div
@@ -855,9 +866,15 @@ export default function ChatInbox() {
                         <small className="convo-time">{c.lastAt ? fmtDay(c.lastAt) : ''}</small>
                       </div>
                       <div className="convo-sub">
-                        <span className={`convo-last-msg ${hasUnread ? 'convo-last-msg-bold' : ''}`}>
-                          {c.lastMessage || 'No messages yet'}
-                        </span>
+                        {typingHere.length > 0 ? (
+                          <span className="convo-last-msg convo-peer-typing" title={typingLabel(typingHere)}>
+                            ✍️ {typingLabel(typingHere)}
+                          </span>
+                        ) : (
+                          <span className={`convo-last-msg ${hasUnread ? 'convo-last-msg-bold' : ''}`}>
+                            {c.lastMessage || 'No messages yet'}
+                          </span>
+                        )}
                         {hasUnread && (
                           <span className="convo-unread-bubble-count">{unreadCount}</span>
                         )}
@@ -1188,6 +1205,14 @@ export default function ChatInbox() {
         {/* SHARED INPUT & REPLY FORM (WITH MULTILINE AUTO-EXPANDING TEXTAREA) */}
         {hasSelection && (
           <>
+            {/* Another admin is writing a reply in this chat (only admins see this) */}
+            {activeTab === 'sellers' && peerTyping.typersIn(selectedSellerId).length > 0 && (
+              <div className="peer-typing-bar" role="status" aria-live="polite">
+                <span className="peer-typing-dots"><i /><i /><i /></span>
+                <span>{typingLabel(peerTyping.typersIn(selectedSellerId))}</span>
+              </div>
+            )}
+
             {/* WhatsApp Replying Preview */}
             {replyingTo && (
               <div className="chat-replying-bar">
@@ -1249,6 +1274,7 @@ export default function ChatInbox() {
                 <VoiceRecordButton
                   onTranscribed={(spokenText) => {
                     setText((prev) => (prev ? `${prev.trim()} ${spokenText}` : spokenText));
+                    noteSellerTyping(spokenText);
                     textInputRef.current?.focus();
                   }}
                   disabled={sending || uploading}
@@ -1258,7 +1284,10 @@ export default function ChatInbox() {
                 ref={textInputRef}
                 rows={3}
                 value={text}
-                onChange={(e) => setText(e.target.value)}
+                onChange={(e) => {
+                  setText(e.target.value);
+                  noteSellerTyping(e.target.value);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -1293,6 +1322,7 @@ export default function ChatInbox() {
                   text={text}
                   onApply={(rewritten) => {
                     setText(rewritten);
+                    noteSellerTyping(rewritten);
                     textInputRef.current?.focus();
                   }}
                   onApplyAndSend={(rewritten) => {

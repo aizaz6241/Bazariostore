@@ -29,6 +29,7 @@ import mongoose from 'mongoose';
 import { Server } from 'socket.io';
 import { verifySocketToken, loadAdminAccount } from './middleware/auth.js';
 import { attachPortalRealtime } from './realtime/portalRealtime.js';
+import { attachAdminTyping, registerAdminTyping, forgetSocketTyping } from './realtime/adminTyping.js';
 import { sanitizeRequest, asText } from './middleware/sanitize.js';
 import { limit } from './utils/rateLimit.js';
 import { isStoredUpload } from './services/uploads.js';
@@ -317,6 +318,8 @@ app.use(finalErrorHandler);
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: (origin, cb) => cb(null, originAllowed(origin)) } });
 app.set('io', io);
+// "Admin is typing…" between admins in seller chats (admins only, in memory)
+attachAdminTyping(io);
 setRealtimeIo(io);
 
 /**
@@ -389,6 +392,9 @@ io.on('connection', (socket) => {
     for (const r of [...socket.rooms]) if (r !== socket.id && test(r)) socket.leave(r);
   };
 
+  // admin-to-admin typing signal in seller / guest chats (never reaches sellers)
+  registerAdminTyping(socket);
+
   socket.on('seller:join', async ({ token, sellerId } = {}) => {
     try {
       if (!token) return;
@@ -407,7 +413,9 @@ io.on('connection', (socket) => {
           // A seller session must never stay inside admin rooms (e.g. an admin logged out and a
           // seller logged in on the same browser tab), nor inside another seller's room.
           leaveRooms((r) => r === 'admins' || r.startsWith('admins:') || r.startsWith('admin:') || (r.startsWith('seller:') && r !== `seller:${id}`));
+          forgetSocketTyping(socket.id);
           delete socket.data.adminId;
+          delete socket.data.adminName;
           delete socket.data.adminPerms;
         }
         socket.join(`seller:${id}`);
@@ -444,9 +452,11 @@ io.on('connection', (socket) => {
         // a different admin on the same socket: drop the previous admin's private room
         if (socket.data.adminId && String(socket.data.adminId) !== String(payload.id)) {
           leaveRooms((r) => r === `admin:${socket.data.adminId}`);
+          forgetSocketTyping(socket.id);
         }
         socket.data.isAdmin = true;
         socket.data.adminId = payload.id;
+        socket.data.adminName = typeof payload.name === 'string' ? payload.name.slice(0, 40) : '';
         socket.data.adminPerms = payload.role === 'super_admin' ? [...PERMISSIONS] : payload.permissions || [];
         // Live events are sent per module: this socket only joins the rooms its role allows
         // (re-joined on every connect, so a changed role takes effect on the next reconnect).

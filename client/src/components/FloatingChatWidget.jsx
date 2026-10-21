@@ -7,6 +7,7 @@ import ChatAttachment from './ChatAttachment.jsx';
 import ChatMessageBubble from './ChatMessageBubble.jsx';
 import AiRewriteBox from './AiRewriteBox.jsx';
 import VoiceRecordButton from './VoiceRecordButton.jsx';
+import { useAdminTyping, typingLabel } from '../admin/useAdminTyping.js';
 
 export default function FloatingChatWidget({ role = 'seller', currentSeller = null }) {
   const location = useLocation();
@@ -31,6 +32,14 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
   const textInputRef = useRef(null);
   // Blocks a second send while one is still going (fast double Enter / double click)
   const sendingRef = useRef(false);
+
+  // "Steve is typing…" between admins: only in admin mode (sellers and guests never get it)
+  const peerTyping = useAdminTyping(role === 'admin');
+  const noteAdminTyping = (value) => {
+    if (role === 'admin' && isOpen && selectedConvoId) peerTyping.noteTyping(selectedConvoId, value);
+  };
+  // switching chat or closing the widget = no longer typing in that chat
+  useEffect(() => () => peerTyping.stopTyping(), [selectedConvoId, isOpen]);
 
   // ─── DRAGGABLE FLOATING FAB STATE & REFS ───
   const buttonRef = useRef(null);
@@ -497,6 +506,7 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
     const clean = (overrideText !== null ? overrideText : text).trim();
     if (!clean && !file) return;
     if (sendingRef.current) return;
+    if (role === 'admin') peerTyping.stopTyping();
 
     sendingRef.current = true;
     setSending(true);
@@ -796,6 +806,14 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
             </div>
           )}
 
+            {/* Another admin is writing a reply in this chat (admin mode only) */}
+          {role === 'admin' && peerTyping.typersIn(selectedConvoId).length > 0 && (
+            <div className="peer-typing-bar floating-peer-typing" role="status" aria-live="polite">
+              <span className="peer-typing-dots"><i /><i /><i /></span>
+              <span>{typingLabel(peerTyping.typersIn(selectedConvoId))}</span>
+            </div>
+          )}
+
             {/* Floating Input / Reply Bar */}
           <form onSubmit={handleSend} className="floating-chat-input-bar" style={{ alignItems: 'flex-end', position: 'relative' }}>
             <input
@@ -822,6 +840,7 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
                 compact={true}
                 onTranscribed={(spokenText) => {
                   setText((prev) => (prev ? `${prev.trim()} ${spokenText}` : spokenText));
+                  noteAdminTyping(spokenText);
                   textInputRef.current?.focus();
                 }}
                 disabled={sending || uploading}
@@ -832,7 +851,10 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
               ref={textInputRef}
               rows={2}
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                setText(e.target.value);
+                noteAdminTyping(e.target.value);
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -864,6 +886,7 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
                   compact={true}
                   onApply={(rewritten) => {
                     setText(rewritten);
+                    noteAdminTyping(rewritten);
                     textInputRef.current?.focus();
                   }}
                   onApplyAndSend={(rewritten) => {
