@@ -1,10 +1,36 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useContent } from '../content.jsx';
 import ProductCard from '../components/ProductCard.jsx';
 import { Breadcrumb, TrustStrip } from '../components/Bits.jsx';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
+import Ic from '../components/Icons.jsx';
+
+const PAGE_SIZE = 36;
+
+const SORTS = [
+  { value: '', label: 'Featured' },
+  { value: 'popular', label: 'Best selling' },
+  { value: 'rating', label: 'Top rated' },
+  { value: 'price-asc', label: 'Price: low to high' },
+  { value: 'price-desc', label: 'Price: high to low' },
+];
+
+function CardSkeleton() {
+  return (
+    <div className="pc pc-skel" aria-hidden="true">
+      <div className="pc-media"><div className="sk sk-img" /></div>
+      <div className="pc-body">
+        <div className="sk sk-line" style={{ width: '45%' }} />
+        <div className="sk sk-line" />
+        <div className="sk sk-line" style={{ width: '70%' }} />
+        <div className="sk sk-line" style={{ width: '35%', height: 16 }} />
+        <div className="sk sk-btn" />
+      </div>
+    </div>
+  );
+}
 
 export default function Shop() {
   const [params, setParams] = useSearchParams();
@@ -14,6 +40,8 @@ export default function Shop() {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const chipsRef = useRef(null);
+  const [chipEdges, setChipEdges] = useState({ left: false, right: false });
 
   const category = params.get('category') || '';
   const q = params.get('q') || '';
@@ -25,14 +53,14 @@ export default function Shop() {
     setLoading(true);
     setPage(1);
     const p = new URLSearchParams(params);
-    if (!p.has('limit')) p.set('limit', '36');
+    if (!p.has('limit')) p.set('limit', String(PAGE_SIZE));
     p.set('page', '1');
 
     api('/products?' + p.toString())
       .then((data) => {
         const list = Array.isArray(data) ? data : [];
         setProducts(list);
-        setHasMore(list.length >= 36);
+        setHasMore(list.length >= PAGE_SIZE);
       })
       .catch(() => {
         setProducts([]);
@@ -46,7 +74,7 @@ export default function Shop() {
     setLoadingMore(true);
     const nextPage = page + 1;
     const p = new URLSearchParams(params);
-    if (!p.has('limit')) p.set('limit', '36');
+    if (!p.has('limit')) p.set('limit', String(PAGE_SIZE));
     p.set('page', String(nextPage));
 
     try {
@@ -57,7 +85,7 @@ export default function Shop() {
       } else {
         setProducts((prev) => [...prev, ...nextList]);
         setPage(nextPage);
-        setHasMore(nextList.length >= 36);
+        setHasMore(nextList.length >= PAGE_SIZE);
       }
     } catch (_) {}
     setLoadingMore(false);
@@ -70,97 +98,161 @@ export default function Shop() {
     setParams(next);
   };
 
+  // category pills: one scrollable row with arrows / fades on the side that can still scroll
+  const updateEdges = () => {
+    const el = chipsRef.current;
+    if (!el) return;
+    setChipEdges({ left: el.scrollLeft > 4, right: el.scrollLeft + el.clientWidth < el.scrollWidth - 4 });
+  };
+  useEffect(() => {
+    updateEdges();
+    window.addEventListener('resize', updateEdges);
+    return () => window.removeEventListener('resize', updateEdges);
+  }, [categories]);
+  // keep the selected category pill in view
+  useEffect(() => {
+    const box = chipsRef.current;
+    const el = box?.querySelector('.sf-pill.on');
+    if (box && el) {
+      // only the pill row scrolls sideways; the page itself never jumps
+      const target = el.offsetLeft - (box.clientWidth - el.offsetWidth) / 2;
+      box.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
+    }
+    const t = setTimeout(updateEdges, 350);
+    return () => clearTimeout(t);
+  }, [category, categories]);
+  const scrollChips = (dir) => chipsRef.current?.scrollBy({ left: dir * 320, behavior: 'smooth' });
+
   const catName = categories.find((c) => c.slug === category)?.name || 'Products';
   const sellerName = products[0]?.sellerName || products[0]?.seller?.storeName;
 
   const title = seller && sellerName
-    ? `Storefront: ${sellerName}`
+    ? sellerName
     : q
-    ? `Search results for "${q}"`
+    ? `Results for “${q}”`
     : label === 'new'
     ? 'New Arrivals'
     : label === 'sale'
     ? 'Deals & Sale'
     : category
     ? catName
-    : 'All Marketplace Products';
+    : 'All Products';
+
+  const countText = loading
+    ? 'Loading products…'
+    : `${products.length}${hasMore ? '+' : ''} product${products.length === 1 ? '' : 's'}`;
+
+  // filters that are on, each removable
+  const active = [
+    q && { key: 'q', text: `Search: ${q}` },
+    label === 'new' && { key: params.get('label') ? 'label' : 'badge', text: 'New arrivals' },
+    label === 'sale' && { key: params.get('label') ? 'label' : 'badge', text: 'On sale' },
+    label && label !== 'new' && label !== 'sale' && { key: params.get('label') ? 'label' : 'badge', text: label },
+    seller && !sellerName && !loading && { key: 'seller', text: 'Selected store' },
+  ].filter(Boolean);
 
   return (
-    <>
-      <div className="page-head">
+    <div className="sf">
+      <div className="sf-head">
         <div className="container">
           <Breadcrumb trail={[{ label: 'Shop', to: '/shop' }, ...(category ? [{ label: catName }] : []), ...(seller && sellerName ? [{ label: sellerName }] : [])]} />
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span>{title}</span>
-            {seller && sellerName && (
-              <VerifiedStoreBadge variant="pill" size={15} text="Verified Store" />
-            )}
-          </h1>
-          {seller && sellerName && (
-            <p className="seller-shop-subtitle">
-              Verified Marketplace Merchant • Fast Prime Dispatch • Authentic Products Guarantee
-            </p>
+
+          {seller && sellerName ? (
+            <div className="sf-store">
+              <span className="sf-store-av">{(sellerName[0] || 'S').toUpperCase()}</span>
+              <div className="sf-store-txt">
+                <h1 className="sf-title">
+                  <span>{title}</span>
+                  <VerifiedStoreBadge variant="pill" size={14} text="Verified Store" />
+                </h1>
+                <p className="sf-sub">Verified marketplace merchant · {countText}</p>
+              </div>
+              <button type="button" onClick={() => setParam('seller', '')} className="sf-store-all">
+                View all stores <Ic name="arrowRight" size={14} />
+              </button>
+            </div>
+          ) : (
+            <>
+              <h1 className="sf-title"><span>{title}</span></h1>
+              <p className="sf-sub">{countText}</p>
+            </>
           )}
         </div>
       </div>
 
-      <div className="container section-sm">
-        {seller && (
-          <div className="seller-filter-alert">
-            <span>Showing products exclusively from <b>{sellerName || 'this seller'}</b></span>
-            <button onClick={() => setParam('seller', '')} className="btn-clear-filter">✕ View All Marketplace Sellers</button>
+      <div className="sf-bar">
+        <div className="container sf-bar-in">
+          <div className={'sf-pills-wrap' + (chipEdges.left ? ' fade-l' : '') + (chipEdges.right ? ' fade-r' : '')}>
+            {chipEdges.left && (
+              <button type="button" className="sf-pills-arrow l" onClick={() => scrollChips(-1)} aria-label="Scroll categories left">
+                <Ic name="chevLeft" size={16} />
+              </button>
+            )}
+            <div className="sf-pills" ref={chipsRef} onScroll={updateEdges}>
+              <button type="button" className={'sf-pill' + (!category ? ' on' : '')} onClick={() => setParam('category', '')}>All</button>
+              {categories.map((c) => (
+                <button
+                  type="button"
+                  key={c.slug}
+                  className={'sf-pill' + (category === c.slug ? ' on' : '')}
+                  onClick={() => setParam('category', c.slug)}
+                >
+                  {c.name}
+                </button>
+              ))}
+            </div>
+            {chipEdges.right && (
+              <button type="button" className="sf-pills-arrow r" onClick={() => scrollChips(1)} aria-label="Scroll categories right">
+                <Ic name="chevRight" size={16} />
+              </button>
+            )}
+          </div>
+
+          <label className="sf-sort">
+            <span>Sort</span>
+            <select value={sort} onChange={(e) => setParam('sort', e.target.value)}>
+              {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+            <Ic name="chevDown" size={14} />
+          </label>
+        </div>
+      </div>
+
+      <div className="container sf-main">
+        {active.length > 0 && (
+          <div className="sf-active">
+            {active.map((f) => (
+              <button type="button" key={f.key + f.text} className="sf-active-chip" onClick={() => setParam(f.key, '')}>
+                {f.text} <Ic name="x" size={13} />
+              </button>
+            ))}
+            <Link to="/shop" className="sf-active-clear">Clear all</Link>
           </div>
         )}
 
-        <div className="shop-chips">
-          <button className={'chip' + (!category ? ' chip-on' : '')} onClick={() => setParam('category', '')}>All Categories</button>
-          {categories.map((c) => (
-            <button
-              key={c.slug}
-              className={'chip' + (category === c.slug ? ' chip-on' : '')}
-              onClick={() => setParam('category', c.slug)}
-            >
-              {c.name}
-            </button>
-          ))}
-        </div>
-
-        <div className="shop-toolbar">
-          <span>{loading ? 'Loading…' : `Showing ${products.length} product${products.length === 1 ? '' : 's'}`}</span>
-          <label>
-            Sort by:{' '}
-            <select value={sort} onChange={(e) => setParam('sort', e.target.value)}>
-              <option value="">Featured / Newest</option>
-              <option value="popular">Best Selling</option>
-              <option value="rating">Highest Customer Rating</option>
-              <option value="price-asc">Price: Low to High</option>
-              <option value="price-desc">Price: High to Low</option>
-            </select>
-          </label>
-        </div>
-
-        {!loading && products.length === 0 ? (
-          <div className="empty-box">
-            <p>No products found{q ? ` for "${q}"` : ''}.</p>
-            <Link to="/shop" className="btn-primary">VIEW ALL PRODUCTS</Link>
+        {loading ? (
+          <div className="sf-grid">
+            {Array.from({ length: 10 }).map((_, i) => <CardSkeleton key={i} />)}
+          </div>
+        ) : products.length === 0 ? (
+          <div className="sf-empty">
+            <span className="sf-empty-ic"><Ic name="search" size={26} /></span>
+            <h3>No products found{q ? ` for “${q}”` : ''}</h3>
+            <p>Try another category or a different search word.</p>
+            <Link to="/shop" className="sf-btn-dark">Browse all products</Link>
           </div>
         ) : (
           <>
-            <div className="pgrid pgrid-4">
+            <div className="sf-grid">
               {products.map((p) => (
                 <ProductCard p={p} key={p._id} />
               ))}
             </div>
             {hasMore && (
-              <div style={{ textAlign: 'center', marginTop: 36, marginBottom: 20 }}>
-                <button
-                  type="button"
-                  onClick={handleLoadMore}
-                  disabled={loadingMore}
-                  className="btn-outline"
-                  style={{ minWidth: 200, padding: '12px 28px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
-                >
-                  {loadingMore ? 'Loading More Products…' : 'Load More Products ↓'}
+              <div className="sf-more">
+                <p>Showing {products.length} products</p>
+                <button type="button" onClick={handleLoadMore} disabled={loadingMore} className="sf-btn-outline">
+                  {loadingMore ? 'Loading…' : 'Load more products'}
                 </button>
               </div>
             )}
@@ -168,6 +260,6 @@ export default function Shop() {
         )}
       </div>
       <TrustStrip />
-    </>
+    </div>
   );
 }

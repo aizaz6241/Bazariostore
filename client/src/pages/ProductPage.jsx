@@ -8,13 +8,41 @@ import Stars from '../components/Stars.jsx';
 import ProductCard from '../components/ProductCard.jsx';
 import { Breadcrumb, TrustStrip } from '../components/Bits.jsx';
 
-const TABS = ['DESCRIPTION', 'HOW TO USE', 'INGREDIENTS', 'SPECIFICATIONS', 'REVIEWS', 'SHIPPING & RETURNS'];
+// Product detail page (styles: styles/storefront/catalog-v2.css, scoped `.pv`)
 
 const SAMPLE_REVIEWS = [
   { name: 'Ahmad K.', rating: 5, text: '100% Original and authentic product! Arrived in 2 days via Express Prime shipping. Packaging was great.' },
   { name: 'Fatima R.', rating: 4.5, text: 'Very happy with my order. Seller dispatched the item immediately with real tracking code.' },
   { name: 'Usman S.', rating: 5, text: 'Top quality and reasonable price. Cash on delivery was smooth and driver was polite.' },
 ];
+
+const PERKS = [
+  { icon: 'badgeCheck', t: '100% Genuine', s: 'Authentic items' },
+  { icon: 'banknote', t: 'Cash on Delivery', s: 'Pay when it arrives' },
+  { icon: 'truck', t: 'Fast Delivery', s: '1-2 days express' },
+  { icon: 'refresh', t: '14-Day Returns', s: 'Easy return policy' },
+];
+
+function PageSkeleton() {
+  return (
+    <div className="pv">
+      <div className="container">
+        <div className="pv-grid" aria-hidden="true">
+          <div className="pv-gallery"><div className="sk pv-sk-img" /></div>
+          <div className="pv-info">
+            <div className="sk sk-line" style={{ width: '30%' }} />
+            <div className="sk sk-line" style={{ height: 30, width: '90%' }} />
+            <div className="sk sk-line" style={{ height: 30, width: '60%' }} />
+            <div className="sk sk-line" style={{ width: '40%' }} />
+            <div className="sk sk-line" style={{ height: 38, width: '35%', marginTop: 12 }} />
+            <div className="sk sk-btn" style={{ height: 50, marginTop: 24 }} />
+            <div className="sk sk-btn" style={{ height: 50 }} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function ProductPage() {
   const { slug } = useParams();
@@ -29,7 +57,7 @@ export default function ProductPage() {
   const [size, setSize] = useState('');
   const [variantSel, setVariantSel] = useState({});
   const [qty, setQty] = useState(1);
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useState('desc');
   const [liked, setLiked] = useState(false);
   const [added, setAdded] = useState(false);
   const addLockRef = useRef(false);
@@ -39,7 +67,7 @@ export default function ProductPage() {
     setNotFound(false);
     setImgIdx(0);
     setQty(1);
-    setTab(0);
+    setTab('desc');
     setVariantSel({});
     api(`/products/slug/${slug}`)
       .then((prod) => {
@@ -52,12 +80,18 @@ export default function ProductPage() {
 
   if (notFound)
     return (
-      <div className="container section empty-box">
-        <p>Product not found.</p>
-        <Link to="/shop" className="btn-primary">BACK TO SHOP</Link>
+      <div className="pv">
+        <div className="container">
+          <div className="sf-empty" style={{ marginTop: 32 }}>
+            <span className="sf-empty-ic"><Ic name="search" size={26} /></span>
+            <h3>Product not found</h3>
+            <p>This product may have been removed or the link is wrong.</p>
+            <Link to="/shop" className="sf-btn-dark">Back to shop</Link>
+          </div>
+        </div>
       </div>
     );
-  if (!p) return <div className="container section center muted">Loading product details…</div>;
+  if (!p) return <PageSkeleton />;
 
   const gallery = p.images?.length > 1 ? p.images.map((i) => i.url) : p.gallery?.length ? p.gallery : [p.image || '/img/products/serum.svg'];
   const activePrice = size && p.sizes?.length ? p.sizes.find((s) => s.label === size)?.price ?? p.price : p.price;
@@ -65,7 +99,23 @@ export default function ProductPage() {
   const out = p.stock <= 0;
   const low = !out && p.stock <= (p.lowStockThreshold || 5);
   const variantStr = Object.entries(variantSel).map(([k, v]) => `${k}: ${v}`).join(', ');
-  const sellerName = p.seller?.storeName || p.sellerName || 'Amazon Verified Store';
+  const sellerName = p.seller?.storeName || p.sellerName || 'Bazario Verified Store';
+  const sellerId = p.seller?._id || '';
+  const sellerPlace = [p.seller?.address?.city, p.seller?.address?.country].filter(Boolean).join(', ');
+  const sellerRated = p.seller?.rating && p.seller?.numReviews > 0;
+  const rating = p.rating || 4.8;
+  const reviews = p.numReviews || 35;
+  const save = p.oldPrice > activePrice ? p.oldPrice - activePrice : 0;
+
+  const tabs = [
+    { key: 'desc', label: 'Description' },
+    p.specifications?.length > 0 && { key: 'specs', label: 'Specifications' },
+    p.howToUse && { key: 'use', label: 'How to use' },
+    p.ingredients && { key: 'ingr', label: 'Ingredients' },
+    { key: 'reviews', label: `Reviews (${reviews})` },
+    { key: 'ship', label: 'Shipping & returns' },
+  ].filter(Boolean);
+  const curTab = tabs.some((t) => t.key === tab) ? tab : 'desc';
 
   const doAdd = () => {
     if (out || addLockRef.current) return;
@@ -83,268 +133,241 @@ export default function ProductPage() {
     navigate('/checkout');
   };
 
-  const scrollRel = (dir) => relRef.current?.scrollBy({ left: dir * 480, behavior: 'smooth' });
+  const step = (dir) => setImgIdx((i) => (i + dir + gallery.length) % gallery.length);
+  const scrollRel = (dir) => relRef.current?.scrollBy({ left: dir * (relRef.current.clientWidth * 0.8), behavior: 'smooth' });
 
   return (
-    <>
+    <div className="pv">
       <div className="container">
         <Breadcrumb
           trail={[
+            { label: 'Shop', to: '/shop' },
             ...(p.category ? [{ label: p.category.name, to: `/shop?category=${p.category.slug}` }] : []),
             { label: p.name },
           ]}
         />
 
-        <div className="pdp">
-          {/* Image Gallery */}
-          <div className="pdp-gallery">
-            <div className="pdp-thumbs">
-              {gallery.map((g, i) => (
-                <button key={i} className={'pdp-thumb' + (i === imgIdx ? ' on' : '')} onClick={() => setImgIdx(i)}>
-                  <img src={g} alt="" />
-                </button>
-              ))}
-            </div>
-            <div className="pdp-main">
-              {off > 0 && <span className="pdp-off">-{off}%</span>}
+        <div className="pv-grid">
+          {/* ── Gallery ── */}
+          <div className="pv-gallery">
+            <div className="pv-main">
+              {off > 0 && <span className="pv-off">-{off}%</span>}
               <img src={gallery[imgIdx]} alt={p.name} />
-            </div>
-          </div>
-
-          {/* Product Meta & Actions */}
-          <div className="pdp-info">
-            {/* Seller Information Tag */}
-            <div className="pdp-seller-box">
-              <div className="pdp-seller-left">
-                <span className="pdp-sold-by">Sold & Fulfilled by:</span>
-                <Link to={`/shop?seller=${p.seller?._id || ''}`} className="pdp-seller-title">
-                  <b>{sellerName}</b> <span className="badge-verified">✓ Verified Merchant</span>
-                </Link>
-                <div className="seller-rating-line">
-                  ⭐ {p.seller?.rating || '4.9'} / 5.0 • {p.seller?.numReviews || 84} Store Ratings
-                </div>
-              </div>
-              <Link to={`/shop?seller=${p.seller?._id || ''}`} className="btn-visit-store">
-                Visit Store →
-              </Link>
-            </div>
-
-            <h1>{p.name}</h1>
-            <div className="pdp-rating">
-              <Stars value={p.rating || 4.8} />
-              <span className="muted">({p.numReviews || 35} Verified Customer Reviews)</span>
-              <em>|</em>
-              <span className="muted">{p.sold || 40} Sold</span>
-              <em>|</em>
-              {out ? (
-                <span className="stock-out">Out of Stock</span>
-              ) : low ? (
-                <span className="stock-low">Only {p.stock} units left in stock!</span>
-              ) : (
-                <span className="stock-ok">
-                  In Stock ({p.stock} available{p.treasuryProduct ? ' • Central Warehouse' : ''})
-                </span>
+              {gallery.length > 1 && (
+                <>
+                  <button type="button" className="pv-nav l" onClick={() => step(-1)} aria-label="Previous image"><Ic name="chevLeft" size={18} /></button>
+                  <button type="button" className="pv-nav r" onClick={() => step(1)} aria-label="Next image"><Ic name="chevRight" size={18} /></button>
+                  <span className="pv-count">{imgIdx + 1} / {gallery.length}</span>
+                </>
               )}
             </div>
+            {gallery.length > 1 && (
+              <div className="pv-thumbs">
+                {gallery.map((g, i) => (
+                  <button type="button" key={i} className={'pv-thumb' + (i === imgIdx ? ' on' : '')} onClick={() => setImgIdx(i)} aria-label={`Image ${i + 1}`}>
+                    <img src={g} alt="" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
-            <div className="pdp-price">
-              <b>{formatMoney(activePrice)}</b>
-              {p.oldPrice && <s>{formatMoney(p.oldPrice)}</s>}
-              {off > 0 && <span className="off-chip">-{off}%</span>}
+          {/* ── Info & buy box ── */}
+          <div className="pv-info">
+            <div className="pv-eyebrow">
+              {p.brand && <span>{p.brand}</span>}
+              {p.brand && p.category && <i>·</i>}
+              {p.category && <Link to={`/shop?category=${p.category.slug}`}>{p.category.name}</Link>}
             </div>
-            <p className="pdp-short">{p.shortDescription}</p>
+
+            <h1 className="pv-title">{p.name}</h1>
+
+            <div className="pv-rating">
+              <Stars value={rating} />
+              <b>{Number(rating).toFixed(1)}</b>
+              <button type="button" className="pv-rating-link" onClick={() => { setTab('reviews'); document.getElementById('pv-details')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
+                {reviews} reviews
+              </button>
+              {p.sold > 0 && <><i>·</i><span>{p.sold} sold</span></>}
+            </div>
+
+            <div className="pv-price">
+              <b>{formatMoney(activePrice)}</b>
+              {p.oldPrice > activePrice && <s>{formatMoney(p.oldPrice)}</s>}
+              {save > 0 && off > 0 && <span className="pv-save">Save {formatMoney(save)} ({off}%)</span>}
+            </div>
+
+            {p.shortDescription && <p className="pv-short">{p.shortDescription}</p>}
 
             {p.highlights?.length > 0 && (
-              <div className="pdp-highlights">
+              <div className="pv-hls">
                 {p.highlights.map((h) => (
-                  <span key={h.label} className="pdp-hl">
-                    <i><Ic name={h.icon} size={17} /></i> {h.label}
+                  <span key={h.label} className="pv-hl">
+                    <Ic name={h.icon} size={15} /> {h.label}
                   </span>
                 ))}
               </div>
             )}
 
-            {p.sizes?.length > 0 && (
-              <div className="pdp-sizes">
-                <span className="pdp-lbl">Size / Option: {size}</span>
-                <div>
-                  {p.sizes.map((s) => (
-                    <button key={s.label} className={'size-btn' + (size === s.label ? ' on' : '')} onClick={() => setSize(s.label)}>
-                      {s.label}
-                    </button>
-                  ))}
+            <div className="pv-buy">
+              {p.sizes?.length > 0 && (
+                <div className="pv-opt">
+                  <span className="pv-lbl">Size <b>{size}</b></span>
+                  <div className="pv-opt-row">
+                    {p.sizes.map((s) => (
+                      <button type="button" key={s.label} className={'pv-chip' + (size === s.label ? ' on' : '')} onClick={() => setSize(s.label)}>
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {(p.variants || []).map((v) => (
-              <div className="pdp-sizes" key={v.name}>
-                <span className="pdp-lbl">{v.name}: {variantSel[v.name] || ''}</span>
-                <div>
-                  {v.options.map((o) => (
-                    <button
-                      key={o}
-                      className={'size-btn' + (variantSel[v.name] === o ? ' on' : '')}
-                      onClick={() => setVariantSel({ ...variantSel, [v.name]: o })}
-                    >
-                      {o}
-                    </button>
-                  ))}
+              {(p.variants || []).map((v) => (
+                <div className="pv-opt" key={v.name}>
+                  <span className="pv-lbl">{v.name} <b>{variantSel[v.name] || ''}</b></span>
+                  <div className="pv-opt-row">
+                    {v.options.map((o) => (
+                      <button
+                        type="button"
+                        key={o}
+                        className={'pv-chip' + (variantSel[v.name] === o ? ' on' : '')}
+                        onClick={() => setVariantSel({ ...variantSel, [v.name]: o })}
+                      >
+                        {o}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
 
-            <div className="pdp-qty">
-              <span className="pdp-lbl">Quantity:</span>
-              <div className="qty-box">
-                <button onClick={() => setQty(Math.max(1, qty - 1))} aria-label="Decrease"><Ic name="minus" size={14} /></button>
-                <span>{qty}</span>
-                <button onClick={() => setQty(Math.min(20, qty + 1))} aria-label="Increase"><Ic name="plus" size={14} /></button>
+              <div className={'pv-stock ' + (out ? 'out' : low ? 'low' : 'ok')}>
+                <span className="pv-dot" />
+                {out ? 'Out of stock' : low ? `Only ${p.stock} left in stock, order soon` : 'In stock, ready to ship'}
               </div>
+
+              <div className="pv-actions">
+                <div className="pv-qty" aria-label="Quantity">
+                  <button type="button" onClick={() => setQty(Math.max(1, qty - 1))} aria-label="Decrease" disabled={qty <= 1}><Ic name="minus" size={15} /></button>
+                  <span>{qty}</span>
+                  <button type="button" onClick={() => setQty(Math.min(20, qty + 1))} aria-label="Increase" disabled={qty >= 20}><Ic name="plus" size={15} /></button>
+                </div>
+                <button type="button" className={'pv-add' + (added ? ' done' : '')} onClick={doAdd} disabled={out || added}>
+                  {out ? 'Out of stock' : added ? <><Ic name="check" size={17} /> Added to cart</> : <><Ic name="cart" size={17} /> Add to cart</>}
+                </button>
+                <button type="button" className={'pv-wish' + (liked ? ' on' : '')} onClick={() => setLiked(!liked)} aria-label="Wishlist" aria-pressed={liked}>
+                  <Ic name="heart" size={19} />
+                </button>
+              </div>
+              <button type="button" className="pv-buynow" onClick={buyNow} disabled={out}>
+                Buy now
+              </button>
             </div>
 
-            <div className="pdp-cta">
-              <button className={'btn-primary btn-block' + (added ? ' added' : '')} onClick={doAdd} disabled={out || added}>
-                {out ? 'OUT OF STOCK' : added ? '✓ ADDED TO CART' : 'ADD TO CART'}
-              </button>
-              <button className={'btn-wish-lg' + (liked ? ' liked' : '')} onClick={() => setLiked(!liked)} aria-label="Wishlist">
-                <Ic name="heart" size={19} />
-              </button>
-            </div>
-            <button className="btn-buynow btn-block" onClick={buyNow} disabled={out}>⚡ BUY NOW WITH 1-CLICK</button>
-
-            <div className="pdp-trust">
-              {[
-                { icon: 'badgeCheck', t: '100% Genuine', s: 'Authentic Items' },
-                { icon: 'banknote', t: 'Cash on', s: 'Delivery (COD)' },
-                { icon: 'truck', t: 'Fast Delivery', s: '1-2 Days Express' },
-                { icon: 'refresh', t: '14 Days Easy', s: 'Return Policy' },
-              ].map((f) => (
-                <div key={f.t}><i><Ic name={f.icon} size={19} /></i><span>{f.t}<br />{f.s}</span></div>
+            <div className="pv-perks">
+              {PERKS.map((f) => (
+                <div key={f.t} className="pv-perk">
+                  <span className="pv-perk-ic"><Ic name={f.icon} size={18} /></span>
+                  <span><b>{f.t}</b><small>{f.s}</small></span>
+                </div>
               ))}
             </div>
 
-            {/* Other Sellers Offering This Master Product */}
+            <div className="pv-seller">
+              <span className={'pv-seller-av' + (p.seller?.logo ? ' has-logo' : '')}>
+                {p.seller?.logo ? <img src={p.seller.logo} alt="" /> : (sellerName[0] || 'S').toUpperCase()}
+              </span>
+              <div className="pv-seller-txt">
+                <small>Sold &amp; shipped by</small>
+                <Link to={`/shop?seller=${sellerId}`} className="pv-seller-name">
+                  {sellerName} <span className="pv-verified"><Ic name="badgeCheck" size={13} /> Verified</span>
+                </Link>
+                {(sellerRated || sellerPlace) && (
+                  <span className="pv-seller-meta">
+                    {sellerRated && <>★ {Number(p.seller.rating).toFixed(1)} · {p.seller.numReviews} store ratings</>}
+                    {sellerRated && sellerPlace && ' · '}
+                    {sellerPlace}
+                  </span>
+                )}
+              </div>
+              <Link to={`/shop?seller=${sellerId}`} className="pv-seller-btn">Visit store</Link>
+            </div>
+
             {p.otherOffers?.length > 0 && (
-              <div
-                style={{
-                  marginTop: '20px',
-                  padding: '16px',
-                  background: '#f8fafc',
-                  borderRadius: '10px',
-                  border: '1px solid #e2e8f0',
-                }}
-              >
-                <div
-                  style={{
-                    fontSize: '13.5px',
-                    fontWeight: 700,
-                    color: '#0f172a',
-                    marginBottom: '10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
-                >
-                  <span>🏪 Other Sellers Offering This Product ({p.otherOffers.length})</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {p.otherOffers.map((offer) => (
-                    <div
-                      key={offer._id}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        background: '#fff',
-                        padding: '10px 14px',
-                        borderRadius: '8px',
-                        border: '1px solid #cbd5e1',
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: '13px', color: '#1e293b' }}>
-                          {offer.sellerName || offer.seller?.storeName}
-                          <span style={{ color: '#059669', marginLeft: '6px', fontSize: '11px', fontWeight: 700 }}>
-                            ✓ Verified
-                          </span>
-                        </div>
-                        <div style={{ fontSize: '11.5px', color: '#64748b' }}>
-                          ⭐ {offer.seller?.rating || '4.9'} • In Stock ({offer.stock})
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <b style={{ fontSize: '14px', color: '#0f172a' }}>{formatMoney(offer.price)}</b>
-                        <Link
-                          to={`/product/${offer.slug}`}
-                          className="btn-sec"
-                          style={{
-                            padding: '4px 10px',
-                            fontSize: '12px',
-                            borderRadius: '6px',
-                            textDecoration: 'none',
-                          }}
-                        >
-                          View Offer →
-                        </Link>
-                      </div>
+              <div className="pv-offers">
+                <div className="pv-offers-head">Also sold by {p.otherOffers.length} other seller{p.otherOffers.length === 1 ? '' : 's'}</div>
+                {p.otherOffers.map((offer) => (
+                  <div key={offer._id} className="pv-offer">
+                    <div className="pv-offer-who">
+                      <b>{offer.sellerName || offer.seller?.storeName}</b>
+                      <span><Ic name="badgeCheck" size={12} /> Verified · {offer.stock > 0 ? `In stock (${offer.stock})` : 'Out of stock'}</span>
                     </div>
-                  ))}
-                </div>
+                    <b className="pv-offer-price">{formatMoney(offer.price)}</b>
+                    <Link to={`/product/${offer.slug}`} className="pv-offer-btn">View</Link>
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </div>
 
-        {/* Detailed Tabs */}
-        <div className="pdp-tabs-card">
-          <div className="pdp-tabs">
-            {TABS.map((t, i) => (
-              <button key={t} className={i === tab ? 'on' : ''} onClick={() => setTab(i)}>
-                {t === 'REVIEWS' ? `REVIEWS (${p.numReviews || 35})` : t}
+        {/* ── Details ── */}
+        <div className="pv-details" id="pv-details">
+          <div className="pv-tabs" role="tablist">
+            {tabs.map((t) => (
+              <button type="button" role="tab" aria-selected={curTab === t.key} key={t.key} className={curTab === t.key ? 'on' : ''} onClick={() => setTab(t.key)}>
+                {t.label}
               </button>
             ))}
           </div>
-          <div className="pdp-tab-body">
-            {tab === 0 && (
-              <div className="tab-desc">
+          <div className="pv-tab-body">
+            {curTab === 'desc' && (
+              <div className="pv-desc">
                 <p>{p.description || p.shortDescription || 'No description provided.'}</p>
                 {p.bullets?.length > 0 && (
-                  <ul className="bullets">
+                  <ul>
                     {p.bullets.map((b, i) => (
-                      <li key={i}>{b}</li>
+                      <li key={i}><Ic name="check" size={15} /><span>{b}</span></li>
                     ))}
                   </ul>
                 )}
               </div>
             )}
-            {tab === 1 && <p>{p.howToUse || 'Please follow product user guide and packaging instructions.'}</p>}
-            {tab === 2 && <p>{p.ingredients || '100% compliant materials and ingredients certified by manufacturer.'}</p>}
-            {tab === 3 && (
-              <div className="specs-table">
-                {p.specifications?.map((s) => (
-                  <div key={s.key} className="spec-row">
-                    <b>{s.key}</b>
-                    <span>{s.value}</span>
+            {curTab === 'specs' && (
+              <dl className="pv-specs">
+                {p.specifications.map((s) => (
+                  <div key={s.key} className="pv-spec">
+                    <dt>{s.key}</dt>
+                    <dd>{s.value}</dd>
                   </div>
                 ))}
-              </div>
+              </dl>
             )}
-            {tab === 4 && (
-              <div className="reviews-tab">
-                {SAMPLE_REVIEWS.map((r, i) => (
-                  <div key={i} className="rev-card">
-                    <div className="rev-head">
-                      <b>{r.name}</b>
-                      <Stars value={r.rating} />
+            {curTab === 'use' && <p>{p.howToUse}</p>}
+            {curTab === 'ingr' && <p>{p.ingredients}</p>}
+            {curTab === 'reviews' && (
+              <div className="pv-reviews">
+                <div className="pv-rev-sum">
+                  <b>{Number(rating).toFixed(1)}</b>
+                  <Stars value={rating} />
+                  <span>{reviews} reviews</span>
+                </div>
+                <div className="pv-rev-list">
+                  {SAMPLE_REVIEWS.map((r, i) => (
+                    <div key={i} className="pv-rev">
+                      <div className="pv-rev-head">
+                        <span className="pv-rev-av">{r.name[0]}</span>
+                        <b>{r.name}</b>
+                        <Stars value={r.rating} />
+                      </div>
+                      <p>{r.text}</p>
                     </div>
-                    <p>{r.text}</p>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             )}
-            {tab === 5 && (
-              <div className="tab-shipping">
+            {curTab === 'ship' && (
+              <div className="pv-ship">
                 <p>We deliver orders worldwide using trusted international couriers. Standard delivery takes 3-7 business days depending on your location. Express delivery takes 1-3 business days.</p>
                 <p>Enjoy a 14-day hassle-free return window if you receive a damaged or incorrect item. Full buyer protection on every order.</p>
               </div>
@@ -352,17 +375,17 @@ export default function ProductPage() {
           </div>
         </div>
 
-        {/* Related Products Carousel */}
+        {/* ── Related ── */}
         {related.length > 0 && (
-          <div className="section">
-            <div className="section-head">
-              <h2>RELATED PRODUCTS YOU MAY ALSO LIKE</h2>
-              <div className="carousel-arrows">
-                <button onClick={() => scrollRel(-1)} aria-label="Previous"><Ic name="chevLeft" size={18} /></button>
-                <button onClick={() => scrollRel(1)} aria-label="Next"><Ic name="chevRight" size={18} /></button>
+          <div className="pv-related">
+            <div className="pv-related-head">
+              <h2>You may also like</h2>
+              <div className="pv-related-arrows">
+                <button type="button" onClick={() => scrollRel(-1)} aria-label="Previous"><Ic name="chevLeft" size={18} /></button>
+                <button type="button" onClick={() => scrollRel(1)} aria-label="Next"><Ic name="chevRight" size={18} /></button>
               </div>
             </div>
-            <div className="related-scroll" ref={relRef}>
+            <div className="pv-related-row" ref={relRef}>
               {related.map((rp) => (
                 <ProductCard key={rp._id} p={rp} />
               ))}
@@ -371,6 +394,6 @@ export default function ProductPage() {
         )}
       </div>
       <TrustStrip />
-    </>
+    </div>
   );
 }
