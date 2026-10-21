@@ -650,3 +650,14 @@
     padding: 16px;
   }
 }
+
+/* delivery could not be completed */
+.status-pill.st-delivery_failed,
+.status-pill.st-returned_to_warehouse {
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+}
+.track-issue { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 14px; padding: 12px 14px; border-radius: 12px; background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; font-size: 13.5px; line-height: 1.5; }
+.track-issue b { display: block; margin-bottom: 2px; }
+.tl-step.issue .tl-dot { background: #f97316 !important; border-color: #f97316 !important; color: #fff !important; }

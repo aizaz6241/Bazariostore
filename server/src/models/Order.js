@@ -9,6 +9,10 @@ export const STATUSES = [
   'delivery_warehouse',
   'shipped',
   'out_for_delivery',
+  // the courier could not deliver (customer did not answer / was not there): the admin sets the
+  // next step — out for delivery again, delivered, or cancelled. These never move by themselves.
+  'delivery_failed',
+  'returned_to_warehouse',
   'delivered',
   'cancelled',
   'refunded',

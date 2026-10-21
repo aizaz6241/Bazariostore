@@ -29,9 +29,11 @@ import {
   delta,
 } from './insights.jsx';
 
-const FULFILLMENT = ['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery'];
+const FULFILLMENT = ['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery', 'delivery_failed', 'returned_to_warehouse'];
 const STATUS_TONE = {
   pending: 'warning',
+  delivery_failed: 'warning',
+  returned_to_warehouse: 'warning',
   delivered: 'good',
   cancelled: 'critical',
   refunded: 'neutral',

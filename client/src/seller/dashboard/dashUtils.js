@@ -41,6 +41,8 @@ export const STATUS_META = {
   delivery_warehouse: { label: 'At delivery hub', tone: 'indigo' },
   shipped: { label: 'Shipped', tone: 'indigo' },
   out_for_delivery: { label: 'Out for delivery', tone: 'indigo' },
+  delivery_failed: { label: 'No response from customer', tone: 'amber' },
+  returned_to_warehouse: { label: 'Returned to warehouse', tone: 'amber' },
   delivered: { label: 'Delivered', tone: 'green' },
   cancelled: { label: 'Cancelled', tone: 'slate' },
   refunded: { label: 'Refunded', tone: 'red' },

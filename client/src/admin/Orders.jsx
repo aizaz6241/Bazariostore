@@ -21,6 +21,8 @@ const STATUS_TONE = {
   delivery_warehouse: 'violet',
   shipped: 'violet',
   out_for_delivery: 'violet',
+  delivery_failed: 'warning',
+  returned_to_warehouse: 'warning',
   delivered: 'good',
   cancelled: 'critical',
   refunded: 'neutral',
@@ -1090,7 +1092,7 @@ export default function Orders() {
                 </div>
 
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'out_for_delivery', 'delivered', 'cancelled']
+                  {['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'out_for_delivery', 'delivery_failed', 'returned_to_warehouse', 'delivered', 'cancelled']
                     // a delivered order was already paid out: it goes back only through a refund
                     .filter((st) => !(st === 'cancelled' && inspectOrder.status === 'delivered'))
                     .map((st) => (

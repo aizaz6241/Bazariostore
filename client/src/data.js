@@ -25,12 +25,20 @@ export const STATUS_LABELS = {
   delivery_warehouse: 'Delivery Warehouse',
   shipped: 'Shipped',
   out_for_delivery: 'Out for Delivery',
+  delivery_failed: 'No Response from Customer',
+  returned_to_warehouse: 'Returned to Warehouse',
   delivered: 'Delivered',
   cancelled: 'Cancelled',
   refunded: 'Refunded',
 };
 
-export const ALL_STATUSES = [...STATUS_STEPS, 'shipped', 'cancelled', 'refunded'];
+export const ALL_STATUSES = [...STATUS_STEPS, 'delivery_failed', 'returned_to_warehouse', 'shipped', 'cancelled', 'refunded'];
+
+// delivery could not be completed: shown with a note, the order waits for the next attempt
+export const DELIVERY_ISSUE = {
+  delivery_failed: 'The courier could not reach the customer. Another delivery attempt will be made.',
+  returned_to_warehouse: 'The parcel is back at the warehouse after a failed delivery and will be sent out again.',
+};
 
 // Status changes that move money at once: asked before they are sent
 export const STATUS_WARNINGS = {

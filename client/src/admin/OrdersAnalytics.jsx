@@ -8,7 +8,7 @@ import {
   SERIES, STATUS, GRID, AXIS, shortMoney, delta,
 } from './insights.jsx';
 
-const FULFILLMENT = ['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery'];
+const FULFILLMENT = ['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery', 'delivery_failed', 'returned_to_warehouse'];
 // one hue, lighter → darker as open orders get older
 const AGE_STEPS = ['#fed7aa', '#fb923c', '#ea580c', '#9a3412'];
 

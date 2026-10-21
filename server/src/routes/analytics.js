@@ -555,7 +555,7 @@ router.get('/reports', authAdmin('reports'), async (req, res) => {
       if (isDelivered) statusCounts.delivered++;
       else if (isCancelled) statusCounts.cancelled++;
       else if (isRefunded) statusCounts.refunded++;
-      else if (['processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery', 'confirmed'].includes(order.status)) {
+      else if (['processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery', 'delivery_failed', 'returned_to_warehouse', 'confirmed'].includes(order.status)) {
         statusCounts.processing++;
       } else {
         statusCounts.pending++;

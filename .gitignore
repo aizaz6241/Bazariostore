@@ -30,3 +30,6 @@ database_backup_full/
 
 # database backups downloaded to this computer (sensitive)
 db-backups/
+
+# Temporary folders
+.claude-tmp/

@@ -6,7 +6,7 @@ import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 import { getSocket } from '../socket.js';
 
-const IN_TRANSIT = ['out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery'];
+const IN_TRANSIT = ['out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery', 'delivery_failed', 'returned_to_warehouse'];
 const LOCKED = ['confirmed', 'processing', 'packed', ...IN_TRANSIT];
 
 const TABS = [
@@ -36,6 +36,8 @@ const STATUS = {
   delivery_warehouse: { label: 'At delivery hub', tone: 'indigo', text: 'Reached the local delivery hub for last-mile sorting.' },
   shipped: { label: 'Shipped', tone: 'indigo', text: 'On its way to the customer.' },
   out_for_delivery: { label: 'Out for delivery', tone: 'indigo', text: 'With the courier rider for doorstep delivery.' },
+  delivery_failed: { label: 'No response from customer', tone: 'amber', text: 'The courier could not reach the customer. Operations will try to deliver again. Your locked amount stays locked until the order is delivered or cancelled.' },
+  returned_to_warehouse: { label: 'Returned to warehouse', tone: 'amber', text: 'Back at the warehouse after a failed delivery. Operations will send it out again. Your locked amount stays locked until the order is delivered or cancelled.' },
   delivered: { label: 'Delivered', tone: 'green', text: 'Delivered. Your locked amount plus profit has been paid into your wallet.' },
   cancelled: { label: 'Cancelled', tone: 'slate', text: 'Cancelled. Any locked amount went back to your available balance.' },
   refunded: { label: 'Refunded', tone: 'red', text: 'Refunded to the customer.' },

@@ -389,7 +389,7 @@ router.get('/', authAdmin('orders'), async (req, res) => {
 // products, top cities and when in the day orders come in. Values are per seller share of
 // each order (items.price × qty), so a multi-seller order is split fairly.
 const OPEN_EXCLUDE = ['delivered', 'cancelled', 'refunded'];
-const FULFILLMENT = ['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery'];
+const FULFILLMENT = ['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery', 'delivery_failed', 'returned_to_warehouse'];
 
 router.get('/analytics/overview', authAdmin('orders'), async (req, res) => {
   try {
@@ -679,7 +679,7 @@ const orderStatusHandler = async (req, res) => {
   // 2. Order moved forward by Admin: the seller's funds are locked first.
   //    (Also when a waiting order jumps straight to packed / shipped / ..., otherwise it would
   //    later be "delivered" and paid out without the funds ever having been locked.)
-  const FORWARD = ['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery'];
+  const FORWARD = ['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery', 'delivery_failed', 'returned_to_warehouse'];
   if (FORWARD.includes(status)) {
     const sellerIds = [...new Set(order.items.map((i) => i.seller?.toString()).filter(Boolean))];
     for (const sId of sellerIds) {
@@ -725,7 +725,9 @@ const orderStatusHandler = async (req, res) => {
   }
 
   order.status = status;
-  if (['pending', 'cancelled', 'refunded', 'delivered'].includes(status)) {
+  // a failed delivery / return to warehouse waits for the admin: no automatic next step (an
+  // order left "out for delivery" is otherwise marked delivered — and paid out — by itself)
+  if (['pending', 'cancelled', 'refunded', 'delivered', 'delivery_failed', 'returned_to_warehouse'].includes(status)) {
     order.nextStatus = null;
     order.nextStatusAt = null;
   } else if (['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery'].includes(status)) {
@@ -757,13 +759,15 @@ const orderStatusHandler = async (req, res) => {
 
   // Notify sellers about the status transition
   if (req.admin && prev !== status) {
+    const NICE = { delivery_failed: 'NO RESPONSE FROM CUSTOMER', returned_to_warehouse: 'RETURNED TO WAREHOUSE' };
+    const nice = (st) => NICE[st] || String(st).replace(/_/g, ' ').toUpperCase();
     for (const sId of sellerIds) {
       notify(req.app, {
         recipientType: 'seller',
         sellerId: sId,
         type: 'order',
-        title: `📦 Order #${order.orderNumber} Status: ${status.replace(/_/g, ' ').toUpperCase()}`,
-        body: `Order #${order.orderNumber} status changed from "${prev}" to "${status.replace(/_/g, ' ').toUpperCase()}".`,
+        title: `📦 Order #${order.orderNumber} Status: ${nice(status)}`,
+        body: `Order #${order.orderNumber} status changed from "${nice(prev)}" to "${nice(status)}".`,
         link: '/seller/orders',
       });
     }

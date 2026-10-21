@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, fmtDate } from '../api.js';
 import { useCurrency } from '../context/CurrencyContext.jsx';
-import { STATUS_STEPS, STATUS_LABELS } from '../data.js';
+import { STATUS_STEPS, STATUS_LABELS, DELIVERY_ISSUE } from '../data.js';
 import Ic from '../components/Icons.jsx';
 import { TrustStrip } from '../components/Bits.jsx';
 
@@ -15,6 +15,8 @@ const STEP_ICONS = {
   delivery_warehouse: 'box',
   shipped: 'truck',
   out_for_delivery: 'truck',
+  delivery_failed: 'alert',
+  returned_to_warehouse: 'box',
   delivered: 'home',
 };
 
@@ -23,25 +25,38 @@ export function OrderTimeline({ order }) {
   if (reachedIdx === -1 && order.status === 'shipped') {
     reachedIdx = STATUS_STEPS.indexOf('out_from_warehouse');
   }
+  // a delivery that could not be completed stays at "Out for delivery", marked, with a note
+  const issue = DELIVERY_ISSUE[order.status];
+  const issueIdx = issue ? STATUS_STEPS.indexOf('out_for_delivery') : -1;
+  if (issue) reachedIdx = issueIdx;
   if (order.status === 'cancelled')
     return <div className="alert-error"><Ic name="x" size={15} /> Yeh order cancel ho chuka hai. Kisi bhi sawal ke liye chat support se rabta karein.</div>;
   if (order.status === 'refunded')
     return <div className="alert-info"><Ic name="refresh" size={15} /> Is order ka refund process ho chuka hai.</div>;
   return (
+    <>
+    {issue && (
+      <div className="track-issue">
+        <Ic name="alert" size={18} />
+        <div><b>{STATUS_LABELS[order.status]}</b>{issue}</div>
+      </div>
+    )}
     <div className="timeline">
       {STATUS_STEPS.map((s, i) => {
         const done = i <= reachedIdx;
-        const hist = order.statusHistory?.filter((h) => h.status === s).pop();
+        const isIssue = i === issueIdx;
+        const hist = order.statusHistory?.filter((h) => h.status === (isIssue ? order.status : s)).pop();
         return (
-          <div key={s} className={'tl-step' + (done ? ' done' : '') + (i === reachedIdx ? ' current' : '')}>
-            <span className="tl-dot"><Ic name={STEP_ICONS[s]} size={16} /></span>
-            <b>{STATUS_LABELS[s]}</b>
+          <div key={s} className={'tl-step' + (done ? ' done' : '') + (i === reachedIdx ? ' current' : '') + (isIssue ? ' issue' : '')}>
+            <span className="tl-dot"><Ic name={STEP_ICONS[isIssue ? order.status : s]} size={16} /></span>
+            <b>{STATUS_LABELS[isIssue ? order.status : s]}</b>
             <small>{done && hist ? fmtDate(hist.at) : ''}</small>
             {i < STATUS_STEPS.length - 1 && <span className="tl-line" />}
           </div>
         );
       })}
     </div>
+    </>
   );
 }
 
