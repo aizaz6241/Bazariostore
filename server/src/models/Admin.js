@@ -21,6 +21,8 @@ const adminSchema = new mongoose.Schema(
     // When the password was last changed: logins made before this moment stop working.
     pwdAt: { type: Date, default: null },
     lastLoginAt: Date,
+    // stores this admin pinned for quick access (Ctrl + K, store panel); max 30
+    pinnedSellers: { type: [mongoose.Schema.Types.ObjectId], default: undefined },
   },
   { timestamps: true }
 );

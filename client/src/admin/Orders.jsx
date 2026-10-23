@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import StoreLink from './hub/StoreLink.jsx';
 import { api, money, fmtDate, getCurrencyRate } from '../api.js';
 import { STATUS_LABELS, ALL_STATUSES, PAYMENT_LABELS, STATUS_WARNINGS } from '../data.js';
 import { ErrorBox } from './ui.jsx';
@@ -39,7 +40,7 @@ export default function Orders() {
   const [params, setParams] = useSearchParams();
   const status = params.get('status') || '';
   const [sellerFilter, setSellerFilter] = useState('');
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(() => params.get('q') || '');
   const [orders, setOrders] = useState([]);
   const [sellers, setSellers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -621,7 +622,9 @@ export default function Orders() {
                             <div className="ins-cell-who">
                               <Avatar name={seller.storeName} size={30} />
                               <div>
-                                <b className="ins-clip" style={{ maxWidth: 160 }} title={seller.storeName}>{seller.storeName}</b>
+                                <b className="ins-clip" style={{ maxWidth: 160 }} title={seller.storeName}>
+                                  <StoreLink id={seller._id} name={seller.storeName} />
+                                </b>
                                 <span className="ins-sub">{storeCount > 1 ? `+${storeCount - 1} more store${storeCount > 2 ? 's' : ''}` : seller.ownerName || ''}</span>
                               </div>
                             </div>
@@ -698,7 +701,7 @@ export default function Orders() {
                     </div>
                     <div className="ins-mcard-row">
                       <span>Store</span>
-                      <b className="ins-clip" style={{ maxWidth: 180 }}>{seller ? seller.storeName : 'Bazario Direct'}</b>
+                      <b className="ins-clip" style={{ maxWidth: 180 }}>{seller ? <StoreLink id={seller._id} name={seller.storeName} /> : 'Bazario Direct'}</b>
                     </div>
                     <div className="ins-mcard-row">
                       <span>Customer</span>

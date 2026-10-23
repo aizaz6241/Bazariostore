@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api, money, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
@@ -7,6 +8,7 @@ import useLiveReload from '../useLiveReload.js';
 import DiamondUpgradeModal from './DiamondUpgradeModal.jsx';
 
 export default function Sellers() {
+  const [params, setParams] = useSearchParams();
   const [sellers, setSellers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
@@ -184,6 +186,20 @@ export default function Sellers() {
     setKycDocs({ sellerId: '', docs: {}, loading: false, done: 0, total: 0, error: '' });
     loadProfileData(seller);
   };
+
+  // ?open=<seller id>[&tab=dashboard|upgrades|documents] (Ctrl + K, the store panel, the Today page)
+  // opens that store's profile as soon as the list is loaded
+  useEffect(() => {
+    const id = params.get('open');
+    if (!id || !sellers.length) return;
+    const s = sellers.find((x) => String(x._id) === String(id));
+    const tab = ['account', 'documents', 'dashboard', 'upgrades'].includes(params.get('tab')) ? params.get('tab') : 'account';
+    const next = new URLSearchParams(params);
+    next.delete('open');
+    next.delete('tab');
+    setParams(next, { replace: true });
+    if (s) handleOpenProfile(s, tab);
+  }, [params, sellers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Live seller metrics, listed items & orders. Without the KYC pictures (?kyc=0): with them this
   // answer was several MB, often ran past the 30 s limit (the screen then showed "0 products"),

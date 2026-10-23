@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { api, compressImage, dropClearedMessages, addChatMessage, syncLatestMessages } from '../api.js';
 import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
@@ -81,6 +82,16 @@ export default function ChatInbox() {
   const [selectedSellerId, setSelectedSellerId] = useState(() => {
     try { return new URLSearchParams(window.location.search).get('c') || null; } catch { return null; }
   });
+
+  // a link to /admin/chat?c=<id> while this page is already open (Ctrl + K, Today, store panel)
+  const location = useLocation();
+  useEffect(() => {
+    const c = new URLSearchParams(location.search).get('c');
+    if (c) {
+      setActiveTab('sellers');
+      setSelectedSellerId(c);
+    }
+  }, [location.search]);
 
   // Team & Super Admin State
   const [teamMembers, setTeamMembers] = useState([]);

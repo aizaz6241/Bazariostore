@@ -8,6 +8,9 @@ import FloatingChatWidget from '../components/FloatingChatWidget.jsx';
 import NotificationToast from '../components/NotificationToast.jsx';
 import { playNotificationSound } from '../utils/audio.js';
 import { enablePush, pushState } from '../utils/push.js';
+import CommandPalette from './hub/CommandPalette.jsx';
+import SellerPeek from './hub/SellerPeek.jsx';
+import { HUB_REFRESH_EVENT, openSearch } from './hub/hubBus.js';
 
 // Sidebar, grouped by job. Same links and permissions as before.
 const NAV_GROUPS = [
@@ -15,13 +18,14 @@ const NAV_GROUPS = [
     title: 'Overview',
     items: [
       { to: '/admin', icon: 'grid', label: 'Dashboard', end: true },
+      { to: '/admin/today', icon: 'clock', label: 'Today', badge: 'total' },
       { to: '/admin/reports', icon: 'chart', label: 'Analytics & Reports', perm: 'reports' },
     ],
   },
   {
     title: 'Commerce',
     items: [
-      { to: '/admin/orders', icon: 'box', label: 'Orders', perm: 'orders' },
+      { to: '/admin/orders', icon: 'box', label: 'Orders', perm: 'orders', badge: 'orders' },
       { to: '/admin/treasury', icon: 'package', label: 'Product Treasury', perm: 'products' },
       { to: '/admin/complaints', icon: 'alert', label: 'Complaints', perm: 'sellers' },
     ],
@@ -29,16 +33,16 @@ const NAV_GROUPS = [
   {
     title: 'Sellers',
     items: [
-      { to: '/admin/sellers', icon: 'users', label: 'Sellers & Vendors', perm: 'sellers' },
-      { to: '/admin/applications', icon: 'badgeCheck', label: 'New Applications', perm: 'sellers' },
+      { to: '/admin/sellers', icon: 'users', label: 'Sellers & Vendors', perm: 'sellers', badge: 'diamond' },
+      { to: '/admin/applications', icon: 'badgeCheck', label: 'New Applications', perm: 'sellers', badge: 'applications' },
       { to: '/admin/affiliates', icon: 'tag', label: 'Affiliate Codes', perm: 'sellers' },
       { to: '/admin/targets', icon: 'trend', label: 'Targets & Bonuses', perm: 'sellers' },
-      { to: '/admin/chat', icon: 'chat', label: 'Seller Support Desk', perm: 'chat' },
+      { to: '/admin/chat', icon: 'chat', label: 'Seller Support Desk', perm: 'chat', badge: 'chats' },
     ],
   },
   {
     title: 'Finance',
-    items: [{ to: '/admin/withdrawals', icon: 'banknote', label: 'Payouts', perm: 'finance' }],
+    items: [{ to: '/admin/withdrawals', icon: 'banknote', label: 'Payouts', perm: 'finance', badge: 'payouts' }],
   },
   {
     title: 'System',
@@ -104,6 +108,36 @@ export default function AdminLayout() {
   };
 
   const [toasts, setToasts] = useState([]);
+
+  // How many things wait in each part of the panel (menu badges); live: every 45 s, when this tab
+  // comes back, after an action, and a moment after a live event (new order, message, deposit…)
+  const [hubCounts, setHubCounts] = useState({});
+  useEffect(() => {
+    if (!token) return undefined;
+    let timer = null;
+    const load = () =>
+      api('/admin-hub/counts')
+        .then((d) => d?.counts && setHubCounts(d.counts))
+        .catch(() => {});
+    const soon = () => {
+      clearTimeout(timer);
+      timer = setTimeout(load, 2500);
+    };
+    load();
+    const every = setInterval(load, 45000);
+    window.addEventListener('focus', soon);
+    window.addEventListener(HUB_REFRESH_EVENT, soon);
+    const socket = getSocket();
+    const events = ['notify', 'message:new', 'order:new', 'order:update', 'withdrawal:new', 'sellers:changed', 'chat:broadcast_done'];
+    events.forEach((ev) => socket.on(ev, soon));
+    return () => {
+      clearInterval(every);
+      clearTimeout(timer);
+      window.removeEventListener('focus', soon);
+      window.removeEventListener(HUB_REFRESH_EVENT, soon);
+      events.forEach((ev) => socket.off(ev, soon));
+    };
+  }, [token]);
   const [notif, setNotif] = useState({ items: [], unread: 0 });
   const [bellOpen, setBellOpen] = useState(false);
   // Phone push: silently re-register when already allowed; otherwise show an "Enable alerts" button
@@ -291,6 +325,9 @@ export default function AdminLayout() {
                     onClick={() => setMobileSidebarOpen(false)}
                   >
                     <Ic name={n.icon} size={17} /> {n.label}
+                    {n.badge && hubCounts[n.badge] > 0 && (
+                      <span className={`nav-hub-badge ${n.badge === 'total' ? 'is-total' : ''}`}>{hubCounts[n.badge] > 99 ? '99+' : hubCounts[n.badge]}</span>
+                    )}
                   </NavLink>
                 ))}
               </div>
@@ -316,6 +353,11 @@ export default function AdminLayout() {
             <b className="show-on-mobile" style={{ fontSize: 14 }}>{currentPage?.label || 'Bazario Admin'}</b>
           </div>
           <span className="admin-top-right">
+            <button type="button" className="hub-search-btn" onClick={openSearch} title="Search stores, orders, chats, UTR, pages (Ctrl + K)" aria-label="Search">
+              <Ic name="search" size={17} />
+              <span className="hide-on-mobile">Search…</span>
+              <kbd className="hide-on-mobile">Ctrl K</kbd>
+            </button>
             {pushPerm !== 'granted' && pushPerm !== 'unsupported' && (
               <button
                 type="button"
@@ -376,6 +418,10 @@ export default function AdminLayout() {
         toasts={toasts}
         onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))}
       />
+
+      {/* Ctrl + K search and the store quick-view panel (open from anywhere) */}
+      <CommandPalette pages={NAV.filter(can)} />
+      <SellerPeek can={can} />
 
       {/* Floating Chat Widget for Super Admin */}
       <FloatingChatWidget role="admin" />

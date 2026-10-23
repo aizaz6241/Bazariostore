@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { registerSellerNameSync } from '../utils/sellerNameSync.js';
 
 const sellerSchema = new mongoose.Schema(
   {
@@ -274,5 +275,8 @@ export function stripSellerSecrets(obj) {
 const hideSecrets = { transform: (doc, ret) => stripSellerSecrets(ret) };
 sellerSchema.set('toJSON', hideSecrets);
 sellerSchema.set('toObject', hideSecrets);
+
+// a new store name / owner / email / phone is copied onto the store's support chat
+registerSellerNameSync(sellerSchema);
 
 export default mongoose.model('Seller', sellerSchema);

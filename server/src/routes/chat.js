@@ -15,6 +15,7 @@ import { sellerSafeMessage, sellerSafeConversation } from '../utils/sellerChatPr
 import { clearAdminTyping } from '../realtime/adminTyping.js';
 import { SHORTCUT_PAGES, resolveShortcut, searchShortcutTargets, pageAction } from '../utils/chatShortcuts.js';
 import { sellerFacts, fillPlaceholders, PLACEHOLDERS } from '../utils/chatPlaceholders.js';
+import { chatNamesOf } from '../utils/sellerNameSync.js';
 import Order from '../models/Order.js';
 import Withdrawal from '../models/Withdrawal.js';
 
@@ -408,6 +409,21 @@ router.get('/admin/conversations', authAdmin('chat'), async (req, res) => {
     const sellerMap = new Map();
     const cleanList = [];
 
+    // The store's CURRENT name / owner / email / phone (the copy on the chat was written when the
+    // chat was opened; a renamed store used to keep showing its old name here). An out-of-date
+    // copy is also corrected in the database, so search and the Today page show the new name too.
+    const fixes = [];
+    for (const c of allConvos) {
+      if (c.seller && typeof c.seller === 'object' && c.seller.storeName !== undefined) {
+        const live = chatNamesOf(c.seller);
+        if (Object.entries(live).some(([k, v]) => (c[k] || '') !== v)) {
+          Object.assign(c, live);
+          fixes.push({ updateOne: { filter: { _id: c._id }, update: { $set: live } } });
+        }
+      }
+    }
+    if (fixes.length) Conversation.bulkWrite(fixes, { ordered: false }).catch((e) => console.error('[chat names] fix failed:', e.message));
+
     for (const c of allConvos) {
       const sId = c.seller?._id?.toString() || c.seller?.toString();
       if (sId) {
@@ -458,7 +474,23 @@ router.get('/admin/conversations/:id/messages', authAdmin('chat'), async (req, r
       );
     }
 
-    const { messages, hasMore } = await fetchConversationMessages(query, { limit, before });
+    const fetched = await fetchConversationMessages(query, { limit, before });
+    const { hasMore } = fetched;
+    let messages = fetched.messages;
+
+    // the store's messages carry the name it had when each was sent: show its current name
+    if (sellerId) {
+      const live = await Seller.findById(sellerId).select('storeName ownerName').lean();
+      const name = live?.storeName || live?.ownerName || '';
+      if (name) {
+        messages = messages.map((m) => {
+          const o = typeof m.toObject === 'function' ? m.toObject() : { ...m };
+          if (o.sender === 'seller') o.senderName = name;
+          if (o.replyTo && o.replyTo.sender === 'seller') o.replyTo = { ...o.replyTo, senderName: name };
+          return o;
+        });
+      }
+    }
 
     // Mark as read for admin
     await Conversation.findByIdAndUpdate(req.params.id, { unreadForAdmin: 0 });

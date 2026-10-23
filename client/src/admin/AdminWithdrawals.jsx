@@ -6,6 +6,7 @@ import { getSocket } from '../socket.js';
 import SplitDepositModal from './SplitDepositModal.jsx';
 import AddFundsModal from './AddFundsModal.jsx';
 import PayoutsAnalytics from './PayoutsAnalytics.jsx';
+import StoreLink from './hub/StoreLink.jsx';
 
 // The upgrade fee exactly as the server charges it (offeredFee is null until an offer is sent; $0 is a real fee)
 const limitFeeOf = (l) => {
@@ -24,7 +25,15 @@ function timeAgo(d) {
 
 export default function AdminWithdrawals() {
   const [activeTab, setActiveTab] = useState('requests'); // 'requests' | 'analytics' | 'limits' | 'ledger'
-  const [queueSearch, setQueueSearch] = useState('');
+  // ?q=<UTR / store> (from Ctrl + K) fills the search boxes
+  const urlQ = (() => {
+    try {
+      return new URLSearchParams(window.location.search).get('q') || '';
+    } catch {
+      return '';
+    }
+  })();
+  const [queueSearch, setQueueSearch] = useState(urlQ);
   const [copiedKey, setCopiedKey] = useState('');
   const [analyticsKey, setAnalyticsKey] = useState(0);
   const [requests, setRequests] = useState([]);
@@ -39,7 +48,7 @@ export default function AdminWithdrawals() {
   const [depositsLedger, setDepositsLedger] = useState([]);
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [ledgerStatus, setLedgerStatus] = useState('all');
-  const [ledgerSearch, setLedgerSearch] = useState('');
+  const [ledgerSearch, setLedgerSearch] = useState(urlQ);
   const [splitModalDeposit, setSplitModalDeposit] = useState(null);
 
   const filteredLedger = useMemo(() => {
@@ -734,7 +743,9 @@ export default function AdminWithdrawals() {
                           </span>
                           {isTest && <span className="pd-pill pd-pill-violet">🧪 Test Account</span>}
                         </div>
-                        <b className="pd-req-store">{r.storeName}</b>
+                        <b className="pd-req-store">
+                          <StoreLink id={r.seller} name={r.storeName} />
+                        </b>
                         <small className="pd-req-sub">{r.seller?.ownerName} • {r.seller?.email}</small>
                       </div>
                     </div>
@@ -1080,7 +1091,9 @@ export default function AdminWithdrawals() {
                             <div className="pd-cell-who">
                               <span className="pd-avatar pd-avatar-sm">{(d.storeName || d.seller?.storeName || 'S')[0]}</span>
                               <div>
-                                <div className="pd-strong">{d.storeName || d.seller?.storeName || 'Store'}</div>
+                                <div className="pd-strong">
+                                  <StoreLink id={d.seller} name={d.storeName || d.seller?.storeName || 'Store'} />
+                                </div>
                                 <small className="pd-muted">{d.seller?.ownerName} {d.seller?.email && `• ${d.seller.email}`}</small>
                               </div>
                             </div>
