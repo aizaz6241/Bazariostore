@@ -1377,7 +1377,7 @@ router.get('/:id', authAdmin('sellers'), async (req, res, next) => {
     const [seller, products, orders] = await Promise.all([
       Seller.findById(req.params.id).select(sellerSelect),
       Product.find({ seller: req.params.id })
-        .select('name slug price oldPrice stock image images active sold treasuryProduct category createdAt')
+        .select('name slug sku brand tags price oldPrice stock image images active sold treasuryProduct category createdAt')
         .populate('category', 'name slug')
         .lean(),
       Order.find({

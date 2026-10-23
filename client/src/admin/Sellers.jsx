@@ -44,6 +44,8 @@ export default function Sellers() {
   const [profileTab, setProfileTab] = useState('account'); // 'account' | 'documents' | 'dashboard' | 'upgrades'
   const [profileUpgradeSubTab, setProfileUpgradeSubTab] = useState('compliance'); // 'compliance' | 'warning' | 'health' | 'limits'
   const [dashboardSubTab, setDashboardSubTab] = useState('products'); // 'products' | 'orders'
+  const [productSearch, setProductSearch] = useState('');
+  const [orderFilter, setOrderFilter] = useState('unconfirmed'); // 'unconfirmed' | 'all' | 'progress' | 'delivered' | 'cancelled'
 
   // Section 1: Account Form
   const [accForm, setAccForm] = useState({
@@ -138,6 +140,8 @@ export default function Sellers() {
     setProfileTab(initialTab);
     setProfileUpgradeSubTab(initialSubTab);
     setDashboardSubTab('products');
+    setProductSearch('');
+    setOrderFilter('unconfirmed');
     setAccSuccess('');
     setAccError('');
     setShowAccPassword(true);
@@ -1333,7 +1337,7 @@ export default function Sellers() {
                     </div>
                     <div>
                       <span>Pending orders</span>
-                      <b>{pendingCount}</b>
+                      <b title="Waiting for this seller to confirm">{unconfirmedCount ?? pendingCount}</b>
                     </div>
                     <div>
                       <span>Commission</span>
@@ -1863,14 +1867,73 @@ export default function Sellers() {
                     const stats = profileData?.stats || {};
                     const wallet = profileSeller.wallet || {};
                     const orders = profileData?.orders || [];
-                    const pendingOrders =
-                      stats.pendingOrders !== undefined
-                        ? stats.pendingOrders
-                        : orders.filter((o) =>
-                            ['pending', 'processing', 'unfulfilled', 'paid', 'confirmed', 'placed'].includes(
-                              (o.status || '').toLowerCase()
-                            )
-                          ).length;
+                    // "Pending" = waiting for THIS seller to confirm (its items in the order not confirmed yet)
+                    const sid = String(profileSeller._id);
+                    const mineItems = (o) =>
+                      (o.items || []).filter((it) => (it.seller ? String(it.seller._id || it.seller) === sid : String(o.seller?._id || o.seller || '') === sid));
+                    const isUnconfirmed = (o) =>
+                      (o.status || '').toLowerCase() === 'pending' && mineItems(o).some((it) => !it.itemStatus || it.itemStatus === 'pending');
+                    const orderGroup = (o) => {
+                      const st = (o.status || '').toLowerCase();
+                      if (isUnconfirmed(o)) return 'unconfirmed';
+                      if (st === 'delivered') return 'delivered';
+                      if (['cancelled', 'refunded', 'failed', 'delivery_failed', 'returned'].includes(st)) return 'cancelled';
+                      return 'progress';
+                    };
+                    const unconfirmedList = orders.filter(isUnconfirmed);
+                    const pendingOrders = stats.unconfirmedOrders !== undefined ? stats.unconfirmedOrders : unconfirmedList.length;
+                    const orderCounts = orders.reduce(
+                      (c, o) => {
+                        c[orderGroup(o)] += 1;
+                        return c;
+                      },
+                      { unconfirmed: 0, progress: 0, delivered: 0, cancelled: 0 }
+                    );
+                    const shownOrders = orderFilter === 'all' ? orders : orders.filter((o) => orderGroup(o) === orderFilter);
+
+                    // product search: every typed word must appear (name, SKU, brand, category); if
+                    // nothing matches, close spellings are accepted too (one letter off)
+                    const products = profileData?.products || [];
+                    const norm = (v) => String(v || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9\s]/g, ' ');
+                    const hay = (p) => norm([p.name, p.sku, p.brand, p.category?.name, ...(p.tags || [])].join(' '));
+                    const words = norm(productSearch).split(/\s+/).filter(Boolean);
+                    const near = (a, b) => {
+                      if (Math.abs(a.length - b.length) > 1) return false;
+                      let i = 0;
+                      let j = 0;
+                      let edits = 0;
+                      while (i < a.length && j < b.length) {
+                        if (a[i] === b[j]) {
+                          i += 1;
+                          j += 1;
+                          continue;
+                        }
+                        edits += 1;
+                        if (edits > 1) return false;
+                        if (a.length > b.length) i += 1;
+                        else if (b.length > a.length) j += 1;
+                        else {
+                          i += 1;
+                          j += 1;
+                        }
+                      }
+                      return edits + (a.length - i) + (b.length - j) <= 1;
+                    };
+                    let shownProducts = products;
+                    let fuzzyResult = false;
+                    if (words.length) {
+                      shownProducts = products.filter((p) => {
+                        const h = hay(p);
+                        return words.every((w) => h.includes(w));
+                      });
+                      if (!shownProducts.length) {
+                        shownProducts = products.filter((p) => {
+                          const tokens = hay(p).split(/\s+/).filter(Boolean);
+                          return words.every((w) => tokens.some((t) => t.includes(w) || (w.length >= 4 && (near(w, t) || near(w, t.slice(0, w.length))))));
+                        });
+                        fuzzyResult = shownProducts.length > 0;
+                      }
+                    }
 
                     return (
                       <>
@@ -1949,8 +2012,29 @@ export default function Sellers() {
                                 {profileData ? 'No products listed by this seller yet.' : profileLoading ? 'Loading products…' : 'Products could not be loaded (see the message above).'}
                               </div>
                             ) : (
+                              <>
+                              <div style={{ position: 'relative', marginBottom: 10 }}>
+                                <input
+                                  type="search"
+                                  value={productSearch}
+                                  onChange={(e) => setProductSearch(e.target.value)}
+                                  placeholder={`🔍 Search ${products.length} products by name, SKU or brand…`}
+                                  aria-label="Search this seller's products"
+                                  style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 14 }}
+                                />
+                                {productSearch && (
+                                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>
+                                    {shownProducts.length} of {products.length} products{fuzzyResult ? ' (close spellings)' : ''}
+                                  </div>
+                                )}
+                              </div>
+                              {shownProducts.length === 0 ? (
+                                <div style={{ padding: 20, textAlign: 'center', color: '#64748b', background: '#f8fafc', borderRadius: 8 }}>
+                                  No product matches “{productSearch}”.
+                                </div>
+                              ) : (
                               <div className="inspect-prods-grid" style={{ maxHeight: 340 }}>
-                                {profileData.products.map((p) => (
+                                {shownProducts.map((p) => (
                                   <div key={p._id} className="inspect-prod-item">
                                     <img
                                       src={p.image || p.images?.[0]?.url || p.images?.[0] || '/img/products/serum.svg'}
@@ -1968,6 +2052,8 @@ export default function Sellers() {
                                   </div>
                                 ))}
                               </div>
+                              )}
+                              </>
                             )}
                           </div>
                         )}
@@ -1980,11 +2066,42 @@ export default function Sellers() {
                                 {profileData ? 'No orders associated with this seller yet.' : profileLoading ? 'Loading orders…' : 'Orders could not be loaded (see the message above).'}
                               </div>
                             ) : (
+                              <>
+                              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
+                                {[
+                                  { key: 'unconfirmed', label: '⏳ Pending (not confirmed)', n: orderCounts.unconfirmed },
+                                  { key: 'progress', label: '🚚 Confirmed / in progress', n: orderCounts.progress },
+                                  { key: 'delivered', label: '✅ Delivered', n: orderCounts.delivered },
+                                  { key: 'cancelled', label: '✖ Cancelled', n: orderCounts.cancelled },
+                                  { key: 'all', label: 'All', n: orders.length },
+                                ].map((f) => (
+                                  <button
+                                    key={f.key}
+                                    type="button"
+                                    onClick={() => setOrderFilter(f.key)}
+                                    style={{
+                                      padding: '6px 10px',
+                                      borderRadius: 999,
+                                      fontSize: 12,
+                                      fontWeight: 700,
+                                      cursor: 'pointer',
+                                      border: `1px solid ${orderFilter === f.key ? '#0f172a' : '#e2e8f0'}`,
+                                      background: orderFilter === f.key ? '#0f172a' : '#fff',
+                                      color: orderFilter === f.key ? '#fff' : '#334155',
+                                    }}
+                                  >
+                                    {f.label} ({f.n})
+                                  </button>
+                                ))}
+                              </div>
+                              {shownOrders.length === 0 ? (
+                                <div style={{ padding: 20, textAlign: 'center', color: '#64748b', background: '#f8fafc', borderRadius: 8 }}>
+                                  {orderFilter === 'unconfirmed' ? 'No order is waiting for this seller to confirm.' : 'No orders here.'}
+                                </div>
+                              ) : (
                               <div className="inspect-orders-list" style={{ maxHeight: 380 }}>
-                                {profileData.orders.map((o) => {
-                                  const isPending = ['pending', 'processing', 'unfulfilled', 'paid', 'confirmed', 'placed'].includes(
-                                    (o.status || '').toLowerCase()
-                                  );
+                                {shownOrders.map((o) => {
+                                  const isPending = isUnconfirmed(o);
 
                                   return (
                                     <div
@@ -2016,7 +2133,7 @@ export default function Sellers() {
                                               textTransform: 'capitalize',
                                             }}
                                           >
-                                            {o.status}
+                                            {isPending ? 'Not confirmed' : o.status}
                                           </span>
                                         </div>
                                         <span className="muted block" style={{ fontSize: 11.5, marginTop: 2 }}>
@@ -2044,6 +2161,8 @@ export default function Sellers() {
                                   );
                                 })}
                               </div>
+                              )}
+                              </>
                             )}
                           </div>
                         )}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useOutletContext } from 'react-router-dom';
+import { Link, useOutletContext, useSearchParams } from 'react-router-dom';
 import { sapi, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
@@ -181,6 +181,25 @@ export default function SellerOrders() {
   }, [rows, tab, q]);
 
   const selected = useMemo(() => rows.find((r) => r.ord._id === selectedId) || null, [rows, selectedId]);
+
+  // ?open=<order id> (a shortcut button from support): open that order once the list is loaded
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openParam = searchParams.get('open');
+  useEffect(() => {
+    if (!openParam || loading) return;
+    if (orders.some((o) => o._id === openParam)) {
+      setTab('all');
+      setQ('');
+      setSelectedId(openParam);
+    } else {
+      setToast({ ok: false, text: 'That order is not in your order list any more.' });
+    }
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('open');
+      return next;
+    }, { replace: true });
+  }, [openParam, loading, orders, setSearchParams]);
   const closeDrawer = useCallback(() => setSelectedId(null), []);
   const balance = Number(seller?.wallet?.balance) || 0;
 

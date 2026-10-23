@@ -7,6 +7,8 @@ import AiRewriteBox from '../components/AiRewriteBox.jsx';
 import ClearChatModal from './ClearChatModal.jsx';
 import VoiceRecordButton from '../components/VoiceRecordButton.jsx';
 import { useAdminTyping, typingLabel } from './useAdminTyping.js';
+import ChatShortcutPicker from './ChatShortcutPicker.jsx';
+import ChatQuickReplies from './ChatQuickReplies.jsx';
 
 const ROLE_LABELS = {
   super_admin: '👑 Super Admin',
@@ -61,6 +63,24 @@ export default function ChatInbox() {
   const [file, setFile] = useState(null);
   const [filePreview, setFilePreview] = useState(null);
   const [replyingTo, setReplyingTo] = useState(null);
+  // a shortcut button to send with the next message (page / order / product of this store)
+  const [pendingAction, setPendingAction] = useState(null);
+  const [shortcutOpen, setShortcutOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [shortcutPages, setShortcutPages] = useState([]);
+  // a button suggested from what is being typed ("diamond", "deposit", "order 182"…)
+  const [suggestion, setSuggestion] = useState(null);
+  const [dismissedSuggestion, setDismissedSuggestion] = useState('');
+  useEffect(() => {
+    api('/chat/admin/shortcut-pages')
+      .then((d) => setShortcutPages(Array.isArray(d) ? d : []))
+      .catch(() => {});
+  }, []);
+  // a button picked for one chat never goes to another
+  useEffect(() => {
+    setPendingAction(null);
+    setShortcutOpen(false);
+  }, [selectedSellerId, activeTab]);
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -407,7 +427,16 @@ export default function ChatInbox() {
       loadSellerConvos();
     };
 
+    // the seller tapped a shortcut button: show "Opened" on it at once
+    const onActionOpened = (p) => {
+      if (!p?.messageId) return;
+      setMessages((prev) =>
+        Array.isArray(prev) ? prev.map((m) => (m._id === p.messageId && m.action ? { ...m, action: { ...m.action, openedAt: p.openedAt } } : m)) : prev
+      );
+    };
+
     if (socket) {
+      socket.on('message:action_opened', onActionOpened);
       socket.on('message:new', onNewSellerMsg);
       socket.on('admin:message:new', onNewTeamMsg);
       socket.on('chat:cleared', onChatCleared);
@@ -418,6 +447,7 @@ export default function ChatInbox() {
     }
     return () => {
       if (socket) {
+        socket.off('message:action_opened', onActionOpened);
         socket.off('chat:cleared', onChatCleared);
         socket.off('message:new', onNewSellerMsg);
         socket.off('admin:message:new', onNewTeamMsg);
@@ -466,7 +496,8 @@ export default function ChatInbox() {
   const handleSend = async (e, overrideText = null) => {
     if (e?.preventDefault) e.preventDefault();
     const clean = (overrideText !== null ? overrideText : text).trim();
-    if (!clean && !file) return;
+    const actionToSend = activeTab === 'sellers' ? pendingAction : null;
+    if (!clean && !file && !actionToSend) return;
 
     if (activeTab === 'sellers' && !selectedSellerId) return;
     if (activeTab === 'team' && !selectedTeamId) return;
@@ -514,6 +545,7 @@ export default function ChatInbox() {
       setText('');
       removeFile();
       setReplyingTo(null);
+      setPendingAction(null);
 
       if (activeTab === 'sellers') {
         // Send to Seller Support Thread
@@ -526,6 +558,7 @@ export default function ChatInbox() {
             attachmentName,
             attachmentSize,
             replyTo: targetReply,
+            action: actionToSend ? { kind: actionToSend.kind, key: actionToSend.key, refId: actionToSend.refId } : undefined,
           },
         });
         if (newMsg?._id) {
@@ -554,6 +587,7 @@ export default function ChatInbox() {
       }
     } catch (err) {
       setText(clean);
+      if (actionToSend) setPendingAction(actionToSend);
       alert('Failed to send message: ' + err.message);
     } finally {
       sendingRef.current = false;
@@ -648,6 +682,52 @@ export default function ChatInbox() {
   const selectedSellerConv = Array.isArray(sellerConvos)
     ? sellerConvos.find((c) => c._id === selectedSellerId)
     : null;
+
+  const isStoreChat = activeTab === 'sellers' && !!selectedSellerConv?.seller && !selectedSellerConv?.isGuest && selectedSellerConv?.type !== 'guest';
+
+  // Typing suggestions: a word in the message → offer its button (only in a store's chat)
+  useEffect(() => {
+    if (!isStoreChat || pendingAction || !text.trim()) {
+      setSuggestion(null);
+      if (!text.trim()) setDismissedSuggestion('');
+      return undefined;
+    }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const orderNo = text.match(/\b(?:ord(?:er)?[\s#:-]*|#)(\d{1,7})\b/i);
+      if (orderNo) {
+        try {
+          const list = await api(`/chat/admin/conversations/${selectedSellerId}/shortcuts?kind=order&q=${encodeURIComponent(orderNo[1])}`);
+          const hit = (Array.isArray(list) ? list : []).find((o) => new RegExp(`(^|\\D)${orderNo[1]}$`).test(String(o.title || '')));
+          if (!cancelled && hit) {
+            setSuggestion({ kind: 'order', refId: hit.id, label: `🧾 Open order ${hit.title}`, sub: 'Tap to see this order', id: `order:${hit.id}` });
+            return;
+          }
+        } catch {}
+      }
+      const RULES = [
+        [/\b(diamond|upgrade)\b/i, 'diamond'],
+        [/\b(deposit|recharge|top ?up|add (funds|money|balance))\b/i, 'deposit'],
+        [/\b(withdraw|withdrawal|payout)\b/i, 'withdraw'],
+        [/\b(treasury|import)\b/i, 'treasury'],
+        [/\b(coupons?|discounts?)\b/i, 'discounts'],
+        [/\b(refunds?|returns?)\b/i, 'refunds'],
+        [/\bshipping\b/i, 'shipping'],
+        [/\b(bank|upi|store settings|payout details)\b/i, 'settings'],
+        [/\b(analytics|reports?)\b/i, 'analytics'],
+        [/\b(orders?|confirm)\b/i, 'orders'],
+        [/\b(products?|listing)\b/i, 'products'],
+        [/\b(wallet|balance)\b/i, 'wallet'],
+      ];
+      const rule = RULES.find(([re]) => re.test(text));
+      const page = rule ? shortcutPages.find((p) => p.key === rule[1]) : null;
+      if (!cancelled) setSuggestion(page ? { kind: 'page', key: page.key, label: page.label, sub: page.sub, id: `page:${page.key}` } : null);
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [text, isStoreChat, pendingAction, selectedSellerId, shortcutPages]);
 
   const currentTeamMember = Array.isArray(teamMembers)
     ? teamMembers.find((t) => t._id === selectedTeamId)
@@ -1233,6 +1313,46 @@ export default function ChatInbox() {
               </div>
             )}
 
+            {/* Suggested button from what is being typed */}
+            {suggestion && !pendingAction && isStoreChat && dismissedSuggestion !== suggestion.id && (
+              <div className="chat-suggest-bar" role="status">
+                <span>💡 Add a button?</span>
+                <button
+                  type="button"
+                  className="sg"
+                  onClick={() => {
+                    const { id, ...a } = suggestion;
+                    setPendingAction(a);
+                    setSuggestion(null);
+                    textInputRef.current?.focus();
+                  }}
+                >
+                  {suggestion.label}
+                </button>
+                <button type="button" className="x" onClick={() => setDismissedSuggestion(suggestion.id)} aria-label="Not now">
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* Shortcut button that goes with the next message */}
+            {pendingAction && activeTab === 'sellers' && (
+              <div className="chat-replying-bar csp-pending">
+                <div className="crb-left">
+                  <div className="crb-indicator" style={{ background: '#0891b2' }}></div>
+                  <div className="crb-info">
+                    <span className="crb-title">
+                      Button: <b>{pendingAction.label}</b>
+                    </span>
+                    <span className="crb-snippet">Add a message (optional) and press Send — the seller taps the button to open it.</span>
+                  </div>
+                </div>
+                <button type="button" className="crb-close" onClick={() => setPendingAction(null)} title="Remove button">
+                  <Ic name="x" size={16} />
+                </button>
+              </div>
+            )}
+
             {/* File Upload Preview */}
             {file && (
               <div className="chat-attachment-preview-bar admin-preview-bar">
@@ -1270,6 +1390,30 @@ export default function ChatInbox() {
               >
                 <Ic name="paperclip" size={20} stroke={2} />
               </button>
+              {activeTab === 'sellers' && (
+                <button
+                  type="button"
+                  className="chat-attach-btn"
+                  onClick={() => setQuickOpen(true)}
+                  disabled={sending}
+                  title="Saved replies"
+                  style={{ marginBottom: 8 }}
+                >
+                  <span style={{ fontSize: 17, lineHeight: 1 }}>⚡</span>
+                </button>
+              )}
+              {isStoreChat && (
+                <button
+                  type="button"
+                  className="chat-attach-btn csp-trigger"
+                  onClick={() => setShortcutOpen(true)}
+                  disabled={sending}
+                  title="Send a shortcut button (Diamond, Deposit, an order, a product…)"
+                  style={{ marginBottom: 8 }}
+                >
+                  <Ic name="link" size={19} stroke={2} />
+                </button>
+              )}
               <div style={{ marginBottom: 8 }}>
                 <VoiceRecordButton
                   onTranscribed={(spokenText) => {
@@ -1411,6 +1555,38 @@ export default function ChatInbox() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* SAVED REPLIES */}
+      {quickOpen && (
+        <ChatQuickReplies
+          pages={shortcutPages}
+          canButton={isStoreChat}
+          onClose={() => setQuickOpen(false)}
+          onUse={(r, page) => {
+            if (r.text) {
+              setText(r.text);
+              noteSellerTyping(r.text);
+            }
+            if (isStoreChat && page) setPendingAction({ kind: 'page', key: page.key, label: page.label, sub: page.sub });
+            setQuickOpen(false);
+            setTimeout(() => textInputRef.current?.focus(), 30);
+          }}
+        />
+      )}
+
+      {/* SHORTCUT BUTTON PICKER (page / order / product of this store) */}
+      {shortcutOpen && selectedSellerId && (
+        <ChatShortcutPicker
+          conversationId={selectedSellerId}
+          storeName={selectedSellerConv?.seller?.storeName || selectedSellerConv?.storeName || ''}
+          onClose={() => setShortcutOpen(false)}
+          onPick={(a) => {
+            setPendingAction(a);
+            setShortcutOpen(false);
+            textInputRef.current?.focus();
+          }}
+        />
       )}
 
       {/* CLEAR CHAT (whole chat or by date; pictures / files are removed from storage too) */}

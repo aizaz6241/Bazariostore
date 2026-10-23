@@ -410,7 +410,14 @@ export default function FloatingChatWidget({ role = 'seller', currentSeller = nu
     const onMessageDelete = (payload) => {
       const targetId = payload?.messageId || payload?._id;
       if (!targetId) return;
-      setMessages((prev) => (Array.isArray(prev) ? prev.filter((m) => m._id !== targetId) : prev));
+      // the message disappears without a trace, also from the replies that quoted it
+      setMessages((prev) =>
+        Array.isArray(prev)
+          ? prev
+              .filter((m) => m._id !== targetId)
+              .map((m) => (m.replyTo && String(m.replyTo.messageId) === String(targetId) ? { ...m, replyTo: null } : m))
+          : prev
+      );
     };
 
 

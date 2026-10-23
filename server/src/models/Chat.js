@@ -80,6 +80,22 @@ const messageSchema = new mongoose.Schema(
       attachmentType: { type: String, default: null },
       attachmentName: { type: String, default: '' },
     },
+    // A shortcut button sent by support (utils/chatShortcuts.js): opens a page of the seller panel,
+    // one of the store's orders or one of its products. Only admins send it; the server checks it.
+    action: {
+      type: new mongoose.Schema(
+        {
+          kind: { type: String, enum: ['page', 'order', 'product'] },
+          key: { type: String, default: '' }, // page key (kind 'page')
+          refId: { type: String, default: '' }, // order / product id
+          label: { type: String, default: '' }, // button text
+          sub: { type: String, default: '' }, // small line under it
+          openedAt: { type: Date, default: null }, // first time the seller tapped it (shown to support)
+        },
+        { _id: false }
+      ),
+      default: undefined,
+    },
   },
   { timestamps: true }
 );
@@ -92,6 +108,8 @@ const chatSettingsSchema = new mongoose.Schema(
       default: 'Assalam o Alaikum! 👋 Thanks for reaching out. We are currently away from the desk, but we have received your inquiry and our support team will respond to you shortly.',
     },
     awayMode: { type: Boolean, default: false },
+    // the ready saved replies were added once (deleting them all later does not bring them back)
+    quickRepliesSeeded: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
@@ -105,4 +123,19 @@ messageSchema.index({ guestId: 1, createdAt: -1 });
 export const Conversation = mongoose.model('Conversation', conversationSchema);
 export const Message = mongoose.model('Message', messageSchema);
 export const ChatSettings = mongoose.model('ChatSettings', chatSettingsSchema);
+
+// Saved replies of the support team (shared by all admins): a ready text, optionally with a page
+// shortcut button (utils/chatShortcuts.js → SHORTCUT_PAGES).
+const quickReplySchema = new mongoose.Schema(
+  {
+    title: { type: String, required: true, trim: true },
+    text: { type: String, default: '' },
+    actionKey: { type: String, default: '' }, // page key, '' = no button
+    order: { type: Number, default: 0 },
+    createdBy: { type: String, default: '' },
+    updatedBy: { type: String, default: '' },
+  },
+  { timestamps: true }
+);
+export const ChatQuickReply = mongoose.model('ChatQuickReply', quickReplySchema);
 

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
-import { Conversation, Message, ChatSettings } from '../models/Chat.js';
+import { Conversation, Message, ChatSettings, ChatQuickReply } from '../models/Chat.js';
 import Seller from '../models/Seller.js';
 import Admin from '../models/Admin.js';
 import { authAdmin, authSeller, authSellerOrAdmin } from '../middleware/auth.js';
@@ -13,6 +13,7 @@ import { limit } from '../utils/rateLimit.js';
 import { adminRoom } from '../utils/permissions.js';
 import { sellerSafeMessage, sellerSafeConversation } from '../utils/sellerChatPrivacy.js';
 import { clearAdminTyping } from '../realtime/adminTyping.js';
+import { SHORTCUT_PAGES, resolveShortcut, searchShortcutTargets } from '../utils/chatShortcuts.js';
 
 // A guest chat is opened with the random id the storefront keeps in the browser (36 characters).
 // Knowing that id is what gives access to that one chat, so it must be real text of a sensible
@@ -331,6 +332,27 @@ router.post('/seller/send', authSeller, sellerSendLimit, async (req, res) => {
   }
 });
 
+// POST /api/chat/seller/action-opened  { messageId } — the seller tapped a support shortcut button;
+// the first tap is recorded and shown to support ("✓ Opened")
+router.post('/seller/action-opened', authSeller, async (req, res) => {
+  try {
+    const id = String(req.body?.messageId || '');
+    if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ message: 'Message not found' });
+    const at = new Date();
+    const msg = await Message.findOneAndUpdate(
+      { _id: id, seller: req.seller.id, 'action.label': { $exists: true }, $or: [{ 'action.openedAt': null }, { 'action.openedAt': { $exists: false } }] },
+      { $set: { 'action.openedAt': at } },
+      { new: true, projection: { conversation: 1, action: 1 } }
+    ).lean();
+    if (msg) {
+      req.app.get('io')?.to(adminRoom('chat')).emit('message:action_opened', { messageId: String(msg._id), conversation: String(msg.conversation), openedAt: at });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // POST /api/chat/seller/read (Seller marks messages as read)
 router.post('/seller/read', authSeller, async (req, res) => {
   try {
@@ -448,12 +470,22 @@ router.post('/admin/conversations/:id/reply', authAdmin('chat'), async (req, res
   try {
     const { text, attachment, attachmentType, attachmentName, attachmentSize, replyTo } = req.body;
     const cleanText = (text || '').trim();
-    if (!cleanText && !attachment) return res.status(400).json({ message: 'Message or attachment is required' });
+    if (!cleanText && !attachment && !req.body?.action) return res.status(400).json({ message: 'Message or attachment is required' });
 
     const conv = await Conversation.findById(req.params.id);
     if (!conv) return res.status(404).json({ message: 'Conversation not found' });
 
-    const previewMsg = cleanText || (attachmentType === 'pdf' ? `📄 ${attachmentName || 'PDF Document'}` : '📷 Image Attachment');
+    // a shortcut button (page / order / product of this store), checked before anything is saved
+    let action = null;
+    if (req.body?.action) {
+      try {
+        action = await resolveShortcut(req.body.action, conv);
+      } catch (e) {
+        return res.status(e.status || 400).json({ message: e.message });
+      }
+    }
+
+    const previewMsg = cleanText || (action ? `🔗 ${action.label}` : attachmentType === 'pdf' ? `📄 ${attachmentName || 'PDF Document'}` : '📷 Image Attachment');
     conv.lastMessage = previewMsg;
     conv.lastSender = 'admin';
     conv.lastAt = new Date();
@@ -486,6 +518,7 @@ router.post('/admin/conversations/:id/reply', authAdmin('chat'), async (req, res
         attachmentType: replyTo.attachmentType || null,
         attachmentName: replyTo.attachmentName || '',
       } : null,
+      ...(action ? { action } : {}),
     });
     await message.save();
 
@@ -495,7 +528,7 @@ router.post('/admin/conversations/:id/reply', authAdmin('chat'), async (req, res
         to: 'seller',
         sellerId: conv.seller,
         title: '💬 Bazario Support',
-        body: cleanText ? cleanText.slice(0, 140) : (message.attachment ? '📎 Sent an attachment' : 'New message'),
+        body: cleanText ? cleanText.slice(0, 140) : action ? `🔗 ${action.label}` : (message.attachment ? '📎 Sent an attachment' : 'New message'),
         url: '/seller/support',
         tag: `chat-${conv._id}`,
       });
@@ -518,6 +551,122 @@ router.post('/admin/conversations/:id/reply', authAdmin('chat'), async (req, res
     clearAdminTyping(req.admin.id, conv._id);
 
     res.status(201).json(message);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ─── Saved replies (shared by the support team) ───
+const DEFAULT_QUICK_REPLIES = [
+  {
+    title: 'Upgrade to Diamond',
+    text: 'To upgrade your store to 💎 Diamond (35% profit on every order and 72 hours to confirm orders), tap the button below and send the upgrade request. Our team will then guide you on the one-time fee.',
+    actionKey: 'diamond',
+  },
+  {
+    title: 'How to deposit',
+    text: 'To add funds to your wallet, tap the button below, enter the amount and upload your payment proof. The amount is added to your balance as soon as our team verifies it.',
+    actionKey: 'deposit',
+  },
+  {
+    title: 'How to withdraw',
+    text: 'To withdraw, tap the button below, choose your saved payout method and enter the amount. Our team processes it after review.',
+    actionKey: 'withdraw',
+  },
+  {
+    title: 'Confirm your pending orders',
+    text: 'You have orders waiting for your confirmation. Please confirm them on time to avoid a penalty — tap the button below to open your orders.',
+    actionKey: 'orders',
+  },
+  {
+    title: 'Add products from Treasury',
+    text: 'You can add ready products to your store in one tap from the Product Treasury. Tap the button below to open it.',
+    actionKey: 'treasury',
+  },
+  {
+    title: 'Update payout details',
+    text: 'Please add or update your bank / UPI payout details in Store Settings. Tap the button below to open it.',
+    actionKey: 'settings',
+  },
+];
+const cleanQuickReply = (body) => {
+  const title = asText(body?.title, 80).trim();
+  const text = asText(body?.text, 2000).trim();
+  const key = String(body?.actionKey || '');
+  const actionKey = key && Object.prototype.hasOwnProperty.call(SHORTCUT_PAGES, key) ? key : '';
+  return { title, text, actionKey };
+};
+
+// GET /api/chat/admin/quick-replies (the first time: a few ready ones are added)
+router.get('/admin/quick-replies', authAdmin('chat'), async (req, res) => {
+  try {
+    let list = await ChatQuickReply.find().sort({ order: 1, createdAt: 1 }).lean();
+    if (!list.length && !(await ChatSettings.exists({ quickRepliesSeeded: true }))) {
+      await ChatQuickReply.insertMany(DEFAULT_QUICK_REPLIES.map((r, i) => ({ ...r, order: i, createdBy: 'Bazario' })));
+      await ChatSettings.updateOne({}, { $set: { quickRepliesSeeded: true } }, { upsert: true });
+      list = await ChatQuickReply.find().sort({ order: 1, createdAt: 1 }).lean();
+    }
+    res.json(list);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/chat/admin/quick-replies  { title, text, actionKey }
+router.post('/admin/quick-replies', authAdmin('chat'), async (req, res) => {
+  try {
+    const r = cleanQuickReply(req.body);
+    if (!r.title) return res.status(400).json({ message: 'Give the saved reply a short title.' });
+    if (!r.text && !r.actionKey) return res.status(400).json({ message: 'Write the reply text or choose a button.' });
+    const last = await ChatQuickReply.findOne().sort({ order: -1 }).select('order').lean();
+    const doc = await ChatQuickReply.create({ ...r, order: (last?.order ?? -1) + 1, createdBy: req.admin?.name || '' });
+    res.status(201).json(doc);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// PUT /api/chat/admin/quick-replies/:id
+router.put('/admin/quick-replies/:id', authAdmin('chat'), async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Saved reply not found' });
+    const r = cleanQuickReply(req.body);
+    if (!r.title) return res.status(400).json({ message: 'Give the saved reply a short title.' });
+    if (!r.text && !r.actionKey) return res.status(400).json({ message: 'Write the reply text or choose a button.' });
+    const doc = await ChatQuickReply.findByIdAndUpdate(req.params.id, { $set: { ...r, updatedBy: req.admin?.name || '' } }, { new: true });
+    if (!doc) return res.status(404).json({ message: 'Saved reply not found' });
+    res.json(doc);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// DELETE /api/chat/admin/quick-replies/:id
+router.delete('/admin/quick-replies/:id', authAdmin('chat'), async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Saved reply not found' });
+    await ChatQuickReply.deleteOne({ _id: req.params.id });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/chat/admin/shortcut-pages — the pages support can send as a button
+router.get('/admin/shortcut-pages', authAdmin('chat'), (req, res) => {
+  res.json(Object.entries(SHORTCUT_PAGES).map(([key, p]) => ({ key, ...p })));
+});
+
+// GET /api/chat/admin/conversations/:id/shortcuts?kind=order|product&q=  — this store's orders /
+// products for the shortcut picker (only the store of this chat)
+router.get('/admin/conversations/:id/shortcuts', authAdmin('chat'), async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Conversation not found' });
+    const conv = await Conversation.findById(req.params.id).select('seller').lean();
+    if (!conv) return res.status(404).json({ message: 'Conversation not found' });
+    if (!conv.seller) return res.json([]);
+    const kind = req.query.kind === 'product' ? 'product' : 'order';
+    res.json(await searchShortcutTargets(conv, kind, asText(req.query.q, 60)));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -1110,11 +1259,17 @@ router.delete('/messages/:id', authSellerOrAdmin, async (req, res) => {
       await deleteUnreferencedAttachments([attachmentUrl]);
     }
 
-    // Replies quote a copy of this message: a deleted message's text must not live on inside them
-    await Message.updateMany(
-      { 'replyTo.messageId': msg._id },
-      { $set: { 'replyTo.text': '🚫 This message was deleted', 'replyTo.attachmentType': null, 'replyTo.attachmentName': '' } }
-    );
+    // Replies quote a copy of this message: a deleted message's text must not live on inside them.
+    // A message deleted by SUPPORT leaves no trace at all (the quote is removed from the replies);
+    // a seller's / customer's own deleted message still shows "deleted" in the quote.
+    if (msg.sender === 'admin' || msg.sender === 'staff') {
+      await Message.updateMany({ 'replyTo.messageId': msg._id }, { $set: { replyTo: null } });
+    } else {
+      await Message.updateMany(
+        { 'replyTo.messageId': msg._id },
+        { $set: { 'replyTo.text': '🚫 This message was deleted', 'replyTo.attachmentType': null, 'replyTo.attachmentName': '' } }
+      );
+    }
 
     // If conversation lastMessage was this, update it to previous non-deleted message
     let unreadForSellerNow;

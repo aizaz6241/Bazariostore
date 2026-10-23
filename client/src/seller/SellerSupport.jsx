@@ -139,7 +139,10 @@ export default function SellerSupport() {
     const onDelete = (p) => {
       const id = p?.messageId || p?._id;
       if (!id) return;
-      setMessages((prev) => prev.filter((m) => m._id !== id));
+      // the message disappears without a trace, also from the replies that quoted it
+      setMessages((prev) =>
+        prev.filter((m) => m._id !== id).map((m) => (m.replyTo && String(m.replyTo.messageId) === String(id) ? { ...m, replyTo: null } : m))
+      );
     };
     const onCleared = (p) => p && setMessages((prev) => dropClearedMessages(prev, p));
     const onReconnect = () => loadThread(true);

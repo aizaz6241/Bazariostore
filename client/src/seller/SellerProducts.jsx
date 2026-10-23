@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useOutletContext, Link } from 'react-router-dom';
+import { useOutletContext, Link, useSearchParams } from 'react-router-dom';
 import { sapi } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
@@ -168,6 +168,30 @@ export default function SellerProducts() {
   const canRemove = (p) => !p.treasuryProduct || isDiamond;
   const resetFilters = () => { setQInput(''); setStatus('all'); setSource('all'); setSort('newest'); };
 
+  // ?highlight=<product id> (a shortcut button from support): show that product, even in a long list
+  const [searchParams, setSearchParams] = useSearchParams();
+  const highlightParam = searchParams.get('highlight');
+  const [highlightId, setHighlightId] = useState(null);
+  useEffect(() => {
+    if (!highlightParam || loading) return;
+    const p = products.find((x) => x._id === highlightParam);
+    if (p) {
+      setStatus('all');
+      setSource('all');
+      setQInput(p.name || '');
+      setHighlightId(p._id);
+      setTimeout(() => document.getElementById(`pp-row-${p._id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 450);
+      setTimeout(() => setHighlightId(null), 6000);
+    } else {
+      setToast({ ok: false, text: 'That product is not in your store any more.' });
+    }
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('highlight');
+      return next;
+    }, { replace: true });
+  }, [highlightParam, loading, products, setSearchParams]);
+
   return (
     <div className="pp">
       <header className="pp-head">
@@ -241,7 +265,7 @@ export default function SellerProducts() {
               </thead>
               <tbody>
                 {list.map((p) => (
-                  <tr key={p._id} className={p.active === false ? 'is-hidden' : ''}>
+                  <tr key={p._id} id={`pp-row-${p._id}`} className={`${p.active === false ? 'is-hidden' : ''} ${highlightId === p._id ? 'pp-highlight' : ''}`}>
                     <td><ProductCell p={p} /></td>
                     <td className="r"><b>{formatMoney(p.price)}</b>{p.oldPrice > p.price && <s className="pp-old">{formatMoney(p.oldPrice)}</s>}</td>
                     <td className="r"><span className="pp-earn">+{formatMoney(((Number(p.price) || 0) * rate) / 100)}</span></td>
@@ -265,7 +289,7 @@ export default function SellerProducts() {
 
             <ul className="pp-cards">
               {list.map((p) => (
-                <li key={p._id} className={p.active === false ? 'is-hidden' : ''}>
+                <li key={p._id} className={`${p.active === false ? 'is-hidden' : ''} ${highlightId === p._id ? 'pp-highlight' : ''}`}>
                   <ProductCell p={p} />
                   <div className="pp-c-grid">
                     <div><span>Price</span><b>{formatMoney(p.price)}</b></div>

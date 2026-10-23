@@ -1,7 +1,9 @@
 import { useState, useRef } from 'react';
 import Ic from './Icons.jsx';
 import ChatAttachment from './ChatAttachment.jsx';
-import { fmtDate } from '../api.js';
+import { fmtDate, sapi } from '../api.js';
+import { useNavigate } from 'react-router-dom';
+import { shortcutPath } from '../utils/chatShortcuts.js';
 
 export function scrollToQuotedMessage(messageId) {
   if (!messageId) return;
@@ -22,6 +24,7 @@ export default function ChatMessageBubble({ msg, isMe, myRole = 'seller', onRepl
   const [dragOffset, setDragOffset] = useState(0);
   const [isSwiping, setIsSwiping] = useState(false);
   const touchStartRef = useRef({ x: 0, y: 0 });
+  const navigate = useNavigate();
 
   const handleTouchStart = (e) => {
     touchStartRef.current = {
@@ -183,10 +186,42 @@ export default function ChatMessageBubble({ msg, isMe, myRole = 'seller', onRepl
             <div className="chat-text-content">{msg.text}</div>
           )}
 
+          {/* Shortcut button from support: the seller taps it and lands on that page / order / product */}
+          {msg.action && msg.action.label && (() => {
+            const path = shortcutPath(msg.action);
+            const canOpen = myRole === 'seller' && !!path;
+            const Tag = canOpen ? 'button' : 'div';
+            const open = () => {
+              // the first tap is shown to support as "Opened" (never blocks the page from opening)
+              if (!msg.action.openedAt && msg._id) sapi('/chat/seller/action-opened', { method: 'POST', body: { messageId: msg._id } }).catch(() => {});
+              navigate(path);
+            };
+            const supportView = myRole !== 'seller' && myRole !== 'guest' && myRole !== 'customer';
+            return (
+              <Tag
+                {...(canOpen ? { type: 'button', onClick: open } : {})}
+                className={`chat-action-card ${canOpen ? 'is-link' : ''}`}
+                title={canOpen ? 'Open' : 'The seller sees this as a button'}
+              >
+                <span className="cac-txt">
+                  <b>{msg.action.label}</b>
+                  {msg.action.sub && <small>{msg.action.sub}</small>}
+                  {supportView && (
+                    <small className={`cac-opened ${msg.action.openedAt ? 'yes' : ''}`}>
+                      {msg.action.openedAt ? `✓ Opened by the seller · ${fmtDate(msg.action.openedAt)}` : 'Not opened yet'}
+                    </small>
+                  )}
+                </span>
+                {canOpen ? <span className="cac-go">Open →</span> : <span className="cac-note">Button</span>}
+              </Tag>
+            );
+          })()}
+
           {/* Timestamp & Edited Indicator & Seen Checkmarks */}
           <div className="chat-bubble-footer">
             <span className="chat-bubble-time">{fmtDate(msg.createdAt)}</span>
-            {msg.isEdited && !msg.isDeleted && (
+            {/* support's own corrections are not marked: only a seller's / customer's edit shows "(edited)" */}
+            {msg.isEdited && !msg.isDeleted && !['admin', 'staff'].includes(msg.sender) && (
               <span className="chat-bubble-edited-tag" style={{ fontSize: 10, color: '#94a3b8', fontStyle: 'italic', marginLeft: 4 }}>
                 (edited)
               </span>
