@@ -28,7 +28,19 @@ const NEEDS_DECISION = ['delivery_failed', 'returned_to_warehouse'];
 const LATE_DELIVERY_DAYS = 7; // the automatic lifecycle takes about 5–7 days from confirmation
 const STUCK_AFTER_MS = 60 * 60 * 1000; // a next step overdue by more than an hour has not moved by itself
 const WAITING_CHAT = ['seller', 'guest', 'customer'];
+// previews written by the system when a chat is opened / emptied: nobody wrote anything, so these
+// chats do not wait for a reply (they used to show on Today as soon as a store opened its chat)
+const SYSTEM_PREVIEWS = ['', 'Conversation started', 'Live guest conversation started', '🧹 Chat cleared'];
 const LIST_MAX = 8;
+// when a waiting item becomes urgent (shown in red on Today)
+const URGENT = {
+  chatMin: 30, // chat without a reply for 30 minutes
+  depositMin: 30, // deposits are approved within ~15 minutes
+  withdrawalH: 24,
+  confirmLeftH: 6, // less than 6 hours to the store's confirmation deadline
+  healthScore: 20,
+  lateExtraDays: 3, // 3 days over the usual delivery time
+};
 
 const oid = (v) => (mongoose.Types.ObjectId.isValid(String(v || '')) ? new mongoose.Types.ObjectId(String(v)) : null);
 const can = (admin, p) => admin?.role === 'super_admin' || (admin?.permissions || []).includes(p);
@@ -57,30 +69,47 @@ async function orderAttention(now) {
   const ids = new Set();
   for (const o of pending) for (const it of o.items || []) if (it.seller) ids.add(String(it.seller));
   for (const o of pending) if (o.seller) ids.add(String(o.seller));
-  const sellers = ids.size ? await Seller.find({ _id: { $in: [...ids] } }).select('storeName tier status isTestAccount accountType').lean() : [];
+  const sellers = ids.size ? await Seller.find({ _id: { $in: [...ids] } }).select('storeName tier status isTestAccount accountType wallet.balance').lean() : [];
   const byId = new Map(sellers.map((s) => [String(s._id), s]));
+  // deposits waiting for our approval, per store (the store is not penalised while one covers it)
+  const waitingDep = new Map();
+  if (ids.size) {
+    const deps = await Withdrawal.find({ seller: { $in: [...ids].map(oid).filter(Boolean) }, type: 'deposit', status: { $in: ['pending', 'processing'] } })
+      .select('seller amount')
+      .lean();
+    for (const d of deps) waitingDep.set(sid(d.seller), (waitingDep.get(sid(d.seller)) || 0) + (Number(d.amount) || 0));
+  }
+  // the store an item belongs to (old items without a seller belong to the order's seller)
+  const ownerOf = (o, it) => sid(it.seller) || sid(o.seller);
 
   const confirm = [];
   for (const o of pending) {
     const waitingSince = new Date(o.pendingSince || o.createdAt).getTime();
     const hours = (nowMs - waitingSince) / H;
-    const storeIds = [...new Set((o.items || []).filter((it) => !it.itemStatus || it.itemStatus === 'pending').map((it) => sid(it.seller) || sid(o.seller)).filter(Boolean))];
+    const storeIds = [...new Set((o.items || []).filter((it) => !it.itemStatus || it.itemStatus === 'pending').map((it) => ownerOf(o, it)).filter(Boolean))];
     for (const id of storeIds) {
       const s = byId.get(id);
       if (!s || s.isTestAccount || s.accountType === 'test' || s.status === 'suspended') continue;
       const limitH = confirmHoursFor(s);
       if (hours < limitH - 24) continue; // not at the warning yet (Diamond)
       const value = (o.items || [])
-        .filter((it) => sid(it.seller) === id && (!it.itemStatus || it.itemStatus === 'pending'))
+        .filter((it) => ownerOf(o, it) === id && (!it.itemStatus || it.itemStatus === 'pending'))
         .reduce((t, it) => t + (Number(it.price) || 0) * (Number(it.qty) || 1), 0);
+      const balance = Number(s.wallet?.balance) || 0;
+      const hoursLeft = Math.round((limitH - hours) * 10) / 10;
       confirm.push({
         id: String(o._id),
         orderNumber: o.orderNumber,
         sellerId: id,
         storeName: s.storeName,
+        storeStatus: s.status,
         value: r2(value),
-        hoursLeft: Math.round((limitH - hours) * 10) / 10,
+        hoursLeft,
+        // the store's wallet cannot cover it (it must deposit first); a deposit waiting for us covers it
+        short: balance + 0.01 < value,
+        depositWaiting: (waitingDep.get(id) || 0) > 0,
         at: new Date(waitingSince),
+        urgent: hoursLeft < URGENT.confirmLeftH,
       });
     }
   }
@@ -95,14 +124,22 @@ async function orderAttention(now) {
 
   // 3. on the way: the next automatic step is overdue (it did not move by itself), or the order
   //    is taking longer than the usual delivery time
-  const moving = await Order.find({
-    status: { $in: IN_PROGRESS },
-    $or: [{ nextStatusAt: { $lt: new Date(nowMs - STUCK_AFTER_MS) } }, { createdAt: { $lt: new Date(nowMs - LATE_DELIVERY_DAYS * 24 * H) } }],
-  })
-    .select('orderNumber status nextStatus nextStatusAt createdAt seller items.seller items.sellerName total statusHistory')
-    .sort({ createdAt: 1 })
-    .limit(400)
-    .lean();
+  //    (two separate reads: many old orders on the way used to push the stuck ones out of the list)
+  const MOVING_FIELDS = 'orderNumber status nextStatus nextStatusAt createdAt seller items.seller items.sellerName total statusHistory';
+  const [stuckRaw, oldRaw] = await Promise.all([
+    Order.find({ status: { $in: IN_PROGRESS }, nextStatusAt: { $ne: null, $lt: new Date(nowMs - STUCK_AFTER_MS) } })
+      .select(MOVING_FIELDS)
+      .sort({ nextStatusAt: 1 })
+      .limit(300)
+      .lean(),
+    Order.find({ status: { $in: IN_PROGRESS }, createdAt: { $lt: new Date(nowMs - LATE_DELIVERY_DAYS * 24 * H) } })
+      .select(MOVING_FIELDS)
+      .sort({ createdAt: 1 })
+      .limit(400)
+      .lean(),
+  ]);
+  const seen = new Set();
+  const moving = [...stuckRaw, ...oldRaw].filter((o) => !seen.has(String(o._id)) && seen.add(String(o._id)));
 
   const storeOf = (o) => {
     const it = (o.items || []).find((x) => x.seller || x.sellerName) || {};
@@ -124,6 +161,7 @@ async function orderAttention(now) {
     ...storeOf(o),
     value: r2(o.total),
     at: lastAt(o, o.status) || o.updatedAt,
+    urgent: true,
   }));
 
   const stuck = [];
@@ -131,25 +169,32 @@ async function orderAttention(now) {
   for (const o of moving) {
     const base = { id: String(o._id), orderNumber: o.orderNumber, status: o.status, ...storeOf(o), value: r2(o.total) };
     if (o.nextStatusAt && new Date(o.nextStatusAt).getTime() < nowMs - STUCK_AFTER_MS) {
-      stuck.push({ ...base, nextStatus: o.nextStatus, at: o.nextStatusAt, hoursOver: Math.round(((nowMs - new Date(o.nextStatusAt).getTime()) / H) * 10) / 10 });
+      stuck.push({ ...base, nextStatus: o.nextStatus, at: o.nextStatusAt, hoursOver: Math.round(((nowMs - new Date(o.nextStatusAt).getTime()) / H) * 10) / 10, urgent: true });
       continue;
     }
     const since = confirmedAt(o);
     const days = (nowMs - since.getTime()) / (24 * H);
-    if (days >= LATE_DELIVERY_DAYS) late.push({ ...base, at: since, days: Math.floor(days) });
+    if (days >= LATE_DELIVERY_DAYS) late.push({ ...base, at: since, days: Math.floor(days), urgent: days >= LATE_DELIVERY_DAYS + URGENT.lateExtraDays });
   }
   stuck.sort((a, b) => b.hoursOver - a.hoursOver);
   late.sort((a, b) => b.days - a.days);
 
-  // store names for orders that only carry the id
-  const missing = [...new Set([...decisionList, ...stuck, ...late].filter((x) => !x.storeName && x.sellerId).map((x) => x.sellerId))];
-  if (missing.length) {
-    const names = await Seller.find({ _id: { $in: missing } }).select('storeName').lean();
-    const m = new Map(names.map((s) => [String(s._id), s.storeName]));
-    for (const x of [...decisionList, ...stuck, ...late]) if (!x.storeName) x.storeName = m.get(x.sellerId) || 'Bazario Direct';
+  // store names (the current name, not the one saved on the order) and test stores, which are
+  // kept out like on the confirmation list
+  const listed = [...decisionList, ...stuck, ...late];
+  const storeIds = [...new Set(listed.map((x) => x.sellerId).filter(Boolean))].map(oid).filter(Boolean);
+  const stores = storeIds.length ? await Seller.find({ _id: { $in: storeIds } }).select('storeName isTestAccount accountType').lean() : [];
+  const storeById = new Map(stores.map((s) => [String(s._id), s]));
+  const isTest = (x) => {
+    const s = storeById.get(x.sellerId);
+    return Boolean(s && (s.isTestAccount || s.accountType === 'test'));
+  };
+  for (const x of listed) {
+    const s = storeById.get(x.sellerId);
+    x.storeName = s?.storeName || x.storeName || 'Bazario Direct';
   }
 
-  return { confirm, decision: decisionList, stuck, late };
+  return { confirm, decision: decisionList.filter((x) => !isTest(x)), stuck: stuck.filter((x) => !isTest(x)), late: late.filter((x) => !isTest(x)) };
 }
 
 async function computeAll() {
@@ -173,7 +218,7 @@ async function computeAll() {
       .select('storeName ownerName tierRequest')
       .lean(),
     Refund.find({ status: 'requested' }).select('order orderNumber amount createdAt seller customer.name').sort({ createdAt: 1 }).limit(200).lean().catch(() => []),
-    Conversation.find({ type: { $ne: 'internal' }, status: { $ne: 'resolved' }, lastSender: { $in: WAITING_CHAT } })
+    Conversation.find({ type: { $ne: 'internal' }, status: { $ne: 'resolved' }, lastSender: { $in: WAITING_CHAT }, lastMessage: { $nin: SYSTEM_PREVIEWS } })
       .select('seller storeName name isGuest type lastMessage lastAt unreadForAdmin')
       .sort({ lastAt: 1 })
       .limit(300)
@@ -187,8 +232,24 @@ async function computeAll() {
       .lean(),
   ]);
 
+  // store names of the refund requests
+  const refundStores = [...new Set(refunds.map((r) => sid(r.seller)).filter(Boolean))].map(oid).filter(Boolean);
+  const refundNames = refundStores.length ? new Map((await Seller.find({ _id: { $in: refundStores } }).select('storeName').lean()).map((s) => [String(s._id), s.storeName])) : new Map();
+
+  const nowMs = now.getTime();
+  const olderThan = (d, ms) => Boolean(d) && nowMs - new Date(d).getTime() > ms;
   const money = (list, kind) =>
-    list.map((w) => ({ id: String(w._id), kind, sellerId: sid(w.seller), storeName: w.storeName || 'Store', amount: r2(w.amount), at: w.createdAt, status: w.status, ref: w.depositRef || '' }));
+    list.map((w) => ({
+      id: String(w._id),
+      kind,
+      sellerId: sid(w.seller),
+      storeName: w.storeName || 'Store',
+      amount: r2(w.amount),
+      at: w.createdAt,
+      status: w.status,
+      ref: w.depositRef || '',
+      urgent: olderThan(w.createdAt, kind === 'deposit' ? URGENT.depositMin * 60000 : URGENT.withdrawalH * H),
+    }));
 
   return {
     at: now,
@@ -203,8 +264,24 @@ async function computeAll() {
     })),
     applications: applications.map((s) => ({ sellerId: String(s._id), storeName: s.storeName, ownerName: s.ownerName, at: s.createdAt })),
     diamond: diamond.map((s) => ({ sellerId: String(s._id), storeName: s.storeName, status: s.tierRequest?.status, at: s.tierRequest?.requestedAt || null })),
-    criticalHealth: critical.map((s) => ({ sellerId: String(s._id), storeName: s.storeName, status: s.status, score: s.accountHealth?.score ?? 0, at: s.accountHealth?.lastEvaluatedAt || null })),
-    refunds: refunds.map((r) => ({ id: String(r._id), orderId: sid(r.order), orderNumber: r.orderNumber || '', sellerId: sid(r.seller), customer: r.customer?.name || '', amount: r2(r.amount), at: r.createdAt })),
+    criticalHealth: critical.map((s) => ({
+      sellerId: String(s._id),
+      storeName: s.storeName,
+      status: s.status,
+      score: s.accountHealth?.score ?? 0,
+      at: s.accountHealth?.lastEvaluatedAt || null,
+      urgent: (s.accountHealth?.score ?? 0) < URGENT.healthScore,
+    })),
+    refunds: refunds.map((r) => ({
+      id: String(r._id),
+      orderId: sid(r.order),
+      orderNumber: r.orderNumber || '',
+      sellerId: sid(r.seller),
+      storeName: refundNames.get(sid(r.seller)) || '',
+      customer: r.customer?.name || '',
+      amount: r2(r.amount),
+      at: r.createdAt,
+    })),
     chats: chats.map((c) => ({
       id: String(c._id),
       sellerId: sid(c.seller),
@@ -213,6 +290,7 @@ async function computeAll() {
       lastMessage: String(c.lastMessage || '').slice(0, 120),
       at: c.lastAt,
       unread: c.unreadForAdmin || 0,
+      urgent: olderThan(c.lastAt, URGENT.chatMin * 60000),
     })),
     orders,
   };
@@ -260,6 +338,19 @@ function countsOf(v) {
     ordersStuck: n(v.orders?.stuck),
     ordersLate: n(v.orders?.late),
   };
+  // how many of each are urgent (same rules as the red rows on Today)
+  const u = (a) => (Array.isArray(a) ? a.filter((x) => x.urgent).length : 0);
+  c.urgent = {
+    chats: u(v.chats),
+    deposits: u(v.deposits),
+    withdrawals: u(v.withdrawals),
+    criticalHealth: u(v.criticalHealth),
+    ordersConfirm: u(v.orders?.confirm),
+    ordersDecision: u(v.orders?.decision),
+    ordersStuck: u(v.orders?.stuck),
+    ordersLate: u(v.orders?.late),
+  };
+  c.urgent.total = Object.values(c.urgent).reduce((t, x) => t + x, 0);
   c.payouts = c.deposits + c.withdrawals + c.limitRequests;
   c.orders = c.ordersConfirm + c.ordersDecision + c.ordersStuck + c.ordersLate;
   c.total = c.payouts + c.applications + c.diamond + c.criticalHealth + c.refunds + c.chats + c.orders;
@@ -299,7 +390,7 @@ router.get('/today', authAdmin(), async (req, res) => {
         ordersStuck: top(v.orders?.stuck),
         ordersLate: top(v.orders?.late),
       },
-      rules: { lateDeliveryDays: LATE_DELIVERY_DAYS, stuckAfterMinutes: STUCK_AFTER_MS / 60000 },
+      rules: { lateDeliveryDays: LATE_DELIVERY_DAYS, stuckAfterMinutes: STUCK_AFTER_MS / 60000, urgent: URGENT },
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
