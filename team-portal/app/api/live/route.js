@@ -4,6 +4,7 @@ import { buildLedger } from '@/lib/utils/finance';
 import { getLiveVersion, hashOf } from '@/lib/utils/liveVersion';
 import { flushFinanceAlerts } from '@/lib/utils/financeLog';
 import { syncPaymentProofs } from '@/lib/utils/paymentProofs';
+import { rememberPortalUrl } from '@/lib/utils/portalTick';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +23,9 @@ export async function GET(req) {
     }
     const decoded = token ? verifyToken(token) : null;
     if (!decoded || !decoded.id) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+
+    // so the store server can reach this portal when nobody has it open (lib/utils/portalTick.js)
+    await Promise.race([rememberPortalUrl(req), new Promise((resolve) => setTimeout(resolve, 800))]).catch(() => 0);
 
     // The ledger comes from memory unless the database changed; if it did, this rebuilds it, so
     // the screens that reload right after get the new numbers immediately.

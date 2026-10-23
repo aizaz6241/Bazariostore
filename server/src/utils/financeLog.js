@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { pokePortal } from './portalTick.js';
 
 /**
  * Finance activity log + two-person approval requests, written from the store admin panel.
@@ -54,6 +55,7 @@ export async function finLog(req, { action, summary = '', entity = '', entityId 
       pushed: false,
       createdAt: now,
     });
+    pokePortal('finance-log'); // the team portal sends the alert for this line right away
   } catch (e) {
     console.error('finance log failed:', e.message);
   }

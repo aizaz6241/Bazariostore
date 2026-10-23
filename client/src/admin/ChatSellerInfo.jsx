@@ -87,7 +87,9 @@ export default function ChatSellerInfo({ conversationId, onButton, onClose }) {
           {info.waitingOrders.map((o) => (
             <li key={o._id}>
               <span className="csi-o-txt">
-                <b>{o.orderNumber}</b> · {usd(o.value)}
+                <span className="csi-o-top">
+                  <b>{o.orderNumber}</b> · {usd(o.value)}
+                </span>
                 <small>{o.items} · {fmtDay(o.createdAt)}</small>
               </span>
               <button type="button" onClick={() => onButton({ kind: 'order', refId: o._id, label: `✅ Confirm order ${o.orderNumber}`, sub: 'Tap to open and confirm it' })}>

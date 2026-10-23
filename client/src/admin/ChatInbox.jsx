@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef } from 'react';
-import { api, fmtDay, compressImage, dropClearedMessages, addChatMessage, syncLatestMessages } from '../api.js';
+import { Fragment, useEffect, useState, useRef } from 'react';
+import { api, compressImage, dropClearedMessages, addChatMessage, syncLatestMessages } from '../api.js';
 import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
 import ChatMessageBubble from '../components/ChatMessageBubble.jsx';
@@ -20,6 +20,44 @@ const waitLabel = (ms) => {
   return `${Math.floor(m / 1440)}d`;
 };
 
+/** "AB" from "Abc Bazaar" (first letters of the first two words). */
+const initialsOf = (name) => {
+  const parts = String(name || '').replace(/[^\p{L}\p{N} ]/gu, ' ').trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] || 'S') + (parts[1]?.[0] || '')).toUpperCase();
+};
+/** The same store always gets the same avatar colour. */
+const AVATAR_TONES = ['blue', 'teal', 'violet', 'amber', 'rose', 'indigo', 'emerald', 'sky'];
+const avatarTone = (name) => {
+  let h = 0;
+  for (const ch of String(name || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return AVATAR_TONES[h % AVATAR_TONES.length];
+};
+/** List time: "3:42 PM" today, "Yesterday", "Mon", else "21 Oct". */
+const whenLabel = (d) => {
+  const t = new Date(d);
+  if (Number.isNaN(t.getTime())) return '';
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const ts = t.getTime();
+  if (ts >= startToday) return t.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  if (ts >= startToday - 86400000) return 'Yesterday';
+  if (ts >= startToday - 6 * 86400000) return t.toLocaleDateString('en-US', { weekday: 'short' });
+  return t.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+};
+const dayKey = (d) => {
+  const t = new Date(d);
+  return Number.isNaN(t.getTime()) ? '' : `${t.getFullYear()}-${t.getMonth()}-${t.getDate()}`;
+};
+const dayLabel = (d) => {
+  const t = new Date(d);
+  const now = new Date();
+  if (dayKey(t) === dayKey(now)) return 'Today';
+  if (dayKey(t) === dayKey(new Date(now.getTime() - 86400000))) return 'Yesterday';
+  return t.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: t.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
+};
+/** The last word in this chat is the store's / guest's and support has not answered yet. */
+const isWaiting = (c) => c.status !== 'resolved' && ['seller', 'guest', 'customer'].includes(c.lastSender);
+
 const ROLE_LABELS = {
   super_admin: '👑 Super Admin',
   admin: '🛡️ Admin',
@@ -35,7 +73,7 @@ export default function ChatInbox() {
 
   // Navigation Tab: 'sellers' | 'team'
   const [activeTab, setActiveTab] = useState('sellers');
-  const [sellerFilter, setSellerFilter] = useState('all'); // 'all' | 'sellers' | 'guests'
+  const [sellerFilter, setSellerFilter] = useState('all'); // 'all' | 'waiting' | 'sellers' | 'guests'
 
   // Seller Support State
   const [sellerConvos, setSellerConvos] = useState([]);
@@ -767,11 +805,13 @@ export default function ChatInbox() {
   // Unread Totals for Tabs
   const totalSellerUnread = sellerConvos.reduce((sum, c) => sum + (c.unreadForAdmin || 0), 0);
   const totalTeamUnread = teamMembers.reduce((sum, t) => sum + (t.unreadCount || 0), 0);
+  const waitingCount = (Array.isArray(sellerConvos) ? sellerConvos : []).filter(isWaiting).length;
 
   // Filtered Lists
   const filteredSellerConvos = (Array.isArray(sellerConvos) ? sellerConvos : []).filter((c) => {
     if (sellerFilter === 'sellers' && (c.isGuest || c.type === 'guest')) return false;
     if (sellerFilter === 'guests' && (!c.isGuest && c.type !== 'guest')) return false;
+    if (sellerFilter === 'waiting' && !isWaiting(c)) return false;
     if (!q) return true;
     const name = (c.seller?.storeName || c.storeName || '').toLowerCase();
     const sub = (c.subject || '').toLowerCase();
@@ -789,11 +829,38 @@ export default function ChatInbox() {
   const hasSelection = activeTab === 'sellers' ? !!selectedSellerId : !!selectedTeamId;
 
   return (
-    <div className={`admin-chat-layout ${hasSelection ? 'mobile-thread-view' : 'mobile-list-view'}`}>
+    <div className={`admin-chat-layout sci ${hasSelection ? 'mobile-thread-view' : 'mobile-list-view'}`}>
       {/* SIDEBAR */}
-      <div className="admin-chat-sidebar">
+      <aside className="admin-chat-sidebar">
         <div className="admin-chat-sidebar-head">
-          {/* Segmented Tab Switcher */}
+          <div className="sci-head-row">
+            <div className="sci-head-title">
+              <h2>Support inbox</h2>
+              <span>
+                {activeTab === 'sellers'
+                  ? `${sellerConvos.length} chats${waitingCount ? ` · ${waitingCount} waiting for reply` : ''}`
+                  : `${teamMembers.length} team members`}
+              </span>
+            </div>
+            <div className="sci-head-actions">
+              {activeTab === 'sellers' && (
+                <button type="button" className="sci-icon-btn" onClick={() => setBroadcastOpen(true)} title="Broadcast: one message (+ button) to a group of stores" aria-label="Broadcast">
+                  📣
+                </button>
+              )}
+              <button
+                type="button"
+                className={`sci-auto ${autoReply.awayMode ? 'away' : autoReply.enabled ? 'on' : ''}`}
+                onClick={() => setAutoReplyModal(true)}
+                title="Auto-reply settings"
+              >
+                <i />
+                {autoReply.awayMode ? 'Away mode' : autoReply.enabled ? 'Auto-reply on' : 'Auto-reply off'}
+              </button>
+            </div>
+          </div>
+
+          {/* Inquiries / Team */}
           <div className="admin-chat-tabs">
             <button
               type="button"
@@ -803,7 +870,7 @@ export default function ChatInbox() {
                 setQ('');
               }}
             >
-              <span>🏬 Inquiries</span>
+              <span>Inquiries</span>
               {totalSellerUnread > 0 && <span className="tab-badge">{totalSellerUnread}</span>}
             </button>
             <button
@@ -814,100 +881,10 @@ export default function ChatInbox() {
                 setQ('');
               }}
             >
-              <span>👥 Team &amp; Admins</span>
+              <span>Team</span>
               {totalTeamUnread > 0 && <span className="tab-badge">{totalTeamUnread}</span>}
             </button>
           </div>
-
-          {/* Auto-Reply Status Pill & Settings Trigger */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '8px 0', padding: '0 4px' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 11.5, fontWeight: 700, color: '#64748b' }}>Support Automation:</span>
-              {activeTab === 'sellers' && (
-                <button type="button" className="cbc-trigger" onClick={() => setBroadcastOpen(true)} title="Send one message (+ button) to a group of stores">
-                  📣 Broadcast
-                </button>
-              )}
-            </span>
-            <button
-              type="button"
-              onClick={() => setAutoReplyModal(true)}
-              style={{
-                background: autoReply.awayMode ? '#fef3c7' : autoReply.enabled ? '#ecfdf5' : '#f1f5f9',
-                color: autoReply.awayMode ? '#92400e' : autoReply.enabled ? '#065f46' : '#64748b',
-                border: `1px solid ${autoReply.awayMode ? '#fde68a' : autoReply.enabled ? '#a7f3d0' : '#cbd5e1'}`,
-                borderRadius: 14,
-                padding: '3px 10px',
-                fontSize: 11.5,
-                fontWeight: 800,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-              }}
-            >
-              <span>{autoReply.awayMode ? '🌙 Away Mode:' : '🤖 Auto-Reply:'}</span>
-              <b>{autoReply.awayMode ? 'ACTIVE' : autoReply.enabled ? 'ON' : 'OFF'}</b>
-              <span>⚙️</span>
-            </button>
-          </div>
-
-          {/* Guest vs Seller sub-filters */}
-          {activeTab === 'sellers' && (
-            <div style={{ display: 'flex', gap: 6, marginBottom: 8, padding: '0 4px' }}>
-              <button
-                type="button"
-                onClick={() => setSellerFilter('all')}
-                style={{
-                  flex: 1,
-                  padding: '4px 8px',
-                  borderRadius: 6,
-                  border: 'none',
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  background: sellerFilter === 'all' ? '#0f172a' : '#f1f5f9',
-                  color: sellerFilter === 'all' ? '#fff' : '#64748b',
-                }}
-              >
-                All ({sellerConvos.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setSellerFilter('sellers')}
-                style={{
-                  flex: 1,
-                  padding: '4px 8px',
-                  borderRadius: 6,
-                  border: 'none',
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  background: sellerFilter === 'sellers' ? '#0f172a' : '#f1f5f9',
-                  color: sellerFilter === 'sellers' ? '#fff' : '#64748b',
-                }}
-              >
-                Merchants ({sellerConvos.filter((c) => !c.isGuest && c.type !== 'guest').length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setSellerFilter('guests')}
-                style={{
-                  flex: 1,
-                  padding: '4px 8px',
-                  borderRadius: 6,
-                  border: 'none',
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  background: sellerFilter === 'guests' ? '#0284c7' : '#f1f5f9',
-                  color: sellerFilter === 'guests' ? '#fff' : '#64748b',
-                }}
-              >
-                Guests ({sellerConvos.filter((c) => c.isGuest || c.type === 'guest').length})
-              </button>
-            </div>
-          )}
 
           {/* Search Box */}
           <div className="admin-search-box search-field-sm">
@@ -916,25 +893,49 @@ export default function ChatInbox() {
               type="text"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder={activeTab === 'sellers' ? 'Search store or subject...' : 'Search team members or role...'}
+              placeholder={activeTab === 'sellers' ? 'Search store or subject…' : 'Search team members or role…'}
             />
             {q && (
-              <button type="button" onClick={() => setQ('')} className="btn-clear-search">
+              <button type="button" onClick={() => setQ('')} className="btn-clear-search" aria-label="Clear search">
                 ✕
               </button>
             )}
           </div>
+
+          {/* Stores / guests / waiting */}
+          {activeTab === 'sellers' && (
+            <div className="sci-filters" role="tablist">
+              {[
+                { id: 'all', label: 'All', count: sellerConvos.length },
+                { id: 'waiting', label: 'Waiting', count: waitingCount, tone: 'warn' },
+                { id: 'sellers', label: 'Stores', count: sellerConvos.filter((c) => !c.isGuest && c.type !== 'guest').length },
+                { id: 'guests', label: 'Guests', count: sellerConvos.filter((c) => c.isGuest || c.type === 'guest').length },
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={sellerFilter === f.id}
+                  className={`${sellerFilter === f.id ? 'on' : ''} ${f.tone && f.count ? f.tone : ''}`}
+                  onClick={() => setSellerFilter(f.id)}
+                >
+                  {f.label}
+                  <em>{f.count}</em>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* CONVERSATION LIST */}
         <div className="admin-convos-list">
-          {loading && <div className="p-4 text-center muted">Loading conversations...</div>}
+          {loading && <div className="sci-list-state">Loading conversations…</div>}
 
           {/* 1. SELLER SUPPORT INBOX */}
           {activeTab === 'sellers' && (
             <>
               {!loading && filteredSellerConvos.length === 0 && (
-                <div className="p-6 text-center muted">No conversations found matching filter.</div>
+                <div className="sci-list-state">{sellerFilter === 'waiting' ? '🎉 No chat is waiting for a reply.' : 'No conversations match.'}</div>
               )}
               {filteredSellerConvos.map((c) => {
                 const isSelected = c._id === selectedSellerId;
@@ -944,7 +945,7 @@ export default function ChatInbox() {
                 const storeTitle = c.storeName || c.seller?.storeName || (isGuestConvo ? 'Guest Visitor' : 'Unknown Store');
                 const typingHere = peerTyping.typersIn(c._id);
                 // the last word is the seller's / guest's and nobody answered yet
-                const waitingMs = c.status !== 'resolved' && ['seller', 'guest', 'customer'].includes(c.lastSender) && c.lastAt ? nowTick - new Date(c.lastAt).getTime() : -1;
+                const waitingMs = isWaiting(c) && c.lastAt ? nowTick - new Date(c.lastAt).getTime() : -1;
                 const waitTone = waitingMs >= 30 * 60000 ? 'late' : waitingMs >= 10 * 60000 ? 'warn' : 'ok';
 
                 return (
@@ -961,37 +962,14 @@ export default function ChatInbox() {
                       }
                     }}
                   >
-                    <div className="convo-avatar" style={{ background: isGuestConvo ? '#e0f2fe' : '#fef3c7', color: isGuestConvo ? '#0369a1' : '#b45309' }}>
-                      <span>{isGuestConvo ? '👤' : (storeTitle[0] || 'S').toUpperCase()}</span>
+                    <div className={`convo-avatar sci-av ${isGuestConvo ? 'is-guest' : `tone-${avatarTone(storeTitle)}`}`}>
+                      <span>{isGuestConvo ? '👤' : initialsOf(storeTitle)}</span>
                       {hasUnread && <span className="avatar-unread-dot" />}
                     </div>
                     <div className="convo-body">
                       <div className="convo-top">
-                        <div className="convo-title-box">
-                          <b className="convo-name">{storeTitle}</b>
-                          {isGuestConvo ? (
-                            <span style={{ fontSize: 10.5, fontWeight: 800, background: '#e0f2fe', color: '#0369a1', padding: '1px 6px', borderRadius: 4 }}>
-                              GUEST
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: 10.5, fontWeight: 800, background: '#fef3c7', color: '#b45309', padding: '1px 6px', borderRadius: 4 }}>
-                              SELLER
-                            </span>
-                          )}
-                          {hasUnread && (
-                            <span className="seller-unread-pill-label" title={`${unreadCount} unread message(s)`}>
-                              {unreadCount} NEW
-                            </span>
-                          )}
-                        </div>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: 'none' }}>
-                          {waitingMs >= 0 && (
-                            <span className={`convo-wait ${waitTone}`} title="Waiting for a reply from support">
-                              ⏱ {waitLabel(waitingMs)}
-                            </span>
-                          )}
-                          <small className="convo-time">{c.lastAt ? fmtDay(c.lastAt) : ''}</small>
-                        </span>
+                        <b className="convo-name">{storeTitle}</b>
+                        <small className={`convo-time ${hasUnread ? 'is-new' : ''}`}>{c.lastAt ? whenLabel(c.lastAt) : ''}</small>
                       </div>
                       <div className="convo-sub">
                         {typingHere.length > 0 ? (
@@ -1000,11 +978,19 @@ export default function ChatInbox() {
                           </span>
                         ) : (
                           <span className={`convo-last-msg ${hasUnread ? 'convo-last-msg-bold' : ''}`}>
+                            {c.lastSender === 'admin' || c.lastSender === 'staff' ? <i className="sci-you">You: </i> : null}
                             {c.lastMessage || 'No messages yet'}
                           </span>
                         )}
-                        {hasUnread && (
-                          <span className="convo-unread-bubble-count">{unreadCount}</span>
+                        {hasUnread && <span className="convo-unread-bubble-count">{unreadCount}</span>}
+                      </div>
+                      <div className="sci-convo-tags">
+                        <span className={`sci-tag ${isGuestConvo ? 'guest' : 'store'}`}>{isGuestConvo ? 'Guest' : 'Store'}</span>
+                        {c.status === 'resolved' && <span className="sci-tag ok">Resolved</span>}
+                        {waitingMs >= 0 && (
+                          <span className={`convo-wait ${waitTone}`} title="Waiting for a reply from support">
+                            ⏱ {waitLabel(waitingMs)}
+                          </span>
                         )}
                       </div>
                     </div>
@@ -1017,9 +1003,7 @@ export default function ChatInbox() {
           {/* 2. TEAM & SUPER ADMIN INBOX */}
           {activeTab === 'team' && (
             <>
-              {!loading && filteredTeamMembers.length === 0 && (
-                <div className="p-6 text-center muted">No team members found.</div>
-              )}
+              {!loading && filteredTeamMembers.length === 0 && <div className="sci-list-state">No team members found.</div>}
               {filteredTeamMembers.map((t) => {
                 const isSelected = t._id === selectedTeamId;
                 const unreadCount = t.unreadCount || 0;
@@ -1040,27 +1024,21 @@ export default function ChatInbox() {
                       }
                     }}
                   >
-                    <div className={`convo-avatar ${isSuper ? 'admin-avatar-super' : 'admin-avatar-team'}`}>
-                      <span>{(t.name?.[0] || 'A').toUpperCase()}</span>
+                    <div className={`convo-avatar sci-av ${isSuper ? 'tone-violet' : 'tone-slate'}`}>
+                      <span>{initialsOf(t.name || 'A')}</span>
                       {hasUnread && <span className="avatar-unread-dot" />}
                     </div>
                     <div className="convo-body">
                       <div className="convo-top">
-                        <div className="convo-title-box">
-                          <b className="convo-name">{t.name}</b>
-                          <span className={`admin-role-badge-sm role-${t.role}`}>
-                            {ROLE_LABELS[t.role] || t.role}
-                          </span>
-                        </div>
-                        <small className="convo-time">{t.lastAt ? fmtDay(t.lastAt) : ''}</small>
+                        <b className="convo-name">{t.name}</b>
+                        <small className={`convo-time ${hasUnread ? 'is-new' : ''}`}>{t.lastAt ? whenLabel(t.lastAt) : ''}</small>
                       </div>
                       <div className="convo-sub">
-                        <span className={`convo-last-msg ${hasUnread ? 'convo-last-msg-bold' : ''}`}>
-                          {t.lastMessage || 'Click to start conversation'}
-                        </span>
-                        {hasUnread && (
-                          <span className="seller-unread-pill-label">{unreadCount} NEW</span>
-                        )}
+                        <span className={`convo-last-msg ${hasUnread ? 'convo-last-msg-bold' : ''}`}>{t.lastMessage || 'Start a conversation'}</span>
+                        {hasUnread && <span className="convo-unread-bubble-count">{unreadCount}</span>}
+                      </div>
+                      <div className="sci-convo-tags">
+                        <span className={`admin-role-badge-sm role-${t.role}`}>{ROLE_LABELS[t.role] || t.role}</span>
                       </div>
                     </div>
                   </div>
@@ -1069,74 +1047,54 @@ export default function ChatInbox() {
             </>
           )}
         </div>
-      </div>
-
+      </aside>
       {/* CHAT THREAD AREA */}
       <div className="admin-chat-thread">
         {/* 1. SELLER SUPPORT THREAD */}
-        {activeTab === 'sellers' && selectedSellerConv && (
+        {activeTab === 'sellers' && selectedSellerConv && (() => {
+          const guest = selectedSellerConv.isGuest || selectedSellerConv.type === 'guest';
+          const title = selectedSellerConv.storeName || selectedSellerConv.seller?.storeName || (guest ? 'Guest Support' : 'Support Thread');
+          const resolved = selectedSellerConv.status === 'resolved';
+          return (
           <>
             <div className="admin-thread-head">
               <div className="ath-left">
-                <button
-                  type="button"
-                  className="mobile-back-btn"
-                  onClick={() => setSelectedSellerId(null)}
-                  title="Back to seller list"
-                >
+                <button type="button" className="mobile-back-btn" onClick={() => setSelectedSellerId(null)} title="Back to the list" aria-label="Back to the list">
                   <Ic name="arrowLeft" size={18} />
                 </button>
+                <div className={`convo-avatar sci-av sm ${guest ? 'is-guest' : `tone-${avatarTone(title)}`}`}>
+                  <span>{guest ? '👤' : initialsOf(title)}</span>
+                </div>
                 <div className="ath-info">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <b className="ath-name">{selectedSellerConv.storeName || selectedSellerConv.seller?.storeName || (selectedSellerConv.isGuest ? 'Guest Support' : 'Support Thread')}</b>
-                    {selectedSellerConv.isGuest || selectedSellerConv.type === 'guest' ? (
-                      <span style={{ fontSize: 11, fontWeight: 800, background: '#e0f2fe', color: '#0369a1', padding: '2px 8px', borderRadius: 4 }}>
-                        👤 Guest Inquiry (Pre-Login)
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#166534', padding: '2px 8px', borderRadius: 4 }}>
-                        🏪 Registered Merchant
-                      </span>
-                    )}
+                  <div className="ath-title-row">
+                    <b className="ath-name">{title}</b>
+                    <span className={`sci-tag ${guest ? 'guest' : 'store'}`}>{guest ? 'Guest · before login' : 'Registered store'}</span>
+                    {resolved && <span className="sci-tag ok">Resolved</span>}
                   </div>
                   <div className="ath-meta">
-                    <span>{selectedSellerConv.isGuest ? `Guest ID: ${selectedSellerConv.guestId || 'Unregistered'}` : `Owner: ${selectedSellerConv.sellerName || selectedSellerConv.seller?.ownerName || 'Merchant'}`}</span>
-                    <span>•</span>
-                    <span>{selectedSellerConv.sellerEmail || selectedSellerConv.seller?.email || 'Live Channel'}</span>
+                    <span>{guest ? `Guest ID: ${selectedSellerConv.guestId || 'unregistered'}` : `Owner: ${selectedSellerConv.sellerName || selectedSellerConv.seller?.ownerName || 'Merchant'}`}</span>
+                    <span className="dot">•</span>
+                    <span>{selectedSellerConv.sellerEmail || selectedSellerConv.seller?.email || selectedSellerConv.email || 'Live chat'}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="ath-actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div className="ath-actions">
                 {isStoreChat && (
-                  <button type="button" className={`csi-toggle ${infoOpen ? 'on' : ''}`} onClick={() => setInfoOpen((v) => !v)} title="Balance, waiting orders, plan… of this store">
-                    📋 Store info
+                  <button type="button" className={`sci-btn ${infoOpen ? 'on' : ''}`} onClick={() => setInfoOpen((v) => !v)} title="Balance, waiting orders, plan… of this store">
+                    📋<span className="sci-btn-txt">Store info</span>
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setClearChat('seller')}
-                  title="Delete messages and their pictures / files for good"
-                  style={{
-                    padding: '7px 12px',
-                    borderRadius: 8,
-                    border: '1px solid #fecaca',
-                    background: '#fff',
-                    color: '#b91c1c',
-                    fontWeight: 700,
-                    fontSize: 12.5,
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  🧹 Clear chat
+                <button type="button" className="sci-btn danger" onClick={() => setClearChat('seller')} title="Delete messages and their pictures / files for good">
+                  🧹<span className="sci-btn-txt">Clear</span>
                 </button>
                 <button
                   type="button"
-                  className={`btn-status-toggle ${selectedSellerConv.status === 'resolved' ? 'status-resolved' : 'status-open'}`}
+                  className={`sci-btn ${resolved ? 'ok' : 'primary'} btn-status-toggle ${resolved ? 'status-resolved' : 'status-open'}`}
                   onClick={handleToggleResolve}
+                  title={resolved ? 'Reopen this chat' : 'Mark this chat as resolved'}
                 >
-                  {selectedSellerConv.status === 'resolved' ? '✅ Resolved (Reopen)' : 'Mark as Resolved'}
+                  {resolved ? '✓ Resolved' : '✓ Resolve'}
                 </button>
               </div>
             </div>
@@ -1153,178 +1111,96 @@ export default function ChatInbox() {
               />
             )}
 
-            <div
-              ref={threadMessagesRef}
-              onScroll={handleThreadScroll}
-              className="admin-thread-messages"
-            >
+            <div ref={threadMessagesRef} onScroll={handleThreadScroll} className="admin-thread-messages">
               {hasMore && (
-                <div style={{ textAlign: 'center', padding: '12px 0 16px' }}>
-                  <button
-                    type="button"
-                    onClick={handleLoadEarlier}
-                    disabled={loadingEarlier}
-                    style={{
-                      padding: '7px 18px',
-                      fontSize: 12.5,
-                      fontWeight: 700,
-                      borderRadius: 20,
-                      border: '1px solid #cbd5e1',
-                      background: '#f8fafc',
-                      color: '#1e293b',
-                      cursor: loadingEarlier ? 'not-allowed' : 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-                    }}
-                  >
-                    {loadingEarlier ? (
-                      <span>⏳ Loading earlier messages...</span>
-                    ) : (
-                      <>
-                        <span>⬆️</span>
-                        <span>Load earlier messages (Purani chat dekhein)</span>
-                      </>
-                    )}
+                <div className="sci-earlier">
+                  <button type="button" onClick={handleLoadEarlier} disabled={loadingEarlier}>
+                    {loadingEarlier ? 'Loading earlier messages…' : '↑ Load earlier messages'}
                   </button>
                 </div>
               )}
-              {!hasMore && messages.length >= 50 && (
-                <div style={{ textAlign: 'center', padding: '8px 0 14px', fontSize: 11.5, color: '#94a3b8' }}>
-                  📜 Beginning of conversation history
-                </div>
-              )}
+              {!hasMore && messages.length > 0 && <div className="sci-begin">Start of the conversation</div>}
 
-              {messages.map((m) => {
+              {messages.map((m, i) => {
                 const isAdmin = m.sender === 'admin' || m.sender === 'staff';
+                const day = dayKey(m.createdAt);
+                const newDay = i === 0 || day !== dayKey(messages[i - 1]?.createdAt);
                 return (
-                  <ChatMessageBubble
-                    key={m._id}
-                    msg={m}
-                    isMe={isAdmin}
-                    myRole="admin"
-                    onReply={handleStartReply}
-                    onEdit={handleStartEdit}
-                    onDelete={handleDeleteMessage}
-                  />
+                  <Fragment key={m._id}>
+                    {newDay && day && (
+                      <div className="sci-day">
+                        <span>{dayLabel(m.createdAt)}</span>
+                      </div>
+                    )}
+                    <ChatMessageBubble msg={m} isMe={isAdmin} myRole="admin" onReply={handleStartReply} onEdit={handleStartEdit} onDelete={handleDeleteMessage} />
+                  </Fragment>
                 );
               })}
               <div ref={scrollRef} />
             </div>
           </>
-        )}
+          );
+        })()}
 
         {/* 2. TEAM & SUPER ADMIN DIRECT THREAD */}
         {activeTab === 'team' && currentTeamMember && (
           <>
             <div className="admin-thread-head">
               <div className="ath-left">
-                <button
-                  type="button"
-                  className="mobile-back-btn"
-                  onClick={() => setSelectedTeamId(null)}
-                  title="Back to team list"
-                >
+                <button type="button" className="mobile-back-btn" onClick={() => setSelectedTeamId(null)} title="Back to team list" aria-label="Back to team list">
                   <Ic name="arrowLeft" size={18} />
                 </button>
+                <div className={`convo-avatar sci-av sm ${currentTeamMember.role === 'super_admin' ? 'tone-violet' : 'tone-slate'}`}>
+                  <span>{initialsOf(currentTeamMember.name || 'A')}</span>
+                </div>
                 <div className="ath-info">
-                  <div className="flex items-center gap-2">
+                  <div className="ath-title-row">
                     <b className="ath-name">{currentTeamMember.name}</b>
-                    <span className={`admin-role-badge-sm role-${currentTeamMember.role}`}>
-                      {ROLE_LABELS[currentTeamMember.role] || currentTeamMember.role}
-                    </span>
+                    <span className={`admin-role-badge-sm role-${currentTeamMember.role}`}>{ROLE_LABELS[currentTeamMember.role] || currentTeamMember.role}</span>
                   </div>
                   <div className="ath-meta">
                     <span>{currentTeamMember.email}</span>
                     {currentTeamMember.phone && (
                       <>
-                        <span>•</span>
+                        <span className="dot">•</span>
                         <span>{currentTeamMember.phone}</span>
                       </>
                     )}
-                    <span>•</span>
-                    <span style={{ color: '#16a34a', fontWeight: 600 }}>● Internal Team Channel</span>
+                    <span className="dot">•</span>
+                    <span className="sci-internal">● Internal team chat</span>
                   </div>
                 </div>
               </div>
               <div className="ath-actions">
-                <button
-                  type="button"
-                  onClick={() => setClearChat('team')}
-                  title="Delete messages and their pictures / files for good"
-                  style={{
-                    padding: '7px 12px',
-                    borderRadius: 8,
-                    border: '1px solid #fecaca',
-                    background: '#fff',
-                    color: '#b91c1c',
-                    fontWeight: 700,
-                    fontSize: 12.5,
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  🧹 Clear chat
+                <button type="button" className="sci-btn danger" onClick={() => setClearChat('team')} title="Delete messages and their pictures / files for good">
+                  🧹<span className="sci-btn-txt">Clear</span>
                 </button>
               </div>
             </div>
 
-            <div
-              ref={threadMessagesRef}
-              onScroll={handleThreadScroll}
-              className="admin-thread-messages"
-            >
+            <div ref={threadMessagesRef} onScroll={handleThreadScroll} className="admin-thread-messages">
               {hasMore && (
-                <div style={{ textAlign: 'center', padding: '12px 0 16px' }}>
-                  <button
-                    type="button"
-                    onClick={handleLoadEarlier}
-                    disabled={loadingEarlier}
-                    style={{
-                      padding: '7px 18px',
-                      fontSize: 12.5,
-                      fontWeight: 700,
-                      borderRadius: 20,
-                      border: '1px solid #cbd5e1',
-                      background: '#f8fafc',
-                      color: '#1e293b',
-                      cursor: loadingEarlier ? 'not-allowed' : 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
-                    }}
-                  >
-                    {loadingEarlier ? (
-                      <span>⏳ Loading earlier messages...</span>
-                    ) : (
-                      <>
-                        <span>⬆️</span>
-                        <span>Load earlier messages (Purani chat dekhein)</span>
-                      </>
-                    )}
+                <div className="sci-earlier">
+                  <button type="button" onClick={handleLoadEarlier} disabled={loadingEarlier}>
+                    {loadingEarlier ? 'Loading earlier messages…' : '↑ Load earlier messages'}
                   </button>
                 </div>
               )}
-              {!hasMore && messages.length >= 50 && (
-                <div style={{ textAlign: 'center', padding: '8px 0 14px', fontSize: 11.5, color: '#94a3b8' }}>
-                  📜 Beginning of conversation history
-                </div>
-              )}
+              {!hasMore && messages.length > 0 && <div className="sci-begin">Start of the conversation</div>}
 
-              {messages.map((m) => {
+              {messages.map((m, i) => {
                 const isMe = String(m.senderAdmin) === String(me?.id) || (m.sender === 'admin' && !m.senderAdmin && m.senderName === me?.name);
+                const day = dayKey(m.createdAt);
+                const newDay = i === 0 || day !== dayKey(messages[i - 1]?.createdAt);
                 return (
-                  <ChatMessageBubble
-                    key={m._id}
-                    msg={m}
-                    isMe={isMe}
-                    myRole="admin"
-                    onReply={handleStartReply}
-                    onEdit={handleStartEdit}
-                    onDelete={handleDeleteMessage}
-                  />
+                  <Fragment key={m._id}>
+                    {newDay && day && (
+                      <div className="sci-day">
+                        <span>{dayLabel(m.createdAt)}</span>
+                      </div>
+                    )}
+                    <ChatMessageBubble msg={m} isMe={isMe} myRole="admin" onReply={handleStartReply} onEdit={handleStartEdit} onDelete={handleDeleteMessage} />
+                  </Fragment>
                 );
               })}
               <div ref={scrollRef} />
@@ -1334,16 +1210,21 @@ export default function ChatInbox() {
 
         {/* EMPTY STATE */}
         {!hasSelection && (
-          <div className="admin-chat-empty">
+          <div className="admin-chat-empty sci-empty">
             <div className="empty-icon">
-              <Ic name={activeTab === 'sellers' ? 'chat' : 'user'} size={40} />
+              <Ic name={activeTab === 'sellers' ? 'chat' : 'user'} size={34} />
             </div>
-            <h3>{activeTab === 'sellers' ? 'Select an Inquiry' : 'Select a Team Member or Super Admin'}</h3>
+            <h3>{activeTab === 'sellers' ? 'Pick a conversation' : 'Pick a team member'}</h3>
             <p>
               {activeTab === 'sellers'
-                ? 'Select a registered merchant or guest visitor to review inquiries and provide real-time vendor assistance.'
-                : 'Select an administrator, super admin, or staff member to begin direct internal team messaging.'}
+                ? 'Choose a store or a guest from the list to read their messages and reply.'
+                : 'Choose an admin or staff member to start an internal chat.'}
             </p>
+            {activeTab === 'sellers' && waitingCount > 0 && (
+              <button type="button" className="sci-btn primary" onClick={() => setSellerFilter('waiting')}>
+                ⏱ {waitingCount} {waitingCount === 1 ? 'chat is' : 'chats are'} waiting for a reply
+              </button>
+            )}
           </div>
         )}
 
@@ -1436,8 +1317,8 @@ export default function ChatInbox() {
               </div>
             )}
 
-            {/* Input Bar with Multiline Auto-Expanding Textarea (4-5 lines visible) */}
-            <form onSubmit={handleSend} className="admin-reply-bar" style={{ alignItems: 'flex-end' }}>
+            {/* Composer: message box on top, tools and Send below */}
+            <form onSubmit={handleSend} className="admin-reply-bar sci-composer">
               <input
                 type="file"
                 ref={fileInputRef}
@@ -1445,53 +1326,10 @@ export default function ChatInbox() {
                 accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
                 style={{ display: 'none' }}
               />
-              <button
-                type="button"
-                className="chat-attach-btn"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={sending}
-                title="Attach photo or PDF document"
-                style={{ marginBottom: 8 }}
-              >
-                <Ic name="paperclip" size={20} stroke={2} />
-              </button>
-              {activeTab === 'sellers' && (
-                <button
-                  type="button"
-                  className="chat-attach-btn"
-                  onClick={() => setQuickOpen(true)}
-                  disabled={sending}
-                  title="Saved replies"
-                  style={{ marginBottom: 8 }}
-                >
-                  <span style={{ fontSize: 17, lineHeight: 1 }}>⚡</span>
-                </button>
-              )}
-              {isStoreChat && (
-                <button
-                  type="button"
-                  className="chat-attach-btn csp-trigger"
-                  onClick={() => setShortcutOpen(true)}
-                  disabled={sending}
-                  title="Send a shortcut button (Diamond, Deposit, an order, a product…)"
-                  style={{ marginBottom: 8 }}
-                >
-                  <Ic name="link" size={19} stroke={2} />
-                </button>
-              )}
-              <div style={{ marginBottom: 8 }}>
-                <VoiceRecordButton
-                  onTranscribed={(spokenText) => {
-                    setText((prev) => (prev ? `${prev.trim()} ${spokenText}` : spokenText));
-                    noteSellerTyping(spokenText);
-                    textInputRef.current?.focus();
-                  }}
-                  disabled={sending || uploading}
-                />
-              </div>
               <textarea
                 ref={textInputRef}
-                rows={3}
+                className="sci-input"
+                rows={2}
                 value={text}
                 onChange={(e) => {
                   setText(e.target.value);
@@ -1505,48 +1343,70 @@ export default function ChatInbox() {
                 }}
                 placeholder={
                   file
-                    ? 'Add a caption...'
+                    ? 'Add a caption…'
                     : replyingTo
-                    ? `Reply to ${replyingTo.senderName || 'message'}... (Enter to send, Shift+Enter for new line)`
+                    ? `Reply to ${replyingTo.senderName || 'message'}…`
                     : activeTab === 'sellers'
-                    ? `Message ${selectedSellerConv?.seller?.storeName || selectedSellerConv?.storeName || 'Merchant'}... (Enter to send, Shift+Enter for new line)`
-                    : `Message ${currentTeamMember?.name || 'Admin'}... (Enter to send, Shift+Enter for new line)`
+                    ? `Message ${selectedSellerConv?.seller?.storeName || selectedSellerConv?.storeName || 'merchant'}…`
+                    : `Message ${currentTeamMember?.name || 'admin'}…`
                 }
                 disabled={sending}
-                style={{
-                  flex: 1,
-                  padding: '10px 14px',
-                  borderRadius: 8,
-                  border: '1px solid #cbd5e1',
-                  resize: 'vertical',
-                  minHeight: 65,
-                  maxHeight: 160,
-                  fontFamily: 'inherit',
-                  fontSize: 13.5,
-                  lineHeight: 1.45,
-                }}
               />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 4 }}>
-                <AiRewriteBox
-                  text={text}
-                  onApply={(rewritten) => {
-                    setText(rewritten);
-                    noteSellerTyping(rewritten);
-                    textInputRef.current?.focus();
-                  }}
-                  onApplyAndSend={(rewritten) => {
-                    handleSend(null, rewritten);
-                  }}
-                  disabled={sending || uploading}
-                />
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  disabled={sending || (!text.trim() && !file)}
-                  style={{ height: 42, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                >
-                  {sending ? (uploading ? 'Uploading...' : 'Sending...') : <><Ic name="send" size={16} /> Send</>}
-                </button>
+              <div className="sci-toolbar">
+                <div className="sci-tools">
+                  <button type="button" className="chat-attach-btn sci-tool" onClick={() => fileInputRef.current?.click()} disabled={sending} title="Attach a photo or PDF" aria-label="Attach file">
+                    <Ic name="paperclip" size={18} stroke={2} />
+                  </button>
+                  {activeTab === 'sellers' && (
+                    <button type="button" className="chat-attach-btn sci-tool" onClick={() => setQuickOpen(true)} disabled={sending} title="Saved replies" aria-label="Saved replies">
+                      <span className="sci-emoji">⚡</span>
+                    </button>
+                  )}
+                  {isStoreChat && (
+                    <button
+                      type="button"
+                      className="chat-attach-btn csp-trigger sci-tool"
+                      onClick={() => setShortcutOpen(true)}
+                      disabled={sending}
+                      title="Send a shortcut button (Diamond, Deposit, an order, a product…)"
+                      aria-label="Shortcut button"
+                    >
+                      <Ic name="link" size={18} stroke={2} />
+                    </button>
+                  )}
+                  <span className="sci-tool-voice">
+                    <VoiceRecordButton
+                      onTranscribed={(spokenText) => {
+                        setText((prev) => (prev ? `${prev.trim()} ${spokenText}` : spokenText));
+                        noteSellerTyping(spokenText);
+                        textInputRef.current?.focus();
+                      }}
+                      disabled={sending || uploading}
+                    />
+                  </span>
+                  <span className="sci-hint">Enter to send · Shift + Enter for a new line</span>
+                </div>
+                <div className="sci-send-row">
+                  <AiRewriteBox
+                    text={text}
+                    onApply={(rewritten) => {
+                      setText(rewritten);
+                      noteSellerTyping(rewritten);
+                      textInputRef.current?.focus();
+                    }}
+                    onApplyAndSend={(rewritten) => {
+                      handleSend(null, rewritten);
+                    }}
+                    disabled={sending || uploading}
+                  />
+                  <button
+                    type="submit"
+                    className="btn-primary sci-send"
+                    disabled={sending || (!text.trim() && !file && !(activeTab === 'sellers' && pendingAction))}
+                  >
+                    {sending ? (uploading ? 'Uploading…' : 'Sending…') : <><Ic name="send" size={15} /> Send</>}
+                  </button>
+                </div>
               </div>
             </form>
           </>

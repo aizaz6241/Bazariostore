@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { pokePortal } from '../utils/portalTick.js';
 
 const withdrawalSchema = new mongoose.Schema(
   {
@@ -93,6 +94,17 @@ const withdrawalSchema = new mongoose.Schema(
 withdrawalSchema.index({ seller: 1, createdAt: -1 });
 withdrawalSchema.index({ type: 1, status: 1, createdAt: -1 });
 withdrawalSchema.index({ createdAt: -1 });
+
+// Any change to a deposit / withdrawal line: the team portal is asked to check right away (its
+// "payment proof needed" card + push for a new deposit, finance alerts). See utils/portalTick.js.
+const pokeAfterWrite = function () {
+  pokePortal('withdrawals');
+};
+withdrawalSchema.post('save', pokeAfterWrite);
+withdrawalSchema.post('insertMany', pokeAfterWrite);
+withdrawalSchema.post('updateOne', pokeAfterWrite);
+withdrawalSchema.post('updateMany', pokeAfterWrite);
+withdrawalSchema.post('findOneAndUpdate', pokeAfterWrite);
 
 export default mongoose.model('Withdrawal', withdrawalSchema);
 
