@@ -24,7 +24,13 @@ const safeId = (v) => (/^[a-f0-9]{24}$/i.test(String(v || '')) ? String(v) : '')
 /** Where a shortcut button takes the seller ('' = nowhere / unknown). */
 export function shortcutPath(action) {
   if (!action) return '';
-  if (action.kind === 'page') return SHORTCUT_PAGE_PATHS[action.key] || '';
+  if (action.kind === 'page') {
+    const base = SHORTCUT_PAGE_PATHS[action.key] || '';
+    // a deposit button can carry the amount to fill in
+    const amt = Number(action.amount);
+    if (base && action.key === 'deposit' && amt > 0 && amt <= 1000000) return `${base}&amount=${Math.round(amt * 100) / 100}`;
+    return base;
+  }
   if (action.kind === 'order' && safeId(action.refId)) return `/seller/orders?open=${safeId(action.refId)}`;
   if (action.kind === 'product' && safeId(action.refId)) return `/seller/products?highlight=${safeId(action.refId)}`;
   return '';

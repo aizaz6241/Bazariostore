@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
-import { Conversation, Message, ChatSettings, ChatQuickReply } from '../models/Chat.js';
+import { Conversation, Message, ChatSettings, ChatQuickReply, ChatBroadcast } from '../models/Chat.js';
 import Seller from '../models/Seller.js';
 import Admin from '../models/Admin.js';
 import { authAdmin, authSeller, authSellerOrAdmin } from '../middleware/auth.js';
@@ -13,7 +13,10 @@ import { limit } from '../utils/rateLimit.js';
 import { adminRoom } from '../utils/permissions.js';
 import { sellerSafeMessage, sellerSafeConversation } from '../utils/sellerChatPrivacy.js';
 import { clearAdminTyping } from '../realtime/adminTyping.js';
-import { SHORTCUT_PAGES, resolveShortcut, searchShortcutTargets } from '../utils/chatShortcuts.js';
+import { SHORTCUT_PAGES, resolveShortcut, searchShortcutTargets, pageAction } from '../utils/chatShortcuts.js';
+import { sellerFacts, fillPlaceholders, PLACEHOLDERS } from '../utils/chatPlaceholders.js';
+import Order from '../models/Order.js';
+import Withdrawal from '../models/Withdrawal.js';
 
 // A guest chat is opened with the random id the storefront keeps in the browser (36 characters).
 // Knowing that id is what gives access to that one chat, so it must be real text of a sensible
@@ -469,7 +472,7 @@ router.get('/admin/conversations/:id/messages', authAdmin('chat'), async (req, r
 router.post('/admin/conversations/:id/reply', authAdmin('chat'), async (req, res) => {
   try {
     const { text, attachment, attachmentType, attachmentName, attachmentSize, replyTo } = req.body;
-    const cleanText = (text || '').trim();
+    let cleanText = (text || '').trim();
     if (!cleanText && !attachment && !req.body?.action) return res.status(400).json({ message: 'Message or attachment is required' });
 
     const conv = await Conversation.findById(req.params.id);
@@ -484,6 +487,8 @@ router.post('/admin/conversations/:id/reply', authAdmin('chat'), async (req, res
         return res.status(e.status || 400).json({ message: e.message });
       }
     }
+    // {storeName}, {balance}, {pendingOrders}… → this store's values
+    if (conv.seller && cleanText.includes('{')) cleanText = fillPlaceholders(cleanText, await sellerFacts(conv.seller));
 
     const previewMsg = cleanText || (action ? `🔗 ${action.label}` : attachmentType === 'pdf' ? `📄 ${attachmentName || 'PDF Document'}` : '📷 Image Attachment');
     conv.lastMessage = previewMsg;
@@ -594,18 +599,28 @@ const cleanQuickReply = (body) => {
   const text = asText(body?.text, 2000).trim();
   const key = String(body?.actionKey || '');
   const actionKey = key && Object.prototype.hasOwnProperty.call(SHORTCUT_PAGES, key) ? key : '';
-  return { title, text, actionKey };
+  return { title, text, actionKey, showToSellers: body?.showToSellers === true };
 };
 
 // GET /api/chat/admin/quick-replies (the first time: a few ready ones are added)
+/** The default saved replies, added once; the ones Bazario added are shown to sellers as Quick Help once. */
+async function seedQuickReplies() {
+  const settings = await ChatSettings.findOne().select('quickRepliesSeeded quickHelpSeeded').lean();
+  if (!settings?.quickRepliesSeeded && !(await ChatQuickReply.exists({}))) {
+    await ChatQuickReply.insertMany(DEFAULT_QUICK_REPLIES.map((r, i) => ({ ...r, order: i, createdBy: 'Bazario', showToSellers: true })));
+    await ChatSettings.updateOne({}, { $set: { quickRepliesSeeded: true, quickHelpSeeded: true } }, { upsert: true });
+    return;
+  }
+  if (!settings?.quickHelpSeeded) {
+    await ChatQuickReply.updateMany({ createdBy: 'Bazario', showToSellers: { $exists: false } }, { $set: { showToSellers: true } });
+    await ChatSettings.updateOne({}, { $set: { quickRepliesSeeded: true, quickHelpSeeded: true } }, { upsert: true });
+  }
+}
+
 router.get('/admin/quick-replies', authAdmin('chat'), async (req, res) => {
   try {
-    let list = await ChatQuickReply.find().sort({ order: 1, createdAt: 1 }).lean();
-    if (!list.length && !(await ChatSettings.exists({ quickRepliesSeeded: true }))) {
-      await ChatQuickReply.insertMany(DEFAULT_QUICK_REPLIES.map((r, i) => ({ ...r, order: i, createdBy: 'Bazario' })));
-      await ChatSettings.updateOne({}, { $set: { quickRepliesSeeded: true } }, { upsert: true });
-      list = await ChatQuickReply.find().sort({ order: 1, createdAt: 1 }).lean();
-    }
+    await seedQuickReplies();
+    const list = await ChatQuickReply.find().sort({ order: 1, createdAt: 1 }).lean();
     res.json(list);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -647,6 +662,182 @@ router.delete('/admin/quick-replies/:id', authAdmin('chat'), async (req, res) =>
     if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Saved reply not found' });
     await ChatQuickReply.deleteOne({ _id: req.params.id });
     res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/chat/admin/placeholders — the {names} that can be used in messages
+router.get('/admin/placeholders', authAdmin('chat'), (req, res) => {
+  res.json(Object.entries(PLACEHOLDERS).map(([key, label]) => ({ key, label })));
+});
+
+// GET /api/chat/admin/conversations/:id/seller-info — the store behind a chat, for the side panel
+router.get('/admin/conversations/:id/seller-info', authAdmin('chat'), async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Conversation not found' });
+    const conv = await Conversation.findById(req.params.id).select('seller').lean();
+    if (!conv) return res.status(404).json({ message: 'Conversation not found' });
+    if (!conv.seller) return res.json({ guest: true });
+    const facts = await sellerFacts(conv.seller, { withOrders: true });
+    if (!facts) return res.status(404).json({ message: 'This store no longer exists' });
+    res.json(facts);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ─── Broadcast: one message (+ button) to a group of stores ───
+const SEGMENTS = {
+  all: 'All active stores',
+  basic: 'Basic stores (not Diamond)',
+  diamond: 'Diamond stores',
+  pending: 'Stores with orders waiting to be confirmed',
+  no_deposit_7d: 'No deposit in the last 7 days',
+  frozen: 'Frozen stores',
+};
+
+async function segmentSellers(segment) {
+  const base = { status: { $in: ['active', 'frozen'] }, isTestAccount: { $ne: true }, accountType: { $ne: 'test' }, registrationRejectedAt: null };
+  const pick = 'storeName ownerName email phone';
+  if (segment === 'basic') return Seller.find({ ...base, tier: { $ne: 'diamond' } }).select(pick).lean();
+  if (segment === 'diamond') return Seller.find({ ...base, tier: 'diamond' }).select(pick).lean();
+  if (segment === 'frozen') return Seller.find({ ...base, status: 'frozen' }).select(pick).lean();
+  if (segment === 'pending') {
+    const orders = await Order.find({ status: 'pending' }).select('seller items.seller items.itemStatus').lean();
+    const ids = new Set();
+    for (const o of orders) {
+      for (const it of o.items || []) {
+        if (!it.itemStatus || it.itemStatus === 'pending') {
+          const sid = it.seller || o.seller;
+          if (sid) ids.add(String(sid));
+        }
+      }
+    }
+    return Seller.find({ ...base, _id: { $in: [...ids] } }).select(pick).lean();
+  }
+  if (segment === 'no_deposit_7d') {
+    const recent = await Withdrawal.distinct('seller', { type: 'deposit', status: { $in: ['approved', 'completed', 'pending'] }, createdAt: { $gte: new Date(Date.now() - 7 * 86400000) } });
+    return Seller.find({ ...base, _id: { $nin: recent } }).select(pick).lean();
+  }
+  return Seller.find(base).select(pick).lean();
+}
+
+// GET /api/chat/admin/broadcasts/preview?segment= — how many stores it would reach
+router.get('/admin/broadcasts/preview', authAdmin('chat'), async (req, res) => {
+  try {
+    const segment = Object.prototype.hasOwnProperty.call(SEGMENTS, req.query.segment) ? req.query.segment : 'all';
+    const list = await segmentSellers(segment);
+    res.json({ segment, label: SEGMENTS[segment], count: list.length, sample: list.slice(0, 8).map((s) => s.storeName) });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/chat/admin/broadcasts — segments + past broadcasts with their results
+router.get('/admin/broadcasts', authAdmin('chat'), async (req, res) => {
+  try {
+    const list = await ChatBroadcast.find().sort({ createdAt: -1 }).limit(30).lean();
+    const stats = list.length
+      ? await Message.aggregate([
+          { $match: { broadcastId: { $in: list.map((b) => b._id) } } },
+          {
+            $group: {
+              _id: '$broadcastId',
+              sent: { $sum: 1 },
+              seen: { $sum: { $cond: ['$isSeen', 1, 0] } },
+              opened: { $sum: { $cond: [{ $ifNull: ['$action.openedAt', false] }, 1, 0] } },
+              done: { $sum: { $cond: [{ $ifNull: ['$action.doneAt', false] }, 1, 0] } },
+            },
+          },
+        ])
+      : [];
+    const byId = new Map(stats.map((x) => [String(x._id), x]));
+    res.json({
+      segments: Object.entries(SEGMENTS).map(([key, label]) => ({ key, label })),
+      broadcasts: list.map((b) => ({ ...b, stats: byId.get(String(b._id)) || { sent: 0, seen: 0, opened: 0, done: 0 } })),
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/chat/admin/broadcasts  { segment, text, actionKey?, amount? } — sent in the background
+router.post('/admin/broadcasts', authAdmin('chat'), async (req, res) => {
+  try {
+    const segment = Object.prototype.hasOwnProperty.call(SEGMENTS, req.body?.segment) ? req.body.segment : '';
+    if (!segment) return res.status(400).json({ message: 'Choose who gets the message.' });
+    const text = asText(req.body?.text, 2000).trim();
+    const key = String(req.body?.actionKey || '');
+    const action = key ? pageAction(key, { amount: req.body?.amount }) : null;
+    if (key && !action) return res.status(400).json({ message: 'Unknown button.' });
+    if (!text && !action) return res.status(400).json({ message: 'Write a message or choose a button.' });
+
+    const sellers = await segmentSellers(segment);
+    if (!sellers.length) return res.status(400).json({ message: 'No store is in this group right now.' });
+    if (sellers.length > 3000) return res.status(400).json({ message: 'This group is too large to send at once.' });
+
+    const by = req.admin?.name || 'Support';
+    const bc = await ChatBroadcast.create({ segment, segmentLabel: SEGMENTS[segment], text, action, sentTo: sellers.length, sentBy: by, status: 'sending' });
+    audit(req, 'create', 'chat_broadcast', bc._id, `Broadcast to ${SEGMENTS[segment]} (${sellers.length} stores)${action ? ` with button ${action.label}` : ''}`);
+    res.status(201).json({ ok: true, id: String(bc._id), sentTo: sellers.length, message: `Sending to ${sellers.length} stores…` });
+
+    // the sending itself happens after the answer (it can take a while for many stores)
+    const io = req.app.get('io');
+    const needsFacts = text.includes('{');
+    (async () => {
+      for (const s of sellers) {
+        try {
+          let conv = await Conversation.findOne({ seller: s._id, type: { $ne: 'internal' } }).sort({ lastAt: -1 });
+          if (!conv) {
+            conv = await Conversation.findOneAndUpdate(
+              { seller: s._id, type: 'seller' },
+              { $setOnInsert: { type: 'seller', seller: s._id, storeName: s.storeName, sellerName: s.ownerName, sellerEmail: s.email, sellerPhone: s.phone || '', subject: 'General Seller Support & Operations' } },
+              { upsert: true, new: true }
+            );
+          }
+          const body = needsFacts ? fillPlaceholders(text, await sellerFacts(s._id)) : text;
+          const msg = await Message.create({
+            conversation: conv._id,
+            seller: s._id,
+            sender: 'admin',
+            senderName: by,
+            text: body,
+            broadcastId: bc._id,
+            ...(action ? { action } : {}),
+          });
+          await Conversation.updateOne(
+            { _id: conv._id },
+            { $set: { lastMessage: (body || `🔗 ${action?.label || ''}`).slice(0, 140), lastSender: 'admin', lastAt: new Date() }, $inc: { unreadForSeller: 1 } }
+          );
+          io?.to(`seller:${s._id}`).emit('message:new', sellerSafeMessage(msg));
+          sendPush({ to: 'seller', sellerId: s._id, title: '💬 Bazario Support', body: (body || `🔗 ${action?.label || ''}`).slice(0, 140), url: '/seller/support', tag: `bc-${bc._id}` });
+        } catch (e) {
+          console.error('[broadcast] store', String(s._id), e.message);
+        }
+      }
+      await ChatBroadcast.updateOne({ _id: bc._id }, { $set: { status: 'done' } });
+      io?.to(adminRoom('chat')).emit('chat:broadcast_done', { id: String(bc._id) });
+    })().catch((e) => console.error('[broadcast] failed:', e.message));
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/chat/seller/quick-help — answers support marked for sellers, filled in for this store
+router.get('/seller/quick-help', authSeller, async (req, res) => {
+  try {
+    await seedQuickReplies();
+    const list = await ChatQuickReply.find({ showToSellers: true }).sort({ order: 1, createdAt: 1 }).limit(12).lean();
+    const facts = list.some((r) => (r.text || '').includes('{')) ? await sellerFacts(req.seller.id) : null;
+    res.json(
+      list.map((r) => ({
+        id: String(r._id),
+        title: r.title,
+        text: facts ? fillPlaceholders(r.text || '', facts) : r.text || '',
+        action: r.actionKey ? pageAction(r.actionKey) : null,
+      }))
+    );
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

@@ -78,7 +78,12 @@ export default function SellerWallet() {
   const [successSlip, setSuccessSlip] = useState(null);
 
   // forms
-  const [depForm, setDepForm] = useState(EMPTY_DEP);
+  // a "Deposit $X" button from support opens this page with ?amount=X: the amount is filled in
+  const urlAmount = (() => {
+    const n = Number(searchParams.get('amount'));
+    return n > 0 && n <= 1000000 ? String(Math.round(n * 100) / 100) : '';
+  })();
+  const [depForm, setDepForm] = useState(() => (urlAmount ? { ...EMPTY_DEP, amount: urlAmount } : EMPTY_DEP));
   const [depInLocal, setDepInLocal] = useState(false);
   const [method, setMethod] = useState('bank');
   const [activeSavedKey, setActiveSavedKey] = useState('');
@@ -91,7 +96,8 @@ export default function SellerWallet() {
   useEffect(() => {
     const urlTab = searchParams.get('tab');
     if (urlTab && ['ledger', 'deposit', 'withdraw'].includes(urlTab)) setTab(urlTab);
-  }, [searchParams]);
+    if (urlTab === 'deposit' && urlAmount) setDepForm((p) => ({ ...p, amount: urlAmount }));
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const changeTab = (next) => {
     setTab(next);

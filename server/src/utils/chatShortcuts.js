@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import Order from '../models/Order.js';
 import Product from '../models/Product.js';
+import { Message } from '../models/Chat.js';
+import { toAdmins } from './realtime.js';
 
 /**
  * SUPPORT SHORTCUTS — buttons that support sends in a seller's chat. The seller taps one and lands
@@ -45,6 +47,12 @@ export async function resolveShortcut(raw, conv) {
     const key = String(raw.key || '');
     const page = Object.prototype.hasOwnProperty.call(SHORTCUT_PAGES, key) ? SHORTCUT_PAGES[key] : null;
     if (!page) throw fail('Unknown page.');
+    // a deposit card can carry the amount to deposit (filled in on the seller's deposit form)
+    const amount = key === 'deposit' ? Math.round((Number(raw.amount) || 0) * 100) / 100 : 0;
+    if (key === 'deposit' && raw.amount !== undefined && raw.amount !== '' && raw.amount !== null && !(amount >= 1 && amount <= 1000000)) {
+      throw fail('Enter a deposit amount between $1 and $1,000,000.');
+    }
+    if (amount > 0) return { kind, key, refId: '', amount, label: `💰 Deposit $${amount.toLocaleString('en-US')}`, sub: 'Tap to open the deposit form with this amount' };
     return { kind, key, refId: '', label: page.label, sub: page.sub };
   }
   if (kind === 'order') {
@@ -91,4 +99,46 @@ export async function searchShortcutTargets(conv, kind, q = '') {
     return list.map((p) => ({ id: String(p._id), title: p.name, sub: `$${Number(p.price || 0).toFixed(2)}${p.active === false ? ' · hidden' : ''}`, image: p.image || '' }));
   }
   return [];
+}
+
+/** Ready-made buttons for the system's own messages (warnings, approvals…). */
+export function pageAction(key, over = {}) {
+  const page = SHORTCUT_PAGES[key];
+  if (!page) return undefined;
+  const out = { kind: 'page', key, refId: '', label: over.label || page.label, sub: over.sub ?? page.sub };
+  if (key === 'deposit' && Number(over.amount) > 0) out.amount = Math.round(Number(over.amount) * 100) / 100;
+  return out;
+}
+export function orderAction(order, over = {}) {
+  if (!order?._id) return undefined;
+  return { kind: 'order', key: '', refId: String(order._id), label: over.label || `🧾 Open order ${order.orderNumber}`, sub: over.sub || 'Tap to see this order' };
+}
+
+/**
+ * The seller did what a button asked (sent a deposit request, confirmed the order, asked for
+ * Diamond…): the buttons of the last 30 days that asked for it get a "done" mark, shown to support.
+ * @param {string} sellerId
+ * @param {object} match   { key } for a page button, { refId } for an order button
+ * @param {string} text    e.g. 'Deposit request sent'
+ */
+export async function markShortcutDone(sellerId, match, text) {
+  try {
+    if (!sellerId || !mongoose.Types.ObjectId.isValid(String(sellerId))) return;
+    const filter = {
+      seller: new mongoose.Types.ObjectId(String(sellerId)),
+      'action.label': { $exists: true },
+      $or: [{ 'action.doneAt': null }, { 'action.doneAt': { $exists: false } }],
+      createdAt: { $gte: new Date(Date.now() - 30 * 86400000) },
+      isDeleted: { $ne: true },
+    };
+    if (match.refId) Object.assign(filter, { 'action.kind': 'order', 'action.refId': String(match.refId) });
+    else Object.assign(filter, { 'action.kind': 'page', 'action.key': String(match.key || '') });
+    const ids = (await Message.find(filter).select('_id conversation').limit(50).lean()).map((m) => ({ id: String(m._id), conversation: String(m.conversation) }));
+    if (!ids.length) return;
+    const at = new Date();
+    await Message.updateMany({ _id: { $in: ids.map((x) => x.id) } }, { $set: { 'action.doneAt': at, 'action.doneText': String(text || 'Done').slice(0, 80) } });
+    toAdmins('chat', 'message:action_done', { messageIds: ids.map((x) => x.id), doneAt: at, doneText: text });
+  } catch (e) {
+    console.error('[chat shortcuts] done mark failed:', e.message);
+  }
 }

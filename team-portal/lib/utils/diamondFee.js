@@ -132,6 +132,8 @@ export async function applyDiamondUpgrade(p, { by = '' } = {}) {
           sender: 'admin',
           senderName: by || 'Bazario',
           text: diamondWelcomeText(seller.storeName),
+          // a button to the Diamond page (the seller panel builds the link from the key)
+          action: { kind: 'page', key: 'diamond', refId: '', label: '💎 See my Diamond plan', sub: 'Your plan, profit and deadlines' },
           attachment: null,
           attachmentType: null,
           isEdited: false,
@@ -142,6 +144,11 @@ export async function applyDiamondUpgrade(p, { by = '' } = {}) {
           updatedAt: now,
           __v: 0,
         });
+        // earlier "Upgrade to Diamond" buttons sent to this store are now done (shown to support)
+        await db.collection('messages').updateMany(
+          { seller: seller._id, 'action.kind': 'page', 'action.key': 'diamond', 'action.doneAt': null, createdAt: { $gte: new Date(now.getTime() - 30 * 86400000), $lt: now } },
+          { $set: { 'action.doneAt': now, 'action.doneText': 'Upgraded to Diamond' } }
+        );
         await db.collection('conversations').updateOne(
           { _id: conv._id },
           { $set: { lastMessage: '💎 Your store is now Diamond!', lastSender: 'admin', lastAt: now, updatedAt: now }, $inc: { unreadForSeller: 1 } }

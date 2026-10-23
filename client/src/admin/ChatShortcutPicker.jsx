@@ -12,7 +12,10 @@ export default function ChatShortcutPicker({ conversationId, storeName, onPick, 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
+  const [depAmount, setDepAmount] = useState('');
   const seq = useRef(0);
+  const depNum = Math.round((Number(depAmount) || 0) * 100) / 100;
+  const depOk = depNum >= 1 && depNum <= 1000000;
 
   useEffect(() => {
     api('/chat/admin/shortcut-pages')
@@ -73,6 +76,24 @@ export default function ChatShortcutPicker({ conversationId, storeName, onPick, 
                 <span>{p.sub}</span>
               </button>
             ))}
+            {pages.some((p) => p.key === 'deposit') && (
+              <form
+                className="csp-dep"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!depOk) return;
+                  onPick({ kind: 'page', key: 'deposit', amount: depNum, label: `💰 Deposit $${depNum.toLocaleString('en-US')}`, sub: 'Tap to open the deposit form with this amount' });
+                }}
+              >
+                <span>💰 Deposit with an amount</span>
+                <div className="csp-dep-row">
+                  <em>$</em>
+                  <input type="number" min="1" max="1000000" step="0.01" inputMode="decimal" value={depAmount} onChange={(e) => setDepAmount(e.target.value)} placeholder="e.g. 250" />
+                  <button type="submit" disabled={!depOk}>Add button</button>
+                </div>
+                <small>The amount is filled in on the seller's deposit form.</small>
+              </form>
+            )}
           </div>
         ) : (
           <>

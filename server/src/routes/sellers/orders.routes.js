@@ -19,6 +19,7 @@ import { blockWhenFrozen, ownProductFilter } from './helpers.js';
 import { profitRateFor, confirmHoursFor, warnHoursFor, tierOf } from '../../utils/sellerTier.js';
 import { sellerSafeOrder, sellerOrderPing, maskName } from '../../utils/orderPrivacy.js';
 import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
+import { orderAction, pageAction, markShortcutDone } from '../../utils/chatShortcuts.js';
 
 const router = express.Router();
 
@@ -812,6 +813,7 @@ router.post('/orders/:id/confirm', authSellerOrAdmin, async (req, res) => {
       link: `/admin/orders/${order._id}`,
     });
 
+    markShortcutDone(sellerId, { refId: order._id }, 'Order confirmed');
     res.json({ ok: true, order: req.admin ? order : sellerSafeOrder(order), lockedAmount: fundResult?.totalToLock || 0 });
   } catch (err) {
     res.status(err.status || 500).json({ message: err.message });
@@ -959,6 +961,9 @@ export const handleStatusUpdate = async (req, res) => {
       });
     }
 
+    if (status === 'confirmed' || status === 'processing') {
+      for (const sId of affectedSellerIds) markShortcutDone(sId, { refId: order._id }, 'Order confirmed');
+    }
     res.json({ ok: true, order: req.admin ? order : sellerSafeOrder(order) });
   } catch (err) {
     res.status(err.status || 500).json({ message: err.message });
@@ -1301,12 +1306,28 @@ export async function processOrderPenalties(app) {
               `Please go to "Orders & Dispatch" and confirm this order now.\n` +
               `━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
+            // a button under the warning: the order itself when the wallet covers it, otherwise the
+            // deposit page with the missing amount filled in
+            let action;
+            try {
+              const value = (ord.items || [])
+                .filter((it) => ownedBy(it, seller._id) && (!it.itemStatus || it.itemStatus === 'pending'))
+                .reduce((t, it) => t + itemValue(it), 0);
+              const bal = Number(seller.wallet?.balance) || 0;
+              const short = Math.ceil((value - bal) * 100) / 100;
+              action =
+                short > 0
+                  ? pageAction('deposit', { label: `💰 Deposit to confirm ${ord.orderNumber}`, sub: `Short by $${short.toFixed(2)}`, amount: short })
+                  : orderAction(ord, { label: `✅ Confirm order ${ord.orderNumber}`, sub: 'Tap to open and confirm it' });
+            } catch {}
+
             const msg = await Message.create({
               conversation: conv._id,
               seller: seller._id,
               sender: 'admin',
               senderName: 'Compliance Enforcement Bot',
               text: warnMsg,
+              ...(action ? { action } : {}),
             });
 
             conv.lastMessage = `⚠️ ${warnH}h Warning: Unconfirmed Order #${ord.orderNumber}`;
@@ -1402,6 +1423,7 @@ export async function processOrderPenalties(app) {
               sender: 'admin',
               senderName: 'Compliance Enforcement Bot',
               text: freezeMsg,
+              action: orderAction(ord, { label: `🧾 Open order ${ord.orderNumber}`, sub: 'Confirm it to keep it moving' }),
             });
 
             conv.lastMessage = `🚫 Account Frozen: Order #${ord.orderNumber} (>${confirmH}h)`;

@@ -15,6 +15,7 @@ import { adminRoom } from '../../utils/permissions.js';
 import { blockWhenFrozen } from './helpers.js';
 import { announceToAdmins } from '../../utils/realtime.js';
 import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
+import { pageAction, markShortcutDone } from '../../utils/chatShortcuts.js';
 
 const router = express.Router();
 
@@ -348,6 +349,7 @@ router.post('/wallet/deposit', authSellerOrAdmin, oneRequestAtATime('deposit'), 
       io.to(adminRoom('finance')).emit('withdrawal:new', reqDoc);
     }
 
+    markShortcutDone(seller._id, { key: 'deposit' }, `Deposit request sent ($${Number(amount).toLocaleString('en-US')})`);
     res.status(201).json({ message: 'Deposit request submitted! Admin will verify and approve.', request: reqDoc });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -502,6 +504,7 @@ router.post('/wallet/withdraw', authSellerOrAdmin, blockWhenFrozen('withdrawing'
       io.to(adminRoom('finance')).emit('withdrawal:new', reqDoc);
     }
 
+    markShortcutDone(seller._id, { key: 'withdraw' }, 'Withdrawal request sent');
     res.status(201).json({ message: 'Withdrawal request submitted! Admin will process within 2-3 business days.', request: reqDoc });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -1025,12 +1028,28 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
           (transactionRef ? `Ref / UTR: ${transactionRef}\n` : '') +
           `━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
+        // the next step as a button under the result
+        let action;
+        try {
+          if (reqDoc.type === 'deposit') {
+            action =
+              status === 'approved'
+                ? reqDoc.purpose === 'diamond_fee'
+                  ? pageAction('diamond', { label: '💎 See my Diamond plan' })
+                  : pageAction('orders', { label: '📦 Go to my orders', sub: 'Confirm the orders waiting for you' })
+                : pageAction('deposit', { label: '💰 Send the deposit again', amount: reqDoc.amount });
+          } else {
+            action = pageAction('wallet', { label: '👛 Open my wallet' });
+          }
+        } catch {}
+
         const msg = await Message.create({
           conversation: conv._id,
           seller: seller._id,
           sender: 'admin',
           senderName: req.admin.name || 'Admin',
           text: msgText,
+          ...(action ? { action } : {}),
         });
 
         conv.lastMessage = `${resultEmoji} ${typeLabel} ${status} — $${finalAmount}`;

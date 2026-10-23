@@ -80,6 +80,8 @@ const messageSchema = new mongoose.Schema(
       attachmentType: { type: String, default: null },
       attachmentName: { type: String, default: '' },
     },
+    // set on the messages of one broadcast (ChatBroadcast), for its report
+    broadcastId: { type: mongoose.Schema.Types.ObjectId, default: undefined, index: { sparse: true } },
     // A shortcut button sent by support (utils/chatShortcuts.js): opens a page of the seller panel,
     // one of the store's orders or one of its products. Only admins send it; the server checks it.
     action: {
@@ -91,6 +93,9 @@ const messageSchema = new mongoose.Schema(
           label: { type: String, default: '' }, // button text
           sub: { type: String, default: '' }, // small line under it
           openedAt: { type: Date, default: null }, // first time the seller tapped it (shown to support)
+          amount: { type: Number, default: undefined }, // deposit card: the amount to deposit
+          doneAt: { type: Date, default: null }, // the seller did what it asked (request sent, order confirmed…)
+          doneText: { type: String, default: '' },
         },
         { _id: false }
       ),
@@ -110,6 +115,8 @@ const chatSettingsSchema = new mongoose.Schema(
     awayMode: { type: Boolean, default: false },
     // the ready saved replies were added once (deleting them all later does not bring them back)
     quickRepliesSeeded: { type: Boolean, default: false },
+    // the default saved replies were shown to sellers as Quick Help once (admins can change it after)
+    quickHelpSeeded: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
@@ -131,6 +138,8 @@ const quickReplySchema = new mongoose.Schema(
     title: { type: String, required: true, trim: true },
     text: { type: String, default: '' },
     actionKey: { type: String, default: '' }, // page key, '' = no button
+    // shown to sellers as a "Quick help" answer in their support chat (placeholders filled for them)
+    showToSellers: { type: Boolean, default: false },
     order: { type: Number, default: 0 },
     createdBy: { type: String, default: '' },
     updatedBy: { type: String, default: '' },
@@ -138,4 +147,19 @@ const quickReplySchema = new mongoose.Schema(
   { timestamps: true }
 );
 export const ChatQuickReply = mongoose.model('ChatQuickReply', quickReplySchema);
+
+// One message (+ optional button) sent to a whole group of stores at once
+const broadcastSchema = new mongoose.Schema(
+  {
+    segment: { type: String, default: 'all' },
+    segmentLabel: { type: String, default: '' },
+    text: { type: String, default: '' },
+    action: { type: mongoose.Schema.Types.Mixed, default: null },
+    sentTo: { type: Number, default: 0 },
+    sentBy: { type: String, default: '' },
+    status: { type: String, enum: ['sending', 'done'], default: 'sending' },
+  },
+  { timestamps: true }
+);
+export const ChatBroadcast = mongoose.model('ChatBroadcast', broadcastSchema);
 

@@ -9,6 +9,16 @@ import VoiceRecordButton from '../components/VoiceRecordButton.jsx';
 import { useAdminTyping, typingLabel } from './useAdminTyping.js';
 import ChatShortcutPicker from './ChatShortcutPicker.jsx';
 import ChatQuickReplies from './ChatQuickReplies.jsx';
+import ChatSellerInfo from './ChatSellerInfo.jsx';
+import ChatBroadcast from './ChatBroadcast.jsx';
+
+/** How long a chat has waited for support: "4m", "2h 10m", "3d". */
+const waitLabel = (ms) => {
+  const m = Math.max(0, Math.floor(ms / 60000));
+  if (m < 60) return `${m}m`;
+  if (m < 1440) return `${Math.floor(m / 60)}h${m % 60 ? ` ${m % 60}m` : ''}`;
+  return `${Math.floor(m / 1440)}d`;
+};
 
 const ROLE_LABELS = {
   super_admin: '👑 Super Admin',
@@ -68,6 +78,14 @@ export default function ChatInbox() {
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [shortcutPages, setShortcutPages] = useState([]);
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  // a clock for the "waiting for reply" timers in the list (every 30 seconds is enough)
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
   // a button suggested from what is being typed ("diamond", "deposit", "order 182"…)
   const [suggestion, setSuggestion] = useState(null);
   const [dismissedSuggestion, setDismissedSuggestion] = useState('');
@@ -435,8 +453,19 @@ export default function ChatInbox() {
       );
     };
 
+    // the seller did what a button asked (deposit sent, order confirmed…): show "Done" on it
+    const onActionDone = (p) => {
+      const ids = new Set((p?.messageIds || []).map(String));
+      if (!ids.size) return;
+      setMessages((prev) =>
+        Array.isArray(prev) ? prev.map((m) => (ids.has(String(m._id)) && m.action ? { ...m, action: { ...m.action, doneAt: p.doneAt, doneText: p.doneText } } : m)) : prev
+      );
+    };
+
     if (socket) {
       socket.on('message:action_opened', onActionOpened);
+      socket.on('message:action_done', onActionDone);
+      socket.on('chat:broadcast_done', loadSellerConvos);
       socket.on('message:new', onNewSellerMsg);
       socket.on('admin:message:new', onNewTeamMsg);
       socket.on('chat:cleared', onChatCleared);
@@ -448,6 +477,8 @@ export default function ChatInbox() {
     return () => {
       if (socket) {
         socket.off('message:action_opened', onActionOpened);
+        socket.off('message:action_done', onActionDone);
+        socket.off('chat:broadcast_done', loadSellerConvos);
         socket.off('chat:cleared', onChatCleared);
         socket.off('message:new', onNewSellerMsg);
         socket.off('admin:message:new', onNewTeamMsg);
@@ -790,7 +821,14 @@ export default function ChatInbox() {
 
           {/* Auto-Reply Status Pill & Settings Trigger */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '8px 0', padding: '0 4px' }}>
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: '#64748b' }}>Support Automation:</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: '#64748b' }}>Support Automation:</span>
+              {activeTab === 'sellers' && (
+                <button type="button" className="cbc-trigger" onClick={() => setBroadcastOpen(true)} title="Send one message (+ button) to a group of stores">
+                  📣 Broadcast
+                </button>
+              )}
+            </span>
             <button
               type="button"
               onClick={() => setAutoReplyModal(true)}
@@ -905,6 +943,9 @@ export default function ChatInbox() {
                 const isGuestConvo = c.isGuest || c.type === 'guest';
                 const storeTitle = c.storeName || c.seller?.storeName || (isGuestConvo ? 'Guest Visitor' : 'Unknown Store');
                 const typingHere = peerTyping.typersIn(c._id);
+                // the last word is the seller's / guest's and nobody answered yet
+                const waitingMs = c.status !== 'resolved' && ['seller', 'guest', 'customer'].includes(c.lastSender) && c.lastAt ? nowTick - new Date(c.lastAt).getTime() : -1;
+                const waitTone = waitingMs >= 30 * 60000 ? 'late' : waitingMs >= 10 * 60000 ? 'warn' : 'ok';
 
                 return (
                   <div
@@ -943,7 +984,14 @@ export default function ChatInbox() {
                             </span>
                           )}
                         </div>
-                        <small className="convo-time">{c.lastAt ? fmtDay(c.lastAt) : ''}</small>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: 'none' }}>
+                          {waitingMs >= 0 && (
+                            <span className={`convo-wait ${waitTone}`} title="Waiting for a reply from support">
+                              ⏱ {waitLabel(waitingMs)}
+                            </span>
+                          )}
+                          <small className="convo-time">{c.lastAt ? fmtDay(c.lastAt) : ''}</small>
+                        </span>
                       </div>
                       <div className="convo-sub">
                         {typingHere.length > 0 ? (
@@ -1060,6 +1108,11 @@ export default function ChatInbox() {
               </div>
 
               <div className="ath-actions" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {isStoreChat && (
+                  <button type="button" className={`csi-toggle ${infoOpen ? 'on' : ''}`} onClick={() => setInfoOpen((v) => !v)} title="Balance, waiting orders, plan… of this store">
+                    📋 Store info
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setClearChat('seller')}
@@ -1087,6 +1140,18 @@ export default function ChatInbox() {
                 </button>
               </div>
             </div>
+
+            {infoOpen && isStoreChat && (
+              <ChatSellerInfo
+                key={selectedSellerId}
+                conversationId={selectedSellerId}
+                onClose={() => setInfoOpen(false)}
+                onButton={(a) => {
+                  setPendingAction(a);
+                  textInputRef.current?.focus();
+                }}
+              />
+            )}
 
             <div
               ref={threadMessagesRef}
@@ -1574,6 +1639,9 @@ export default function ChatInbox() {
           }}
         />
       )}
+
+      {/* BROADCAST: one message (+ button) to a group of stores */}
+      {broadcastOpen && <ChatBroadcast pages={shortcutPages} onClose={() => setBroadcastOpen(false)} />}
 
       {/* SHORTCUT BUTTON PICKER (page / order / product of this store) */}
       {shortcutOpen && selectedSellerId && (

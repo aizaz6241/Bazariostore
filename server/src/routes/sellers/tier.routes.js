@@ -12,6 +12,7 @@ import { announceToAdmins } from '../../utils/realtime.js';
 import { asText } from '../../middleware/sanitize.js';
 import { TIERS, DIAMOND_UPGRADE_FEE_USD, isDiamond, tierInfo } from '../../utils/sellerTier.js';
 import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
+import { pageAction, markShortcutDone } from '../../utils/chatShortcuts.js';
 
 /**
  * Seller account tiers — Basic / 💎 Diamond (rules in utils/sellerTier.js).
@@ -113,6 +114,7 @@ router.post('/tier/request-upgrade', authSeller, announceToAdmins('sellers', 'se
       senderName: seller.storeName || seller.ownerName,
       text,
     });
+    markShortcutDone(seller._id, { key: 'diamond' }, 'Diamond upgrade requested');
     conv.lastMessage = '💎 Diamond upgrade request';
     conv.lastSender = 'seller';
     conv.lastAt = new Date();
@@ -272,7 +274,7 @@ async function makeDiamond(req, seller, { by, note }) {
   const d = TIERS.diamond;
   try {
     const conv = await supportConversation(seller);
-    const msg = await Message.create({ conversation: conv._id, seller: seller._id, sender: 'admin', senderName: by, text: diamondWelcomeText(seller.storeName) });
+    const msg = await Message.create({ conversation: conv._id, seller: seller._id, sender: 'admin', senderName: by, text: diamondWelcomeText(seller.storeName), action: pageAction('diamond', { label: '💎 See my Diamond plan' }) });
     conv.lastMessage = '💎 Your store is now Diamond!';
     conv.lastSender = 'admin';
     conv.lastAt = new Date();

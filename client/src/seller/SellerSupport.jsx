@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Link, useOutletContext } from 'react-router-dom';
+import { Link, useNavigate, useOutletContext } from 'react-router-dom';
 import { sapi, compressImage, dropClearedMessages, addChatMessage, syncLatestMessages } from '../api.js';
 import { getSocket } from '../socket.js';
 import Ic from '../components/Icons.jsx';
 import ChatMessageBubble from '../components/ChatMessageBubble.jsx';
+import { shortcutPath } from '../utils/chatShortcuts.js';
 
 const MAX_FILE = 15 * 1024 * 1024; // same limit as the upload server
 const FILE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf'];
@@ -62,6 +63,16 @@ export default function SellerSupport() {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [newBelow, setNewBelow] = useState(0);
   const [dragging, setDragging] = useState(false);
+  // Quick Help: ready answers from support (filled in for this store), answered here without waiting
+  const navigate = useNavigate();
+  const [helpList, setHelpList] = useState([]);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [helpPick, setHelpPick] = useState(null);
+  useEffect(() => {
+    sapi('/chat/seller/quick-help')
+      .then((d) => setHelpList(Array.isArray(d) ? d : []))
+      .catch(() => {});
+  }, []);
 
   const feedRef = useRef(null);
   const endRef = useRef(null);
@@ -236,6 +247,12 @@ export default function SellerSupport() {
     inputRef.current?.focus();
   };
 
+  const askAboutHelp = (h) => {
+    setHelpPick(null);
+    setHelpOpen(false);
+    applyTopic({ text: `About "${h.title}": ` });
+  };
+
   const applyTopic = (t) => {
     setText((cur) => (cur.trim() ? cur : t.text));
     requestAnimationFrame(() => {
@@ -404,6 +421,36 @@ export default function SellerSupport() {
           {dragging && <div className="sp-drop"><Ic name="paperclip" size={22} /><b>Drop a photo or PDF to attach</b></div>}
 
           <div className="sp-composer-wrap">
+            {helpPick && (
+              <div className="sp-help-card">
+                <div className="sp-help-top">
+                  <b>💡 {helpPick.title}</b>
+                  <button type="button" className="sp-icon-btn" onClick={() => setHelpPick(null)} aria-label="Close answer"><Ic name="x" size={15} /></button>
+                </div>
+                {helpPick.text && <p>{helpPick.text}</p>}
+                <div className="sp-help-actions">
+                  {helpPick.action && shortcutPath(helpPick.action) && (
+                    <button type="button" className="sp-help-go" onClick={() => navigate(shortcutPath(helpPick.action))}>
+                      {helpPick.action.label} →
+                    </button>
+                  )}
+                  <button type="button" className="sp-help-ask" onClick={() => askAboutHelp(helpPick)}>Still need help? Ask support</button>
+                </div>
+              </div>
+            )}
+            {helpList.length > 0 && !helpPick && (
+              <div className={`sp-help-row ${helpOpen ? 'open' : ''}`}>
+                <button type="button" className="sp-help-toggle" onClick={() => setHelpOpen((v) => !v)} aria-expanded={helpOpen}>
+                  💡 Quick answers {helpOpen ? '▾' : '▸'}
+                </button>
+                {helpOpen &&
+                  helpList.map((h) => (
+                    <button key={h.id} type="button" className="sp-help-chip" onClick={() => setHelpPick(h)}>
+                      {h.title}
+                    </button>
+                  ))}
+              </div>
+            )}
             {replyingTo && (
               <div className="sp-pending">
                 <i className="bar" />
@@ -455,6 +502,17 @@ export default function SellerSupport() {
             <div className="sp-card sp-alert">
               <Ic name="lock" size={16} />
               <p><b>Your store is restricted.</b> This chat stays open — tell the team what happened and they will guide you.</p>
+            </div>
+          )}
+          {helpList.length > 0 && (
+            <div className="sp-card">
+              <h3>Quick answers</h3>
+              <p>Get the answer right away — no need to wait.</p>
+              <div className="sp-topics">
+                {helpList.map((h) => (
+                  <button key={h.id} type="button" onClick={() => setHelpPick(h)}>💡 {h.title}</button>
+                ))}
+              </div>
             </div>
           )}
           <div className="sp-card">

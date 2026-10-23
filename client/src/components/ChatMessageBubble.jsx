@@ -211,6 +211,9 @@ export default function ChatMessageBubble({ msg, isMe, myRole = 'seller', onRepl
                       {msg.action.openedAt ? `✓ Opened by the seller · ${fmtDate(msg.action.openedAt)}` : 'Not opened yet'}
                     </small>
                   )}
+                  {supportView && msg.action.doneAt && (
+                    <small className="cac-opened cac-done">✅ Done: {msg.action.doneText || 'Done'} · {fmtDate(msg.action.doneAt)}</small>
+                  )}
                 </span>
                 {canOpen ? <span className="cac-go">Open →</span> : <span className="cac-note">Button</span>}
               </Tag>
