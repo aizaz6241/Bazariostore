@@ -22,6 +22,7 @@ import { normalizeCode, codeFormatError, getMasterCode, resolveAffiliateCode, us
 import { announceToAdmins } from '../../utils/realtime.js';
 import { restartSellerDeadlines, releaseFrozenFund } from './orders.routes.js';
 import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
+import { setScoreAsAdjustment, bandOf, recomputeHealth, MONITOR_NAME } from '../../utils/healthEngine.js';
 
 const router = express.Router();
 
@@ -381,10 +382,11 @@ router.get('/analytics/overview', authAdmin('sellers'), async (req, res) => {
       Object.keys(wallet).forEach((k) => {
         wallet[k] += Number(s.wallet?.[k]) || 0;
       });
-      const score = s.accountHealth?.score ?? 100;
-      if (score >= 80) health.healthy += 1;
-      else if (score >= 31) health.watch += 1;
-      else if (score > 20) health.atRisk += 1;
+      // bands of the account monitoring: 75+ healthy (Good / Excellent), 60–74 warning, 40–59 at risk, below 40 critical
+      const band = bandOf(s.accountHealth?.score ?? 100).key;
+      if (band === 'excellent' || band === 'good') health.healthy += 1;
+      else if (band === 'warning') health.watch += 1;
+      else if (band === 'at_risk') health.atRisk += 1;
       else health.critical += 1;
       if (status[s.status] !== undefined) status[s.status] += 1;
       if (s.warning?.active) status.warned += 1;
@@ -753,7 +755,7 @@ router.post('/:id/freeze', authAdmin('sellers'), announceToAdmins('sellers', 'se
       seller.frozenAt = null;
       seller.frozenBy = '';
     } else {
-      seller.freezeReason = reason || 'Account restricted by platform administrator due to policy compliance review.';
+      seller.freezeReason = reason || 'Account restricted by Bazario Account Monitoring after a compliance review.';
       seller.frozenAt = new Date();
       seller.frozenBy = req.admin.name || 'Super Admin';
     }
@@ -764,6 +766,8 @@ router.post('/:id/freeze', authAdmin('sellers'), announceToAdmins('sellers', 'se
     if (status === 'active' && wasSuspended) await restartSellerDeadlines(seller._id);
     // back to active: payouts held while frozen / suspended go to the available balance
     if (status === 'active' && wasRestricted) await releaseFrozenFund(req.app, seller._id, req.admin?.name || 'Admin');
+    // the health status follows the store status (frozen / suspended / back to its band)
+    await recomputeHealth(seller._id).catch(() => {});
 
     const isRestricted = status !== 'active';
     const statusLabel = status === 'frozen' ? 'FROZEN' : status === 'suspended' ? 'SUSPENDED' : 'UNFROZEN / ACTIVE';
@@ -789,7 +793,7 @@ router.post('/:id/freeze', authAdmin('sellers'), announceToAdmins('sellers', 'se
           `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
           `Status: ACCOUNT ${statusLabel}\n` +
           `Reason: ${seller.freezeReason}\n` +
-          `Action Taken By: ${req.admin.name || 'Platform Admin'}\n` +
+          `Action Taken By: ${MONITOR_NAME}\n` +
           `Date: ${new Date().toLocaleString('en-IN')}\n\n` +
           `Please contact platform support to resolve this suspension.\n` +
           `━━━━━━━━━━━━━━━━━━━━━━━━━`
@@ -797,7 +801,7 @@ router.post('/:id/freeze', authAdmin('sellers'), announceToAdmins('sellers', 'se
           `✅ ACCOUNT RESTRICTION LIFTED\n` +
           `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
           `Status: ACCOUNT ACTIVE & FULL ACCESS RESTORED\n` +
-          `Action Taken By: ${req.admin.name || 'Platform Admin'}\n` +
+          `Action Taken By: ${MONITOR_NAME}\n` +
           `You can now add products and process withdrawals normally.\n` +
           `━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
@@ -805,7 +809,7 @@ router.post('/:id/freeze', authAdmin('sellers'), announceToAdmins('sellers', 'se
         conversation: conv._id,
         seller: seller._id,
         sender: 'admin',
-        senderName: req.admin.name || 'Platform Compliance',
+        senderName: MONITOR_NAME, // the store sees the account monitoring, not the admin (the admin is in the audit log)
         text: msgText,
       });
 
@@ -942,78 +946,34 @@ router.post('/:id/warn', authAdmin('sellers'), announceToAdmins('sellers', 'sell
   }
 });
 
-// POST /api/sellers/:id/health (Admin adjusts Seller Account Health score 0-100)
+// POST /api/sellers/:id/health (Admin sets the Account Health score 0-100)
+// The score comes from the account-monitoring ledger (utils/healthEngine.js): "set it to X" adds
+// one review entry for the difference (it ends by itself after `days`, default 21). The store
+// sees it as "Bazario Account Monitoring"; the admin's name and reason stay in the admin panel.
 router.post('/:id/health', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:changed'), async (req, res) => {
   try {
     const { score, notifySeller = true } = req.body || {};
-    const reason = String(req.body?.reason || 'Manual score adjustment by Administrator').slice(0, 500);
+    const reason = String(req.body?.reason || 'Account review').slice(0, 500);
     const numScore = Math.max(0, Math.min(100, Math.round(Number(score))));
     if (score === '' || score === null || score === undefined || isNaN(numScore)) {
       return res.status(400).json({ message: 'Valid health score between 0 and 100 is required' });
     }
+    const days = Math.max(1, Math.min(90, Math.round(Number(req.body?.days) || 21)));
 
+    const before = await Seller.findById(req.params.id).select('storeName accountHealth.score').lean();
+    if (!before) return res.status(404).json({ message: 'Seller not found' });
+    const previousScore = before.accountHealth?.score ?? 100;
+
+    const out = await setScoreAsAdjustment(req.params.id, numScore, req.admin, reason, days);
+    if (out && !out.unchanged && notifySeller === false) {
+      // (the entry already told the store; nothing else to send)
+    }
     const seller = await Seller.findById(req.params.id);
-    if (!seller) return res.status(404).json({ message: 'Seller not found' });
 
-    if (!seller.accountHealth) {
-      seller.accountHealth = {
-        score: 100,
-        status: 'healthy',
-        history: [],
-      };
-    }
-
-    const previousScore = seller.accountHealth.score !== undefined ? seller.accountHealth.score : 100;
-    const delta = numScore - previousScore;
-    const newStatus = calculateHealthStatus(numScore);
-
-    seller.accountHealth.score = numScore;
-    seller.accountHealth.status = newStatus;
-    seller.accountHealth.lastEvaluatedAt = new Date();
-
-    if (!Array.isArray(seller.accountHealth.history)) {
-      seller.accountHealth.history = [];
-    }
-
-    seller.accountHealth.history.unshift({
-      previousScore,
-      newScore: numScore,
-      delta,
-      reason: reason.trim() || 'Health score evaluated by Platform Compliance',
-      changedBy: req.admin.name || 'Platform Administrator',
-      createdAt: new Date(),
-    });
-
-    // Keep history trimmed to last 50 entries
-    if (seller.accountHealth.history.length > 50) {
-      seller.accountHealth.history = seller.accountHealth.history.slice(0, 50);
-    }
-
-    await seller.save();
-
-    // Broadcast live health update
-    const io = req.app.get('io');
-    if (io) {
-      io.to(`seller:${seller._id}`).emit('seller:health_update', { accountHealth: seller.accountHealth });
-      io.to(adminRoom('sellers')).emit('seller:health_update', { sellerId: seller._id, accountHealth: seller.accountHealth });
-    }
-
-    if (notifySeller) {
-      const tierLabel = numScore >= 80 ? 'Healthy (Good Standing)' : numScore >= 31 ? 'At Risk (Action Needed)' : numScore > 20 ? 'Critical (Freeze Alert)' : 'Critical (Suspension Alert)';
-      notify(req.app, {
-        recipientType: 'seller',
-        sellerId: seller._id,
-        type: numScore < 80 ? 'withdrawal' : 'approval',
-        title: `🛡️ Account Health Updated: ${numScore}/100`,
-        body: `Rating: ${tierLabel}. Reason: ${reason.trim() || 'Score adjusted by Platform Compliance'}`,
-        link: '/seller',
-      });
-    }
-
-    audit(req, 'update', 'seller_health', seller._id, `Updated account health for ${seller.storeName} from ${previousScore} to ${numScore}. Reason: ${reason}`);
+    audit(req, 'update', 'seller_health', seller._id, `Updated account health for ${seller.storeName} from ${previousScore} to ${seller.accountHealth?.score ?? numScore} (for ${days} days). Reason: ${reason}`);
 
     res.json({
-      message: `Account health updated to ${numScore}/100 successfully`,
+      message: out?.unchanged ? `Account health is already ${numScore}/100` : `Account health is now ${seller.accountHealth?.score ?? numScore}/100 (the change ends by itself after ${days} days)`,
       seller: lightSeller(seller),
     });
   } catch (err) {

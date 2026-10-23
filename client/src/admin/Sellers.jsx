@@ -6,6 +6,7 @@ import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
 import SellersAnalytics from './SellersAnalytics.jsx';
 import useLiveReload from '../useLiveReload.js';
 import DiamondUpgradeModal from './DiamondUpgradeModal.jsx';
+import HealthPanel from './health/HealthPanel.jsx';
 
 export default function Sellers() {
   const [params, setParams] = useSearchParams();
@@ -193,12 +194,13 @@ export default function Sellers() {
     const id = params.get('open');
     if (!id || !sellers.length) return;
     const s = sellers.find((x) => String(x._id) === String(id));
-    const tab = ['account', 'documents', 'dashboard', 'upgrades'].includes(params.get('tab')) ? params.get('tab') : 'account';
+    const wanted = params.get('tab');
+    const tab = ['account', 'documents', 'dashboard', 'upgrades'].includes(wanted) ? wanted : wanted === 'health' ? 'upgrades' : 'account';
     const next = new URLSearchParams(params);
     next.delete('open');
     next.delete('tab');
     setParams(next, { replace: true });
-    if (s) handleOpenProfile(s, tab);
+    if (s) handleOpenProfile(s, tab, wanted === 'health' ? 'health' : 'compliance');
   }, [params, sellers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Live seller metrics, listed items & orders. Without the KYC pictures (?kyc=0): with them this
@@ -766,7 +768,7 @@ export default function Sellers() {
   const warnedCount = activeSellers.filter((s) => s.warning?.active).length;
   const frozenOnlyCount = activeSellers.filter((s) => s.status === 'frozen').length;
   const suspendedCount = activeSellers.filter((s) => s.status === 'suspended').length;
-  const atRiskCount = activeSellers.filter((s) => (s.accountHealth?.score ?? 100) <= 30).length;
+  const atRiskCount = activeSellers.filter((s) => (s.accountHealth?.score ?? 100) < 40).length;
   const diamondCount = activeSellers.filter((s) => s.tier === 'diamond').length;
   const diamondRequestCount = activeSellers.filter((s) => s.tier !== 'diamond' && s.tierRequest?.status === 'pending').length;
   const totalGMV = activeSellers.reduce((a, b) => a + (b.lifetimeSales || 0), 0);
@@ -808,7 +810,7 @@ export default function Sellers() {
       if (statusFilter === 'frozen' && s.status !== 'frozen') return false;
       if (statusFilter === 'suspended' && s.status !== 'suspended') return false;
       if (statusFilter === 'warned' && !s.warning?.active) return false;
-      if (statusFilter === 'at_risk' && score > 30) return false;
+      if (statusFilter === 'at_risk' && score >= 40) return false;
 
       if (!q) return true;
       const match =
@@ -931,7 +933,7 @@ export default function Sellers() {
         <div className="admin-sellers-cards-grid scards-grid">
           {filtered.map((s) => {
             const score = s.accountHealth?.score !== undefined ? s.accountHealth.score : 100;
-            const tier = score >= 80 ? 'good' : score >= 31 ? 'watch' : score > 20 ? 'risk' : 'critical';
+            const tier = score >= 75 ? 'good' : score >= 60 ? 'watch' : score >= 40 ? 'risk' : 'critical';
             const statusKey = s.status === 'active' ? 'active' : s.status === 'frozen' ? 'frozen' : 'suspended';
             const pending = s.pendingOrders || 0;
             const locked = s.wallet?.processingFund || 0;
@@ -1082,9 +1084,9 @@ export default function Sellers() {
               <tbody>
                 {filtered.map((s) => {
                   const score = s.accountHealth?.score !== undefined ? s.accountHealth.score : 100;
-                  const tierBg = score >= 80 ? '#dcfce7' : score >= 31 ? '#fef9c3' : score > 20 ? '#ffedd5' : '#fee2e2';
-                  const tierColor = score >= 80 ? '#15803d' : score >= 31 ? '#854d0e' : score > 20 ? '#c2410c' : '#b91c1c';
-                  const fillBg = score >= 80 ? '#16a34a' : score >= 31 ? '#eab308' : score > 20 ? '#ea580c' : '#dc2626';
+                  const tierBg = score >= 75 ? '#dcfce7' : score >= 60 ? '#fef9c3' : score >= 40 ? '#ffedd5' : '#fee2e2';
+                  const tierColor = score >= 75 ? '#15803d' : score >= 60 ? '#854d0e' : score >= 40 ? '#c2410c' : '#b91c1c';
+                  const fillBg = score >= 75 ? '#16a34a' : score >= 60 ? '#eab308' : score >= 40 ? '#ea580c' : '#dc2626';
 
                   return (
                     <tr key={s._id}>
@@ -1129,7 +1131,7 @@ export default function Sellers() {
                             className="admin-health-badge"
                             style={{ background: tierBg, color: tierColor, border: `1px solid ${tierColor}40` }}
                           >
-                            {score >= 80 ? '🟢' : score >= 31 ? '🟡' : score > 20 ? '🟠' : '🔴'} {score}/100
+                            {score >= 75 ? '🟢' : score >= 60 ? '🟡' : score >= 40 ? '🟠' : '🔴'} {score}/100
                           </span>
                           <div className="admin-health-bar-wrap">
                             <div
@@ -1288,7 +1290,7 @@ export default function Sellers() {
               const ps = profileSeller;
               const statusKey = ps.status === 'active' ? 'active' : ps.status === 'frozen' ? 'frozen' : 'suspended';
               const hScore = ps.accountHealth?.score !== undefined ? ps.accountHealth.score : 100;
-              const hTier = hScore >= 80 ? 'good' : hScore >= 31 ? 'watch' : hScore > 20 ? 'risk' : 'critical';
+              const hTier = hScore >= 75 ? 'good' : hScore >= 60 ? 'watch' : hScore >= 40 ? 'risk' : 'critical';
               const pendingCount = profileData?.stats?.pendingOrders ?? ps.pendingOrders ?? 0;
               const unconfirmedCount = profileData?.stats?.unconfirmedOrders;
               const unconfirmedAmount = profileData?.stats?.unconfirmedAmount;
@@ -2384,147 +2386,10 @@ export default function Sellers() {
                   {/* SUBTAB 4c: HEALTH SCORE (0-100)                           */}
                   {/* ───────────────────────────────────────────────────────── */}
                   {profileUpgradeSubTab === 'health' && (
-                    <form onSubmit={handleHealthSubmit} className="spf-panel">
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#ffffff', padding: '12px 16px', borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 16 }}>
-                        <div>
-                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#64748b' }}>Current Rating</span>
-                          <div style={{ fontSize: 18, fontWeight: 900, color: '#0f172a' }}>
-                            {profileSeller.accountHealth?.score !== undefined ? profileSeller.accountHealth.score : 100}/100
-                          </div>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', color: '#64748b' }}>Target Tier</span>
-                          <div>
-                            <span
-                              style={{
-                                background: Number(healthScore) >= 80 ? '#dcfce7' : Number(healthScore) >= 31 ? '#fef9c3' : Number(healthScore) > 20 ? '#ffedd5' : '#fee2e2',
-                                color: Number(healthScore) >= 80 ? '#15803d' : Number(healthScore) >= 31 ? '#854d0e' : Number(healthScore) > 20 ? '#c2410c' : '#b91c1c',
-                                fontWeight: 800,
-                                fontSize: 12,
-                                padding: '3px 8px',
-                                borderRadius: 6,
-                              }}
-                            >
-                              {Number(healthScore) >= 80 ? 'Healthy (80-100)' : Number(healthScore) >= 31 ? 'At Risk (31-79)' : Number(healthScore) > 20 ? 'Freeze Alert (21-30)' : 'Suspension Alert (0-20)'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div style={{ marginBottom: 14 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                          <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b' }}>
-                            Adjust Health Score (0 to 100) *
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={healthScore}
-                            onChange={(e) => setHealthScore(Math.max(0, Math.min(100, Number(e.target.value))))}
-                            style={{ width: 70, padding: '4px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontWeight: 800, textAlign: 'center' }}
-                          />
-                        </div>
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
-                          value={healthScore}
-                          onChange={(e) => setHealthScore(Number(e.target.value))}
-                          style={{ width: '100%', accentColor: Number(healthScore) >= 80 ? '#16a34a' : Number(healthScore) >= 31 ? '#eab308' : Number(healthScore) > 20 ? '#ea580c' : '#dc2626' }}
-                        />
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, color: '#94a3b8', fontWeight: 700, marginTop: 4 }}>
-                          <span style={{ color: '#dc2626' }}>0 (Suspension)</span>
-                          <span style={{ color: '#ea580c' }}>20-30 (Freeze)</span>
-                          <span style={{ color: '#ca8a04' }}>31-79 (At Risk)</span>
-                          <span style={{ color: '#16a34a' }}>80-100 (Healthy)</span>
-                        </div>
-                      </div>
-
-                      {/* Quick Preset Buttons */}
-                      <div style={{ marginBottom: 14 }}>
-                        <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b', display: 'block', marginBottom: 6, textTransform: 'uppercase' }}>
-                          Quick Reason Presets:
-                        </label>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setHealthScore((prev) => Math.max(0, prev - 15));
-                              setHealthReason('Late order dispatch exceeds platform 48h fulfillment policy.');
-                            }}
-                            style={{ fontSize: 11.5, padding: '4px 8px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer' }}
-                          >
-                            ⏱️ Late Dispatch (-15)
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setHealthScore((prev) => Math.max(0, prev - 20));
-                              setHealthReason('Customer complaints of defective or counterfeit items.');
-                            }}
-                            style={{ fontSize: 11.5, padding: '4px 8px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer' }}
-                          >
-                            ⚠️ Defective Item (-20)
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setHealthScore((prev) => Math.max(0, prev - 30));
-                              setHealthReason('Serious copyright or policy compliance violation.');
-                            }}
-                            style={{ fontSize: 11.5, padding: '4px 8px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer' }}
-                          >
-                            ⛔ Policy Violation (-30)
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setHealthScore((prev) => Math.min(100, prev + 15));
-                              setHealthReason('Customer dispute satisfactorily resolved with prompt refund.');
-                            }}
-                            style={{ fontSize: 11.5, padding: '4px 8px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: 6, cursor: 'pointer' }}
-                          >
-                            ✅ Dispute Resolved (+15)
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setHealthScore(100);
-                              setHealthReason('Clean compliance slate restored by Platform Admin.');
-                            }}
-                            style={{ fontSize: 11.5, padding: '4px 8px', background: '#dcfce7', border: '1px solid #86efac', color: '#166534', borderRadius: 6, cursor: 'pointer', fontWeight: 700 }}
-                          >
-                            🌟 Reset to 100
-                          </button>
-                        </div>
-                      </div>
-
-                      <div style={{ marginBottom: 14 }}>
-                        <label className="spf-label">
-                          Reason / Notes *
-                        </label>
-                        <textarea
-                          rows="2"
-                          value={healthReason}
-                          onChange={(e) => setHealthReason(e.target.value)}
-                          placeholder="Enter reason for health score adjustment..."
-                          className="spf-input"
-                          required
-                        />
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-                        <button
-                          type="submit"
-                          className="btn-primary"
-                          disabled={submittingHealth}
-                          style={{ padding: '8px 20px', fontSize: 13 }}
-                        >
-                          {submittingHealth ? 'Saving...' : `💾 Save Account Health (${healthScore}/100)`}
-                        </button>
-                      </div>
-                    </form>
+                    <div className="spf-panel">
+                      {/* account monitoring: ledger, who added each entry and why, add / remove entries, rules */}
+                      <HealthPanel sellerId={profileSeller._id} onChanged={() => loadSellers({ silent: true })} />
+                    </div>
                   )}
 
                   {/* ───────────────────────────────────────────────────────── */}

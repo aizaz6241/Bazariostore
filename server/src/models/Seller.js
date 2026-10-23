@@ -233,6 +233,27 @@ const sellerSchema = new mongoose.Schema(
       orderDefectRate: { type: Number, default: 0 },
       policyViolations: { type: Number, default: 0 },
       lastEvaluatedAt: { type: Date, default: Date.now },
+      // account monitoring (utils/healthEngine.js): the score is worked out from the ledger
+      // (sellerhealthevents); these are kept here for quick reads
+      band: { type: String, default: undefined }, // excellent | good | warning | at_risk | critical
+      nextChangeAt: { type: Date, default: null }, // when the next active entry ends
+      onTimeStreak: { type: Number, default: 0 }, // orders in a row confirmed before the warning time
+      engine: { type: Number, default: undefined }, // 2 = moved to the ledger
+      // perfect-health bonus: since when the store is at 100/100 without a break (null = not now)
+      perfectSince: { type: Date, default: null },
+      perfectBonusTotal: { type: Number, default: 0 }, // $ paid in perfect-health bonuses
+      perfectBonusCount: { type: Number, default: 0 },
+      lastPerfectBonusAt: { type: Date, default: null },
+      // levels: perfect weeks IN A ROW (Bronze 2 · Silver 4 · Gold 8 · Platinum 12); a penalty
+      // drops the store one level. Counted from 1 Oct 2026 (filled in once: levelsBackfilled)
+      perfectWeeks: { type: Number, default: 0 },
+      bestPerfectWeeks: { type: Number, default: 0 },
+      totalPerfectWeeks: { type: Number, default: 0 },
+      levelsBackfilled: { type: Boolean, default: false },
+      levelDroppedAt: { type: Date, default: null }, // one level drop per 24 hours at most
+      weekNudgedFor: { type: String, default: '' }, // "1 day left" reminder sent for this week
+      // a bonus / level-up the store has not seen yet (celebration on its next screen)
+      pendingCelebration: { type: mongoose.Schema.Types.Mixed, default: null },
     },
     // Tiered Withdrawal Limit & Upgrade System (Banking Model)
     withdrawalLimit: {

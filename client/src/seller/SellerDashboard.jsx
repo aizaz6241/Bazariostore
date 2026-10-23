@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { bandOf } from '../utils/healthBands.js';
+import PerfectBonus from './PerfectBonus.jsx';
+import AtStake from './AtStake.jsx';
+import LevelCard from './LevelCard.jsx';
 import { Link, useOutletContext } from 'react-router-dom';
 import {
   ResponsiveContainer, ComposedChart, Area, Bar, XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell,
@@ -29,11 +33,10 @@ const STATUS_SLICES = [
   { key: 'refunded', name: 'Refunded', color: '#ef4444' },
 ];
 
+// bands of the account monitoring (utils/healthBands.js, same as the server)
 function healthOf(score) {
-  if (score >= 80) return { tier: 'healthy', label: 'Healthy', desc: 'Excellent standing — full listing and fast withdrawal privileges.' };
-  if (score >= 31) return { tier: 'warning', label: 'At risk', desc: 'Below 80. Dispatch on time and keep customers happy to avoid restrictions.' };
-  if (score > 20) return { tier: 'freeze', label: 'Freeze warning', desc: 'Close to the 30 freeze threshold. Contact platform compliance now.' };
-  return { tier: 'suspended', label: 'Suspension warning', desc: 'At the 20 suspension threshold. Admin review is pending.' };
+  const b = bandOf(score);
+  return { tier: b.tier, label: b.label, desc: b.desc };
 }
 
 const pctChange = (now, before) => {
@@ -42,6 +45,19 @@ const pctChange = (now, before) => {
 };
 
 export default function SellerDashboard() {
+  // account health overview (perfect-health bonus progress in the health card)
+  const [healthInfo, setHealthInfo] = useState(null);
+  useEffect(() => {
+    const loadHealth = () => sapi('/sellers/health').then(setHealthInfo).catch(() => {});
+    loadHealth();
+    const sock = getSocket();
+    sock?.on('seller:health_update', loadHealth);
+    sock?.on('wallet:update', loadHealth);
+    return () => {
+      sock?.off('seller:health_update', loadHealth);
+      sock?.off('wallet:update', loadHealth);
+    };
+  }, []);
   const { formatMoney, convert, currentCurrency } = useCurrency();
   const compact = useMemo(() => makeCompact(convert, currentCurrency.symbol), [convert, currentCurrency.symbol]);
   const { seller: me } = useOutletContext() || {};
@@ -225,6 +241,9 @@ export default function SellerDashboard() {
         </div>
       </header>
 
+      {/* ── What is at stake right now (waiting orders, deadlines, shortfall) ── */}
+      <AtStake where="dashboard" />
+
       {/* ── First steps for new stores (hides itself when done) ── */}
       <GettingStarted />
 
@@ -361,7 +380,7 @@ export default function SellerDashboard() {
           <div className="sd-card-head">
             <div>
               <h3 className="sd-card-title"><Ic name="shield" size={16} /> Account health</h3>
-              <p className="sd-card-sub">Compliance score</p>
+              <p className="sd-card-sub">Bazario Account Monitoring</p>
             </div>
             <span className={`sd-tag tone-${h.tier === 'healthy' ? 'green' : h.tier === 'warning' ? 'amber' : 'red'}`}>{h.label}</span>
           </div>
@@ -384,8 +403,12 @@ export default function SellerDashboard() {
               ))}
             </ul>
           )}
+          <PerfectBonus compact bonus={healthInfo?.perfectBonus} score={score} />
+          <LevelCard mini level={healthInfo?.level} standing={healthInfo?.standing} score={score} />
           <p className="sd-health-foot">
-            {health.lastEvaluatedAt ? `Evaluated ${fmtDate(health.lastEvaluatedAt)}` : 'Score scale: 80+ healthy · 31–79 at risk · ≤30 freeze · ≤20 suspension'}
+            <Link to="/seller/health" className="sd-health-more">See every entry and how your score comes back →</Link>
+            <br />
+            {health.lastEvaluatedAt ? `Evaluated ${fmtDate(health.lastEvaluatedAt)}` : '90+ excellent · 75+ good · 60+ warning · 40+ at risk · below 40 critical'}
           </p>
         </section>
       </div>

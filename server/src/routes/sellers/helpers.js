@@ -11,12 +11,13 @@ export function slugify(text) {
     .replace(/--+/g, '-');
 }
 
+// same bands as the account monitoring (utils/healthEngine.js): 75+ healthy, 40–74 at risk,
+// below 40 critical. Suspension is never decided by the score.
 export function calculateHealthStatus(score) {
   const s = Number(score) || 0;
-  if (s >= 80) return 'healthy';
-  if (s >= 31) return 'at_risk';
-  if (s > 20) return 'critical_risk';
-  return 'suspended';
+  if (s >= 75) return 'healthy';
+  if (s >= 40) return 'at_risk';
+  return 'critical_risk';
 }
 
 /**

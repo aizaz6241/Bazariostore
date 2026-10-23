@@ -16,6 +16,7 @@ import { blockWhenFrozen } from './helpers.js';
 import { announceToAdmins } from '../../utils/realtime.js';
 import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
 import { pageAction, markShortcutDone } from '../../utils/chatShortcuts.js';
+import { addHealthEvent, LIMIT_MIN_SCORE } from '../../utils/healthEngine.js';
 
 const router = express.Router();
 
@@ -318,6 +319,31 @@ router.post('/wallet/deposit', authSellerOrAdmin, oneRequestAtATime('deposit'), 
     seller.wallet = seller.wallet || {};
     if (afterRequest) seller.wallet.pendingDeposit = afterRequest.wallet.pendingDeposit; // for the messages below; not saved
 
+    // account monitoring: a UTR / reference that was already credited on an earlier deposit
+    if (depositRef && depositRef.trim().length >= 4) {
+      const rx = new RegExp(`^\\s*${depositRef.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
+      Withdrawal.findOne({ _id: { $ne: reqDoc._id }, type: 'deposit', depositRef: rx, status: { $in: ['approved', 'completed'] } })
+        .select('_id storeName createdAt')
+        .lean()
+        .then((used) => {
+          if (!used) return;
+          addHealthEvent({
+            sellerId: seller._id,
+            code: 'duplicate_proof',
+            key: `dup_ref:${reqDoc._id}`,
+            detail: `The payment reference “${depositRef.trim()}” of your new deposit was already used on an earlier deposit.`,
+          });
+          notify(req.app, {
+            recipientType: 'admin',
+            type: 'deposit',
+            title: `⚠️ Reference already used: ${seller.storeName}`,
+            body: `Deposit of $${Number(amount).toLocaleString('en-US')} uses UTR / ref “${depositRef.trim()}”, which was already credited on ${new Date(used.createdAt).toLocaleDateString('en-GB')}${used.storeName ? ` (${used.storeName})` : ''}.`,
+            link: '/admin/withdrawals',
+          });
+        })
+        .catch((e) => console.error('[health] reference check:', e.message));
+    }
+
     // Auto-send chat notification
     const chatMsgId = await sendWalletChatNotification(req.app, seller, reqDoc);
     if (chatMsgId) {
@@ -531,6 +557,15 @@ router.post('/wallet/limit-increase-request', authSellerOrAdmin, blockWhenFrozen
 
     if (seller.withdrawalLimit?.pendingIncreaseRequest?.status === 'pending') {
       return res.status(400).json({ message: 'A limit increase application is already pending admin review.' });
+    }
+
+    // account monitoring: an At risk / Critical store cannot ask for a higher limit
+    const healthScore = Number.isFinite(seller.accountHealth?.score) ? seller.accountHealth.score : 100;
+    if (!req.admin && healthScore < LIMIT_MIN_SCORE) {
+      return res.status(400).json({
+        healthLow: true,
+        message: `Your account health is ${healthScore}/100. A higher withdrawal limit can be requested from ${LIMIT_MIN_SCORE}/100. See Account Health for how your score comes back.`,
+      });
     }
 
     if (!seller.withdrawalLimit) {
@@ -799,7 +834,7 @@ router.get('/withdrawals/all', authAdmin('finance'), async (req, res) => {
     if (status && status !== 'all') filter.status = status;
     filter.type = type && type !== 'all' && REQUEST_TYPES.includes(type) ? type : { $in: REQUEST_TYPES };
 
-    const SELLER_FIELDS = 'storeName ownerName email payoutDetails isTestAccount accountType isPreviousStoreSeller withdrawalLimit.maxAmount';
+    const SELLER_FIELDS = 'storeName ownerName email payoutDetails isTestAccount accountType isPreviousStoreSeller withdrawalLimit.maxAmount accountHealth.score';
     const onlyClients = excludeTest === 'true' || accountType === 'client';
     // Exclude test/demo accounts and deleted/missing sellers when excludeTest=true or accountType=client
     const isClient = (r) => {
@@ -985,6 +1020,18 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
       return res.status(404).json({ message: 'Seller not found' });
     }
     moneyMoved = true;
+
+    // account monitoring: a rejected deposit counts against the store's health, unless the admin
+    // unticked it (an honest mistake, e.g. a wrong amount)
+    if (status === 'rejected' && reqDoc.type === 'deposit' && reqDoc.purpose !== 'diamond_fee' && req.body?.healthPenalty !== false) {
+      addHealthEvent({
+        sellerId: reqDoc.seller,
+        code: 'deposit_rejected',
+        key: `deposit_rejected:${reqDoc._id}`,
+        detail: `Your deposit request of $${Number(reqDoc.amount).toLocaleString('en-US')} was rejected${adminNote ? `: ${String(adminNote).slice(0, 160)}` : '.'}`,
+        notifySeller: true,
+      }).catch((e) => console.error('[health] deposit rejected:', e.message));
+    }
 
     // 3. The request itself
     reqDoc.set(requestFieldsFor(decision, moved.wallet.balance));

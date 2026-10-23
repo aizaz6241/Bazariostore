@@ -12,21 +12,23 @@ import {
 
 const DAY = 86400000;
 const scoreOf = (s) => (s.accountHealth?.score !== undefined && s.accountHealth?.score !== null ? s.accountHealth.score : 100);
+// bands of the account monitoring (server/src/utils/healthEngine.js):
+// 90+ Excellent · 75+ Good · 60+ Warning · 40+ At risk · below 40 Critical
 const healthTier = (score) =>
-  score >= 80
-    ? { key: 'healthy', label: 'Healthy', tone: 'good', color: STATUS.good }
-    : score >= 31
-    ? { key: 'watch', label: 'Watch', tone: 'warning', color: STATUS.warning }
-    : score > 20
-    ? { key: 'freeze', label: 'Freeze zone', tone: 'serious', color: STATUS.serious }
-    : { key: 'suspend', label: 'Suspension zone', tone: 'critical', color: STATUS.critical };
+  score >= 75
+    ? { key: 'healthy', label: score >= 90 ? 'Excellent' : 'Good', tone: 'good', color: STATUS.good }
+    : score >= 60
+    ? { key: 'watch', label: 'Warning', tone: 'warning', color: STATUS.warning }
+    : score >= 40
+    ? { key: 'freeze', label: 'At risk', tone: 'serious', color: STATUS.serious }
+    : { key: 'suspend', label: 'Critical', tone: 'critical', color: STATUS.critical };
 
 const HEALTH_BUCKETS = [
-  { label: '0–20', min: 0, max: 20, color: STATUS.critical },
-  { label: '21–30', min: 21, max: 30, color: STATUS.serious },
-  { label: '31–55', min: 31, max: 55, color: STATUS.warning },
-  { label: '56–79', min: 56, max: 79, color: '#f6c453' },
-  { label: '80–100', min: 80, max: 100, color: STATUS.good },
+  { label: '0–39', min: 0, max: 39, color: STATUS.critical },
+  { label: '40–59', min: 40, max: 59, color: STATUS.serious },
+  { label: '60–74', min: 60, max: 74, color: STATUS.warning },
+  { label: '75–89', min: 75, max: 89, color: '#7dd3a0' },
+  { label: '90–100', min: 90, max: 100, color: STATUS.good },
 ];
 
 const ACCESS_META = {
@@ -210,8 +212,8 @@ export default function Complaints() {
     sellers.forEach((s) => {
       const score = scoreOf(s);
       scoreSum += score;
-      if (score <= 30) counts.critical += 1;
-      if (score >= 80 && s.status === 'active') counts.healthy += 1;
+      if (score < 40) counts.critical += 1;
+      if (score >= 75 && s.status === 'active') counts.healthy += 1;
       if (counts[s.status] !== undefined) counts[s.status] += 1;
       if (s.warning?.active) {
         counts.warned += 1;
@@ -237,7 +239,7 @@ export default function Complaints() {
       });
     });
     const watch = sellers
-      .filter((s) => s.status === 'active' && (scoreOf(s) <= 30 || s.warning?.level === 'critical'))
+      .filter((s) => s.status === 'active' && (scoreOf(s) < 40 || s.warning?.level === 'critical'))
       .sort((x, y) => scoreOf(x) - scoreOf(y))
       .slice(0, 6);
     return {
@@ -257,11 +259,11 @@ export default function Complaints() {
   const filtered = sellers
     .filter((s) => {
       const score = scoreOf(s);
-      if (filterTab === 'critical' && score > 30) return false;
+      if (filterTab === 'critical' && score >= 40) return false;
       if (filterTab === 'warned' && !s.warning?.active) return false;
       if (filterTab === 'frozen' && s.status !== 'frozen') return false;
       if (filterTab === 'suspended' && s.status !== 'suspended') return false;
-      if (filterTab === 'healthy' && (s.status !== 'active' || score < 80)) return false;
+      if (filterTab === 'healthy' && (s.status !== 'active' || score < 75)) return false;
       if (!q.trim()) return true;
       const needle = q.trim().toLowerCase();
       return [s.storeName, s.ownerName, s.email, s.phone].some((v) => String(v ?? '').toLowerCase().includes(needle));
@@ -332,9 +334,9 @@ export default function Complaints() {
   // one button per row: the dialog has a tab for access, warning, health and limits
   const actionButtons = (s) => {
     const score = scoreOf(s);
-    const tab = s.status !== 'active' ? 'freeze' : score <= 30 ? 'freeze' : s.warning?.active ? 'warn' : 'health';
+    const tab = s.status !== 'active' ? 'freeze' : score < 40 ? 'freeze' : s.warning?.active ? 'warn' : 'health';
     return (
-      <button type="button" className={`ins-btn ins-btn-sm${score <= 30 && s.status === 'active' ? ' ins-btn-bad' : ''}`} onClick={() => openCompliance(s, tab)}>
+      <button type="button" className={`ins-btn ins-btn-sm${score < 40 && s.status === 'active' ? ' ins-btn-bad' : ''}`} onClick={() => openCompliance(s, tab)}>
         <Ic name="shield" size={12} /> Manage
       </button>
     );
@@ -441,8 +443,8 @@ export default function Complaints() {
                   const tier = healthTier(score);
                   return (
                     <li key={s._id}>
-                      <button type="button" onClick={() => openCompliance(s, score <= 30 ? 'freeze' : 'warn')}>
-                        <span className="ins-attn-icon" style={{ background: `${tier.color}22`, color: tier.color }}>{score <= 20 ? '⛔' : score <= 30 ? '❄' : '⚠'}</span>
+                      <button type="button" onClick={() => openCompliance(s, score < 40 ? 'freeze' : 'warn')}>
+                        <span className="ins-attn-icon" style={{ background: `${tier.color}22`, color: tier.color }}>{score < 20 ? '⛔' : score < 40 ? '❄' : '⚠'}</span>
                         <span className="ins-attn-text">
                           <b>{s.storeName}</b>
                           <span>{tier.label}{s.warning?.active ? ` · ${s.warning.level} warning` : ''}</span>
@@ -696,7 +698,7 @@ export default function Complaints() {
                     />
                   </div>
                   <input type="range" min="0" max="100" value={Number(healthScore) || 0} onChange={(e) => setHealthScore(Number(e.target.value))} style={{ width: '100%', accentColor: hTier.color }} />
-                  <small>0–20 suspension zone · 21–30 freeze zone · 31–79 watch · 80–100 healthy</small>
+                  <small>Below 40 critical · 40–59 at risk · 60–74 warning · 75–89 good · 90+ excellent. The change is saved as one review entry that ends by itself after 21 days; the store sees “Bazario Account Monitoring”.</small>
                 </div>
                 <div className="ins-field">
                   <span className="ins-label">Quick reasons</span>

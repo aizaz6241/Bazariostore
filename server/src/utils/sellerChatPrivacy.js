@@ -11,7 +11,8 @@ const plain = (m) => (m && typeof m.toObject === 'function' ? m.toObject() : { .
 export function sellerSafeMessage(msg) {
   if (!msg) return msg;
   const m = plain(msg);
-  if (FROM_TEAM.includes(m.sender)) m.senderName = m.isAutoReply ? `${SUPPORT_NAME} (auto-reply)` : SUPPORT_NAME;
+  // the account monitoring speaks with its own name (warnings, freezes, health notices)
+  if (FROM_TEAM.includes(m.sender) && m.senderName !== 'Bazario Account Monitoring') m.senderName = m.isAutoReply ? `${SUPPORT_NAME} (auto-reply)` : SUPPORT_NAME;
   if (m.replyTo && FROM_TEAM.includes(m.replyTo.sender)) m.replyTo = { ...m.replyTo, senderName: SUPPORT_NAME };
   delete m.seenByAdmin;
   delete m.adminId;

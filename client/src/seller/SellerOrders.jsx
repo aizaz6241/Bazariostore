@@ -5,6 +5,7 @@ import { sapi, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 import { getSocket } from '../socket.js';
+import AtStake from './AtStake.jsx';
 
 const IN_TRANSIT = ['out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery', 'delivery_failed', 'returned_to_warehouse'];
 const LOCKED = ['confirmed', 'processing', 'packed', ...IN_TRANSIT];
@@ -215,6 +216,8 @@ export default function SellerOrders() {
           <Ic name="lock" size={14} /> Customer details are private
         </div>
       </header>
+
+      <AtStake where="orders" />
 
       {restricted && (
         <div className="so-banner tone-red">

@@ -154,7 +154,7 @@ async function orderAttention(now) {
 
 async function computeAll() {
   const now = new Date();
-  const [deposits, withdrawals, limitReqs, applications, diamond, refunds, chats, orders] = await Promise.all([
+  const [deposits, withdrawals, limitReqs, applications, diamond, refunds, chats, orders, critical] = await Promise.all([
     Withdrawal.find({ type: 'deposit', status: { $in: ['pending', 'processing'] } })
       .select('seller storeName amount createdAt status depositRef')
       .sort({ createdAt: 1 })
@@ -179,6 +179,12 @@ async function computeAll() {
       .limit(300)
       .lean(),
     orderAttention(now),
+    // account monitoring: stores below 40 (Critical) wait for an admin review
+    Seller.find({ 'accountHealth.score': { $lt: 40 }, status: { $in: ['active', 'frozen'] }, ...realStore })
+      .select('storeName status accountHealth.score accountHealth.lastEvaluatedAt')
+      .sort({ 'accountHealth.score': 1 })
+      .limit(100)
+      .lean(),
   ]);
 
   const money = (list, kind) =>
@@ -197,6 +203,7 @@ async function computeAll() {
     })),
     applications: applications.map((s) => ({ sellerId: String(s._id), storeName: s.storeName, ownerName: s.ownerName, at: s.createdAt })),
     diamond: diamond.map((s) => ({ sellerId: String(s._id), storeName: s.storeName, status: s.tierRequest?.status, at: s.tierRequest?.requestedAt || null })),
+    criticalHealth: critical.map((s) => ({ sellerId: String(s._id), storeName: s.storeName, status: s.status, score: s.accountHealth?.score ?? 0, at: s.accountHealth?.lastEvaluatedAt || null })),
     refunds: refunds.map((r) => ({ id: String(r._id), orderId: sid(r.order), orderNumber: r.orderNumber || '', sellerId: sid(r.seller), customer: r.customer?.name || '', amount: r2(r.amount), at: r.createdAt })),
     chats: chats.map((c) => ({
       id: String(c._id),
@@ -230,7 +237,7 @@ async function allData({ fresh = false } = {}) {
 function forAdmin(admin, d) {
   const out = {};
   if (can(admin, 'finance')) Object.assign(out, { deposits: d.deposits, withdrawals: d.withdrawals, limitRequests: d.limitRequests });
-  if (can(admin, 'sellers')) Object.assign(out, { applications: d.applications, diamond: d.diamond });
+  if (can(admin, 'sellers')) Object.assign(out, { applications: d.applications, diamond: d.diamond, criticalHealth: d.criticalHealth });
   if (can(admin, 'refunds')) out.refunds = d.refunds;
   if (can(admin, 'chat')) out.chats = d.chats;
   if (can(admin, 'orders')) out.orders = d.orders;
@@ -245,6 +252,7 @@ function countsOf(v) {
     limitRequests: n(v.limitRequests),
     applications: n(v.applications),
     diamond: n(v.diamond),
+    criticalHealth: n(v.criticalHealth),
     refunds: n(v.refunds),
     chats: n(v.chats),
     ordersConfirm: n(v.orders?.confirm),
@@ -254,7 +262,7 @@ function countsOf(v) {
   };
   c.payouts = c.deposits + c.withdrawals + c.limitRequests;
   c.orders = c.ordersConfirm + c.ordersDecision + c.ordersStuck + c.ordersLate;
-  c.total = c.payouts + c.applications + c.diamond + c.refunds + c.chats + c.orders;
+  c.total = c.payouts + c.applications + c.diamond + c.criticalHealth + c.refunds + c.chats + c.orders;
   return c;
 }
 
@@ -283,6 +291,7 @@ router.get('/today', authAdmin(), async (req, res) => {
         limitRequests: top(v.limitRequests),
         applications: top(v.applications),
         diamond: top(v.diamond),
+        criticalHealth: top(v.criticalHealth),
         refunds: top(v.refunds),
         chats: top(v.chats),
         ordersConfirm: top(v.orders?.confirm),

@@ -30,6 +30,7 @@ import { Server } from 'socket.io';
 import { verifySocketToken, loadAdminAccount } from './middleware/auth.js';
 import { attachPortalRealtime } from './realtime/portalRealtime.js';
 import { startPortalTicker } from './utils/portalTick.js';
+import { startHealthMonitor } from './utils/healthEngine.js';
 import { attachAdminTyping, registerAdminTyping, forgetSocketTyping } from './realtime/adminTyping.js';
 import { sanitizeRequest, asText } from './middleware/sanitize.js';
 import { limit } from './utils/rateLimit.js';
@@ -172,6 +173,9 @@ if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
   // Team portal notifications (new deposit → payment proof card, finance alerts) also when no
   // portal page is open: this server asks the portal to check (utils/portalTick.js)
   startPortalTicker();
+
+  // Account monitoring: entries that ended, clean-week rewards, first move of old scores
+  startHealthMonitor(app);
 }
 
 // Health check. Until the database has connected ONCE after a start, this answers 503. A host

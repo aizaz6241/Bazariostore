@@ -20,6 +20,7 @@ import { profitRateFor, confirmHoursFor, warnHoursFor, tierOf } from '../../util
 import { sellerSafeOrder, sellerOrderPing, maskName } from '../../utils/orderPrivacy.js';
 import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
 import { orderAction, pageAction, markShortcutDone } from '../../utils/chatShortcuts.js';
+import { recordDeadlineMiss, recordOverdue, recordConfirmation, addHealthEvent, depositWaitingCovers, MONITOR_NAME } from '../../utils/healthEngine.js';
 
 const router = express.Router();
 
@@ -814,6 +815,12 @@ router.post('/orders/:id/confirm', authSellerOrAdmin, async (req, res) => {
     });
 
     markShortcutDone(sellerId, { refId: order._id }, 'Order confirmed');
+    // account monitoring: confirmed on time → streak, after the warning time → small penalty
+    // (only when the store itself confirmed; an admin confirming for it is not counted)
+    if (!req.admin) {
+      const waitedHours = (Date.now() - new Date(order.pendingSince || order.createdAt).getTime()) / 3600000;
+      recordConfirmation(sellerId, order, { waitedHours, warnHours: warnHoursFor(seller) });
+    }
     res.json({ ok: true, order: req.admin ? order : sellerSafeOrder(order), lockedAmount: fundResult?.totalToLock || 0 });
   } catch (err) {
     res.status(err.status || 500).json({ message: err.message });
@@ -963,6 +970,10 @@ export const handleStatusUpdate = async (req, res) => {
 
     if (status === 'confirmed' || status === 'processing') {
       for (const sId of affectedSellerIds) markShortcutDone(sId, { refId: order._id }, 'Order confirmed');
+      if (isSeller && seller) {
+        const waitedHours = (Date.now() - new Date(order.pendingSince || order.createdAt).getTime()) / 3600000;
+        recordConfirmation(String(seller._id), order, { waitedHours, warnHours: warnHoursFor(seller) });
+      }
     }
     res.json({ ok: true, order: req.admin ? order : sellerSafeOrder(order) });
   } catch (err) {
@@ -1152,7 +1163,7 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
  * Background Automated Penalty & Reminder Task
  * Runs periodically (every 5-10 minutes) to check for unconfirmed orders.
  * 24h unconfirmed: Sends warning notification & chat message.
- * 48h unconfirmed: Applies 25-point penalty to Account Health & freezes merchant account.
+ * 48h unconfirmed: account health penalty (utils/healthEngine.js) & freezes merchant account.
  */
 /**
  * The sellers who still owe a confirmation on this order: the owners of the items that are still
@@ -1288,9 +1299,29 @@ export async function processOrderPenalties(app) {
           sellerId: seller._id.toString(),
           type: 'compliance',
           title: `⚠️ ${warnH}-Hour Urgent Order Confirmation Warning: #${ord.orderNumber}`,
-          body: `Order #${ord.orderNumber} has been unconfirmed for over ${warnH} hours! Please confirm and process within 24 hours to avoid a 25-point account health penalty and store freeze.`,
+          body: `Order #${ord.orderNumber} has been unconfirmed for over ${warnH} hours! Please confirm and process within 24 hours to avoid an account health penalty and a store freeze.`,
           link: '/seller/orders',
         });
+
+        // account monitoring: the order reached its warning time and the wallet cannot cover it
+        // (one entry per store per day; not while a deposit that covers it waits for our approval)
+        try {
+          const need = (ord.items || [])
+            .filter((it) => ownedBy(it, seller._id) && (!it.itemStatus || it.itemStatus === 'pending'))
+            .reduce((t, it) => t + itemValue(it), 0);
+          if (need > (Number(seller.wallet?.balance) || 0) + 0.01 && !(await depositWaitingCovers(seller._id, need))) {
+            await addHealthEvent({
+              sellerId: seller._id,
+              code: 'wallet_short',
+              key: `wallet_short:${seller._id}:${new Date().toISOString().slice(0, 10)}`,
+              orderId: ord._id,
+              orderNumber: ord.orderNumber,
+              detail: `Order #${ord.orderNumber} reached its warning time and your wallet balance could not cover it. Deposit to confirm it before the deadline.`,
+            });
+          }
+        } catch (hErr) {
+          console.error('[health] wallet check:', hErr.message);
+        }
 
         try {
           let conv = await Conversation.findOne({ seller: seller._id });
@@ -1302,7 +1333,7 @@ export async function processOrderPenalties(app) {
               `Order Number: #${ord.orderNumber}\n` +
               `Placed On: ${ord.createdAt.toLocaleString('en-US')}\n` +
               `Status: PENDING CONFIRMATION (>${warnH} Hours)\n\n` +
-              `Policy Reminder: All ${tier.label} merchant orders must be confirmed within ${confirmH} hours. Failure to confirm will result in a 25-point Account Health penalty and immediate account freeze.\n` +
+              `Policy Reminder: All ${tier.label} merchant orders must be confirmed within ${confirmH} hours. Failure to confirm will result in an Account Health penalty and an immediate store freeze.\n` +
               `Please go to "Orders & Dispatch" and confirm this order now.\n` +
               `━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
@@ -1325,7 +1356,7 @@ export async function processOrderPenalties(app) {
               conversation: conv._id,
               seller: seller._id,
               sender: 'admin',
-              senderName: 'Compliance Enforcement Bot',
+              senderName: MONITOR_NAME,
               text: warnMsg,
               ...(action ? { action } : {}),
             });
@@ -1353,9 +1384,18 @@ export async function processOrderPenalties(app) {
       const waited = hoursWaiting(ord, now);
       const sellers = await sellersStillToConfirm(ord);
       const done = new Set((ord.penalizedSellers || []).map(String));
-      const due = sellers.filter((s) => s.status !== 'suspended' && !done.has(String(s._id)) && waited >= confirmHoursFor(s));
+      const dueAll = sellers.filter((s) => s.status !== 'suspended' && !done.has(String(s._id)) && waited >= confirmHoursFor(s));
+      // fairness: a store whose deposit is still waiting for OUR approval, and covers this order,
+      // is not penalised or frozen now (the delay is ours); it is checked again on the next run
+      const due = [];
+      for (const s of dueAll) {
+        const need = (ord.items || [])
+          .filter((it) => ownedBy(it, s._id) && (!it.itemStatus || it.itemStatus === 'pending'))
+          .reduce((t, it) => t + itemValue(it), 0);
+        if (!(await depositWaitingCovers(s._id, need).catch(() => false))) due.push(s);
+      }
       const allDone = sellers.every((s) => done.has(String(s._id)) || due.includes(s));
-      if (!due.length && !allDone) continue; // only Diamond sellers left, deadline not reached
+      if (!due.length && !allDone) continue; // only Diamond sellers left / waiting deposits, deadline not reached
 
       const upd = {};
       if (due.length) upd.$addToSet = { penalizedSellers: { $each: due.map((s) => String(s._id)) } };
@@ -1364,15 +1404,10 @@ export async function processOrderPenalties(app) {
 
       for (const seller of due) {
         const confirmH = confirmHoursFor(seller);
-        const prevScore = seller.accountHealth?.score ?? 100;
-        const newScore = Math.max(0, prevScore - 25);
 
-        seller.accountHealth = seller.accountHealth || {};
-        seller.accountHealth.score = newScore;
         // only an active store is frozen here: a suspended store must stay suspended (setting it to
         // "frozen" quietly lifted the suspension) and a frozen one keeps its original reason
         if (seller.status === 'active') {
-          seller.accountHealth.status = 'frozen';
           seller.status = 'frozen';
           seller.freezeReason = `Automatic Freeze: Order #${ord.orderNumber} remained unconfirmed for over ${confirmH} hours.`;
           // when and by whom, like a freeze by an admin (the Complaints page sorts and shows by it)
@@ -1380,26 +1415,26 @@ export async function processOrderPenalties(app) {
           seller.frozenBy = `Automatic (${confirmH}-hour rule)`;
         }
 
-        seller.accountHealth.history = seller.accountHealth.history || [];
-        seller.accountHealth.history.unshift({
-          previousScore: prevScore,
-          newScore,
-          delta: -25,
-          reason: `Automatic penalty for unconfirmed order #${ord.orderNumber} (>${confirmH} hours)`,
-          changedBy: 'System Enforcement',
-          createdAt: new Date(),
-        });
-
-        seller.markModified('accountHealth');
         await seller.save();
         toAdmins('sellers', 'sellers:changed', { sellerId: String(seller._id) });
+
+        // account health: one entry per incident (several orders within a day count once),
+        // more points when it happens again within the repeat window
+        const hr = await recordDeadlineMiss(seller._id, ord, confirmH).catch((e) => {
+          console.error('[health] deadline:', e.message);
+          return null;
+        });
+        const newScore = hr?.score ?? seller.accountHealth?.score ?? 100;
+        const penaltyLine = hr?.grouped
+          ? `Health Score Penalty: ${hr?.line?.points ?? ''} Points — another order of the same incident (New Score: ${newScore}/100)`
+          : `Health Score Penalty: ${hr?.line?.points ?? ''} Points (New Score: ${newScore}/100)`;
 
         notify(app, {
           recipientType: 'seller',
           sellerId: seller._id.toString(),
           type: 'freeze',
           title: `🚫 Account Frozen: ${confirmH}h Unconfirmed Order #${ord.orderNumber}`,
-          body: `Your merchant account has been frozen and penalized -25 points due to failure to confirm order #${ord.orderNumber} within ${confirmH} hours. Please contact support.`,
+          body: `Your store has been frozen because order #${ord.orderNumber} was not confirmed within ${confirmH} hours. Account health is now ${newScore}/100. Please contact support. — ${MONITOR_NAME}`,
           link: '/seller/support',
         });
 
@@ -1408,11 +1443,11 @@ export async function processOrderPenalties(app) {
           if (conv) {
             const freezeMsg =
               `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-              `🚫 COMPLIANCE PENALTY & ACCOUNT FROZEN\n` +
+              `🛡️ BAZARIO ACCOUNT MONITORING — ACCOUNT FROZEN\n` +
               `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
               `Order Number: #${ord.orderNumber}\n` +
               `Reason: Exceeded ${confirmH}-Hour Confirmation Deadline\n` +
-              `Health Score Penalty: -25 Points (New Score: ${newScore}/100)\n` +
+              `${penaltyLine}\n` +
               `Account Status: ${String(seller.status || 'frozen').toUpperCase()}\n\n` +
               `Your seller store has been temporarily frozen. Please contact platform support immediately to request unfreezing.\n` +
               `━━━━━━━━━━━━━━━━━━━━━━━━━`;
@@ -1421,7 +1456,7 @@ export async function processOrderPenalties(app) {
               conversation: conv._id,
               seller: seller._id,
               sender: 'admin',
-              senderName: 'Compliance Enforcement Bot',
+              senderName: MONITOR_NAME,
               text: freezeMsg,
               action: orderAction(ord, { label: `🧾 Open order ${ord.orderNumber}`, sub: 'Confirm it to keep it moving' }),
             });
@@ -1433,13 +1468,31 @@ export async function processOrderPenalties(app) {
             await conv.save();
 
             app?.get('io')?.to(`seller:${seller._id}`).emit('message:new', sellerSafeMessage(msg));
-            app?.get('io')?.to(`seller:${seller._id}`).emit('seller:health_update', {
-              accountHealth: seller.accountHealth,
-              status: seller.status,
-            });
-            app?.get('io')?.to(`seller:${seller._id}`).emit('seller:status_update', { seller: seller.toObject() });
+            // the store as it is now (with the new health score set by the account monitoring)
+            const fresh = await Seller.findById(seller._id).select('accountHealth').lean();
+            const out = { ...seller.toObject(), accountHealth: fresh?.accountHealth || seller.accountHealth };
+            delete out.passwordHash;
+            app?.get('io')?.to(`seller:${seller._id}`).emit('seller:status_update', { seller: out });
           }
         } catch (chatErr) {}
+      }
+    }
+
+    // 3. Account monitoring: an order still not confirmed a full day (or more) after the store's
+    //    deadline costs points again for every full day (Basic from 72 h, Diamond from 96 h)
+    const overdueOrders = await Order.find({
+      status: 'pending',
+      penalizedSellers: { $exists: true, $ne: [] },
+      ...waitingSince(new Date(now.getTime() - 72 * 60 * 60 * 1000)),
+    });
+    for (const ord of overdueOrders) {
+      const waited = hoursWaiting(ord, now);
+      const penalized = new Set((ord.penalizedSellers || []).map(String));
+      const sellers = await sellersStillToConfirm(ord);
+      for (const seller of sellers) {
+        if (!penalized.has(String(seller._id)) || seller.status === 'suspended') continue;
+        const daysOver = Math.floor((waited - confirmHoursFor(seller)) / 24);
+        if (daysOver >= 1) await recordOverdue(seller._id, ord, daysOver).catch((e) => console.error('[health] overdue:', e.message));
       }
     }
   } catch (err) {

@@ -254,6 +254,23 @@ export default function Today() {
       })),
     },
     {
+      id: 'health',
+      show: can?.('sellers') && L.criticalHealth,
+      icon: '🛡️',
+      title: 'Stores in critical health',
+      hint: 'Account health below 40. Review the store — nothing is suspended automatically.',
+      count: c.criticalHealth,
+      tone: 'red',
+      rows: (L.criticalHealth || []).map((x) => ({
+        key: x.sellerId,
+        onClick: () => navigate(profilePath(x.sellerId, 'health')),
+        main: <StoreLink id={x.sellerId} name={x.storeName} />,
+        sub: `Health ${x.score}/100${x.status === 'frozen' ? ' · frozen' : ''}`,
+        right: x.at ? ago(x.at) : '',
+        urgent: x.score < 20,
+      })),
+    },
+    {
       id: 'refunds',
       show: can?.('refunds') && L.refunds,
       icon: '↩️',

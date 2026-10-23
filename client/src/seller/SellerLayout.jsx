@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { bandOf } from '../utils/healthBands.js';
+import { levelOf } from '../utils/healthLevels.js';
+import CelebrationHost from './CelebrationHost.jsx';
 import { NavLink, Outlet, useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
 import { sapi } from '../api.js';
 import { useAuth } from '../auth.jsx';
@@ -22,6 +25,7 @@ const SELLER_NAV = [
   { to: '/seller/refunds', icon: 'refresh', label: 'Refunds & Returns' },
   { to: '/seller/discounts', icon: 'gift', label: 'Discounts & Coupons' },
   { to: '/seller/analytics', icon: 'eye', label: 'Analytics & Reports' },
+  { to: '/seller/health', icon: 'checkCircle', label: 'Account Health' },
   { to: '/seller/wallet', icon: 'banknote', label: 'My Wallet', badgeKey: 'wallet' },
   { to: '/seller/shipping', icon: 'truck', label: 'Shipping Settings' },
   { to: '/seller/support', icon: 'chat', label: 'Support & Helpline', badgeKey: 'unreadChat' },
@@ -250,6 +254,7 @@ export default function SellerLayout() {
 
   // Health calculation: ensure accountHealth score is accurately read
   const healthScore = seller?.accountHealth?.score ?? seller?.healthScore ?? 100;
+  const storeLevel = levelOf(seller?.accountHealth?.perfectWeeks);
   let healthTier = 'healthy';
   let healthLabel = 'HEALTHY';
   if (seller?.status === 'suspended') {
@@ -258,14 +263,12 @@ export default function SellerLayout() {
   } else if (seller?.status === 'frozen') {
     healthTier = 'freeze';
     healthLabel = 'FROZEN';
-  } else if (healthScore <= 30) {
-    // same limits as the admin Complaints page and the server: 80+ healthy, 31-79 at risk,
-    // 30 and below critical (it used to be 75 / 60 here, so both sides saw different ratings)
-    healthTier = 'suspended';
-    healthLabel = 'CRITICAL';
-  } else if (healthScore < 80) {
-    healthTier = 'warning';
-    healthLabel = 'AT RISK';
+  } else {
+    // bands of the account monitoring (utils/healthBands.js, same as the server):
+    // 90+ excellent · 75+ good · 60+ warning · 40+ at risk · below 40 critical
+    const hb = bandOf(healthScore);
+    healthTier = hb.key === 'critical' ? 'suspended' : hb.tier;
+    healthLabel = hb.label.toUpperCase();
   }
 
   const isVerified = Boolean(seller?.verified || seller?.status === 'active');
@@ -476,7 +479,7 @@ export default function SellerLayout() {
             <CurrencySelector compact className="stb-currency" />
 
             <Link
-              to="/seller"
+              to="/seller/health"
               className={`stb-chip stb-health tone-${healthTier}`}
               data-tour="topbar-health"
               title={`Account health ${healthScore}/100 (${healthLabel})`}
@@ -484,6 +487,11 @@ export default function SellerLayout() {
               <Ic name="shield" size={15} />
               <span className="stb-chip-lbl">Health</span>
               <b>{healthScore}</b>
+              {storeLevel.key !== 'starter' && (
+                <span className="stb-level" title={`${storeLevel.label} level`}>
+                  {storeLevel.icon}
+                </span>
+              )}
             </Link>
 
             <Link to="/seller/wallet" className="stb-chip stb-wallet" title="Wallet balance" data-tour="topbar-wallet">
@@ -623,6 +631,9 @@ export default function SellerLayout() {
         toasts={toasts}
         onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))}
       />
+
+      {/* Perfect Health Bonus / new level celebration (once) */}
+      <CelebrationHost seller={seller} setSeller={setSeller} />
 
       {/* Global Floating Chat Bubble Widget */}
       <FloatingChatWidget role="seller" currentSeller={seller} />

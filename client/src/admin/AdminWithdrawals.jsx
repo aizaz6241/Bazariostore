@@ -407,6 +407,14 @@ export default function AdminWithdrawals() {
       }
     }
 
+    // a rejected deposit counts against the store's account health, unless it was an honest mistake
+    let healthPenalty;
+    if (status === 'rejected' && (req?.type || reqType) === 'deposit') {
+      healthPenalty = window.confirm(
+        `Reject this deposit of ${req?.storeName || 'this store'}.\n\nOK — also count it against the store’s account health (wrong / fake payment proof).\nCancel — reject only (an honest mistake, no health penalty).`
+      );
+    }
+
     setProcessing((p) => ({ ...p, [id]: true }));
     try {
       const isDepositReq = req?.type === 'deposit' || reqType === 'deposit';
@@ -450,6 +458,7 @@ export default function AdminWithdrawals() {
           binanceRate: bRate,
           inrAmount: currentInrVal,
           usdtAmount: usdtAmt,
+          ...(healthPenalty !== undefined ? { healthPenalty } : {}),
         },
       });
       load();
@@ -742,6 +751,11 @@ export default function AdminWithdrawals() {
                             {r.isManualAdjustment ? '⚡ Direct Admin Adjustment' : (isDeposit ? '↓ Deposit Request' : '↑ Withdrawal Request')}
                           </span>
                           {isTest && <span className="pd-pill pd-pill-violet">🧪 Test Account</span>}
+                          {Number.isFinite(r.seller?.accountHealth?.score) && r.seller.accountHealth.score < 60 && (
+                            <span className="pd-pill pd-pill-amber" title="Account health below 60 (At risk / Critical): review this request carefully">
+                              🛡️ Health {r.seller.accountHealth.score}
+                            </span>
+                          )}
                         </div>
                         <b className="pd-req-store">
                           <StoreLink id={r.seller} name={r.storeName} />
