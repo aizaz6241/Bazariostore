@@ -16,6 +16,7 @@ import GettingStarted from './onboarding/GettingStarted.jsx';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
 import { getLiveStoreVisitors } from '../utils/liveMetrics.js';
 import SellerCalendar from './dashboard/SellerCalendar.jsx';
+import { useDiamondOffers, OfferCard, RewardProgress, usd } from './DiamondOfferParts.jsx';
 import { dayKey, startOfDay, addDays, shortDay, makeCompact, statusMeta, isClosed } from './dashboard/dashUtils.js';
 
 const RANGES = [
@@ -45,6 +46,8 @@ const pctChange = (now, before) => {
 };
 
 export default function SellerDashboard() {
+  // Diamond offers: the running offer, progress to the reward, the price locked on a request
+  const [dOffers, reloadOffers] = useDiamondOffers(true);
   // account health overview (perfect-health bonus progress in the health card)
   const [healthInfo, setHealthInfo] = useState(null);
   useEffect(() => {
@@ -247,15 +250,24 @@ export default function SellerDashboard() {
       {/* ── First steps for new stores (hides itself when done) ── */}
       <GettingStarted />
 
-      {/* ── Diamond upgrade (Basic stores) ── */}
-      {showDiamond && (
-        <section className={`sd-dia ${diamondPending ? 'is-pending' : ''}`} aria-label="Diamond plan">
+      {/* ── Diamond upgrade (Basic stores): a running offer, else the plan strip with the reward progress ── */}
+      {showDiamond && !diamondPending && dOffers?.offer ? (
+        <OfferCard offer={dOffers.offer} variant="dash" onEnd={reloadOffers} />
+      ) : showDiamond && (
+        <section className={`sd-dia ${diamondPending ? 'is-pending' : ''} ${!diamondPending && dOffers?.progress?.enabled ? 'has-reward' : ''}`} aria-label="Diamond plan">
           <div className="sd-dia-gem" aria-hidden="true">💎</div>
           <div className="sd-dia-body">
             <p className="sd-dia-kicker">{diamondPending ? 'Upgrade in progress' : 'Diamond plan'}</p>
             <h2>{diamondPending ? 'Your Diamond upgrade request is with our team' : 'Earn 35% on every order — not 20%'}</h2>
             {diamondPending ? (
-              <p className="sd-dia-text">Our support team will contact you in chat with the next step. Your new rate starts on the orders placed after the upgrade.</p>
+              <>
+                <p className="sd-dia-text">Our support team will contact you in chat with the next step. Your new rate starts on the orders placed after the upgrade.</p>
+                {dOffers?.locked && (
+                  <span className="sd-dia-lock">
+                    <Ic name="lock" size={14} /> Your price is locked: {usd(dOffers.locked.price)} <s style={{ opacity: 0.6 }}>{usd(dOffers.locked.regular)}</s>
+                  </span>
+                )}
+              </>
             ) : (
               <ul className="sd-dia-perks">
                 <li><Ic name="check" size={13} /> 35% profit per order</li>
@@ -266,18 +278,28 @@ export default function SellerDashboard() {
             )}
           </div>
           <div className="sd-dia-side">
-            {!diamondPending && windows.sales > 0 && (
+            {!diamondPending && (dOffers?.numbers?.extra > 0 ? (
+              <div className="sd-dia-stat">
+                <span>Extra on your last 30 days</span>
+                <b>+{usd(dOffers.numbers.extra)}</b>
+              </div>
+            ) : windows.sales > 0 ? (
               <div className="sd-dia-stat">
                 <span>Extra on your last 30 days</span>
                 <b>+{formatMoney(diamondExtra)}</b>
               </div>
-            )}
+            ) : null)}
             {diamondPending ? (
               <Link to="/seller/support" className="sd-dia-btn ghost">Open support chat</Link>
             ) : (
               <Link to="/seller/diamond" className="sd-dia-btn">Upgrade to Diamond <Ic name="arrowRight" size={15} /></Link>
             )}
           </div>
+          {!diamondPending && dOffers?.progress?.enabled && (
+            <div className="sd-dia-reward">
+              <RewardProgress progress={dOffers.progress} regular={dOffers.regular} compact />
+            </div>
+          )}
         </section>
       )}
 

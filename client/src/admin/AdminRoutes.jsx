@@ -9,6 +9,7 @@ import Sellers from './Sellers.jsx';
 import Complaints from './Complaints.jsx';
 import Applications from './Applications.jsx';
 import Targets from './Targets.jsx';
+import DiamondOffers from './DiamondOffers.jsx';
 import Referrals from './Referrals.jsx';
 import AdminWithdrawals from './AdminWithdrawals.jsx';
 import ChatInbox from './ChatInbox.jsx';
@@ -64,6 +65,7 @@ export default function AdminRoutes() {
         <Route path="orders/:id" element={guard('orders', <OrderDetail />)} />
         <Route path="applications" element={guard('sellers', <Applications />)} />
         <Route path="targets" element={guard('sellers', <Targets />)} />
+        <Route path="diamond-offers" element={guard('sellers', <DiamondOffers />)} />
         <Route path="affiliates" element={guard('sellers', <Referrals />)} />
         <Route path="affiliate-codes" element={<Navigate to="/admin/affiliates" replace />} />
         <Route path="referrals" element={<Navigate to="/admin/affiliates" replace />} />

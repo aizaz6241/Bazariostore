@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { bandOf } from '../utils/healthBands.js';
 import { levelOf } from '../utils/healthLevels.js';
 import CelebrationHost from './CelebrationHost.jsx';
+import { DiamondOfferPopup } from './DiamondOfferParts.jsx';
 import { NavLink, Outlet, useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
 import { sapi } from '../api.js';
 import { useAuth } from '../auth.jsx';
@@ -634,6 +635,8 @@ export default function SellerLayout() {
 
       {/* Perfect Health Bonus / new level celebration (once) */}
       <CelebrationHost seller={seller} setSeller={setSeller} />
+      {/* "You earned it" — once for each Diamond reward offer */}
+      <DiamondOfferPopup seller={seller} />
 
       {/* Global Floating Chat Bubble Widget */}
       <FloatingChatWidget role="seller" currentSeller={seller} />

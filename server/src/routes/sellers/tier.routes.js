@@ -13,6 +13,7 @@ import { asText } from '../../middleware/sanitize.js';
 import { TIERS, DIAMOND_UPGRADE_FEE_USD, isDiamond, tierInfo } from '../../utils/sellerTier.js';
 import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
 import { pageAction, markShortcutDone } from '../../utils/chatShortcuts.js';
+import { offerScreen, lockOfferForRequest, releaseLockedOffer, feeForRequest, markSeen, getOfferSettings, saveOfferSettings, offerResults, REGULAR_PRICE } from '../../utils/diamondOffers.js';
 
 /**
  * Seller account tiers — Basic / 💎 Diamond (rules in utils/sellerTier.js).
@@ -22,6 +23,9 @@ import { pageAction, markShortcutDone } from '../../utils/chatShortcuts.js';
  *                                           admins' support chat as a message from the seller
  *   POST /api/sellers/:id/tier              admin: upgrades the store to Diamond once the one-time
  *                                           fee is paid, or clears a request (action: 'clear-request')
+ *   POST /api/sellers/tier/offer-seen       seller: the "you earned it" popup was shown
+ *   GET|PUT /api/sellers/tier/offers/settings, GET /api/sellers/tier/offers/results   admin
+ * Diamond offers (discounts with a deadline): utils/diamondOffers.js
  */
 const router = express.Router();
 
@@ -62,7 +66,12 @@ router.get('/tier', authSeller, async (req, res) => {
   try {
     const seller = await Seller.findById(req.seller.id).select('tier tierSince tierRequest').lean();
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
-    res.json(tierInfo(seller));
+    // the offer part never stops the page from loading
+    const offers = await offerScreen(seller._id).catch((e) => {
+      console.error('[diamond offers] screen:', e.message);
+      return null;
+    });
+    res.json({ ...tierInfo(seller), offers });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -91,7 +100,13 @@ router.post('/tier/request-upgrade', authSeller, announceToAdmins('sellers', 'se
     }
 
     const note = asText(req.body?.note, 500).trim();
-    seller.tierRequest = { status: 'pending', requestedAt: new Date() };
+    // the price of the offer the seller sees right now is locked on the request (a few days)
+    const lock = await lockOfferForRequest(seller).catch((e) => {
+      console.error('[diamond offers] lock:', e.message);
+      return null;
+    });
+    const price = lock ? lock.price : REGULAR_PRICE;
+    seller.tierRequest = { status: 'pending', requestedAt: new Date(), ...(lock ? { offer: lock } : {}) };
     await seller.save();
 
     const conv = await supportConversation(seller);
@@ -102,7 +117,7 @@ router.post('/tier/request-upgrade', authSeller, announceToAdmins('sellers', 'se
       `Store: ${seller.storeName}\n` +
       `Owner: ${seller.ownerName}\n` +
       `Current plan: Basic\n` +
-      `Requested plan: 💎 Diamond (one-time fee ${usd(DIAMOND_UPGRADE_FEE_USD)})\n\n` +
+      `Requested plan: 💎 Diamond (one-time fee ${usd(price)}${lock ? ` — ${lock.title}, normal price ${usd(lock.regular)}` : ''})\n\n` +
       `I would like to upgrade my store to Diamond. Please guide me on paying the one-time upgrade fee.` +
       (note ? `\n\nMy note: ${note}` : '') +
       `\n━━━━━━━━━━━━━━━━━━━━━━━━━`;
@@ -131,7 +146,7 @@ router.post('/tier/request-upgrade', authSeller, announceToAdmins('sellers', 'se
     sendPush({
       to: 'admin',
       title: `💎 ${seller.storeName} wants Diamond`,
-      body: `Diamond upgrade request (one-time fee ${usd(DIAMOND_UPGRADE_FEE_USD)}). Reply in chat.`,
+      body: `Diamond upgrade request (one-time fee ${usd(price)}${lock ? ', offer price' : ''}). Reply in chat.`,
       url: `/admin/chat?c=${conv._id}`,
       tag: `chat-${conv._id}`,
       skipActiveAdmins: true,
@@ -140,15 +155,53 @@ router.post('/tier/request-upgrade', authSeller, announceToAdmins('sellers', 'se
       push: false, // pushed just above
       type: 'chat',
       title: `💎 Diamond request: ${seller.storeName}`,
-      body: `${seller.storeName} asked to upgrade to Diamond (${usd(DIAMOND_UPGRADE_FEE_USD)} one-time).`,
+      body: `${seller.storeName} asked to upgrade to Diamond (${usd(price)} one-time${lock ? `, ${lock.title}` : ''}).`,
       link: '/admin/chat',
     });
 
     res.json({
       ok: true,
-      message: 'Request sent! Our support team will contact you in chat with the payment details for the one-time Diamond fee.',
+      message: lock
+        ? `Request sent! Your price of ${usd(price)} is locked. Our support team will contact you in chat with the payment details.`
+        : 'Request sent! Our support team will contact you in chat with the payment details for the one-time Diamond fee.',
+      locked: lock ? { price: lock.price, regular: lock.regular, title: lock.title, lockedUntil: lock.lockedUntil } : null,
       tier: tierInfo(seller),
     });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/sellers/tier/offer-seen { key } — the "you earned it" popup was shown once
+router.post('/tier/offer-seen', authSeller, async (req, res) => {
+  try {
+    await markSeen(req.seller.id, asText(req.body?.key, 120));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Admin: Diamond offer rules, milestones, festival calendar, results
+router.get('/tier/offers/settings', authAdmin('sellers'), async (req, res) => {
+  try {
+    res.json({ settings: await getOfferSettings(), regular: REGULAR_PRICE });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+router.put('/tier/offers/settings', authAdmin('sellers'), async (req, res) => {
+  try {
+    const settings = await saveOfferSettings(req.body?.settings || req.body || {});
+    audit(req, 'update', 'settings', 'diamondOffers', 'Changed the Diamond offer settings');
+    res.json({ ok: true, settings, regular: REGULAR_PRICE });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+router.get('/tier/offers/results', authAdmin('sellers'), async (req, res) => {
+  try {
+    res.json(await offerResults());
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -179,6 +232,8 @@ router.post('/:id/tier', authAdmin('sellers'), announceToAdmins('sellers', 'sell
       if (seller.tierRequest?.status === 'awaiting_approval') {
         return res.status(400).json({ message: 'The fee is waiting for the other partner’s approval. Cancel or reject it on the team portal (Finance) instead.' });
       }
+      // an offer whose time has not run out comes back to the seller
+      await releaseLockedOffer(seller).catch(() => {});
       seller.tierRequest = { status: 'none', requestedAt: null };
       await seller.save();
       audit(req, 'update', 'seller', seller._id, `Cleared the Diamond upgrade request of ${seller.storeName}`);
@@ -202,7 +257,8 @@ router.post('/:id/tier', authAdmin('sellers'), announceToAdmins('sellers', 'sell
       const n = Number(v);
       return Number.isFinite(n) ? n : NaN;
     };
-    const fee = DIAMOND_UPGRADE_FEE_USD;
+    // the offer price locked on the seller's request (while valid), otherwise the normal price
+    const { fee, offer: lockedOffer } = feeForRequest(seller);
     const helping = req.body?.helpingAmount === '' || req.body?.helpingAmount === undefined ? 0 : numOf(req.body.helpingAmount);
     const usdt = req.body?.usdtAmount === '' || req.body?.usdtAmount === undefined ? 0 : numOf(req.body.usdtAmount);
     const inr = req.body?.inrAmount === '' || req.body?.inrAmount === undefined ? 0 : numOf(req.body.inrAmount);
@@ -228,10 +284,11 @@ router.post('/:id/tier', authAdmin('sellers'), announceToAdmins('sellers', 'sell
     const asked = await requestApproval(req, {
       action: 'diamond_upgrade',
       targetId: String(seller._id),
-      summary: `Upgrade “${seller.storeName}” to 💎 Diamond — fee $${fee}: ${usdt > 0 ? `₮${money2(usdt)} real (₹${money2(inr)})` : 'no real money'}${helping > 0 ? `, $${money2(helping)} helping` : ''}`,
+      summary: `Upgrade “${seller.storeName}” to 💎 Diamond — fee $${fee}${lockedOffer ? ` (offer price, normal $${lockedOffer.regular || DIAMOND_UPGRADE_FEE_USD})` : ''}: ${usdt > 0 ? `₮${money2(usdt)} real (₹${money2(inr)})` : 'no real money'}${helping > 0 ? `, $${money2(helping)} helping` : ''}`,
       details: [
         usdt > 0 ? 'The real USDT is divided like a normal deposit of this store (owner, referral, partners) and counts for rewards.' : 'No real money came in: nothing is divided.',
         'The fee is NOT added to the store wallet. The store becomes Diamond for life: 35% profit on new orders, 72h to confirm.',
+        ...(lockedOffer ? [`Offer price: ${lockedOffer.title || 'Diamond offer'} — $${fee} instead of $${lockedOffer.regular || DIAMOND_UPGRADE_FEE_USD}.`] : []),
         ...(note ? [`Note: ${note}`] : []),
       ],
       payload: {
@@ -250,7 +307,10 @@ router.post('/:id/tier', authAdmin('sellers'), announceToAdmins('sellers', 'sell
     });
 
     if (!asked.already) {
-      seller.tierRequest = { status: 'awaiting_approval', requestedAt: seller.tierRequest?.requestedAt || new Date() };
+      // only the status changes: the locked offer price stays on the request (a rejected approval
+      // goes back to 'pending' with the same price)
+      seller.tierRequest.status = 'awaiting_approval';
+      if (!seller.tierRequest.requestedAt) seller.tierRequest.requestedAt = new Date();
       await seller.save();
       audit(req, 'update', 'seller', seller._id, `Asked to upgrade ${seller.storeName} to Diamond (fee $${fee}${usdt > 0 ? `, ₮${usdt}` : ''}${helping > 0 ? `, helping $${helping}` : ''})`);
     }

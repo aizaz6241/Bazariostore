@@ -36,6 +36,7 @@ const NAV_GROUPS = [
       { to: '/admin/applications', icon: 'badgeCheck', label: 'New Applications', perm: 'sellers', badge: 'applications' },
       { to: '/admin/affiliates', icon: 'tag', label: 'Security Codes', perm: 'sellers' },
       { to: '/admin/targets', icon: 'trend', label: 'Targets & Bonuses', perm: 'sellers' },
+      { to: '/admin/diamond-offers', icon: 'sparkle', label: 'Diamond Offers', perm: 'sellers' },
       { to: '/admin/chat', icon: 'chat', label: 'Seller Support Desk', perm: 'chat', badge: 'chats' },
     ],
   },

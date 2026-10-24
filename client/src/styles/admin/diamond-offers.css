@@ -1,0 +1,43 @@
+/* Admin → Diamond offers (admin/DiamondOffers.jsx) */
+.do-page .ins-card { margin-bottom: 16px; }
+.do-msg { margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; font-size: 13.5px; font-weight: 600; }
+.do-msg.ok { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+.do-msg.err { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+.do-results { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 0 16px; }
+.do-results > div { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 14px; }
+.do-results small { display: block; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+.do-results b { display: block; margin-top: 4px; font-size: 22px; font-weight: 800; color: #0f172a; }
+.do-results b.g { color: #0e7490; }
+.do-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px 18px; align-items: end; }
+.do-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.do-field > span { font-size: 12px; font-weight: 700; color: #334155; }
+.do-page input[type='number'], .do-page input[type='date'], .do-page input:not([type]), .do-page select {
+  height: 36px; padding: 0 10px; border: 1px solid #cbd5e1; border-radius: 8px; font: 500 13.5px Inter, system-ui, sans-serif; color: #0f172a; background: #fff; min-width: 0;
+}
+.do-page input:focus, .do-page select:focus { outline: none; border-color: #0e7490; box-shadow: 0 0 0 3px rgba(14, 116, 144, 0.15); }
+.do-inline { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #475569; }
+.do-inline input { width: 84px; }
+.do-switch { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; font-size: 13.5px; color: #0f172a; height: 36px; }
+.do-switch input { width: 18px; height: 18px; accent-color: #0e7490; }
+.do-discount { display: flex; align-items: center; gap: 6px; }
+.do-discount select { width: 76px; }
+.do-discount input { width: 80px; }
+.do-price { font-weight: 800; color: #0e7490; font-size: 13.5px; white-space: nowrap; }
+.do-table { display: flex; flex-direction: column; overflow-x: auto; }
+.do-tr { display: grid; grid-template-columns: 44px minmax(120px, 1fr) minmax(250px, 1.6fr) minmax(110px, 0.8fr) 40px; gap: 10px; align-items: center; padding: 8px 4px; border-bottom: 1px solid #f1f5f9; min-width: 640px; }
+.do-tr > span { min-width: 0; }
+.do-fest .do-tr { grid-template-columns: 44px minmax(170px, 1.3fr) 150px 150px minmax(250px, 1.5fr) 96px 40px; min-width: 960px; }
+.do-th { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; border-bottom-color: #e2e8f0; }
+.do-tr input[type='checkbox'] { width: 17px; height: 17px; accent-color: #0e7490; }
+.do-tr input[type='number'] { width: 100px; }
+.do-tr input[type='date'] { width: 140px; }
+.do-name { display: flex; gap: 6px; }
+.do-name input { flex: 1; min-width: 0; width: 100%; }
+.do-name .do-emoji { width: 46px; flex: none; text-align: center; }
+.do-x { border: 0; background: none; color: #94a3b8; cursor: pointer; padding: 6px; border-radius: 6px; }
+.do-x:hover { color: #dc2626; background: #fef2f2; }
+.do-empty { margin: 8px 4px; color: #94a3b8; font-size: 13px; }
+.do-savebar { position: sticky; bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-radius: 12px; background: #0f172a; color: #fff; font-size: 13.5px; font-weight: 600; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.25); }
+@media (max-width: 640px) {
+  .do-results { grid-template-columns: 1fr; }
+}

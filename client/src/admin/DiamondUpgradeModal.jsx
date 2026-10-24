@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 
-const FEE = 1500;
+const REGULAR_FEE = 1500;
+
+/** The fee for this store: the offer price locked on its request (while valid), else the normal price. */
+function feeOf(seller) {
+  const o = seller?.tierRequest?.offer;
+  const ok = o && Number(o.price) > 0 && Number(o.price) <= REGULAR_FEE && o.lockedUntil && new Date(o.lockedUntil) > new Date();
+  return ok ? { fee: Number(o.price), offer: o } : { fee: REGULAR_FEE, offer: null };
+}
 
 const inputStyle = {
   width: '100%',
@@ -32,6 +39,7 @@ export default function DiamondUpgradeModal({ seller, onClose, onDone }) {
 
   if (!seller) return null;
   const isTest = seller.isTestAccount === true || seller.accountType === 'test';
+  const { fee: FEE, offer } = feeOf(seller);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const helping = Math.min(FEE, Math.max(0, Number(form.helpingAmount) || 0));
   const realPart = Math.round((FEE - helping) * 100) / 100;
@@ -66,8 +74,15 @@ export default function DiamondUpgradeModal({ seller, onClose, onDone }) {
         <div className="modal-top">
           <h3 style={{ margin: 0 }}>💎 Upgrade to Diamond</h3>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: '#475569' }}>
-            <b>{seller.storeName}</b> · one-time fee <b>${FEE.toLocaleString('en-US')}</b> · Diamond is for life
+            <b>{seller.storeName}</b> · one-time fee <b>${FEE.toLocaleString('en-US')}</b>
+            {offer && <> <s style={{ color: '#94a3b8' }}>${REGULAR_FEE.toLocaleString('en-US')}</s></>} · Diamond is for life
           </p>
+          {offer && !isTest && (
+            <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: '#ecfdf5', color: '#065f46', fontSize: 12.5, fontWeight: 600 }}>
+              🏷️ Offer price locked on the seller's request: {offer.title || 'Diamond offer'} — ${FEE.toLocaleString('en-US')} instead of ${REGULAR_FEE.toLocaleString('en-US')} (valid until{' '}
+              {new Date(offer.lockedUntil).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}).
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'grid', gap: 12, marginTop: 14 }}>

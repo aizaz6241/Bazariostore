@@ -4,6 +4,7 @@ import { Link, useOutletContext } from 'react-router-dom';
 import { sapi } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
+import { OfferCard, RewardProgress, OwnNumbers, usd } from './DiamondOfferParts.jsx';
 
 // Fallback numbers until /sellers/tier answers (same as server/src/utils/sellerTier.js)
 const DEFAULT_INFO = {
@@ -46,8 +47,14 @@ export default function SellerDiamond() {
   const pending = !isDiamond && ['pending', 'awaiting_approval'].includes(reqStatus);
   const approving = !isDiamond && reqStatus === 'awaiting_approval';
   const underReview = seller?.status === 'pending_approval';
-  const feeNum = Number(info.upgradeFee || 1500);
-  const fee = `$${feeNum.toLocaleString('en-US')}`;
+  const regularNum = Number(info.upgradeFee || 1500);
+  // Diamond offers: a running offer (Basic, no request yet) or the price locked on the request
+  const offers = info.offers || null;
+  const offer = !isDiamond && !pending ? offers?.offer || null : null;
+  const locked = !isDiamond && pending ? offers?.locked || null : null;
+  const feeNum = Number(locked?.price || offer?.price || regularNum);
+  const discounted = feeNum < regularNum;
+  const fee = usd(feeNum);
 
   const value = Math.max(0, Number(orderValue) || 0);
   const perMonth = Math.max(0, Math.round(Number(ordersPerMonth) || 0));
@@ -66,6 +73,7 @@ export default function SellerDiamond() {
       setNotice({ ok: true, text: r.message });
       setConfirmOpen(false);
       if (r.tier) setInfo((prev) => ({ ...prev, ...r.tier }));
+      load(); // the locked price + the request state
       if (setSeller && !r.already) {
         setSeller((prev) => {
           if (!prev) return prev;
@@ -131,6 +139,16 @@ export default function SellerDiamond() {
             <div><b>{diamond.deliveryDays || '3–5'}d</b><span>fast delivery</span></div>
           </div>
         </section>
+      ) : offer ? (
+        <OfferCard
+          offer={offer}
+          variant="page"
+          onClaim={() => setConfirmOpen(true)}
+          busy={sending}
+          disabled={underReview}
+          onEnd={load}
+          note={underReview ? 'Available once your store registration is approved' : 'One-time payment · no monthly charge · Diamond for life'}
+        />
       ) : (
         <section className={`ap-hero ${pending ? 'is-pending' : ''}`}>
           <div className="ap-hero-main">
@@ -151,6 +169,15 @@ export default function SellerDiamond() {
                   ? `Sent${info.request?.requestedAt ? ` on ${fmtDay(info.request.requestedAt)}` : ''}. Support will contact you in chat with the payment details.`
                   : `Diamond stores keep ${diamond.profitRate - basic.profitRate}% more of every sale, get ${diamond.confirmHours} hours to confirm orders and fast ${diamond.deliveryDays || '3–5'} day delivery. One payment, for life.`}
               </p>
+              {locked && (
+                <div className="ap-lock">
+                  <Ic name="lock" size={16} />
+                  <span>
+                    Your price is locked: <b>{usd(locked.price)}</b> <s style={{ opacity: 0.65 }}>{usd(locked.regular)}</s>
+                    {locked.lockedUntil ? ` · until ${fmtDay(locked.lockedUntil)}` : ''}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
           <div className="ap-hero-cta">
@@ -202,7 +229,11 @@ export default function SellerDiamond() {
               <h3>💎 Diamond</h3>
               {isDiamond && <span className="ap-tag on-dark">Current</span>}
             </div>
-            <div className="ap-price"><b>{fee}</b><span>one-time · lifetime</span></div>
+            <div className="ap-price">
+              <b>{fee}</b>
+              {discounted && !isDiamond && <s className="ap-price-was">{usd(regularNum)}</s>}
+              <span>one-time · lifetime{discounted && !isDiamond ? <span className="ap-price-tag">Save {usd(regularNum - feeNum)}</span> : null}</span>
+            </div>
           </header>
           <ul>
             {features.map((f) => (
@@ -215,12 +246,20 @@ export default function SellerDiamond() {
           </ul>
           {!isDiamond && !pending && (
             <button type="button" className="ap-btn ap-btn-diamond" onClick={() => setConfirmOpen(true)} disabled={sending || underReview}>
-              Request upgrade <Ic name="arrowRight" size={15} />
+              {discounted ? `Upgrade for ${fee}` : 'Request upgrade'} <Ic name="arrowRight" size={15} />
             </button>
           )}
           {pending && <div className="ap-plan-note"><Ic name="clock" size={14} /> {approving ? 'Being approved' : 'Request sent — support will contact you'}</div>}
         </article>
       </section>
+
+      {/* ── Reward progress + the store's own numbers (Basic) ── */}
+      {!isDiamond && (offers?.numbers || (!offer && !pending && offers?.progress?.enabled)) && (
+        <div className="ap-offer-wrap">
+          {!offer && !pending && <RewardProgress progress={offers?.progress} regular={regularNum} />}
+          <OwnNumbers numbers={offers?.numbers} price={feeNum} />
+        </div>
+      )}
 
       {/* ── Calculator ── */}
       <section className="ap-card ap-calc">
@@ -323,12 +362,20 @@ export default function SellerDiamond() {
         </details>
       </section>
 
-      <ConfirmDialog open={confirmOpen} fee={fee} sending={sending} onCancel={() => setConfirmOpen(false)} onConfirm={requestUpgrade} />
+      <ConfirmDialog
+        open={confirmOpen}
+        fee={fee}
+        regular={discounted ? usd(regularNum) : ''}
+        lockDays={offer ? offers?.lockDays || 7 : 0}
+        sending={sending}
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={requestUpgrade}
+      />
     </div>
   );
 }
 
-function ConfirmDialog({ open, fee, sending, onCancel, onConfirm }) {
+function ConfirmDialog({ open, fee, regular, lockDays, sending, onCancel, onConfirm }) {
   const okRef = useRef(null);
   useEffect(() => {
     if (!open) return undefined;
@@ -344,7 +391,15 @@ function ConfirmDialog({ open, fee, sending, onCancel, onConfirm }) {
       <div className="ap-modal">
         <div className="ap-modal-gem" aria-hidden="true">💎</div>
         <h3 id="ap-modal-title">Request the Diamond upgrade?</h3>
-        <p>Your request goes to our support team. They will contact you in chat with the payment details for the one-time fee of <b>{fee}</b>.</p>
+        {regular && (
+          <div className="ap-modal-price">
+            <s>{regular}</s> <b>{fee}</b>
+          </div>
+        )}
+        <p>
+          Your request goes to our support team. They will contact you in chat with the payment details for the one-time fee of <b>{fee}</b>.
+          {regular && lockDays ? ` Your offer price is kept for ${lockDays} days after you send the request.` : ''}
+        </p>
         <div className="ap-modal-actions">
           <button type="button" className="ap-btn ap-btn-ghost" onClick={onCancel} disabled={sending}>Cancel</button>
           <button type="button" ref={okRef} className="ap-btn ap-btn-diamond" onClick={onConfirm} disabled={sending}>

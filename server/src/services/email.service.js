@@ -656,6 +656,39 @@ export async function sendWalletReceiptEmail({ to, name = 'Seller', r, receiptNo
   });
 }
 
+/**
+ * 13. Diamond offer — a store earned a discount (or the reminder 24 hours before it ends).
+ *     `offer` is a DiamondOffer record: { title, price, regular, endsAt }.
+ */
+export async function sendDiamondOfferEmail({ to, name = 'Seller', offer, reminder = false }) {
+  const regular = Number(offer.regular) || 1500;
+  const price = Number(offer.price) || regular;
+  const save = Math.round((regular - price) * 100) / 100;
+  const ends = fmtIST(offer.endsAt);
+  const hoursLeft = Math.max(1, Math.round((new Date(offer.endsAt).getTime() - Date.now()) / 3600000));
+  const subject = reminder ? `⏳ Your Diamond offer ends tomorrow — ${money(price)} instead of ${money(regular)}` : `💎 You earned ${money(save)} off Diamond`;
+  const bodyContent = `
+      ${badge('diamond', reminder ? '⏳ Ends soon' : '🏆 You earned it')}
+      ${heading('diamond', reminder ? 'Your Diamond offer ends soon' : `${money(save)} off Diamond — just for you`)}
+      <p>Hello <b>${esc(name)}</b>,</p>
+      <p>${reminder ? 'This is a friendly reminder: your Diamond offer is still waiting for you.' : `${esc(offer.title || 'Your reward for great work')}: you kept your store in great shape, so Diamond is now cheaper for you.`}</p>
+      <div style="text-align:center;margin:18px 0 6px;">
+        <span style="font-size:18px;color:#94a3b8;text-decoration:line-through;margin-right:10px;">${money(regular)}</span>
+        <span style="font-size:34px;font-weight:900;color:#5b21b6;">${money(price)}</span>
+      </div>
+      <p style="text-align:center;margin:0 0 14px;font-size:13px;color:#64748b;">Offer ends <b>${ends}</b> · about ${hoursLeft} hours left</p>
+      ${callout('diamond', `<b>What you get — one time, for life</b>${list([
+        '35% profit on every new order (instead of 20%)',
+        'Fast 3–5 day shipping on every order — arranged by us',
+        'We cover the cost when a customer is unhappy about a late order',
+        '72 hours to confirm orders (instead of 48)',
+        'Remove products from My Store anytime',
+      ])}`)}
+      ${button('diamond', `GET DIAMOND FOR ${money(price)} →`, sellerUrl('/seller/diamond'))}`;
+  const text = `Hello ${name},\n\n${reminder ? 'Your Diamond offer ends soon.' : `You earned ${money(save)} off Diamond.`}\nDiamond for ${money(price)} instead of ${money(regular)} — offer ends ${ends}.\n\n${sellerUrl('/seller/diamond')}`;
+  return sendSellerEmail({ to, subject, preheader: `Diamond for ${money(price)} instead of ${money(regular)} — ends ${ends}.`, bodyContent, text });
+}
+
 export default {
   transporter,
   sendVerificationOtpEmail,
@@ -670,5 +703,6 @@ export default {
   sendAccountStatusEmail,
   sendDiamondEmail,
   sendWalletReceiptEmail,
+  sendDiamondOfferEmail,
   emailEnabled,
 };

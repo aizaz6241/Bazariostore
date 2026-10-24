@@ -100,6 +100,16 @@ const sellerSchema = new mongoose.Schema(
     tierRequest: {
       status: { type: String, enum: ['none', 'pending', 'awaiting_approval'], default: 'none' },
       requestedAt: { type: Date, default: null },
+      // the Diamond offer price locked when the seller sent the request (utils/diamondOffers.js);
+      // the admin's fee form and the partners' approval use this price until `lockedUntil`
+      offer: {
+        key: { type: String, default: '' },
+        kind: { type: String, default: '' },
+        title: { type: String, default: '' },
+        price: { type: Number, default: 0 },
+        regular: { type: Number, default: 0 },
+        lockedUntil: { type: Date, default: null },
+      },
     },
     tierHistory: [
       {
