@@ -120,7 +120,7 @@ export default function Account() {
             <h3>Profile</h3>
             <div className="field"><label>Full Name</label><input value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} /></div>
             <div className="field"><label>Email</label><input value={user?.email || ''} disabled /></div>
-            <div className="field"><label>Phone</label><input value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} placeholder="03XX XXXXXXX" /></div>
+            <div className="field"><label>Phone</label><input value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} placeholder="Phone number" /></div>
             <button className="btn-primary">SAVE PROFILE</button>
           </form>
           <form className="card form-card" onSubmit={changePw}>

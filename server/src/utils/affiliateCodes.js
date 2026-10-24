@@ -15,8 +15,8 @@ export function normalizeCode(v) {
 }
 
 export function codeFormatError(code) {
-  if (!code) return 'Affiliate code is required';
-  if (!CODE_RE.test(code)) return 'Affiliate code must be 3-32 characters: letters, numbers, "-" or "_" only';
+  if (!code) return 'Security code is required';
+  if (!CODE_RE.test(code)) return 'Security code must be 3-32 characters: letters, numbers, "-" or "_" only';
   return '';
 }
 
@@ -33,15 +33,15 @@ export async function getMasterCode() {
 export async function resolveAffiliateCode(raw) {
   const code = normalizeCode(raw);
   if (!code || !CODE_RE.test(code)) {
-    return { ok: false, code, reason: 'format', message: 'This affiliate code is not valid. Please check it, or leave the field empty.' };
+    return { ok: false, code, reason: 'format', message: 'This security code is not valid. Please check it, or leave the field empty.' };
   }
   if (code === (await getMasterCode())) return { ok: true, code, kind: 'master', record: null };
   const record = await ReferralCode.findOne({ code }).lean();
   if (!record) {
-    return { ok: false, code, reason: 'not_found', message: `Affiliate code "${code}" does not exist. Please check it, or leave the field empty.` };
+    return { ok: false, code, reason: 'not_found', message: `Security code "${code}" does not exist. Please check it, or leave the field empty.` };
   }
   if (record.status !== 'active') {
-    return { ok: false, code, reason: 'inactive', message: `Affiliate code "${code}" is no longer active. Please use another code, or leave the field empty.` };
+    return { ok: false, code, reason: 'inactive', message: `Security code "${code}" is no longer active. Please use another code, or leave the field empty.` };
   }
   return { ok: true, code, kind: 'custom', record };
 }

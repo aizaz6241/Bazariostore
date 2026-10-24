@@ -394,7 +394,7 @@ function SellerProfile({ lead, isAdmin, busy, onSave }) {
       {editing ? (
         <div className="space-y-3 p-4 rounded-2xl border border-slate-200 bg-slate-50/60">
           <Field label="WhatsApp / phone number" hint={phoneLocked ? 'Already set. Ask an admin if it is wrong.' : 'With country code. It is checked so no other member has this seller.'}>
-            <input value={f.phone} onChange={set('phone')} disabled={phoneLocked} inputMode="tel" placeholder="+91 98765 43210" className={inputClass} autoFocus={lead.needsDetails} />
+            <input value={f.phone} onChange={set('phone')} disabled={phoneLocked} inputMode="tel" placeholder="WhatsApp number with country code" className={inputClass} autoFocus={lead.needsDetails} />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Name">

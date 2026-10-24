@@ -105,7 +105,7 @@ export default function SellerShipping() {
             </div>
             <div className="shipping-field">
               <label>Description</label>
-              <input value={form.description} onChange={set('description')} placeholder="e.g. Delivered via Delhivery / BlueDart / TCS" />
+              <input value={form.description} onChange={set('description')} placeholder="e.g. Delivered by our courier partner" />
             </div>
             <div className="shipping-field">
               <label>Shipping Cost ($ USD) *</label>

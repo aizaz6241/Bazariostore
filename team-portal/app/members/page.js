@@ -1094,7 +1094,7 @@ export default function MembersPage() {
                       username: createForm.username || autoUser,
                     });
                   }}
-                  placeholder="e.g. Member 1 or Bilal Khan"
+                  placeholder="e.g. Member 1"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
@@ -1139,7 +1139,7 @@ export default function MembersPage() {
                   type="text"
                   value={createForm.phone}
                   onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })}
-                  placeholder="+92 300 0000000"
+                  placeholder="Phone number with country code"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
@@ -1292,7 +1292,7 @@ export default function MembersPage() {
                   required
                   value={bonusReason}
                   onChange={(e) => setBonusReason(e.target.value)}
-                  placeholder="e.g. ₹200k deposit milestone achieved"
+                  placeholder="e.g. Deposit milestone achieved"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>

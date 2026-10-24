@@ -538,7 +538,7 @@ export default function AddFundsModal({
                 type="text"
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
-                placeholder="e.g. UTR982348234 / Cash Receipt #"
+                placeholder="UTR / transaction reference / receipt #"
                 className="afm-subinput"
               />
             </div>

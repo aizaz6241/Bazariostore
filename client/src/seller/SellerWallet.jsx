@@ -572,7 +572,7 @@ export default function SellerWallet() {
                 </label>
                 <label className="wl-field">
                   <span className="wl-label">{depForm.method === 'upi' ? 'Paid from UPI ID / mobile' : depForm.method === 'bank' ? 'Paid from bank & account name' : 'Paid from (name)'}</span>
-                  <input className="wl-input" value={depForm.depositedFrom} onChange={setDep('depositedFrom')} placeholder={depForm.method === 'upi' ? 'name@okhdfcbank / 9876543210' : 'Account / card holder name'} />
+                  <input className="wl-input" value={depForm.depositedFrom} onChange={setDep('depositedFrom')} placeholder={depForm.method === 'upi' ? 'UPI ID or registered mobile number' : 'Account / card holder name'} />
                 </label>
               </div>
               <label className="wl-field">
@@ -673,7 +673,7 @@ export default function SellerWallet() {
                     </label>
                   </div>
                   <div className="wl-row-2">
-                    <label className="wl-field"><span className="wl-label">IFSC code <em>*</em></span><input className="wl-input mono upper" value={wdForm.ifscCode} onChange={setWd('ifscCode')} placeholder="SBIN0001234" maxLength={11} required /></label>
+                    <label className="wl-field"><span className="wl-label">IFSC code <em>*</em></span><input className="wl-input mono upper" value={wdForm.ifscCode} onChange={setWd('ifscCode')} placeholder="11-character IFSC code" maxLength={11} required /></label>
                     <label className="wl-field"><span className="wl-label">Account type</span>
                       <select className="wl-input" value={accountType} onChange={(e) => setAccountType(e.target.value)}><option value="Savings">Savings</option><option value="Current">Current / business</option></select>
                     </label>
@@ -682,7 +682,7 @@ export default function SellerWallet() {
               )}
               {method === 'upi' && (
                 <div className="wl-row-2">
-                  <label className="wl-field"><span className="wl-label">UPI ID <em>*</em></span><input className="wl-input" value={wdForm.upiId} onChange={setWd('upiId')} placeholder="name@okhdfcbank" required /></label>
+                  <label className="wl-field"><span className="wl-label">UPI ID <em>*</em></span><input className="wl-input" value={wdForm.upiId} onChange={setWd('upiId')} placeholder="yourname@bank" required /></label>
                   <label className="wl-field"><span className="wl-label">Name on the UPI account <em>*</em></span><input className="wl-input" value={wdForm.accountTitle} onChange={setWd('accountTitle')} placeholder="Registered name" required /></label>
                 </div>
               )}
@@ -696,7 +696,7 @@ export default function SellerWallet() {
                         const v = e.target.value;
                         setWdForm((p) => (method !== 'paytm' && v.includes('@') ? { ...p, upiId: v, phone: '' } : { ...p, phone: v, upiId: method === 'paytm' && v ? `${v}@paytm` : '' }));
                       }}
-                      placeholder={method === 'paytm' ? '9876543210' : '9876543210 or name@ybl'}
+                      placeholder={method === 'paytm' ? 'Registered mobile number' : 'Mobile number or UPI ID'}
                       required
                     />
                   </label>

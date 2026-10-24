@@ -120,7 +120,7 @@ export default function Referrals() {
         setMasterInput(res?.masterAffiliateCode || res?.masterReferralCode || '');
         setLoadErr('');
       })
-      .catch((e) => setLoadErr(e.message || 'Could not load affiliate codes'))
+      .catch((e) => setLoadErr(e.message || 'Could not load security codes'))
       .finally(() => setLoading(false));
   };
 
@@ -277,7 +277,7 @@ export default function Referrals() {
       }
       return;
     }
-    if (!window.confirm(`Delete affiliate code "${c.code}"?`)) return;
+    if (!window.confirm(`Delete security code "${c.code}"?`)) return;
     try {
       await api(`/sellers/affiliates/${c._id}`, { method: 'DELETE' });
       notify(`Code ${c.code} deleted`);
@@ -304,7 +304,7 @@ export default function Referrals() {
       <div className="aff-head">
         <div>
           <span className="aff-eyebrow"><Ic name="tag" size={13} /> Seller acquisition</span>
-          <h1>Affiliate Codes</h1>
+          <h1>Security Codes</h1>
           <p>Invite sellers with tracked codes. A seller can only register with the master code or an <b>active</b> custom code — wrong or switched-off codes are refused.</p>
         </div>
         <div className="aff-head-actions">
@@ -400,7 +400,7 @@ export default function Referrals() {
             <span className="aff-pill blue">Default</span>
           </header>
           <form onSubmit={saveMaster} className="aff-master-form">
-            <input value={masterInput} onChange={(e) => setMasterInput(cleanCode(e.target.value))} maxLength={32} aria-label="Master affiliate code" />
+            <input value={masterInput} onChange={(e) => setMasterInput(cleanCode(e.target.value))} maxLength={32} aria-label="Master security code" />
             <button type="submit" className="aff-btn primary" disabled={savingMaster || cleanCode(masterInput) === masterCode}>
               {savingMaster ? 'Saving…' : 'Save'}
             </button>
@@ -422,7 +422,7 @@ export default function Referrals() {
             </div>
           </header>
           {!data?.unknownCodes?.length ? (
-            <div className="aff-allgood"><Ic name="checkCircle" size={18} /> Every seller's code matches a real affiliate code.</div>
+            <div className="aff-allgood"><Ic name="checkCircle" size={18} /> Every seller's code matches a real security code.</div>
           ) : (
             <ul className="aff-unknown">
               {data.unknownCodes.slice(0, 8).map((u) => (
@@ -484,7 +484,7 @@ export default function Referrals() {
             </thead>
             <tbody>
               {loading && !data && (
-                <tr><td colSpan="7" className="aff-td-empty">Loading affiliate codes…</td></tr>
+                <tr><td colSpan="7" className="aff-td-empty">Loading security codes…</td></tr>
               )}
               {data && visibleCodes.length === 0 && (
                 <tr>
@@ -541,7 +541,7 @@ export default function Referrals() {
           <div className="aff-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
             <header>
               <div>
-                <h3>{formModal.mode === 'create' ? 'New affiliate code' : `Edit ${form.code}`}</h3>
+                <h3>{formModal.mode === 'create' ? 'New security code' : `Edit ${form.code}`}</h3>
                 <p>{formModal.mode === 'create' ? 'Sellers can register with it as soon as it is active.' : 'The code itself cannot be renamed: sellers already linked to it keep their link.'}</p>
               </div>
               <button type="button" className="aff-icon-btn" onClick={() => setFormModal(null)} aria-label="Close"><Ic name="x" size={16} /></button>
@@ -564,7 +564,7 @@ export default function Referrals() {
               </label>
               <label className="aff-field">
                 <span>Campaign / description</span>
-                <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="e.g. Instagram influencer — Sara" maxLength={200} />
+                <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="e.g. Instagram influencer" maxLength={200} />
               </label>
               <div className="aff-field-row">
                 <label className="aff-field">
@@ -637,7 +637,7 @@ export default function Referrals() {
                 </div>
                 <label className="aff-field">
                   <span>Campaign / description</span>
-                  <input value={bulk.description} onChange={(e) => setBulk({ ...bulk, description: e.target.value })} placeholder="e.g. Field agents — Mumbai" maxLength={200} />
+                  <input value={bulk.description} onChange={(e) => setBulk({ ...bulk, description: e.target.value })} placeholder="e.g. Field agents — city" maxLength={200} />
                 </label>
                 <div className="aff-field-row">
                   <label className="aff-field">

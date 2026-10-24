@@ -717,7 +717,7 @@ function StaffForm({ edit, setEdit, meta, saving, onSubmit, admins }) {
           <h4>Account</h4>
           <div className="form-grid-2">
             <F label="Full name *">
-              <input type="text" value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} placeholder="e.g. Sarah Khan" required />
+              <input type="text" value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} placeholder="Full name" required />
             </F>
             <F label="Login email *">
               <input

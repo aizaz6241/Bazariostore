@@ -159,7 +159,7 @@ export default function OrderDetail() {
             </div>
             <div className="field">
               <label>Note (customer tracking page par nazar aayega)</label>
-              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Courier: TCS, Tracking # 12345" />
+              <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Courier name, tracking number" />
             </div>
             <button className="btn-primary btn-block" onClick={update} disabled={saving}>
               {saving ? 'Updating…' : 'UPDATE STATUS'}

@@ -291,7 +291,7 @@ export default function Checkout() {
                             <input
                               value={walletNumber}
                               onChange={(e) => setWalletNumber(e.target.value)}
-                              placeholder="03XX XXXXXXX"
+                              placeholder="Account number"
                               className={errors.wallet ? 'invalid' : ''}
                             />
                             {errors.wallet && <small className="field-err">{errors.wallet}</small>}

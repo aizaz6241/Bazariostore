@@ -1016,7 +1016,7 @@ async function adminAffiliateError(code) {
   if (!code) return '';
   const r = await resolveAffiliateCode(code);
   if (r.ok || r.reason === 'inactive') return '';
-  return `Affiliate code "${code}" does not exist. Correct it (see Affiliate Codes) or clear the field.`;
+  return `Security code "${code}" does not exist. Correct it (see Security Codes) or clear the field.`;
 }
 
 // GET /api/sellers/master-affiliate or /api/sellers/master-referral (Get platform master affiliate code)
@@ -1040,7 +1040,7 @@ router.post(['/master-affiliate', '/master-referral'], authAdmin('sellers'), asy
     // again; any other custom code keeps its own settings and cannot be turned into the master
     const isFormerMaster = existing && existing.description === 'Former master affiliate code';
     if (existing && !isFormerMaster) {
-      return res.status(400).json({ message: `"${cleanCode}" is already a custom affiliate code. Pick a different master code.` });
+      return res.status(400).json({ message: `"${cleanCode}" is already a custom security code. Pick a different master code.` });
     }
     const previous = await getMasterCode();
     await setSetting('master_affiliate_code', cleanCode);
@@ -1056,9 +1056,9 @@ router.post(['/master-affiliate', '/master-referral'], authAdmin('sellers'), asy
         { upsert: true }
       ).catch(() => {});
     }
-    audit(req, 'update', 'system_setting', null, `Updated master affiliate code from ${previous} to ${cleanCode}`);
+    audit(req, 'update', 'system_setting', null, `Updated master security code from ${previous} to ${cleanCode}`);
     res.json({
-      message: 'Master affiliate code updated successfully',
+      message: 'Master security code updated successfully',
       masterReferralCode: cleanCode,
       masterAffiliateCode: cleanCode,
     });
@@ -1159,7 +1159,7 @@ router.post(['/affiliates', '/referrals'], authAdmin('sellers'), async (req, res
     const formatErr = codeFormatError(cleanCode);
     if (formatErr) return res.status(400).json({ message: formatErr });
     if (cleanCode === (await getMasterCode())) {
-      return res.status(400).json({ message: `"${cleanCode}" is the master affiliate code already` });
+      return res.status(400).json({ message: `"${cleanCode}" is the master security code already` });
     }
     const rate = cleanRate(commissionRate);
     if (rate.error) return res.status(400).json({ message: rate.error });
@@ -1167,7 +1167,7 @@ router.post(['/affiliates', '/referrals'], authAdmin('sellers'), async (req, res
     if (bonus.error) return res.status(400).json({ message: bonus.error });
 
     if (await ReferralCode.exists({ code: cleanCode })) {
-      return res.status(400).json({ message: `Affiliate code "${cleanCode}" already exists` });
+      return res.status(400).json({ message: `Security code "${cleanCode}" already exists` });
     }
 
     const newCode = new ReferralCode({
@@ -1182,14 +1182,14 @@ router.post(['/affiliates', '/referrals'], authAdmin('sellers'), async (req, res
       await newCode.save();
     } catch (err) {
       // two admins creating the same code at the same moment
-      if (isDuplicateKey(err)) return res.status(400).json({ message: `Affiliate code "${cleanCode}" already exists` });
+      if (isDuplicateKey(err)) return res.status(400).json({ message: `Security code "${cleanCode}" already exists` });
       throw err;
     }
 
-    audit(req, 'create', 'referral_code', newCode._id, `Created affiliate code: ${cleanCode}`);
+    audit(req, 'create', 'referral_code', newCode._id, `Created security code: ${cleanCode}`);
 
     res.status(201).json({
-      message: `Affiliate code "${cleanCode}" created successfully! 🎉`,
+      message: `Security code "${cleanCode}" created successfully! 🎉`,
       referralCode: newCode,
       affiliateCode: newCode,
     });
@@ -1242,9 +1242,9 @@ router.post('/affiliates/bulk', authAdmin('sellers'), async (req, res) => {
       if (!isDuplicateKey(err) && !err?.writeErrors) throw err;
       created = err.insertedDocs || [];
     }
-    audit(req, 'create', 'referral_code', null, `Generated ${created.length} affiliate codes${cleanPrefix ? ` (prefix ${cleanPrefix})` : ''}`);
+    audit(req, 'create', 'referral_code', null, `Generated ${created.length} security codes${cleanPrefix ? ` (prefix ${cleanPrefix})` : ''}`);
     res.status(201).json({
-      message: `${created.length} affiliate code${created.length === 1 ? '' : 's'} generated`,
+      message: `${created.length} security code${created.length === 1 ? '' : 's'} generated`,
       codes: created.map((c) => c.code),
       affiliateCodes: created,
     });
@@ -1257,9 +1257,9 @@ router.post('/affiliates/bulk', authAdmin('sellers'), async (req, res) => {
 // The code itself is not renamed: sellers who already used it keep pointing to it.
 router.patch(['/affiliates/:id', '/referrals/:id'], authAdmin('sellers'), async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Affiliate code not found' });
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Security code not found' });
     const rc = await ReferralCode.findById(req.params.id);
-    if (!rc) return res.status(404).json({ message: 'Affiliate code not found' });
+    if (!rc) return res.status(404).json({ message: 'Security code not found' });
     const { description, commissionRate, bonusAmount, status } = req.body || {};
     if (description !== undefined) rc.description = asText(description, 200).trim();
     if (commissionRate !== undefined) {
@@ -1274,8 +1274,8 @@ router.patch(['/affiliates/:id', '/referrals/:id'], authAdmin('sellers'), async 
     }
     if (status !== undefined) rc.status = status === 'inactive' ? 'inactive' : 'active';
     await rc.save();
-    audit(req, 'update', 'referral_code', rc._id, `Edited affiliate code: ${rc.code}`);
-    res.json({ ok: true, message: `Affiliate code "${rc.code}" updated.`, referralCode: rc, affiliateCode: rc });
+    audit(req, 'update', 'referral_code', rc._id, `Edited security code: ${rc.code}`);
+    res.json({ ok: true, message: `Security code "${rc.code}" updated.`, referralCode: rc, affiliateCode: rc });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -1284,9 +1284,9 @@ router.patch(['/affiliates/:id', '/referrals/:id'], authAdmin('sellers'), async 
 // DELETE /api/sellers/affiliates/:id or /api/sellers/referrals/:id (Admin deletes an affiliate code)
 router.delete(['/affiliates/:id', '/referrals/:id'], authAdmin('sellers'), async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Affiliate code not found' });
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Security code not found' });
     const rc = await ReferralCode.findById(req.params.id);
-    if (!rc) return res.status(404).json({ message: 'Affiliate code not found' });
+    if (!rc) return res.status(404).json({ message: 'Security code not found' });
 
     // A code sellers joined with stays: deleting it made their code "unknown", and waiting
     // applications with it could no longer be approved ("code does not exist") without losing
@@ -1301,9 +1301,9 @@ router.delete(['/affiliates/:id', '/referrals/:id'], authAdmin('sellers'), async
     }
 
     await ReferralCode.findByIdAndDelete(req.params.id);
-    audit(req, 'delete', 'referral_code', req.params.id, `Deleted affiliate code: ${rc.code}`);
+    audit(req, 'delete', 'referral_code', req.params.id, `Deleted security code: ${rc.code}`);
 
-    res.json({ ok: true, message: `Affiliate code "${rc.code}" deleted successfully.` });
+    res.json({ ok: true, message: `Security code "${rc.code}" deleted successfully.` });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -1312,9 +1312,9 @@ router.delete(['/affiliates/:id', '/referrals/:id'], authAdmin('sellers'), async
 // PATCH /api/sellers/affiliates/:id/toggle or /api/sellers/referrals/:id/toggle (Admin toggles active / inactive)
 router.patch(['/affiliates/:id/toggle', '/referrals/:id/toggle'], authAdmin('sellers'), async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Affiliate code not found' });
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Security code not found' });
     const rc = await ReferralCode.findById(req.params.id);
-    if (!rc) return res.status(404).json({ message: 'Affiliate code not found' });
+    if (!rc) return res.status(404).json({ message: 'Security code not found' });
 
     rc.status = rc.status === 'active' ? 'inactive' : 'active';
     await rc.save();
@@ -1323,7 +1323,7 @@ router.patch(['/affiliates/:id/toggle', '/referrals/:id/toggle'], authAdmin('sel
 
     res.json({
       ok: true,
-      message: `Affiliate code "${rc.code}" is now ${rc.status.toUpperCase()}.`,
+      message: `Security code "${rc.code}" is now ${rc.status.toUpperCase()}.`,
       referralCode: rc,
       affiliateCode: rc,
     });

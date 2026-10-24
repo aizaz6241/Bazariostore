@@ -859,7 +859,7 @@ export default function AdminWithdrawals() {
                           <span>Bank Ref / UTR Number</span>
                           <input
                             type="text"
-                            placeholder="e.g. UTR9876543210"
+                            placeholder="UTR / transaction reference"
                             value={refMap[r._id] || ''}
                             onChange={(e) => setRefMap((prev) => ({ ...prev, [r._id]: e.target.value }))}
                           />

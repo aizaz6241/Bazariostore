@@ -1576,7 +1576,7 @@ export default function Sellers() {
                           type="text"
                           value={accForm.phone}
                           onChange={(e) => setAccForm({ ...accForm, phone: e.target.value })}
-                          placeholder="+92 300 1234567"
+                          placeholder="Phone number with country code"
                           className="spf-input"
                         />
                       </div>
@@ -1712,7 +1712,7 @@ export default function Sellers() {
                           type="text"
                           value={accForm.city}
                           onChange={(e) => setAccForm({ ...accForm, city: e.target.value })}
-                          placeholder="e.g. New York / Lahore"
+                          placeholder="e.g. City"
                           className="spf-input"
                         />
                       </div>
@@ -2989,7 +2989,7 @@ export default function Sellers() {
                     type="text"
                     value={createForm.ownerName}
                     onChange={(e) => setCreateForm({ ...createForm, ownerName: e.target.value })}
-                    placeholder="e.g. Ali Raza"
+                    placeholder="Owner’s full name"
                     style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
                     required
                   />
@@ -3025,7 +3025,7 @@ export default function Sellers() {
                     type="text"
                     value={createForm.phone}
                     onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })}
-                    placeholder="+92 300 1234567"
+                    placeholder="Phone number with country code"
                     style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
                   />
                 </div>

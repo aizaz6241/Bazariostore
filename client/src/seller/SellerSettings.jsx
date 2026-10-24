@@ -19,8 +19,8 @@ const METHODS = [
       { k: 'accountTitle', label: 'Account holder name', req: true, ph: 'As written in your passbook' },
       { k: 'bankName', label: 'Bank', req: true, options: INDIAN_BANKS },
       { k: 'accountNumber', label: 'Account number', req: true, ph: '01234567890123', mode: 'numeric' },
-      { k: 'ifscCode', label: 'IFSC code', req: true, ph: 'SBIN0001234', upper: true, max: 11 },
-      { k: 'branchName', label: 'Branch (optional)', ph: 'e.g. Bandra West' },
+      { k: 'ifscCode', label: 'IFSC code', req: true, ph: '11-character IFSC code', upper: true, max: 11 },
+      { k: 'branchName', label: 'Branch (optional)', ph: 'Branch name' },
       { k: 'accountType', label: 'Account type', options: ['Savings', 'Current'] },
     ],
     summary: (m) => `${m.bankName || 'Bank'} · ••••${String(m.accountNumber || '').slice(-4)}`,
@@ -28,7 +28,7 @@ const METHODS = [
   {
     key: 'upi', icon: 'drop', name: 'UPI', sub: 'Instant payout to your UPI ID',
     fields: [
-      { k: 'upiId', label: 'UPI ID', req: true, ph: 'name@okhdfcbank' },
+      { k: 'upiId', label: 'UPI ID', req: true, ph: 'yourname@bank' },
       { k: 'holderName', label: 'Name on UPI', req: true, ph: 'Registered name' },
     ],
     summary: (m) => m.upiId,
@@ -36,7 +36,7 @@ const METHODS = [
   {
     key: 'paytm', icon: 'phone', name: 'Paytm', sub: 'Paytm wallet or Payments Bank',
     fields: [
-      { k: 'phone', label: 'Paytm mobile number', req: true, ph: '9876543210', mode: 'tel' },
+      { k: 'phone', label: 'Paytm mobile number', req: true, ph: 'Registered mobile number', mode: 'tel' },
       { k: 'accountName', label: 'Account name (optional)' },
     ],
     summary: (m) => m.phone,
@@ -44,8 +44,8 @@ const METHODS = [
   {
     key: 'gpay', icon: 'card', name: 'Google Pay', sub: 'GPay mobile number or UPI ID',
     fields: [
-      { k: 'phone', label: 'Mobile number', ph: '9876543210', mode: 'tel' },
-      { k: 'upiId', label: 'or UPI ID', ph: 'name@okaxis' },
+      { k: 'phone', label: 'Mobile number', ph: 'Registered mobile number', mode: 'tel' },
+      { k: 'upiId', label: 'or UPI ID', ph: 'yourname@bank' },
       { k: 'accountName', label: 'Account name (optional)' },
     ],
     summary: (m) => m.upiId || m.phone,
@@ -53,8 +53,8 @@ const METHODS = [
   {
     key: 'phonepe', icon: 'phone', name: 'PhonePe', sub: 'PhonePe mobile number or UPI ID',
     fields: [
-      { k: 'phone', label: 'Mobile number', ph: '9876543210', mode: 'tel' },
-      { k: 'upiId', label: 'or UPI ID', ph: 'name@ybl' },
+      { k: 'phone', label: 'Mobile number', ph: 'Registered mobile number', mode: 'tel' },
+      { k: 'upiId', label: 'or UPI ID', ph: 'yourname@bank' },
       { k: 'accountName', label: 'Account name (optional)' },
     ],
     summary: (m) => m.upiId || m.phone,
@@ -281,7 +281,7 @@ function ProfileSection({ seller, restricted, save, setToast }) {
             <input className="st-input" value={form.ownerName} maxLength={80} onChange={set('ownerName')} disabled={restricted} />
           </Field>
           <Field label="Contact phone / WhatsApp" hint="For the Bazario team to reach you.">
-            <input className="st-input" type="tel" value={form.phone} maxLength={30} onChange={set('phone')} placeholder="+91 98765 43210" disabled={restricted} />
+            <input className="st-input" type="tel" value={form.phone} maxLength={30} onChange={set('phone')} placeholder="Phone number with country code" disabled={restricted} />
           </Field>
           <Field label="Login email" hint="To change your email, contact support.">
             <input className="st-input" value={seller?.email || ''} disabled readOnly />
@@ -451,7 +451,7 @@ function AddressSection({ seller, restricted, save, setToast }) {
           <Field label="City"><input className="st-input" value={form.city} maxLength={150} onChange={set('city')} disabled={restricted} /></Field>
           <Field label="State / province"><input className="st-input" value={form.state} maxLength={150} onChange={set('state')} disabled={restricted} /></Field>
           <Field label="Postal code"><input className="st-input" value={form.postalCode} maxLength={20} onChange={set('postalCode')} disabled={restricted} /></Field>
-          <Field label="Country"><input className="st-input" value={form.country} maxLength={150} onChange={set('country')} placeholder="India" disabled={restricted} /></Field>
+          <Field label="Country"><input className="st-input" value={form.country} maxLength={150} onChange={set('country')} placeholder="Country" disabled={restricted} /></Field>
         </div>
       </Card>
     </form>

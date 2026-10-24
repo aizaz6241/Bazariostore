@@ -49,6 +49,8 @@ export default function SellerLogin() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showRegPassword, setShowRegPassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
   const [err, setErr] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
@@ -225,7 +227,7 @@ export default function SellerLogin() {
     if (!code) return { state: 'idle', message: '' };
     try {
       const res = await api(`/sellers/affiliate/validate?code=${encodeURIComponent(code)}`, { timeout: 15000 });
-      return res?.valid ? { state: 'valid', message: res.message || 'Valid affiliate code' } : { state: 'invalid', message: res?.message || 'This affiliate code does not exist.' };
+      return res?.valid ? { state: 'valid', message: res.message || 'Valid security code' } : { state: 'invalid', message: res?.message || 'This security code does not exist.' };
     } catch {
       return { state: 'error', message: 'Could not check the code right now. It will be checked when you submit.' };
     }
@@ -271,7 +273,7 @@ export default function SellerLogin() {
       const aff = affCheck.state === 'valid' || affCheck.state === 'invalid' ? affCheck : await checkAffiliate(regForm.referralCode);
       setAffCheck(aff);
       if (aff.state === 'invalid') {
-        setErr(aff.message + ' (You can also leave the affiliate code empty.)');
+        setErr(aff.message + ' (You can also leave the security code empty.)');
         return;
       }
     }
@@ -478,7 +480,7 @@ export default function SellerLogin() {
               <span>Password</span>
               <div className="sl-pw">
                 <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Your password" required autoComplete="current-password" />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'}><Ic name="eye" size={17} /></button>
+                <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'} title={showPassword ? 'Hide password' : 'Show password'}><Ic name="eye" size={17} /></button>
               </div>
             </label>
             <button type="submit" className="sl-btn primary" disabled={loading}>{loading ? 'Signing in…' : 'Sign in'}</button>
@@ -503,7 +505,7 @@ export default function SellerLogin() {
                 </label>
                 <label className="sl-field">
                   <span>Owner full name</span>
-                  <input type="text" value={regForm.ownerName} onChange={(e) => setRegForm({ ...regForm, ownerName: e.target.value })} placeholder="As on your Aadhaar card" required />
+                  <input type="text" value={regForm.ownerName} onChange={(e) => setRegForm({ ...regForm, ownerName: e.target.value })} placeholder="As on your ID card" required />
                 </label>
               </div>
             </section>
@@ -527,7 +529,7 @@ export default function SellerLogin() {
                 </label>
                 <label className="sl-field">
                   <span>Phone / WhatsApp</span>
-                  <input type="tel" value={regForm.phone} onChange={(e) => setRegForm({ ...regForm, phone: e.target.value })} placeholder="+91 98765 43210" required />
+                  <input type="tel" value={regForm.phone} onChange={(e) => setRegForm({ ...regForm, phone: e.target.value })} placeholder="Phone number with country code" required />
                 </label>
               </div>
               {emailNotice && (
@@ -547,10 +549,13 @@ export default function SellerLogin() {
               <div className="sl-grid">
                 <label className="sl-field">
                   <span>Create a password</span>
-                  <input type="password" value={regForm.password} onChange={(e) => setRegForm({ ...regForm, password: e.target.value })} placeholder="At least 6 characters" minLength={6} required autoComplete="new-password" />
+                  <div className="sl-pw">
+                    <input type={showRegPassword ? 'text' : 'password'} value={regForm.password} onChange={(e) => setRegForm({ ...regForm, password: e.target.value })} placeholder="At least 6 characters" minLength={6} required autoComplete="new-password" />
+                    <button type="button" onClick={() => setShowRegPassword((v) => !v)} aria-label={showRegPassword ? 'Hide password' : 'Show password'} title={showRegPassword ? 'Hide password' : 'Show password'}><Ic name="eye" size={17} /></button>
+                  </div>
                 </label>
                 <label className="sl-field">
-                  <span>Affiliate code <em>(optional)</em></span>
+                  <span>Security code <em>(optional)</em></span>
                   <input
                     type="text"
                     className={affCheck.state === 'valid' ? 'is-ok' : affCheck.state === 'invalid' ? 'is-bad' : ''}
@@ -653,11 +658,17 @@ export default function SellerLogin() {
                 )}
                 <label className="sl-field">
                   <span>New password</span>
-                  <input type="password" value={forgotNewPassword} onChange={(e) => setForgotNewPassword(e.target.value)} placeholder="At least 6 characters" minLength={6} required />
+                  <div className="sl-pw">
+                    <input type={showResetPassword ? 'text' : 'password'} value={forgotNewPassword} onChange={(e) => setForgotNewPassword(e.target.value)} placeholder="At least 6 characters" minLength={6} required autoComplete="new-password" />
+                    <button type="button" onClick={() => setShowResetPassword((v) => !v)} aria-label={showResetPassword ? 'Hide password' : 'Show password'} title={showResetPassword ? 'Hide password' : 'Show password'}><Ic name="eye" size={17} /></button>
+                  </div>
                 </label>
                 <label className="sl-field">
                   <span>Repeat new password</span>
-                  <input type="password" value={forgotConfirmPassword} onChange={(e) => setForgotConfirmPassword(e.target.value)} placeholder="Type it again" minLength={6} required />
+                  <div className="sl-pw">
+                    <input type={showResetPassword ? 'text' : 'password'} value={forgotConfirmPassword} onChange={(e) => setForgotConfirmPassword(e.target.value)} placeholder="Type it again" minLength={6} required autoComplete="new-password" />
+                    <button type="button" onClick={() => setShowResetPassword((v) => !v)} aria-label={showResetPassword ? 'Hide password' : 'Show password'} title={showResetPassword ? 'Hide password' : 'Show password'}><Ic name="eye" size={17} /></button>
+                  </div>
                 </label>
                 <button type="submit" className="sl-btn primary" disabled={forgotBusy}>{forgotBusy ? 'Saving…' : 'Save new password'}</button>
                 <button type="button" className="sl-link center" onClick={() => setForgotStep('request')}>Back</button>

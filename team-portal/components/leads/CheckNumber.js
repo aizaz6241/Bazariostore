@@ -57,7 +57,7 @@ export default function CheckNumber({ onAdd, onOpenLead, isAdmin }) {
                 if (result) setResult(null);
               }}
               inputMode="tel"
-              placeholder="Paste a WhatsApp number, e.g. +91 98765 43210"
+              placeholder="Paste a WhatsApp number with country code"
               aria-label="Phone number to check"
               className="w-full pl-10 pr-3 py-3 rounded-2xl bg-white/10 border border-white/10 text-white placeholder:text-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-white/30"
             />

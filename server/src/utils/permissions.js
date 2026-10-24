@@ -43,7 +43,7 @@ export function permsFor(admin) {
 
 /** What each module lets a staff account do (shown on the Staff screen). */
 export const PERMISSION_INFO = {
-  sellers: { label: 'Sellers & Vendors', group: 'Marketplace', desc: 'Seller accounts, applications, complaints, targets, affiliate codes' },
+  sellers: { label: 'Sellers & Vendors', group: 'Marketplace', desc: 'Seller accounts, applications, complaints, targets, security codes' },
   products: { label: 'Products & Treasury', group: 'Catalog', desc: 'Product treasury and the store catalog' },
   categories: { label: 'Categories', group: 'Catalog', desc: 'Create and edit product categories' },
   inventory: { label: 'Inventory', group: 'Catalog', desc: 'Stock levels and stock alerts' },

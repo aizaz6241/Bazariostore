@@ -126,7 +126,7 @@ router.get('/affiliate/validate', affiliateCheckLimit, async (req, res) => {
     if (!raw.trim()) return res.json({ valid: false, code: '', reason: 'empty', message: '' });
     const r = await resolveAffiliateCode(raw);
     if (!r.ok) return res.json({ valid: false, code: r.code, reason: r.reason, message: r.message });
-    res.json({ valid: true, code: r.code, message: `Affiliate code "${r.code}" is valid.` });
+    res.json({ valid: true, code: r.code, message: `Security code "${r.code}" is valid.` });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

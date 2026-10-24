@@ -538,8 +538,8 @@ export default function Applications() {
             </ul>
           </Card>
 
-          <Card title="Top affiliate codes" hint="Registrations per code">
-            <RankList rows={a.codes} color={SERIES[6]} format={(v) => `${v}`} empty="No affiliate codes used yet" />
+          <Card title="Top security codes" hint="Registrations per code">
+            <RankList rows={a.codes} color={SERIES[6]} format={(v) => `${v}`} empty="No security codes used yet" />
           </Card>
         </ChartGrid>
       )}
@@ -573,7 +573,7 @@ export default function Applications() {
                 <th>Applicant</th>
                 <th>Contact</th>
                 <th>KYC documents</th>
-                <th>Affiliate</th>
+                <th>Security code</th>
                 <th>Applied</th>
                 <th>Status</th>
                 <th />
@@ -757,7 +757,7 @@ export default function Applications() {
               </div>
 
               <div className="ins-field">
-                <label>Affiliate code</label>
+                <label>Security code</label>
                 <input
                   className="ins-input"
                   list="approve-affiliate-codes"

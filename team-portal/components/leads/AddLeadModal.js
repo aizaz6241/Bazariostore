@@ -129,7 +129,7 @@ export default function AddLeadModal({ open, onClose, onSaved, isAdmin, members 
               }}
               onBlur={precheck}
               inputMode="tel"
-              placeholder="+91 98765 43210"
+              placeholder="WhatsApp number with country code"
               className={inputClass}
             />
           </Field>
@@ -148,7 +148,7 @@ export default function AddLeadModal({ open, onClose, onSaved, isAdmin, members 
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label={form.handover ? 'Seller name *' : 'Seller name'}>
-            <input value={form.name} onChange={set('name')} placeholder="e.g. Rahul Sharma" className={inputClass} />
+            <input value={form.name} onChange={set('name')} placeholder="Full name" className={inputClass} />
           </Field>
           <Field label="Age">
             <input value={form.age} onChange={set('age')} inputMode="numeric" placeholder="Optional" className={inputClass} />
@@ -228,7 +228,7 @@ export default function AddLeadModal({ open, onClose, onSaved, isAdmin, members 
             value={form.notes}
             onChange={set('notes')}
             rows={2}
-            placeholder={form.handover ? 'e.g. Found in “Ladies Boutique Delhi” group, will message today' : 'Anything useful about this seller'}
+            placeholder={form.handover ? 'e.g. Found in a WhatsApp group, will message today' : 'Anything useful about this seller'}
             className={`${inputClass} resize-none`}
           />
         </Field>

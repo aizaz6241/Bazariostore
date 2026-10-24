@@ -432,7 +432,7 @@ export default function SellersPage() {
                   type="text"
                   value={noteForm.customName}
                   onChange={(e) => setNoteForm({ ...noteForm, customName: e.target.value })}
-                  placeholder="e.g. Seth Ji Mumbai or Bhai Jaan Wholesale"
+                  placeholder="e.g. The name you know them by"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
@@ -481,7 +481,7 @@ export default function SellersPage() {
                     type="text"
                     value={noteForm.location}
                     onChange={(e) => setNoteForm({ ...noteForm, location: e.target.value })}
-                    placeholder="e.g. Surat, Gujarat"
+                    placeholder="City, region"
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>

@@ -473,7 +473,7 @@ export default function ModelsPage() {
                   required
                   value={createForm.name}
                   onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
-                  placeholder="e.g. Priya Sharma"
+                  placeholder="Full name"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
                 />
               </div>
@@ -511,7 +511,7 @@ export default function ModelsPage() {
                     type="text"
                     value={createForm.location}
                     onChange={(e) => setCreateForm({ ...createForm, location: e.target.value })}
-                    placeholder="e.g. Mumbai, Maharashtra"
+                    placeholder="City, region"
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
                 </div>
