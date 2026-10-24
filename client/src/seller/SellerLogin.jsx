@@ -569,7 +569,11 @@ export default function SellerLogin() {
               <div className="sl-alert ok tight sl-mailnote">
                 <Ic name="mail" size={16} />
                 <div>
-                  <p><b>We have sent you an email</b> at {submittedInfo?.email || 'your email'}. Please check your <b>inbox</b> — and your <b>Spam / Junk</b> folder if you don't see it. We will email you again as soon as your store is approved (usually within 24 hours).</p>
+                  <b>We have sent you an email</b>
+                  <p>
+                    We sent it to <strong>{submittedInfo?.email || 'your email'}</strong>. Please check your <strong>inbox</strong> — and your <strong>Spam / Junk</strong> folder if
+                    you don't see it. We will email you again as soon as your store is approved (usually within 24 hours).
+                  </p>
                 </div>
               </div>
             )}

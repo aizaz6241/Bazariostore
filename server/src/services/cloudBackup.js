@@ -70,15 +70,18 @@ export async function runCloudBackup(reason = 'scheduled') {
       await encryptFile(snap.filePath, encPath, key);
 
       const name = path.basename(snap.filePath).replace(/^backup-cloud-/, 'bazario-db-').replace(/\.json$/, '.bzbk');
-      const buf = fs.readFileSync(encPath);
-      const [res] = await ut().uploadFiles([new UTFile([buf], name, { type: 'application/octet-stream' })]);
+      // The file is handed over as a file-backed Blob: it is read from disk while it uploads instead
+      // of being loaded into memory whole (a big database made the server run out of memory here).
+      const size = fs.statSync(encPath).size;
+      const part = typeof fs.openAsBlob === 'function' ? await fs.openAsBlob(encPath) : fs.readFileSync(encPath);
+      const [res] = await ut().uploadFiles([new UTFile([part], name, { type: 'application/octet-stream' })]);
       if (!res || res.error) throw new Error(res?.error?.message || 'Upload to cloud failed');
 
       const doc = {
         name,
         key: res.data.key,
         url: res.data.ufsUrl || res.data.url,
-        size: buf.length,
+        size,
         rawSize: snap.sizeBytes,
         collectionsCount: snap.collectionsCount,
         documentsCount: snap.documentsCount,
@@ -87,7 +90,7 @@ export async function runCloudBackup(reason = 'scheduled') {
         createdAt: new Date(),
       };
       await col().insertOne(doc);
-      console.log(`☁️ [Cloud Backup] stored ${name} (${(buf.length / 1024 / 1024).toFixed(2)} MB, ${snap.documentsCount} records)`);
+      console.log(`☁️ [Cloud Backup] stored ${name} (${(size / 1024 / 1024).toFixed(2)} MB, ${snap.documentsCount} records)`);
       await applyRetention().catch((e) => console.error('[Cloud Backup] retention warning:', e.message));
       return doc;
     } finally {

@@ -3,11 +3,24 @@
  * Works on two MongoDB `Db` objects (official driver). No mongoose.
  */
 
+import { BSON } from 'mongodb';
+
 export const ARCHIVE = 'zz_mirror_archive'; // documents that were only in the copy, kept instead of deleted
 export const STATE = 'zz_mirror_state'; // where the mirror remembers how far it got
 const SKIP = (name) => name.startsWith('system.') || name === ARCHIVE || name === STATE;
 
 const BATCH = 200;
+// A batch is also cut by SIZE: some documents are big (KYC photos in a seller, a voice note in a
+// chat message — several MB each). 200 of them in one batch used to mean hundreds of MB in memory
+// at once, more than the 512 MB server has (it was restarted "out of memory").
+const MAX_BATCH_BYTES = 4 * 1024 * 1024;
+const sizeOf = (doc) => {
+  try {
+    return BSON.calculateObjectSize(doc);
+  } catch {
+    return 1024 * 1024;
+  }
+};
 
 /**
  * Make one collection of `dst` EXACTLY like the one in `src`:
@@ -27,22 +40,33 @@ export async function syncCollection(src, dst, name) {
   // documents only in the copy → archive, then remove (keeps nothing that the source does not have)
   let archived = 0;
   const extra = [];
-  for await (const doc of d.find({}, { batchSize: 500 })) {
+  let extraBytes = 0;
+  // ids first (small); a document of the copy is only loaded in full when it really has to move
+  for await (const doc of d.find({}, { projection: { _id: 1 }, batchSize: 1000 })) {
     if (srcIds.has(keyOf(doc._id))) continue;
-    extra.push(doc);
-    if (extra.length >= BATCH) archived += await archiveAndRemove(dst, name, extra.splice(0));
+    const full = await d.findOne({ _id: doc._id });
+    if (!full) continue;
+    extra.push(full);
+    extraBytes += sizeOf(full);
+    if (extra.length >= BATCH || extraBytes >= MAX_BATCH_BYTES) {
+      archived += await archiveAndRemove(dst, name, extra.splice(0));
+      extraBytes = 0;
+    }
   }
   if (extra.length) archived += await archiveAndRemove(dst, name, extra.splice(0));
 
   // 2. copy every source document (replace = identical content)
   let copied = 0;
   let ops = [];
-  for await (const doc of s.find({}, { batchSize: BATCH })) {
+  let opsBytes = 0;
+  for await (const doc of s.find({}, { batchSize: 20 })) {
     ops.push({ replaceOne: { filter: { _id: doc._id }, replacement: doc, upsert: true } });
-    if (ops.length >= BATCH) {
+    opsBytes += sizeOf(doc);
+    if (ops.length >= BATCH || opsBytes >= MAX_BATCH_BYTES) {
       await d.bulkWrite(ops, { ordered: false });
       copied += ops.length;
       ops = [];
+      opsBytes = 0;
     }
   }
   if (ops.length) {
