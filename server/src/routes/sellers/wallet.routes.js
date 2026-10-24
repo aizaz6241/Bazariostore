@@ -17,6 +17,8 @@ import { announceToAdmins } from '../../utils/realtime.js';
 import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
 import { pageAction, markShortcutDone } from '../../utils/chatShortcuts.js';
 import { addHealthEvent, LIMIT_MIN_SCORE } from '../../utils/healthEngine.js';
+import { buildReceiptPdf, receiptNumber, hasReceipt } from '../../services/receipt.js';
+import { emailWalletReceipt } from '../../utils/sellerEmails.js';
 
 const router = express.Router();
 
@@ -279,6 +281,27 @@ router.get('/wallet/ledger', authSellerOrAdmin, async (req, res) => {
     res.json({ lines: rows.slice(0, limit).map((r) => lineForStore(r, Boolean(req.admin))), hasMore: rows.length > limit });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/sellers/wallet/receipt/:lineId — the Bazario receipt (PDF) of an approved deposit /
+// withdrawal. A store gets only its own; an admin any store's.
+router.get('/wallet/receipt/:lineId', authSellerOrAdmin, async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.lineId))) return res.status(404).json({ message: 'Receipt not found' });
+    const r = await Withdrawal.findById(req.params.lineId).lean();
+    const ownerId = req.seller?.id || req.seller?._id;
+    if (!r || (!req.admin && String(r.seller) !== String(ownerId))) return res.status(404).json({ message: 'Receipt not found' });
+    if (!hasReceipt(r)) return res.status(400).json({ message: 'A receipt is only available for an approved deposit or withdrawal.' });
+    const seller = await Seller.findById(r.seller).select('storeName ownerName email').lean();
+    const pdf = await buildReceiptPdf(r, seller || {});
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Bazario-Receipt-${receiptNumber(r)}.pdf"`);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(pdf);
+  } catch (err) {
+    console.error('[receipt]', err.message);
+    res.status(500).json({ message: 'Could not create the receipt. Please try again.' });
   }
 });
 
@@ -1142,7 +1165,10 @@ router.put('/withdrawals/:id', authAdmin('finance'), async (req, res) => {
       title: `${status === 'approved' ? '✅' : '❌'} ${reqDoc.type === 'deposit' ? 'Deposit' : 'Withdrawal'} ${status.toUpperCase()}`,
       body: notifyBody,
       link: '/seller/wallet',
+      // rejected: a short email; approved: the email with the PDF receipt (below)
+      email: status !== 'approved',
     });
+    if (status === 'approved') emailWalletReceipt(reqDoc._id);
 
     const io = req.app.get('io');
     if (io) {

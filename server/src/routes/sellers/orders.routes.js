@@ -21,6 +21,7 @@ import { sellerSafeOrder, sellerOrderPing, maskName } from '../../utils/orderPri
 import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
 import { orderAction, pageAction, markShortcutDone } from '../../utils/chatShortcuts.js';
 import { recordDeadlineMiss, recordOverdue, recordConfirmation, addHealthEvent, depositWaitingCovers, MONITOR_NAME } from '../../utils/healthEngine.js';
+import { emailOrderWarning, emailStoreFrozen, healthBefore } from '../../utils/sellerEmails.js';
 
 const router = express.Router();
 
@@ -1268,6 +1269,7 @@ export async function processOrderPenalties(app) {
     const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
 
     // 1. Warnings (24h before each seller's deadline)
+    const warnedNow = new Set(); // one warning EMAIL per store per run (all its waiting orders together)
     const warnOrders = await Order.find({
       status: 'pending',
       ...waitingSince(twentyFourHoursAgo),
@@ -1302,6 +1304,7 @@ export async function processOrderPenalties(app) {
           body: `Order #${ord.orderNumber} has been unconfirmed for over ${warnH} hours! Please confirm and process within 24 hours to avoid an account health penalty and a store freeze.`,
           link: '/seller/orders',
         });
+        warnedNow.add(String(seller._id));
 
         // account monitoring: the order reached its warning time and the wallet cannot cover it
         // (one entry per store per day; not while a deposit that covers it waits for our approval)
@@ -1372,6 +1375,8 @@ export async function processOrderPenalties(app) {
         } catch (chatErr) {}
       }
     }
+    // one warning email per store, with every order it still has to confirm (in the background)
+    for (const sid of warnedNow) emailOrderWarning(sid);
 
     // 2. Penalty & freeze (at each seller's deadline: 48h Basic, 72h Diamond)
     const penaltyOrders = await Order.find({
@@ -1404,6 +1409,7 @@ export async function processOrderPenalties(app) {
 
       for (const seller of due) {
         const confirmH = confirmHoursFor(seller);
+        const hBefore = healthBefore(seller); // for the email: what the penalty cost
 
         // only an active store is frozen here: a suspended store must stay suspended (setting it to
         // "frozen" quietly lifted the suspension) and a frozen one keeps its original reason
@@ -1437,6 +1443,8 @@ export async function processOrderPenalties(app) {
           body: `Your store has been frozen because order #${ord.orderNumber} was not confirmed within ${confirmH} hours. Account health is now ${newScore}/100. Please contact support. — ${MONITOR_NAME}`,
           link: '/seller/support',
         });
+        // email only when the store was active (one email per freeze, not for every extra order)
+        emailStoreFrozen(seller._id, { orderNumber: ord.orderNumber, confirmHours: confirmH, before: hBefore, score: newScore, points: hr?.line?.points });
 
         try {
           let conv = await Conversation.findOne({ seller: seller._id });

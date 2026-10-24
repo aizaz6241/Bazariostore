@@ -7,10 +7,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-// Create Nodemailer Transporter with Gmail SMTP only when credentials are provided
+// How emails leave the server:
+//  1. RESEND_API_KEY set  -> Resend's HTTPS API (works on Render's free plan, which blocks SMTP ports)
+//  2. EMAIL_USER/EMAIL_PASS set -> Gmail SMTP (old way, kept as a fallback)
+//  3. neither -> nothing is sent; every function logs "skipped" and the app carries on as before
+const RESEND_API_KEY = (process.env.RESEND_API_KEY || '').trim();
 const hasEmailCreds = Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
 
-const transporter = hasEmailCreds
+const transporter = !RESEND_API_KEY && hasEmailCreds
   ? nodemailer.createTransport({
       service: 'gmail',
       host: 'smtp.gmail.com',
@@ -23,7 +27,53 @@ const transporter = hasEmailCreds
     })
   : null;
 
-const DEFAULT_FROM = process.env.EMAIL_FROM || (process.env.EMAIL_USER ? `"Bazario Support" <${process.env.EMAIL_USER}>` : '"Bazario Support" <noreply@bazario.com>');
+export const emailEnabled = Boolean(RESEND_API_KEY || transporter);
+
+// With Resend the sender must be on the verified domain, so the old EMAIL_FROM (a Gmail address)
+// is not used for it: RESEND_FROM, or no-reply@bazariomarketplace.shop.
+const DEFAULT_FROM = RESEND_API_KEY
+  ? process.env.RESEND_FROM || 'Bazario <no-reply@bazariomarketplace.shop>'
+  : process.env.EMAIL_FROM ||
+    (process.env.EMAIL_USER
+      ? `"Bazario Support" <${process.env.EMAIL_USER}>`
+      : '"Bazario Support" <noreply@bazario.com>');
+// Optional: where a seller's "Reply" goes (e.g. support@bazariomarketplace.shop once that inbox exists)
+const REPLY_TO = (process.env.EMAIL_REPLY_TO || '').trim();
+
+// Public site address used for links inside emails
+const SITE_URL = (process.env.CLIENT_URL || 'https://www.bazariomarketplace.shop').replace(/\/+$/, '');
+
+/** Sends one email through Resend (or SMTP). Throws on failure; callers decide whether that matters. */
+async function deliver({ to, subject, html, text, attachments }) {
+  if (RESEND_API_KEY) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: DEFAULT_FROM,
+          to: [to],
+          subject,
+          html,
+          ...(text ? { text } : {}),
+          ...(REPLY_TO ? { reply_to: REPLY_TO } : {}),
+          // [{ filename, content: Buffer }] -> Resend wants base64 text
+          ...(attachments?.length ? { attachments: attachments.map((a) => ({ filename: a.filename, content: Buffer.from(a.content).toString('base64') })) } : {}),
+        }),
+        signal: ctrl.signal,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(`Resend ${res.status}: ${data?.message || data?.name || 'send failed'}`);
+      return { messageId: data?.id };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  const info = await transporter.sendMail({ from: DEFAULT_FROM, to, subject, html, ...(text ? { text } : {}), ...(REPLY_TO ? { replyTo: REPLY_TO } : {}), ...(attachments?.length ? { attachments } : {}) });
+  return { messageId: info.messageId };
+}
 
 /**
  * Base Email Wrapper with Responsive Styling & Professional Branding
@@ -76,11 +126,12 @@ function getEmailLayout({ title, preheader, bodyContent }) {
     </div>
     <div class="email-footer">
       <div class="footer-links">
-        <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}">Storefront</a> •
-        <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}/seller/login">Seller Central</a> •
-        <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}/page/privacy">Privacy Policy</a>
+        <a href="${SITE_URL}">Storefront</a> •
+        <a href="${SITE_URL}/seller/login">Seller Central</a> •
+        <a href="${SITE_URL}/page/privacy">Privacy Policy</a>
       </div>
-      <p style="margin: 0;">© ${new Date().getFullYear()} Bazario Global Commerce. All rights reserved.<br>This is an automated security email sent from a verified notification address.</p>
+      <p style="margin: 0;">© ${new Date().getFullYear()} Bazario Global Commerce. All rights reserved.</p>
+      <p style="margin: 8px 0 0; font-size: 11px; color: #a3aab5;">Please do not reply to this email — this address does not accept replies. For help, use Support chat in Seller Central.</p>
     </div>
   </div>
 </body>
@@ -91,8 +142,8 @@ function getEmailLayout({ title, preheader, bodyContent }) {
  * 1. Send 6-Digit Email Verification OTP (Customer or Seller Registration)
  */
 export async function sendVerificationOtpEmail({ to, name = 'User', otp, role = 'Customer' }) {
-  if (!transporter) {
-    console.warn(`[Email-Service] Skipped sending verification OTP to ${to} (EMAIL_USER / EMAIL_PASS not configured in .env).`);
+  if (!emailEnabled) {
+    console.warn(`[Email-Service] Skipped sending verification OTP to ${to} (RESEND_API_KEY not set).`);
     return { success: false, skipped: true };
   }
   try {
@@ -121,8 +172,7 @@ export async function sendVerificationOtpEmail({ to, name = 'User', otp, role = 
       bodyContent,
     });
 
-    const info = await transporter.sendMail({
-      from: DEFAULT_FROM,
+    const info = await deliver({
       to,
       subject: `[Bazario] ${otp} is your verification code`,
       html,
@@ -140,8 +190,8 @@ export async function sendVerificationOtpEmail({ to, name = 'User', otp, role = 
  * 2. Send Password Reset Email (Direct Link + 6-Digit OTP)
  */
 export async function sendPasswordResetEmail({ to, name = 'User', resetUrl, otp, role = 'user' }) {
-  if (!transporter) {
-    console.warn(`[Email-Service] Skipped sending password reset to ${to} (EMAIL_USER / EMAIL_PASS not configured in .env).`);
+  if (!emailEnabled) {
+    console.warn(`[Email-Service] Skipped sending password reset to ${to} (RESEND_API_KEY not set).`);
     return { success: false, skipped: true };
   }
   try {
@@ -161,7 +211,7 @@ export async function sendPasswordResetEmail({ to, name = 'User', resetUrl, otp,
       <div class="otp-card">
         <span style="font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; display: block;">Or Enter 6-Digit Reset Code</span>
         <div class="otp-code">${otp}</div>
-        <div class="otp-expiry">⏱️ Code expires in 60 minutes</div>
+        <div class="otp-expiry">⏱️ Code expires in 20 minutes</div>
       </div>
       ` : ''}
 
@@ -176,8 +226,7 @@ export async function sendPasswordResetEmail({ to, name = 'User', resetUrl, otp,
       bodyContent,
     });
 
-    const info = await transporter.sendMail({
-      from: DEFAULT_FROM,
+    const info = await deliver({
       to,
       subject: `[Bazario] Password Reset Request`,
       html,
@@ -195,8 +244,8 @@ export async function sendPasswordResetEmail({ to, name = 'User', resetUrl, otp,
  * 3. Send Welcome Email Upon Successful Verification
  */
 export async function sendWelcomeEmail({ to, name = 'User', role = 'Customer' }) {
-  if (!transporter) {
-    console.warn(`[Email-Service] Skipped sending welcome email to ${to} (EMAIL_USER / EMAIL_PASS not configured in .env).`);
+  if (!emailEnabled) {
+    console.warn(`[Email-Service] Skipped sending welcome email to ${to} (RESEND_API_KEY not set).`);
     return { success: false, skipped: true };
   }
   try {
@@ -204,17 +253,17 @@ export async function sendWelcomeEmail({ to, name = 'User', role = 'Customer' })
     const bodyContent = `
       <h2 class="email-heading">Welcome to Bazario! 🎉</h2>
       <p>Hello <b>${esc(name)}</b>,</p>
-      <p>Your email has been successfully verified! We are excited to have you on the Bazario platform.</p>
-      
       ${isSeller ? `
-      <p>Your merchant application has been submitted and is currently being processed by our compliance team. Once verified, you will have access to wholesale order fulfillment and 20% guaranteed profit margins.</p>
+      <p>Thank you for registering your store on Bazario. Your seller application has been received and is now under review.</p>
+      <p>We will email you as soon as your store is approved. You can log in to Seller Central at any time to check your status or talk to Support.</p>
       <div style="text-align: center;">
-        <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}/seller/login" class="btn-action">GO TO SELLER HUB →</a>
+        <a href="${SITE_URL}/seller/login" class="btn-action">GO TO SELLER HUB →</a>
       </div>
       ` : `
+      <p>Your email has been successfully verified! We are excited to have you on the Bazario platform.</p>
       <p>You can now browse thousands of products, enjoy real-time order tracking, and experience instant checkout.</p>
       <div style="text-align: center;">
-        <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}/shop" class="btn-action">START SHOPPING →</a>
+        <a href="${SITE_URL}/shop" class="btn-action">START SHOPPING →</a>
       </div>
       `}
     `;
@@ -225,10 +274,9 @@ export async function sendWelcomeEmail({ to, name = 'User', role = 'Customer' })
       bodyContent,
     });
 
-    await transporter.sendMail({
-      from: DEFAULT_FROM,
+    await deliver({
       to,
-      subject: `[Bazario] Welcome aboard, ${name}! 🎉`,
+      subject: isSeller ? `[Bazario] We received your seller application` : `[Bazario] Welcome aboard, ${name}! 🎉`,
       html,
     });
   } catch (error) {
@@ -240,15 +288,15 @@ export async function sendWelcomeEmail({ to, name = 'User', role = 'Customer' })
  * 4. Send Seller Approval Email Notification
  */
 export async function sendSellerApprovalEmail({ to, name, storeName }) {
-  if (!transporter) {
-    console.warn(`[Email-Service] Skipped sending seller approval email to ${to} (EMAIL_USER / EMAIL_PASS not configured in .env).`);
+  if (!emailEnabled) {
+    console.warn(`[Email-Service] Skipped sending seller approval email to ${to} (RESEND_API_KEY not set).`);
     return { success: false, skipped: true };
   }
   try {
     const bodyContent = `
       <h2 class="email-heading" style="color: #16a34a;">Congratulations! Your Merchant Store is Approved 🚀</h2>
       <p>Hello <b>${esc(name)}</b>,</p>
-      <p>Great news! Your merchant store <b>"${esc(storeName)}"</b> has been reviewed and officially approved by the Platform Super Admin.</p>
+      <p>Great news! Your merchant store <b>"${esc(storeName)}"</b> has been reviewed and approved by our team.</p>
       
       <div style="background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 8px; padding: 16px; margin: 18px 0;">
         <b style="color: #166534; display: block; margin-bottom: 6px;">✨ What's Next?</b>
@@ -260,7 +308,7 @@ export async function sendSellerApprovalEmail({ to, name, storeName }) {
       </div>
 
       <div style="text-align: center;">
-        <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}/seller/login" class="btn-action" style="background: #16a34a;">LOG IN TO SELLER CENTRAL →</a>
+        <a href="${SITE_URL}/seller/login" class="btn-action" style="background: #16a34a;">LOG IN TO SELLER CENTRAL →</a>
       </div>
     `;
 
@@ -270,8 +318,7 @@ export async function sendSellerApprovalEmail({ to, name, storeName }) {
       bodyContent,
     });
 
-    await transporter.sendMail({
-      from: DEFAULT_FROM,
+    await deliver({
       to,
       subject: `[Bazario] Your Merchant Store "${storeName}" is Approved! 🚀`,
       html,
@@ -281,10 +328,347 @@ export async function sendSellerApprovalEmail({ to, name, storeName }) {
   }
 }
 
+/* ───────────────────────── Seller emails: shared building blocks ───────────────────────── */
+
+const TONES = {
+  success: { main: '#16a34a', soft: '#f0fdf4', line: '#bbf7d0', text: '#166534' },
+  warning: { main: '#d97706', soft: '#fffbeb', line: '#fde68a', text: '#92400e' },
+  danger: { main: '#dc2626', soft: '#fef2f2', line: '#fecaca', text: '#991b1b' },
+  diamond: { main: '#7c3aed', soft: '#f5f3ff', line: '#ddd6fe', text: '#5b21b6' },
+  info: { main: '#0f172a', soft: '#f8fafc', line: '#e2e8f0', text: '#334155' },
+};
+const toneOf = (title = '') => {
+  const t = String(title).trim();
+  if (/^(✅|🎉|🚀|🏆|🔓)/u.test(t)) return 'success';
+  if (/^(❌|⛔|🚫)/u.test(t)) return 'danger';
+  if (/^⚠️/u.test(t)) return 'warning';
+  if (/^💎/u.test(t)) return 'diamond';
+  return 'info';
+};
+const money = (n) => {
+  const v = Math.round((Number(n) || 0) * 100) / 100;
+  const d = Number.isInteger(v) ? 0 : 2;
+  return `$${v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })}`;
+};
+/** Sellers are in India: deadlines are shown in IST. */
+export const fmtIST = (d) =>
+  `${new Date(d).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true })} IST`;
+const sellerUrl = (link = '/seller') => `${SITE_URL}${String(link || '').startsWith('/') ? link : '/seller'}`;
+
+const badge = (tone, label) => {
+  const c = TONES[tone] || TONES.info;
+  return `<div style="display:inline-block;background:${c.soft};color:${c.main};border:1px solid ${c.line};border-radius:999px;padding:4px 12px;font-size:11.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;margin-bottom:12px;">${label}</div>`;
+};
+const heading = (tone, text) => `<h2 class="email-heading" style="color:${(TONES[tone] || TONES.info).main === '#0f172a' ? '#0f172a' : (TONES[tone] || TONES.info).main};">${text}</h2>`;
+const button = (tone, label, url) => {
+  const c = TONES[tone] || TONES.info;
+  return `<div style="text-align:center;"><a href="${url}" class="btn-action" target="_blank" style="background:${c.main};">${label}</a></div>`;
+};
+const callout = (tone, html) => {
+  const c = TONES[tone] || TONES.info;
+  return `<div style="background:${c.soft};border:1.5px solid ${c.line};border-left:4px solid ${c.main};border-radius:8px;padding:14px 16px;margin:18px 0;color:${c.text};font-size:13.5px;line-height:1.55;">${html}</div>`;
+};
+const list = (items) => `<ul style="margin:6px 0 0;padding-left:18px;">${items.filter(Boolean).map((i) => `<li style="margin:4px 0;">${i}</li>`).join('')}</ul>`;
+/** Up to 3 number tiles in a row (a table, so every email app shows them side by side). */
+const stats = (items) => {
+  const cells = items
+    .filter(Boolean)
+    .map((it) => {
+      const c = TONES[it.tone] || TONES.info;
+      return `<td style="width:${Math.floor(100 / items.filter(Boolean).length)}%;padding:4px;vertical-align:top;"><div style="background:${c.soft};border:1px solid ${c.line};border-radius:10px;padding:12px 8px;text-align:center;"><div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.3px;">${it.label}</div><div style="font-size:22px;font-weight:900;color:${c.main};margin-top:4px;line-height:1.2;">${it.value}</div>${it.sub ? `<div style="font-size:11.5px;color:#64748b;margin-top:3px;">${it.sub}</div>` : ''}</div></td>`;
+    })
+    .join('');
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:16px 0;border-collapse:collapse;"><tr>${cells}</tr></table>`;
+};
+/** A progress bar (perfect-health bonus week). */
+const progress = (tone, pct) => {
+  const c = TONES[tone] || TONES.info;
+  const w = Math.max(0, Math.min(100, Math.round(pct)));
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:8px 0 2px;border-collapse:collapse;"><tr><td style="background:#e2e8f0;border-radius:999px;height:10px;padding:0;"><div style="width:${w}%;background:${c.main};height:10px;border-radius:999px;"></div></td></tr></table>`;
+};
+const rows = (pairs) =>
+  `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:14px 0;border-collapse:collapse;font-size:13.5px;">${pairs
+    .filter(Boolean)
+    .map(([k, v]) => `<tr><td style="padding:8px 0;color:#64748b;border-bottom:1px solid #f1f5f9;">${k}</td><td style="padding:8px 0;text-align:right;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;">${v}</td></tr>`)
+    .join('')}</table>`;
+
+/** Wraps a seller email, sends it, never throws (a failed email must not break anything). */
+async function sendSellerEmail({ to, subject, preheader, bodyContent, text, attachments }) {
+  if (!emailEnabled) return { success: false, skipped: true };
+  try {
+    const html = getEmailLayout({ title: esc(subject), preheader: esc(preheader || subject), bodyContent });
+    const info = await deliver({ to, subject: `[Bazario] ${subject}`, html, text, attachments });
+    console.log(`[Email-Sent] ${subject} -> ${to} (MessageId: ${info.messageId})`);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error(`[Email-Error] "${subject}" to ${to} failed:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * 5. Seller notification email — the same title / text the seller gets in the app
+ *    (deposit / withdrawal result, official warning …). Colour follows the title's symbol.
+ */
+export async function sendSellerNotificationEmail({ to, name = 'Seller', title, body = '', link = '/seller' }) {
+  const tone = toneOf(title);
+  const cleanTitle = String(title || 'Bazario update').replace(/\s+/g, ' ').trim();
+  const paragraphs = String(body || '')
+    .split(/\n+/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => `<p>${esc(l)}</p>`)
+    .join('');
+  const bodyContent = `
+      ${heading(tone, esc(cleanTitle))}
+      <p>Hello <b>${esc(name)}</b>,</p>
+      ${tone === 'info' ? paragraphs : callout(tone, paragraphs.replace(/<p>/g, '<p style="margin:4px 0;">'))}
+      ${button(tone, 'OPEN SELLER CENTRAL →', sellerUrl(link))}`;
+  const text = `Hello ${name},\n\n${cleanTitle}\n\n${String(body || '').trim()}\n\nOpen Seller Central: ${sellerUrl(link)}`;
+  return sendSellerEmail({ to, subject: cleanTitle, preheader: String(body || cleanTitle).slice(0, 140), bodyContent, text });
+}
+
+/** 6. Registration: the application was received and will be reviewed within 24 hours. */
+export async function sendSellerApplicationEmail({ to, name = 'Seller', storeName = '' }) {
+  const bodyContent = `
+      ${badge('info', '📋 Application received')}
+      ${heading('info', 'Thank you for applying to sell on Bazario!')}
+      <p>Hello <b>${esc(name)}</b>,</p>
+      <p>We have received the seller application for your store${storeName ? ` <b>"${esc(storeName)}"</b>` : ''}. Our team will review your details and documents <b>within 24 hours</b>.</p>
+      ${callout('info', `<b>What happens next?</b>${list([
+        'We review your application and documents.',
+        'As soon as your store is approved, we will send you an email.',
+        'You can then log in to Seller Central and start selling.',
+      ])}`)}
+      <p>You can log in to Seller Central at any time to check your status or talk to our Support team.</p>
+      ${button('info', 'GO TO SELLER CENTRAL →', `${SITE_URL}/seller/login`)}`;
+  const text = `Hello ${name},\n\nWe have received your seller application${storeName ? ` for "${storeName}"` : ''}. Our team will review it within 24 hours and email you as soon as your store is approved.\n\nSeller Central: ${SITE_URL}/seller/login`;
+  return sendSellerEmail({ to, subject: 'We received your seller application', preheader: 'Your store will be reviewed within 24 hours.', bodyContent, text });
+}
+
+/** 7. Store approved — straight to the Seller Central login. */
+export async function sendSellerApprovedEmail({ to, name = 'Seller', storeName = '', profitRate = 20, confirmHours = 48, bonus = null }) {
+  const loginUrl = `${SITE_URL}/seller/login`;
+  const bodyContent = `
+      ${badge('success', '✅ Approved')}
+      ${heading('success', 'Your store is approved! 🚀')}
+      <p>Hello <b>${esc(name)}</b>,</p>
+      <p>Great news! Your store${storeName ? ` <b>"${esc(storeName)}"</b>` : ''} has been reviewed and approved. You can log in to Seller Central now and start selling.</p>
+      ${stats([
+        { label: 'Profit per order', value: `${profitRate}%`, tone: 'success', sub: 'on every order' },
+        { label: 'Time to confirm', value: `${confirmHours}h`, tone: 'info', sub: 'per order' },
+        bonus?.amount > 0 ? { label: 'Weekly bonus', value: money(bonus.amount), tone: 'success', sub: `${bonus.days} days at 100/100` } : null,
+      ])}
+      ${callout('success', `<b>Get started in 3 steps</b>${list([
+        'Log in to Seller Central.',
+        'Deposit to your wallet so you can confirm orders.',
+        `Confirm every new order within ${confirmHours} hours to keep your account health at 100.`,
+      ])}`)}
+      ${button('success', 'LOG IN TO SELLER CENTRAL →', loginUrl)}`;
+  const text = `Hello ${name},\n\nYour store${storeName ? ` "${storeName}"` : ''} is approved. Log in to Seller Central: ${loginUrl}\n\nProfit per order: ${profitRate}%. Confirm every order within ${confirmHours} hours.`;
+  return sendSellerEmail({ to, subject: 'Your store is approved! Log in to Seller Central', preheader: 'Your store is approved. Log in and start selling.', bodyContent, text });
+}
+
+/**
+ * 8. Order confirmation warning — orders past their warning time, what is at stake
+ *    (health score, freeze, the running bonus week, the level, wallet shortfall).
+ *    `stake` is healthEngine.atStake().
+ */
+export async function sendOrderWarningEmail({ to, name = 'Seller', stake }) {
+  const orders = (stake?.orders || []).filter((o) => o.stage === 'warning');
+  if (!orders.length) return { success: false, skipped: true };
+  const first = orders.reduce((a, o) => (new Date(o.deadlineAt) < new Date(a.deadlineAt) ? o : a), orders[0]);
+  const hoursLeft = Math.max(1, Math.round((new Date(first.deadlineAt).getTime() - Date.now()) / 3600000));
+  const many = orders.length > 1;
+  const b = stake.bonus;
+  const lv = stake.level;
+
+  const orderRows = rows(orders.map((o) => [`Order #${esc(o.orderNumber)}`, `${money(o.value)} · confirm by ${fmtIST(o.deadlineAt)}`]));
+  const atRisk = [
+    `Your account health drops from <b>${stake.score}/100</b> to about <b>${stake.scoreIfMissed}/100</b> (${stake.pointsAtRisk} points).`,
+    stake.freeze ? '<b>Your store will be frozen</b> — no withdrawals and no store changes until Support unfreezes it.' : '',
+    b ? `Your <b>${money(b.amount)} perfect-health bonus</b> week restarts from day 1.` : '',
+    lv ? `Your level <b>${esc(lv.icon)} ${esc(lv.label)}</b> drops${lv.dropTo ? ` to <b>${esc(lv.dropTo.icon)} ${esc(lv.dropTo.label)}</b>` : ''}.` : '',
+  ];
+  const bonusBox = b
+    ? callout('success', `<b>🏆 Your ${money(b.amount)} bonus is on its way</b><br>Day <b>${b.day} of ${b.days}</b> at 100/100 — ${Math.max(0, b.days - b.day)} day${b.days - b.day === 1 ? '' : 's'} to go (${fmtIST(b.endsAt)}).${progress('success', (b.day / b.days) * 100)}<span style="font-size:12px;">Confirm on time and keep it!</span>`)
+    : '';
+  const walletBox =
+    stake.shortBy > 0
+      ? callout('danger', `<b>💳 Your wallet is short by ${money(stake.shortBy)}</b><br>These orders need ${money(stake.value)}, your balance is ${money(stake.balance)}${stake.waitingDeposits > 0 ? ` (+ ${money(stake.waitingDeposits)} deposit waiting)` : ''}. Deposit now so you can confirm in time.`)
+      : '';
+  const bodyContent = `
+      ${badge('warning', `⏰ ${hoursLeft} hour${hoursLeft === 1 ? '' : 's'} left`)}
+      ${heading('warning', many ? `${orders.length} orders are waiting for your confirmation` : `Order #${esc(first.orderNumber)} is waiting for your confirmation`)}
+      <p>Hello <b>${esc(name)}</b>,</p>
+      <p>${many ? 'These orders have' : 'This order has'} been waiting for more than <b>${stake.warnHours} hours</b>. Please confirm ${many ? 'them' : 'it'} before <b>${fmtIST(first.deadlineAt)}</b>.</p>
+      ${orderRows}
+      ${stats([
+        { label: 'Health now', value: `${stake.score}`, tone: stake.score >= 75 ? 'success' : stake.score >= 60 ? 'warning' : 'danger', sub: 'out of 100' },
+        { label: 'If you miss it', value: `${stake.scoreIfMissed}`, tone: 'danger', sub: `${stake.pointsAtRisk} points` },
+        { label: 'Time left', value: `${hoursLeft}h`, tone: 'warning', sub: 'to confirm' },
+      ])}
+      ${walletBox}
+      ${bonusBox}
+      ${callout('danger', `<b>If ${many ? 'they are' : 'it is'} not confirmed in time:</b>${list(atRisk)}`)}
+      ${button('warning', 'CONFIRM MY ORDERS NOW →', sellerUrl('/seller/orders'))}`;
+  const text = `Hello ${name},\n\n${orders.map((o) => `Order #${o.orderNumber} (${money(o.value)}) — confirm by ${fmtIST(o.deadlineAt)}`).join('\n')}\n\nIf not confirmed in time: health ${stake.score}/100 -> about ${stake.scoreIfMissed}/100${stake.freeze ? ', and your store will be frozen' : ''}.${b ? ` Your ${money(b.amount)} bonus week (day ${b.day} of ${b.days}) restarts.` : ''}${stake.shortBy > 0 ? `\nYour wallet is short by ${money(stake.shortBy)} — deposit now.` : ''}\n\nConfirm now: ${sellerUrl('/seller/orders')}`;
+  return sendSellerEmail({
+    to,
+    subject: many ? `⚠️ ${orders.length} orders need confirmation — ${hoursLeft}h left` : `⚠️ Order #${first.orderNumber} needs confirmation — ${hoursLeft}h left`,
+    preheader: `Confirm before ${fmtIST(first.deadlineAt)} to avoid a health penalty and a store freeze.`,
+    bodyContent,
+    text,
+  });
+}
+
+/** 9. Store frozen automatically (an order was not confirmed by its deadline). */
+export async function sendStoreFrozenEmail({ to, name = 'Seller', orderNumber, confirmHours, scoreBefore, score, points, bonusLost = null, levelChange = null }) {
+  const bodyContent = `
+      ${badge('danger', '🚫 Store frozen')}
+      ${heading('danger', 'Your store has been frozen')}
+      <p>Hello <b>${esc(name)}</b>,</p>
+      <p>Order <b>#${esc(orderNumber)}</b> was not confirmed within <b>${confirmHours} hours</b>, so our monitoring system has frozen your store.</p>
+      ${stats([
+        Number.isFinite(scoreBefore) ? { label: 'Health before', value: `${scoreBefore}`, tone: 'info', sub: 'out of 100' } : null,
+        { label: 'Health now', value: `${score}`, tone: 'danger', sub: 'out of 100' },
+        Number.isFinite(points) ? { label: 'Penalty', value: `${points}`, tone: 'danger', sub: 'points' } : null,
+      ])}
+      ${callout('danger', `<b>While your store is frozen:</b>${list([
+        'You can still log in, see your orders and wallet.',
+        'You can still deposit and confirm pending orders.',
+        'You cannot withdraw or change products, coupons, shipping or store settings.',
+        bonusLost ? `Your ${money(bonusLost.amount)} perfect-health bonus week (day ${bonusLost.day} of ${bonusLost.days}) has restarted.` : '',
+        levelChange ? esc(levelChange) : '',
+      ])}`)}
+      ${callout('info', `<b>What to do now</b>${list(['Confirm your waiting orders right away (deposit first if your wallet is short).', 'Then contact Support in Seller Central to review your store.'])}`)}
+      ${button('danger', 'CONTACT SUPPORT →', sellerUrl('/seller/support'))}`;
+  const text = `Hello ${name},\n\nYour store has been frozen because order #${orderNumber} was not confirmed within ${confirmHours} hours. Account health is now ${score}/100.\nConfirm your waiting orders and contact Support: ${sellerUrl('/seller/support')}`;
+  return sendSellerEmail({ to, subject: '🚫 Your store has been frozen', preheader: `Order #${orderNumber} was not confirmed within ${confirmHours} hours.`, bodyContent, text });
+}
+
+/** 10. Store frozen / suspended / back to active by the team. */
+export async function sendAccountStatusEmail({ to, name = 'Seller', status, reason = '' }) {
+  const reasonBox = reason ? `<p style="margin:0 0 6px;"><b>Reason:</b> ${esc(reason)}</p>` : '';
+  let tone, badgeText, title, intro, points, cta, subject;
+  if (status === 'suspended') {
+    tone = 'danger';
+    badgeText = '⛔ Account suspended';
+    title = 'Your store has been suspended';
+    subject = '⛔ Your store has been suspended';
+    intro = 'Your store has been suspended after an account review.';
+    points = ['You can still log in.', 'Everything is closed except the Support chat.', 'Please contact Support to resolve this.'];
+    cta = ['CONTACT SUPPORT →', '/seller/support'];
+  } else if (status === 'frozen') {
+    tone = 'danger';
+    badgeText = '🚫 Store frozen';
+    title = 'Your store has been frozen';
+    subject = '🚫 Your store has been frozen';
+    intro = 'Your store has been frozen after an account review.';
+    points = [
+      'You can still log in, see your orders and wallet.',
+      'You can still deposit and confirm pending orders.',
+      'You cannot withdraw or change products, coupons, shipping or store settings.',
+      'Please contact Support to resolve this.',
+    ];
+    cta = ['CONTACT SUPPORT →', '/seller/support'];
+  } else {
+    tone = 'success';
+    badgeText = '✅ Store active';
+    title = 'Your store is active again';
+    subject = '✅ Your store is active again';
+    intro = 'Good news! All restrictions on your store have been removed.';
+    points = ['You can withdraw and manage your store again.', 'Keep confirming orders on time to keep your account health high.'];
+    cta = ['OPEN SELLER CENTRAL →', '/seller'];
+  }
+  const bodyContent = `
+      ${badge(tone, badgeText)}
+      ${heading(tone, title)}
+      <p>Hello <b>${esc(name)}</b>,</p>
+      <p>${intro}</p>
+      ${callout(tone, `${tone === 'danger' ? reasonBox : ''}${list(points)}`)}
+      ${button(tone, cta[0], sellerUrl(cta[1]))}`;
+  const text = `Hello ${name},\n\n${intro}${reason && tone === 'danger' ? `\nReason: ${reason}` : ''}\n\n${points.join('\n')}\n\n${sellerUrl(cta[1])}`;
+  return sendSellerEmail({ to, subject, preheader: intro, bodyContent, text });
+}
+
+/** 11. Diamond upgrade. */
+export async function sendDiamondEmail({ to, name = 'Seller', storeName = '', profitRate = 35, confirmHours = 72, deliveryDays = '3–5' }) {
+  const bodyContent = `
+      ${badge('diamond', '💎 Diamond seller')}
+      ${heading('diamond', 'Welcome to Diamond! 💎')}
+      <p>Hello <b>${esc(name)}</b>,</p>
+      <p>Congratulations! Your store${storeName ? ` <b>"${esc(storeName)}"</b>` : ''} is now a <b>Diamond</b> store — for life.</p>
+      ${stats([
+        { label: 'Profit per order', value: `${profitRate}%`, tone: 'diamond', sub: 'on new orders' },
+        { label: 'Time to confirm', value: `${confirmHours}h`, tone: 'diamond', sub: 'per order' },
+        deliveryDays ? { label: 'Fast delivery', value: `${esc(deliveryDays)}`, tone: 'diamond', sub: 'days' } : null,
+      ])}
+      ${callout('diamond', `<b>Your Diamond benefits</b>${list([
+        `${profitRate}% profit on every new order.`,
+        `${confirmHours} hours to confirm each order.`,
+        'You can remove products from My Store.',
+        deliveryDays ? `Fast ${esc(deliveryDays)} day delivery.` : '',
+      ])}`)}
+      ${button('diamond', 'SEE MY DIAMOND PLAN →', sellerUrl('/seller/diamond'))}`;
+  const text = `Hello ${name},\n\nYour store is now Diamond: ${profitRate}% profit on new orders, ${confirmHours} hours to confirm, and you can remove products from My Store.\n\n${sellerUrl('/seller/diamond')}`;
+  return sendSellerEmail({ to, subject: '💎 Your store is now Diamond!', preheader: `${profitRate}% profit on new orders, ${confirmHours}h to confirm.`, bodyContent, text });
+}
+
+/**
+ * 12. Deposit / withdrawal approved — with the Bazario receipt (PDF) attached.
+ *     `r` is the wallet line, `pdf` the receipt Buffer (services/receipt.js).
+ */
+export async function sendWalletReceiptEmail({ to, name = 'Seller', r, receiptNo, methodText = '', payoutTo = '', pdf }) {
+  const isDep = r.type === 'deposit';
+  const requested = Math.abs(Number(r.amount) || 0);
+  const final = Math.abs(Number(r.approvedAmount != null ? r.approvedAmount : r.amount) || 0);
+  const title = isDep ? `Deposit approved — ${money(final)} added to your wallet` : `Withdrawal approved — ${money(final)} sent`;
+  const bodyContent = `
+      ${badge('success', isDep ? '✅ Deposit approved' : '✅ Withdrawal approved')}
+      ${heading('success', isDep ? 'Your deposit is approved' : 'Your withdrawal is approved')}
+      <p>Hello <b>${esc(name)}</b>,</p>
+      <p>${isDep ? `<b>${money(final)}</b> has been added to your Bazario wallet.` : `<b>${money(final)}</b> has been sent to you.`} Your receipt is attached to this email as a PDF.</p>
+      ${stats([
+        { label: isDep ? 'Credited' : 'Paid out', value: money(final), tone: 'success' },
+        r.balanceAfter != null ? { label: 'Wallet balance', value: money(r.balanceAfter), tone: 'info' } : null,
+      ])}
+      ${rows([
+        ['Receipt no.', esc(receiptNo)],
+        ['Requested amount', money(requested)],
+        !isDep && final < requested ? ['Returned to your balance', money(requested - final)] : null,
+        ['Method', esc(methodText || '—')],
+        !isDep && payoutTo ? ['Paid to', esc(payoutTo)] : null,
+        isDep && r.depositRef ? ['Your reference (UTR)', esc(r.depositRef)] : null,
+        !isDep && r.transactionRef ? ['Payout reference (UTR)', esc(r.transactionRef)] : null,
+        ['Approved on', fmtIST(r.processedAt || r.updatedAt || Date.now())],
+      ])}
+      ${callout('info', '📎 <b>Receipt attached.</b> You can also download it any time from <b>Wallet → Transactions</b> in Seller Central.')}
+      ${button('success', 'OPEN MY WALLET →', sellerUrl('/seller/wallet'))}`;
+  const text = `Hello ${name},\n\n${title}.\nReceipt no. ${receiptNo}\nRequested: ${money(requested)}\n${isDep ? 'Credited' : 'Paid'}: ${money(final)}\n\nYour receipt is attached. You can also download it from Wallet -> Transactions in Seller Central: ${sellerUrl('/seller/wallet')}`;
+  return sendSellerEmail({
+    to,
+    subject: title,
+    preheader: `Receipt ${receiptNo} attached.`,
+    bodyContent,
+    text,
+    attachments: pdf ? [{ filename: `Bazario-Receipt-${receiptNo}.pdf`, content: pdf }] : undefined,
+  });
+}
+
 export default {
   transporter,
   sendVerificationOtpEmail,
   sendPasswordResetEmail,
   sendWelcomeEmail,
   sendSellerApprovalEmail,
+  sendSellerNotificationEmail,
+  sendSellerApplicationEmail,
+  sendSellerApprovedEmail,
+  sendOrderWarningEmail,
+  sendStoreFrozenEmail,
+  sendAccountStatusEmail,
+  sendDiamondEmail,
+  sendWalletReceiptEmail,
+  emailEnabled,
 };

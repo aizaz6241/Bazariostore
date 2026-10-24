@@ -350,3 +350,8 @@ textarea.wl-input { height: auto; padding: 10px 13px; resize: vertical; }
 /* saved accounts sit just above the form */
 .wl-card > .wl-field { margin-bottom: 16px; }
 .wl-card > .wl-callout + .wl-field { margin-top: 0; }
+
+/* Receipt download on approved deposits / withdrawals */
+.wl-receipt { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; border: 1px solid #e2e8f0; background: #fff; color: #334155; font: 600 11px/1.6 inherit; cursor: pointer; white-space: nowrap; }
+.wl-receipt:hover:not(:disabled) { background: #f8fafc; border-color: #cbd5e1; }
+.wl-receipt:disabled { opacity: 0.6; cursor: progress; }

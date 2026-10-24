@@ -107,6 +107,26 @@ export async function downloadFile(path, filename) {
   setTimeout(() => URL.revokeObjectURL(urlBlob), 5000);
 }
 
+// seller-token file download (wallet receipts)
+export async function downloadSellerFile(path, filename) {
+  const base = getApiBase();
+  const url = (base ? `${base}/api` : '/api') + path;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${localStorage.getItem('ng_seller_token')}` } });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.message || 'Download failed');
+  }
+  const blob = await res.blob();
+  const urlBlob = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = urlBlob;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(urlBlob), 5000);
+}
+
 export const CURRENCY_SYMBOLS = {
   USD: '$',
   INR: '₹',

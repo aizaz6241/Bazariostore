@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams, Link, useOutletContext } from 'react-router-dom';
-import { sapi, fmtDate } from '../api.js';
+import { sapi, fmtDate, downloadSellerFile } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import CurrencySelector from '../components/CurrencySelector.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
@@ -798,6 +798,8 @@ function LedgerRow({ r, formatMoney }) {
   const rejected = r.status === 'rejected';
   const partial = r.type === 'withdrawal' && (r.status === 'approved' || r.status === 'completed') && r.approvedAmount != null && Math.abs(r.approvedAmount) < Math.abs(r.amount);
   const ref = r.orderNumber ? `#${r.orderNumber}` : r.depositRef ? `Ref ${r.depositRef}` : r.transactionRef ? `UTR ${r.transactionRef}` : '';
+  // the Bazario receipt (PDF) of an approved deposit / withdrawal
+  const hasReceipt = (r.type === 'deposit' || r.type === 'withdrawal') && (r.status === 'approved' || r.status === 'completed') && Boolean(r._id);
   return (
     <li className="wl-line">
       <span className={`wl-line-ico tone-${d.tone}`}><Ic name={d.icon} size={16} /></span>
@@ -818,9 +820,31 @@ function LedgerRow({ r, formatMoney }) {
         <div className="wl-line-meta">
           {r.balanceAfter != null && <small>Bal. {formatMoney(r.balanceAfter)}</small>}
           {r.status !== 'completed' && <span className={`wl-tag tone-${st.tone}`}>{st.label}</span>}
+          {hasReceipt && <ReceiptButton id={r._id} type={r.type} />}
         </div>
       </div>
     </li>
+  );
+}
+
+function ReceiptButton({ id, type }) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState('');
+  const get = async () => {
+    setBusy(true);
+    setFailed('');
+    try {
+      await downloadSellerFile(`/sellers/wallet/receipt/${id}`, `Bazario-${type === 'deposit' ? 'Deposit' : 'Withdrawal'}-Receipt.pdf`);
+    } catch (e) {
+      setFailed(e.message || 'Could not download the receipt. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button type="button" className="wl-receipt" onClick={get} disabled={busy} title={failed || 'Download receipt (PDF)'}>
+      <Ic name="download" size={12} /> {busy ? '…' : failed ? 'Retry' : 'Receipt'}
+    </button>
   );
 }
 

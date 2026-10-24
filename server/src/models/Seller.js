@@ -93,6 +93,8 @@ const sellerSchema = new mongoose.Schema(
     // products from My Store. Set only by an admin, after the one-time upgrade fee is paid.
     tier: { type: String, enum: ['basic', 'diamond'], default: 'basic' },
     tierSince: { type: Date, default: null },
+    // when the "Welcome to Diamond" email was sent (utils/sellerEmails.js); only used for that email
+    diamondEmailAt: { type: Date, default: null },
     // the seller's own "upgrade me" request (sent to support chat): 'pending'; 'awaiting_approval'
     // once an admin entered the fee and the other partner has to approve it (team portal → Finance)
     tierRequest: {

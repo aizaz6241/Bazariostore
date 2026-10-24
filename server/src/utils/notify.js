@@ -1,9 +1,25 @@
 import Notification from '../models/Notification.js';
 import { sendPush } from './push.js';
 import { adminRoom, notificationPerms } from './permissions.js';
+import { emailEnabled, sendSellerNotificationEmail } from '../services/email.service.js';
+
+// Also email the seller (only for the important events that pass `email: true`).
+// Never blocks or breaks the notification: runs in the background, errors are only logged.
+// Test accounts get no emails.
+async function emailSeller(sellerId, { title, body, link }) {
+  try {
+    const { default: Seller } = await import('../models/Seller.js');
+    const s = await Seller.findById(sellerId).select('email ownerName storeName isTestAccount accountType').lean();
+    if (!s?.email || s.isTestAccount || s.accountType === 'test') return;
+    await sendSellerNotificationEmail({ to: s.email, name: s.ownerName || s.storeName || 'Seller', title, body, link });
+  } catch (e) {
+    console.error('notify email failed:', e.message);
+  }
+}
 
 // `push: false` = only the bell / screen notification (for messages that already sent their own push)
-export async function notify(app, { recipientType = 'admin', sellerId = null, type = 'system', title, body = '', link = '', push = true }) {
+// `email: true`  = seller notifications only: also send the same text to the seller's email
+export async function notify(app, { recipientType = 'admin', sellerId = null, type = 'system', title, body = '', link = '', push = true, email = false }) {
   try {
     const n = await Notification.create({
       recipientType,
@@ -39,6 +55,8 @@ export async function notify(app, { recipientType = 'admin', sellerId = null, ty
       // device — the toast and sound show there already (chat, deposits, approvals, orders…)
       skipActiveAdmins: recipientType !== 'seller',
     });
+    // Email copy for the seller (new order, approval, deposit/withdrawal result, warning, freeze …)
+    if (email && emailEnabled && recipientType === 'seller' && sellerId) emailSeller(sellerId, { title, body, link });
     return n;
   } catch (e) {
     console.error('notify failed:', e.message);

@@ -23,6 +23,7 @@ import { announceToAdmins } from '../../utils/realtime.js';
 import { restartSellerDeadlines, releaseFrozenFund } from './orders.routes.js';
 import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
 import { setScoreAsAdjustment, bandOf, recomputeHealth, MONITOR_NAME } from '../../utils/healthEngine.js';
+import { emailSellerApproved, emailAccountStatus } from '../../utils/sellerEmails.js';
 
 /** Setting a seller's password or login email: the same rank as viewing the saved password. */
 const canTouchSellerLogin = (admin) => ['super_admin', 'admin'].includes(admin?.role);
@@ -846,6 +847,7 @@ router.post('/:id/freeze', authAdmin('sellers'), announceToAdmins('sellers', 'se
       body: isRestricted ? `Reason: ${seller.freezeReason}` : `Your account restrictions have been cleared.`,
       link: '/seller',
     });
+    emailAccountStatus(seller._id, status, isRestricted ? seller.freezeReason : '');
 
     audit(req, 'update', 'seller_status', seller._id, `Set status to ${status} for ${seller.storeName}. Reason: ${reason}`);
 
@@ -938,6 +940,7 @@ router.post('/:id/warn', authAdmin('sellers'), announceToAdmins('sellers', 'sell
         title: `⚠️ Official Seller Warning (${level.toUpperCase()})`,
         body: message.trim(),
         link: '/seller',
+        email: true,
       });
     }
 
@@ -1948,6 +1951,7 @@ router.post('/:id/approve', authAdmin('sellers'), oneDecisionAtATime, announceTo
       body: `Your store ${seller.storeName} is now active. You can start listing products and fulfilling orders.`,
       link: '/seller',
     });
+    if (!wasApproved) emailSellerApproved(seller._id);
 
     audit(req, 'approve', 'seller_registration', seller._id, `Approved seller ${seller.storeName} (Security Deposit: $${depAmt}, Referral: ${finalReferral || 'None'})`);
     await finLog(req, {

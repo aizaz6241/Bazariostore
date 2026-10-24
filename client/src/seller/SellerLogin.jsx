@@ -98,7 +98,24 @@ export default function SellerLogin() {
       loginSeller(data.token, data.seller);
       navigate('/seller');
     } catch (e) {
-      if (e.isPendingApproval || (e.message && e.message.toLowerCase().includes('pending admin approval'))) {
+      // right password, application still in review: show its status page (not an error)
+      if (e.code === 'application_pending' || e.data?.isPendingApproval) {
+        const app = e.data?.application || {};
+        setSubmittedInfo({
+          pending: true,
+          storeName: app.storeName,
+          ownerName: app.ownerName,
+          email: app.email || email.trim(),
+          submittedAt: app.submittedAt || null,
+          reviewHours: Number(app.reviewHours) || 24,
+          checkedAt: new Date(),
+        });
+        setErr('');
+        setMode('submitted');
+        try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
+        return;
+      }
+      if (e.message && e.message.toLowerCase().includes('pending admin approval')) {
         setIsPendingApprovalErr(true);
       }
       setErr(e.message || 'Login failed. Please check your business email and password.');
@@ -444,7 +461,9 @@ export default function SellerLogin() {
           <div className="sl-alert err"><Ic name="alert" size={18} /><div><p>{err}</p></div></div>
         )}
 
-        {mode === 'submitted' ? (
+        {mode === 'submitted' && submittedInfo?.pending ? (
+          <PendingReview info={submittedInfo} loading={loading} onCheck={submit} onBack={() => switchMode('login')} />
+        ) : mode === 'submitted' ? (
           <div className="sl-done">
             <span className="sl-done-ico"><Ic name="checkCircle" size={30} /></span>
             <h2>{submittedInfo?.already ? 'You have already applied' : 'Application received!'}</h2>
@@ -484,7 +503,12 @@ export default function SellerLogin() {
               </div>
             </label>
             <button type="submit" className="sl-btn primary" disabled={loading}>{loading ? 'Signing in…' : 'Sign in'}</button>
-            <p className="sl-fine center">Forgot your password? Contact Bazario support and we will reset it for you.</p>
+            <p className="sl-fine center">
+              Forgot your password?{' '}
+              <button type="button" className="sl-link inline" onClick={() => { setForgotEmail(email.trim()); setForgotStep('request'); setForgotErr(''); setForgotSuccess(''); setForgotModalOpen(true); }}>
+                Reset it by email
+              </button>
+            </p>
 
             <div className="sl-become">
               <div>
@@ -677,6 +701,49 @@ export default function SellerLogin() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Shown when a seller signs in while the application is still being reviewed. */
+function PendingReview({ info, loading, onCheck, onBack }) {
+  const sent = info.submittedAt ? new Date(info.submittedAt) : null;
+  const hours = info.reviewHours || 24;
+  const due = sent ? new Date(sent.getTime() + hours * 3600000) : null;
+  const late = due ? Date.now() > due.getTime() : false;
+  const fmt = (d) => d.toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return (
+    <div className="sl-done sl-review">
+      <span className="sl-done-ico review"><Ic name="clock" size={30} /></span>
+      <h2>Your application is under review</h2>
+      <p>
+        Thank you for applying! Our team checks every application <b>within {hours} hours</b>. As soon as your store is approved you can sign in here with the
+        same email and password — and we will also send you an email.
+      </p>
+      <dl className="sl-summary">
+        {info.storeName && <div><dt>Store</dt><dd>{info.storeName}</dd></div>}
+        {info.ownerName && <div><dt>Owner</dt><dd>{info.ownerName}</dd></div>}
+        <div className="full"><dt>Email</dt><dd>{info.email}</dd></div>
+        {sent && <div><dt>Applied on</dt><dd>{fmt(sent)}</dd></div>}
+        {due && <div><dt>{late ? 'Expected by' : 'Decision by'}</dt><dd>{fmt(due)}</dd></div>}
+        <div className="full"><dt>Status</dt><dd><span className="sl-pill">Under review</span></dd></div>
+      </dl>
+      {late && (
+        <div className="sl-alert warn tight">
+          <Ic name="clock" size={16} />
+          <div><p>Your review is taking a little longer than usual. It will be completed soon — no need to apply again.</p></div>
+        </div>
+      )}
+      <ol className="sl-next">
+        <li className="done"><i><Ic name="check" size={12} /></i><span>Application sent</span></li>
+        <li className="now"><i>2</i><span>Our team is checking your details and documents</span></li>
+        <li><i>3</i><span>Store approved — sign in and start selling</span></li>
+      </ol>
+      <button type="button" className="sl-btn primary" onClick={onCheck} disabled={loading}>
+        <Ic name="refresh" size={16} /> {loading ? 'Checking…' : 'Check my status again'}
+      </button>
+      <button type="button" className="sl-btn ghost" onClick={onBack}>Back to sign in</button>
+      <p className="sl-fine">Please do not register again with the same email.</p>
     </div>
   );
 }

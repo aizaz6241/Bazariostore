@@ -8,7 +8,7 @@ import { authSeller } from '../../middleware/auth.js';
 import { slugify, blockWhenFrozen } from './helpers.js';
 import { notify } from '../../utils/notify.js';
 import { comparePassword, cleanEmail } from '../../utils/password.js';
-import { sendVerificationOtpEmail, sendPasswordResetEmail, sendWelcomeEmail } from '../../services/email.service.js';
+import { sendVerificationOtpEmail, sendPasswordResetEmail, sendSellerApplicationEmail } from '../../services/email.service.js';
 import { rememberPassword } from '../../utils/sellerPassword.js';
 import { jwtSecret } from '../../utils/secrets.js';
 import { limit, failureLimiter } from '../../utils/rateLimit.js';
@@ -253,8 +253,8 @@ router.post('/register', registerLimit, async (req, res) => {
     rememberPassword(seller, password);
     await seller.save();
 
-    // Send confirmation/welcome email
-    sendWelcomeEmail({ to: cleanEmail, name: ownerName, role: 'seller' }).catch(() => {});
+    // "Application received — we review it within 24 hours" (in the background; never blocks)
+    sendSellerApplicationEmail({ to: cleanEmail, name: ownerName, storeName }).catch(() => {});
 
     // Live Admin Notification & Broadcast
     notify(req.app, {
@@ -327,6 +327,7 @@ router.post('/login', async (req, res) => {
     if (seller.status === 'suspended' && seller.registrationRejectedAt) {
       // a rejected registration is told so, with the reason (it used to read "suspended")
       return res.status(403).json({
+        code: 'application_rejected',
         isRejected: true,
         message: `Your store registration was not approved. Reason: ${seller.freezeReason || 'not given'}. Please contact platform support if you think this is a mistake.`,
       });
@@ -334,10 +335,20 @@ router.post('/login', async (req, res) => {
     // a suspended store may log in: it sees the suspension and can only talk to support
     // (every other request is refused by the login check, see middleware/auth.js)
     if (seller.status === 'pending_approval') {
+      // the right password, application still in review: the sign-in page shows its status
+      // ("Under review", sent on …, decided within 24 hours) instead of a plain error
       return res.status(403).json({
-        message: 'Your merchant application is currently pending admin approval. Once reviewed and verified, you will be able to log in. You can also chat with our support team.',
+        message: 'Your seller application is under review. Our team reviews every application within 24 hours. You can sign in as soon as your store is approved — we will email you.',
+        code: 'application_pending',
         isPendingApproval: true,
         sellerId: seller._id,
+        application: {
+          storeName: seller.storeName || '',
+          ownerName: seller.ownerName || '',
+          email: seller.email || '',
+          submittedAt: seller.createdAt || null,
+          reviewHours: 24,
+        },
       });
     }
 

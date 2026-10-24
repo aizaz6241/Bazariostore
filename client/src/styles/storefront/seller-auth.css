@@ -155,3 +155,9 @@
 .st-terms-back { margin-top: 24px !important; }
 .st-terms-back a { color: #b45309; font-weight: 700; }
 @media (max-width: 560px) { .st-terms-card { padding: 20px 16px; } }
+
+/* Application still under review (shown when the seller signs in before approval) */
+.sl-done-ico.review { background: #fef3c7; color: #b45309; }
+.sl-review > p b { color: var(--sl-ink, #0f172a); }
+.sl-review .sl-alert { text-align: left; }
+.sl-link.inline { font-size: inherit; font-weight: 700; color: #b45309; }
