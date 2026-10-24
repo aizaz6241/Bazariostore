@@ -147,7 +147,7 @@ export default function SellerDiamond() {
           busy={sending}
           disabled={underReview}
           onEnd={load}
-          note={underReview ? 'Available once your store registration is approved' : 'One-time payment · no monthly charge · Diamond for life'}
+          note={underReview ? 'Available once your store registration is approved' : ''}
         />
       ) : (
         <section className={`ap-hero ${pending ? 'is-pending' : ''}`}>
@@ -174,7 +174,7 @@ export default function SellerDiamond() {
                   <Ic name="lock" size={16} />
                   <span>
                     Your price is locked: <b>{usd(locked.price)}</b> <s style={{ opacity: 0.65 }}>{usd(locked.regular)}</s>
-                    {locked.lockedUntil ? ` · until ${fmtDay(locked.lockedUntil)}` : ''}
+                    {locked.lockedUntil ? `, kept until ${fmtDay(locked.lockedUntil)}` : ''}
                   </span>
                 </div>
               )}
