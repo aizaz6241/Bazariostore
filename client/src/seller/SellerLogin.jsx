@@ -65,6 +65,13 @@ export default function SellerLogin() {
   const [forgotBusy, setForgotBusy] = useState(false);
   const [forgotErr, setForgotErr] = useState('');
   const [forgotSuccess, setForgotSuccess] = useState('');
+  // the reset link from the email (token in the address); dropped once a new code is asked for
+  const [linkToken, setLinkToken] = useState(urlResetToken);
+  const dropResetParams = () => {
+    const next = new URLSearchParams(params);
+    next.delete('resetToken');
+    if (next.toString() !== params.toString()) setParams(next, { replace: true });
+  };
 
   // the Seller Terms & Conditions box on the registration form
   const [acceptTerms, setAcceptTerms] = useState(false);
@@ -232,6 +239,69 @@ export default function SellerLogin() {
     setErr('');
     setMode('submitted');
   };
+  // ─── Email verification: a 6-digit code is sent to the email; registration needs it ───
+  // status: idle | sending | sent | verifying | verified | notRequired
+  const EV0 = { status: 'idle', email: '', code: '', token: '', msg: '', err: '', resendAt: 0 };
+  const [ev, setEv] = useState(EV0);
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!(ev.resendAt > Date.now())) return undefined;
+    const t = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [ev.resendAt]);
+  const resendLeft = Math.max(0, Math.ceil((ev.resendAt - Date.now()) / 1000));
+  const cleanRegEmail = String(regForm.email || '').trim().toLowerCase();
+  // the code belongs to one address: a changed email has to be verified again
+  const evForThis = ev.email === cleanRegEmail;
+  const emailVerified = evForThis && (ev.status === 'verified' || ev.status === 'notRequired');
+
+  const sendEmailCode = async () => {
+    if (!/^\S+@\S+\.\S+$/.test(cleanRegEmail)) {
+      setEv({ ...EV0, err: 'Please enter a valid email address first.' });
+      return;
+    }
+    setEv((v) => ({ ...v, status: 'sending', email: cleanRegEmail, err: '', msg: '' }));
+    try {
+      const res = await api('/sellers/register/send-code', { method: 'POST', body: { email: cleanRegEmail, name: regForm.ownerName }, timeout: 30000 });
+      if (res && res.required === false) {
+        setEv({ ...EV0, status: 'notRequired', email: cleanRegEmail });
+        return;
+      }
+      setEv({ ...EV0, status: 'sent', email: cleanRegEmail, msg: res?.message || 'We sent you a 6-digit code.', resendAt: Date.now() + (Number(res?.resendInSeconds) || 60) * 1000 });
+    } catch (e) {
+      if (e.status === 404) {
+        // a server without email verification: registration works as before
+        setEv({ ...EV0, status: 'notRequired', email: cleanRegEmail });
+        return;
+      }
+      if (e.code === 'APPLICATION_PENDING' || e.code === 'APPLICATION_REJECTED' || e.code === 'ALREADY_REGISTERED') {
+        setEv(EV0);
+        setEmailNotice({ code: e.code, message: e.message, application: e.data?.application });
+        return;
+      }
+      setEv((v) => ({
+        ...v,
+        status: v.msg ? 'sent' : 'idle',
+        err: e.message || 'Could not send the code. Please try again.',
+        resendAt: e.data?.waitSec ? Date.now() + e.data.waitSec * 1000 : v.resendAt,
+      }));
+    }
+  };
+  const verifyEmailCode = async () => {
+    const code = String(ev.code || '').replace(/\D/g, '');
+    if (code.length !== 6) {
+      setEv((v) => ({ ...v, err: 'Please enter the 6-digit code from the email.' }));
+      return;
+    }
+    setEv((v) => ({ ...v, status: 'verifying', err: '' }));
+    try {
+      const res = await api('/sellers/register/verify-code', { method: 'POST', body: { email: ev.email, code }, timeout: 30000 });
+      setEv((v) => ({ ...v, status: 'verified', token: res.emailToken || '', err: '', msg: '' }));
+    } catch (e) {
+      setEv((v) => ({ ...v, status: 'sent', err: e.message || 'Wrong code. Please try again.' }));
+    }
+  };
+
   const onRegEmailBlur = async () => {
     const answer = await checkEmail(regForm.email);
     setEmailNotice(answer ? { code: answer.code, message: answer.message, application: answer.application } : null);
@@ -281,6 +351,11 @@ export default function SellerLogin() {
       setErr('Please read and accept the Seller Terms & Conditions to register.');
       return;
     }
+    if (!emailVerified) {
+      setErr('Please verify your email first: tap "Send code", then enter the 6-digit code from the email.');
+      try { document.getElementById('sl-email-verify')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch {}
+      return;
+    }
     // everything together must stay under what the server accepts (5 MB)
     if (JSON.stringify(regForm).length > 4.6 * 1024 * 1024) {
       setErr('The documents are too large together. Please upload smaller photos (or photos instead of PDFs).');
@@ -308,7 +383,7 @@ export default function SellerLogin() {
       // documents on a slow mobile connection: up to 2 minutes
       const res = await api('/sellers/register', {
         method: 'POST',
-        body: { ...regForm, acceptTerms: true, termsVersion: TERMS_VERSION },
+        body: { ...regForm, acceptTerms: true, termsVersion: TERMS_VERSION, ...(ev.token ? { emailToken: ev.token } : {}) },
         timeout: 120000,
       });
 
@@ -320,6 +395,7 @@ export default function SellerLogin() {
         submittedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       });
       setEmail(regForm.email); // Pre-fill email in login tab
+      setEv(EV0);
       setMode('submitted');
       setRegForm({
         storeName: '',
@@ -346,6 +422,9 @@ export default function SellerLogin() {
         setErr(
           'The connection was too slow to get the answer. Your registration may already have been received: wait one minute, then try to Sign In with this email. If it says "pending admin approval", it worked — no need to register again.'
         );
+      } else if (e.code === 'EMAIL_NOT_VERIFIED') {
+        setEv(EV0);
+        setErr(msg);
       } else if (e.code === 'INVALID_AFFILIATE_CODE') {
         setAffCheck({ state: 'invalid', message: msg });
         setErr(msg);
@@ -369,7 +448,11 @@ export default function SellerLogin() {
         method: 'POST',
         body: { email: forgotEmail.trim() },
       });
-      setForgotSuccess(res.message || 'Recovery instructions sent!');
+      setForgotSuccess(`${res.message || 'Recovery instructions sent!'} Check your inbox — and your Spam / Junk folder if you don't see it.`);
+      // a new code was asked for: the code from this new email is used, not an older link
+      setLinkToken('');
+      dropResetParams();
+      setForgotOtp('');
       setForgotStep('reset');
     } catch (err) {
       setForgotErr(err.message || 'Failed to send recovery email.');
@@ -389,13 +472,15 @@ export default function SellerLogin() {
     try {
       const payload = {
         password: forgotNewPassword,
-        ...(urlResetToken ? { token: urlResetToken } : { email: forgotEmail.trim(), otp: forgotOtp.trim() }),
+        ...(linkToken ? { token: linkToken } : { email: forgotEmail.trim(), otp: forgotOtp.trim() }),
       };
       const res = await api('/sellers/reset-password', {
         method: 'POST',
         body: payload,
       });
       setForgotSuccess(res.message || 'Password updated successfully! You can now log in.');
+      setLinkToken('');
+      dropResetParams();
       setTimeout(() => {
         setForgotModalOpen(false);
         setMode('login');
@@ -480,6 +565,14 @@ export default function SellerLogin() {
                 <div className="full"><dt>Status</dt><dd><span className="sl-pill">Under review</span></dd></div>
               </dl>
             )}
+            {!submittedInfo?.already && (
+              <div className="sl-alert ok tight sl-mailnote">
+                <Ic name="mail" size={16} />
+                <div>
+                  <p><b>We have sent you an email</b> at {submittedInfo?.email || 'your email'}. Please check your <b>inbox</b> — and your <b>Spam / Junk</b> folder if you don't see it. We will email you again as soon as your store is approved (usually within 24 hours).</p>
+                </div>
+              </div>
+            )}
             <ol className="sl-next">
               <li className="done"><i><Ic name="check" size={12} /></i><span>Application sent</span></li>
               <li className="now"><i>2</i><span>Document check by our team</span></li>
@@ -556,6 +649,53 @@ export default function SellerLogin() {
                   <input type="tel" value={regForm.phone} onChange={(e) => setRegForm({ ...regForm, phone: e.target.value })} placeholder="Phone number with country code" required />
                 </label>
               </div>
+              {!emailNotice && (
+                <div className={`sl-verify ${emailVerified ? 'ok' : ''}`} id="sl-email-verify">
+                  {emailVerified ? (
+                    <p className="sl-verify-ok"><Ic name="checkCircle" size={16} /> {ev.status === 'verified' ? 'Email verified' : 'Email saved'}</p>
+                  ) : (
+                    <>
+                      <div className="sl-verify-head">
+                        <span><Ic name="mail" size={15} /> Verify your email</span>
+                        <button
+                          type="button"
+                          className="sl-btn ghost sm"
+                          onClick={sendEmailCode}
+                          disabled={ev.status === 'sending' || (evForThis && resendLeft > 0)}
+                        >
+                          {ev.status === 'sending' ? 'Sending…' : evForThis && ev.status !== 'idle' ? (resendLeft > 0 ? `Send again in ${resendLeft}s` : 'Send code again') : 'Send code'}
+                        </button>
+                      </div>
+                      {evForThis && (ev.status === 'sent' || ev.status === 'verifying') && (
+                        <>
+                          <p className="sl-verify-msg">
+                            {ev.msg || 'We sent a 6-digit code to your email.'}
+                            {!/spam/i.test(ev.msg || '') && <b> Not in your inbox? Look in the Spam / Junk folder.</b>}
+                          </p>
+                          <div className="sl-verify-row">
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              autoComplete="one-time-code"
+                              maxLength={6}
+                              value={ev.code}
+                              onChange={(e) => setEv((v) => ({ ...v, code: e.target.value.replace(/\D/g, '').slice(0, 6), err: '' }))}
+                              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); verifyEmailCode(); } }}
+                              placeholder="6-digit code"
+                              aria-label="6-digit code from the email"
+                            />
+                            <button type="button" className="sl-btn primary sm" onClick={verifyEmailCode} disabled={ev.status === 'verifying'}>
+                              {ev.status === 'verifying' ? 'Checking…' : 'Verify'}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                      {!(evForThis && ev.status !== 'idle') && <p className="sl-verify-msg">We will email you a 6-digit code to make sure this email is yours.</p>}
+                      {ev.err && <p className="sl-verify-err">{ev.err}</p>}
+                    </>
+                  )}
+                </div>
+              )}
               {emailNotice && (
                 <div className={`sl-alert ${emailNotice.code === 'APPLICATION_REJECTED' ? 'err' : 'warn'} tight`}>
                   <Ic name="alert" size={16} />
@@ -668,7 +808,7 @@ export default function SellerLogin() {
               </form>
             ) : (
               <form onSubmit={handleResetPasswordSubmit} className="sl-form">
-                {!urlResetToken && (
+                {!linkToken && (
                   <>
                     <label className="sl-field">
                       <span>Email</span>

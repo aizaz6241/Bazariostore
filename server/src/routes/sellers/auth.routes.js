@@ -8,7 +8,9 @@ import { authSeller } from '../../middleware/auth.js';
 import { slugify, blockWhenFrozen } from './helpers.js';
 import { notify } from '../../utils/notify.js';
 import { comparePassword, cleanEmail } from '../../utils/password.js';
-import { sendVerificationOtpEmail, sendPasswordResetEmail, sendSellerApplicationEmail } from '../../services/email.service.js';
+import { sendVerificationOtpEmail, sendPasswordResetEmail, sendSellerApplicationEmail, emailEnabled } from '../../services/email.service.js';
+import EmailCode from '../../models/EmailCode.js';
+import { allowEmailSend, hashSecret, secretMatches, waitMessage } from '../../utils/emailGuard.js';
 import { rememberPassword } from '../../utils/sellerPassword.js';
 import { jwtSecret } from '../../utils/secrets.js';
 import { limit, failureLimiter } from '../../utils/rateLimit.js';
@@ -47,32 +49,27 @@ function generateOtp() {
   return crypto.randomInt(100000, 1000000).toString();
 }
 
-// In-memory / temporary registration OTP store
-const pendingRegistrationOtps = new Map();
-
-// POST /api/sellers/send-otp (Send OTP bypassed)
-router.post('/send-otp', async (req, res) => {
-  res.json({
-    ok: true,
-    message: 'OTP verification is bypassed. You can proceed with registration.',
-  });
-});
-
-// POST /api/sellers/verify-otp (Verify seller OTP - Bypassed)
-router.post('/verify-otp', async (req, res) => {
-  res.json({
-    ok: true,
-    verified: true,
-    message: 'OTP verification is bypassed.',
-  });
-});
+const SITE_URL = () => (process.env.CLIENT_URL || 'https://www.bazariomarketplace.shop').replace(/\/+$/, '');
+const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const CODE_VALID_MS = 10 * 60 * 1000;
+// proof that the registration email was verified (given after the right code; used by /register)
+const EMAIL_PROOF_TTL = '2h';
+const emailProof = (email) => jwt.sign({ t: 'seller_email', email }, jwtSecret(), { expiresIn: EMAIL_PROOF_TTL });
+function provenEmail(token) {
+  try {
+    const p = jwt.verify(String(token || ''), jwtSecret());
+    return p?.t === 'seller_email' && typeof p.email === 'string' ? p.email : '';
+  } catch {
+    return '';
+  }
+}
 
 // What to tell someone who registers again with an email that already has an account. A seller
 // whose application is still waiting must learn that it WAS received (and not send it again).
 function existingAccountAnswer(existing) {
+  // Anyone can type any email here, so no names are given back (only that an application exists and
+  // when it was sent); the form shows the store / owner name the person typed themselves.
   const application = {
-    storeName: existing.storeName || '',
-    ownerName: existing.ownerName || '',
     email: existing.email || '',
     submittedAt: existing.createdAt || null,
   };
@@ -98,6 +95,78 @@ function existingAccountAnswer(existing) {
     message: 'A merchant account with this email already exists. Please sign in instead.',
   };
 }
+
+// ─── Registration email verification (6-digit code to the seller's email) ───
+// POST /api/sellers/register/send-code { email, name? }
+//   → { ok, required: true, resendInSeconds, message }   (required: false when email sending is off)
+const sendCodeLimit = limit({ name: 'seller-register-code', max: 10, windowMs: 60 * 60 * 1000, message: 'Too many codes requested from this network. Please try again later.' });
+router.post('/register/send-code', sendCodeLimit, async (req, res) => {
+  try {
+    const email = cleanEmail(asText(req.body?.email, 200));
+    const name = asText(req.body?.name, 80).trim() || 'Seller';
+    if (!email || !EMAIL_RX.test(email)) return res.status(400).json({ message: 'Please enter a valid email address.' });
+    const existing = await Seller.findOne({ email }).select('storeName ownerName email status registrationRejectedAt createdAt').lean();
+    if (existing) return res.status(409).json(existingAccountAnswer(existing));
+    // email sending not set up on this server: registration works without the code (as before)
+    if (!emailEnabled) return res.json({ ok: true, required: false, message: '' });
+
+    const gate = allowEmailSend(email, 'seller-register');
+    if (!gate.ok) return res.status(429).json({ code: 'WAIT', waitSec: gate.waitSec, message: waitMessage(gate.waitSec) });
+
+    const otp = generateOtp();
+    const now = new Date();
+    await EmailCode.updateOne(
+      { email, purpose: 'seller_register' },
+      { $set: { codeHash: hashSecret(otp), expiresAt: new Date(now.getTime() + CODE_VALID_MS), attempts: 0, sentAt: now, verifiedAt: null, purgeAt: new Date(now.getTime() + 86400000) } },
+      { upsert: true }
+    );
+    const sent = await sendVerificationOtpEmail({ to: email, name, otp, role: 'seller' }).catch((e) => ({ success: false, error: e.message }));
+    if (!sent?.success) {
+      return res.status(503).json({ message: 'We could not send the email right now. Please check the address and try again in a minute.' });
+    }
+    res.json({
+      ok: true,
+      required: true,
+      resendInSeconds: 60,
+      message: `We sent a 6-digit code to ${email}. Please check your inbox — and your Spam / Junk folder if you don't see it.`,
+    });
+  } catch (err) {
+    console.error('[seller-register-code]', err.message);
+    res.status(500).json({ message: 'Could not send the code. Please try again.' });
+  }
+});
+
+// POST /api/sellers/register/verify-code { email, code } → { ok, emailToken }
+const verifyCodeLimit = limit({ name: 'seller-register-verify', max: 30, windowMs: 15 * 60 * 1000, message: 'Too many tries from this network. Please try again later.' });
+router.post('/register/verify-code', verifyCodeLimit, async (req, res) => {
+  try {
+    const email = cleanEmail(asText(req.body?.email, 200));
+    const code = asText(req.body?.code ?? req.body?.otp, 12).trim();
+    if (!email || !/^\d{6}$/.test(code)) return res.status(400).json({ message: 'Please enter the 6-digit code from the email.' });
+    const now = new Date();
+    // one try is used up BEFORE the code is compared, in one database step (no parallel guessing)
+    const rec = await EmailCode.findOneAndUpdate(
+      { email, purpose: 'seller_register', codeHash: { $ne: '' }, expiresAt: { $gt: now }, attempts: { $lt: MAX_OTP_TRIES } },
+      { $inc: { attempts: 1 } },
+      { new: true }
+    );
+    if (!rec) {
+      const found = await EmailCode.findOne({ email, purpose: 'seller_register' }).lean();
+      if (!found?.codeHash) return res.status(400).json({ message: 'Please ask for a code first.' });
+      if (new Date(found.expiresAt) <= now) return res.status(400).json({ message: 'This code has expired. Please ask for a new one.' });
+      return res.status(400).json({ message: 'Too many wrong codes. Please ask for a new code.' });
+    }
+    if (!secretMatches(code, rec.codeHash)) {
+      const left = Math.max(0, MAX_OTP_TRIES - rec.attempts);
+      return res.status(400).json({ message: left ? `Wrong code. ${left} ${left === 1 ? 'try' : 'tries'} left.` : 'Too many wrong codes. Please ask for a new code.' });
+    }
+    await EmailCode.updateOne({ _id: rec._id }, { $set: { codeHash: '', verifiedAt: now } });
+    res.json({ ok: true, verified: true, emailToken: emailProof(email), message: 'Email verified ✓' });
+  } catch (err) {
+    console.error('[seller-register-verify]', err.message);
+    res.status(500).json({ message: 'Could not check the code. Please try again.' });
+  }
+});
 
 // Small check made BEFORE the documents are uploaded: is there already an account / application for
 // this email? (So someone who already applied is told so at once, without uploading photos again.)
@@ -154,7 +223,7 @@ router.post('/register', registerLimit, async (req, res) => {
       passportDocumentUrl,
       bankStatementDocument,
       bankStatementUrl,
-      otp,
+      emailToken,
       acceptTerms,
       termsVersion,
     } = req.body || {};
@@ -190,11 +259,13 @@ router.post('/register', registerLimit, async (req, res) => {
       return res.status(409).json(existingAccountAnswer(existing));
     }
 
-    // OTP requirement removed - seller registers directly for admin KYC approval
-    if (pendingRegistrationOtps.has(cleanEmail)) {
-      pendingRegistrationOtps.delete(cleanEmail);
+    // The email must be verified with the 6-digit code first (only real, working addresses reach
+    // the team). When email sending is not set up on this server, registration works as before.
+    const verifiedEmail = provenEmail(emailToken);
+    if (emailEnabled && verifiedEmail !== cleanEmail) {
+      return res.status(400).json({ code: 'EMAIL_NOT_VERIFIED', field: 'email', message: 'Please verify your email with the 6-digit code we send you before submitting.' });
     }
-    const isEmailVerified = true;
+    const isEmailVerified = verifiedEmail === cleanEmail;
 
     let baseSlug = slugify(storeName);
     let storeSlug = baseSlug;
@@ -595,28 +666,34 @@ router.post('/forgot-password', recoveryLimit, async (req, res) => {
       message: 'If a merchant account with this email exists, password recovery instructions have been sent.',
     };
 
-    const seller = await Seller.findOne({ email });
+    const seller = await Seller.findOne({ email }).select('email ownerName storeName');
     if (!seller) return res.json(sameAnswer);
+    // one email per address per minute, 5 an hour (protects the mailbox and the email quota);
+    // the answer stays the same so nobody learns anything from it
+    if (!allowEmailSend(email, 'seller-reset').ok) return res.json(sameAnswer);
 
     const token = crypto.randomBytes(24).toString('hex');
     const otp = generateOtp();
     const expires = new Date(Date.now() + RESET_VALID_MS); // 20 minutes
 
-    seller.resetToken = token;
-    seller.resetExpires = expires;
-    seller.resetOtp = { code: otp, expiresAt: expires, attempts: 0 };
-    await seller.save();
+    // only hashes are stored: a copy of the database cannot be used to reset a password
+    await Seller.updateOne(
+      { _id: seller._id },
+      { $set: { resetToken: hashSecret(token), resetExpires: expires, resetOtp: { code: hashSecret(otp), expiresAt: expires, attempts: 0 } } }
+    );
 
-    const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
-    const resetUrl = `${clientUrl}/seller/login?resetToken=${token}&email=${encodeURIComponent(email)}`;
-
-    await sendPasswordResetEmail({
+    const resetUrl = `${SITE_URL()}/seller/login?resetToken=${token}&email=${encodeURIComponent(email)}`;
+    const sent = await sendPasswordResetEmail({
       to: seller.email,
       name: seller.ownerName || seller.storeName,
       resetUrl,
       otp,
       role: 'seller',
-    });
+    }).catch((e) => ({ success: false, error: e.message }));
+    if (sent && sent.success === false && !sent.skipped) {
+      console.error('[seller-forgot-password] email failed:', sent.error);
+      return res.status(503).json({ message: 'We could not send the email right now. Please try again in a few minutes.' });
+    }
 
     res.json(sameAnswer);
   } catch (err) {
@@ -643,22 +720,30 @@ router.post('/reset-password', recoveryLimit, async (req, res) => {
 
     let seller = null;
     if (token.length >= 32) {
-      seller = await Seller.findOne({ resetToken: token, resetExpires: { $gt: now } });
+      seller = await Seller.findOne({ resetToken: hashSecret(token), resetExpires: { $gt: now } });
     } else if (/^\d{6}$/.test(otp) && email) {
-      const candidate = await Seller.findOne({ email });
-      const saved = candidate?.resetOtp;
-      if (!candidate || !saved?.code || !saved.expiresAt || new Date(saved.expiresAt) <= now) return invalid();
-      if ((saved.attempts || 0) >= MAX_OTP_TRIES) {
-        // too many wrong guesses: the code is dead, a new one has to be requested
-        await Seller.updateOne({ _id: candidate._id }, { $unset: { resetOtp: 1, resetToken: 1, resetExpires: 1 } });
-        return res.status(400).json({ message: 'Too many wrong codes. Please request a new recovery code.' });
-      }
-      const a = Buffer.from(String(saved.code));
-      const b = Buffer.from(otp);
-      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-        await Seller.updateOne({ _id: candidate._id }, { $inc: { 'resetOtp.attempts': 1 } });
+      // one try is used up BEFORE the code is compared, in one database step: many guesses sent at
+      // the same moment cannot all slip through (the old check-then-save let them)
+      const candidate = await Seller.findOneAndUpdate(
+        {
+          email,
+          'resetOtp.code': { $type: 'string' },
+          'resetOtp.expiresAt': { $gt: now },
+          $or: [{ 'resetOtp.attempts': { $lt: MAX_OTP_TRIES } }, { 'resetOtp.attempts': { $exists: false } }],
+        },
+        { $inc: { 'resetOtp.attempts': 1 } },
+        { new: true }
+      );
+      if (!candidate) {
+        const found = await Seller.findOne({ email }).select('resetOtp').lean();
+        if (found?.resetOtp?.code && (found.resetOtp.attempts || 0) >= MAX_OTP_TRIES) {
+          // too many wrong guesses: the code is dead, a new one has to be requested
+          await Seller.updateOne({ _id: found._id }, { $unset: { resetOtp: 1, resetToken: 1, resetExpires: 1 } });
+          return res.status(400).json({ message: 'Too many wrong codes. Please request a new recovery code.' });
+        }
         return invalid();
       }
+      if (!secretMatches(otp, candidate.resetOtp.code)) return invalid();
       seller = candidate;
     }
 

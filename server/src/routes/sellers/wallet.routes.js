@@ -11,7 +11,7 @@ import { finLog, requestApproval, isLedgerCounted } from '../../utils/financeLog
 import { walletApply, walletNow } from '../../utils/wallet.js';
 import { applyDecisionToWallet, requestFieldsFor, finishStuckWalletRequests } from '../../utils/walletRequests.js';
 import { asText } from '../../middleware/sanitize.js';
-import { adminRoom } from '../../utils/permissions.js';
+import { adminRoom, hasPermission } from '../../utils/permissions.js';
 import { blockWhenFrozen } from './helpers.js';
 import { announceToAdmins } from '../../utils/realtime.js';
 import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
@@ -291,6 +291,7 @@ router.get('/wallet/receipt/:lineId', authSellerOrAdmin, async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(String(req.params.lineId))) return res.status(404).json({ message: 'Receipt not found' });
     const r = await Withdrawal.findById(req.params.lineId).lean();
     const ownerId = req.seller?.id || req.seller?._id;
+    if (req.admin && !hasPermission(req.admin, 'finance')) return res.status(403).json({ message: 'Finance permission required' });
     if (!r || (!req.admin && String(r.seller) !== String(ownerId))) return res.status(404).json({ message: 'Receipt not found' });
     if (!hasReceipt(r)) return res.status(400).json({ message: 'A receipt is only available for an approved deposit or withdrawal.' });
     const seller = await Seller.findById(r.seller).select('storeName ownerName email').lean();

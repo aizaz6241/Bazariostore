@@ -268,6 +268,7 @@ export function Forgot() {
           </div>
           <p style={{ fontSize: 13, color: '#475569', lineHeight: 1.5, margin: '0 0 16px' }}>
             We've dispatched an email to <b>{email}</b> containing a secure 1-click password reset link and a 6-digit recovery code.
+            {' '}Not in your inbox? Please check your <b>Spam / Junk</b> folder.
           </p>
           <Link
             to={`/reset-password?email=${encodeURIComponent(email)}`}

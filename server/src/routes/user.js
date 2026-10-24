@@ -12,6 +12,7 @@ import { jwtSecret } from '../utils/secrets.js';
 import { limit, failureLimiter } from '../utils/rateLimit.js';
 import { asText } from '../middleware/sanitize.js';
 import { publicOrder } from '../utils/publicOrder.js';
+import { allowEmailSend, waitMessage } from '../utils/emailGuard.js';
 
 const loginGuard = failureLimiter({ name: 'user-login', max: 8, windowMs: 15 * 60 * 1000 });
 const MAX_OTP_TRIES = 5;
@@ -56,6 +57,9 @@ router.post('/send-otp', signupLimit, async (req, res) => {
     // A verified account signs in with its password. A code is only for finishing a registration:
     // before, a code sent to ANY account could be guessed to log in to it.
     if (user?.isEmailVerified) return res.json(sent);
+    // one code per address per minute, 5 an hour (protects the mailbox and the email quota)
+    const gate = allowEmailSend(email, 'user-code');
+    if (!gate.ok) return res.status(429).json({ message: waitMessage(gate.waitSec) });
     if (!user) {
       // Create user placeholder with isEmailVerified: false
       user = new User({
@@ -162,6 +166,8 @@ router.post('/register', signupLimit, async (req, res) => {
     if (existing && existing.isEmailVerified) {
       return res.status(400).json({ message: 'An account with this email already exists' });
     }
+    const gate = allowEmailSend(clean, 'user-code');
+    if (!gate.ok) return res.status(429).json({ message: waitMessage(gate.waitSec) });
 
     const otp = generateOtp();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
@@ -253,6 +259,7 @@ router.post('/forgot', recoveryLimit, async (req, res) => {
 
     const user = await User.findOne({ email });
     if (!user) return res.json(sameAnswer);
+    if (!allowEmailSend(email, 'user-reset').ok) return res.json(sameAnswer);
 
     const token = crypto.randomBytes(24).toString('hex');
     const otp = generateOtp();
@@ -263,7 +270,7 @@ router.post('/forgot', recoveryLimit, async (req, res) => {
     user.resetOtp = { code: otp, expiresAt: expires, attempts: 0 };
     await user.save();
 
-    const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+    const clientUrl = (process.env.CLIENT_URL || 'https://www.bazariomarketplace.shop').replace(/\/+$/, '');
     const resetUrl = `${clientUrl}/reset-password?token=${token}&email=${encodeURIComponent(email)}`;
 
     await sendPasswordResetEmail({

@@ -161,3 +161,18 @@
 .sl-review > p b { color: var(--sl-ink, #0f172a); }
 .sl-review .sl-alert { text-align: left; }
 .sl-link.inline { font-size: inherit; font-weight: 700; color: #b45309; }
+
+/* Email verification on the registration form (6-digit code) */
+.sl-verify { margin-top: 10px; padding: 12px 14px; border-radius: 12px; border: 1px solid #fde68a; background: #fffbeb; display: flex; flex-direction: column; gap: 8px; }
+.sl-verify.ok { border-color: #bbf7d0; background: #f0fdf4; }
+.sl-verify-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.sl-verify-head > span { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13.5px; color: #92400e; }
+.sl-verify-ok { margin: 0; display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13.5px; color: #166534; }
+.sl-verify-msg { margin: 0; font-size: 12.5px; line-height: 1.5; color: #78350f; }
+.sl-verify-err { margin: 0; font-size: 12.5px; font-weight: 600; color: #b91c1c; }
+.sl-verify-row { display: flex; gap: 8px; }
+.sl-verify-row input { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid #e2e8f0; background: #fff; font: 700 17px/1 'Inter', sans-serif; letter-spacing: 4px; }
+.sl-verify-row input:focus { outline: none; border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18); }
+.sl-btn.sm { width: auto; height: 38px; padding: 0 14px; font-size: 13.5px; border-radius: 10px; margin-top: 0; }
+.sl-verify-row .sl-btn.sm { height: 44px; }
+.sl-mailnote { text-align: left; }
