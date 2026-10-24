@@ -18,6 +18,7 @@ export const SHORTCUT_PAGES = {
   withdraw: { label: '💸 Withdraw funds', sub: 'Wallet → Withdraw' },
   wallet: { label: '👛 My Wallet', sub: 'Balance and history' },
   orders: { label: '🛒 My Orders', sub: 'Orders & dispatch' },
+  health: { label: '🛡️ My Account Health', sub: 'Score, entries and how points come back' },
   products: { label: '📦 My Store Products', sub: 'Products in your store' },
   treasury: { label: '✨ Product Treasury', sub: 'Add products to your store' },
   refunds: { label: '🔄 Refunds & Returns', sub: 'Return requests' },

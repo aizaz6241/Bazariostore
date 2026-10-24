@@ -22,7 +22,8 @@ export async function GET(req) {
       if (match) token = match[1];
     }
     const decoded = token ? verifyToken(token) : null;
-    if (!decoded || !decoded.id) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+    // only portal logins (a store token carries a type `t` and never opens the portal)
+    if (!decoded || !decoded.id || decoded.t) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
 
     // so the store server can reach this portal when nobody has it open (lib/utils/portalTick.js)
     await Promise.race([rememberPortalUrl(req), new Promise((resolve) => setTimeout(resolve, 800))]).catch(() => 0);

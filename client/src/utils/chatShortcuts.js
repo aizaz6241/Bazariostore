@@ -9,6 +9,7 @@ export const SHORTCUT_PAGE_PATHS = {
   withdraw: '/seller/wallet?tab=withdraw',
   wallet: '/seller/wallet',
   orders: '/seller/orders',
+  health: '/seller/health',
   products: '/seller/products',
   treasury: '/seller/treasury',
   refunds: '/seller/refunds',

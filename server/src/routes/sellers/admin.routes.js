@@ -16,13 +16,16 @@ import { finLog, requestApproval, sellerMoneyHistory } from '../../utils/finance
 import { rememberPassword, readPassword, encryptionOn } from '../../utils/sellerPassword.js';
 import { forgetAuthCache } from '../../middleware/auth.js';
 import { slugify, calculateHealthStatus } from './helpers.js';
-import { adminRoom } from '../../utils/permissions.js';
+import { adminRoom, hasPermission } from '../../utils/permissions.js';
 import { asText } from '../../middleware/sanitize.js';
 import { normalizeCode, codeFormatError, getMasterCode, resolveAffiliateCode, usageByCode } from '../../utils/affiliateCodes.js';
 import { announceToAdmins } from '../../utils/realtime.js';
 import { restartSellerDeadlines, releaseFrozenFund } from './orders.routes.js';
 import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
 import { setScoreAsAdjustment, bandOf, recomputeHealth, MONITOR_NAME } from '../../utils/healthEngine.js';
+
+/** Setting a seller's password or login email: the same rank as viewing the saved password. */
+const canTouchSellerLogin = (admin) => ['super_admin', 'admin'].includes(admin?.role);
 
 const router = express.Router();
 
@@ -707,6 +710,12 @@ router.get('/:id/password', authAdmin('sellers'), async (req, res) => {
 // POST /api/sellers/:id/reset-password (Admin resets seller password)
 router.post('/:id/reset-password', authAdmin('sellers'), async (req, res) => {
   try {
+    // Setting a seller's password opens that seller's account (wallet, payout details), so it
+    // needs the same rank as viewing the saved password: Administrator or Super Admin. A staff
+    // role with the Sellers permission (e.g. Support Agent) could otherwise take over any store.
+    if (!canTouchSellerLogin(req.admin)) {
+      return res.status(403).json({ message: 'Only an Administrator or the Super Admin can set a seller password.' });
+    }
     const { newPassword } = req.body;
     if (!newPassword || newPassword.length < 6) {
       return res.status(400).json({ message: 'New password must be at least 6 characters long' });
@@ -1433,6 +1442,26 @@ router.put('/:id', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:ch
     }
     const seller = await Seller.findById(req.params.id);
     if (!seller) return res.status(404).json({ message: 'Seller not found' });
+
+    // Checked before anything is changed:
+    //  - a new password or login email opens the store's account: Administrator / Super Admin only
+    //    (same rank as viewing the saved password)
+    //  - the payout (withdrawal) limit is money: Finance permission, like its own route
+    const body = req.body || {};
+    const newEmail = typeof body.email === 'string' ? body.email.toLowerCase().trim() : '';
+    const changesLogin = Boolean(body.password) || (newEmail && newEmail !== String(seller.email || '').toLowerCase().trim());
+    if (changesLogin && !canTouchSellerLogin(req.admin)) {
+      return res.status(403).json({ message: 'Only an Administrator or the Super Admin can change a seller’s login email or password.' });
+    }
+    if (body.withdrawalLimit && typeof body.withdrawalLimit === 'object' && !hasPermission(req.admin, 'finance')) {
+      const wl = body.withdrawalLimit;
+      const cur = seller.withdrawalLimit || {};
+      const differs = (k) => wl[k] !== undefined && wl[k] !== null && wl[k] !== '' && String(wl[k]).trim() !== String(cur[k] ?? '').trim();
+      if (['maxAmount', 'minAmount', 'requiredWithdrawalsForIncrease', 'successfulWithdrawalCount', 'upgradeFee', 'currentTierName'].some(differs)) {
+        return res.status(403).json({ message: 'Changing the payout limit needs the Finance permission.' });
+      }
+      delete body.withdrawalLimit; // unchanged values: nothing to do
+    }
 
     const {
       storeName,

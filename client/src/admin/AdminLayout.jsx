@@ -18,7 +18,6 @@ const NAV_GROUPS = [
     title: 'Overview',
     items: [
       { to: '/admin', icon: 'grid', label: 'Dashboard', end: true },
-      { to: '/admin/today', icon: 'clock', label: 'Today', badge: 'total' },
       { to: '/admin/reports', icon: 'chart', label: 'Analytics & Reports', perm: 'reports' },
     ],
   },

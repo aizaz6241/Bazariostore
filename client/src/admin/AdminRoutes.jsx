@@ -3,7 +3,6 @@
 import { Routes, Route, Navigate, Link, useOutletContext } from 'react-router-dom';
 import AdminLayout from './AdminLayout.jsx';
 import Dashboard from './Dashboard.jsx';
-import Today from './Today.jsx';
 import AdminTreasury from './AdminTreasury.jsx';
 import AdminTreasuryEdit from './AdminTreasuryEdit.jsx';
 import Sellers from './Sellers.jsx';
@@ -54,7 +53,8 @@ export default function AdminRoutes() {
     <Routes>
       <Route element={<AdminLayout />}>
         <Route index element={<Dashboard />} />
-        <Route path="today" element={<Today />} />
+        {/* the Today page was removed from the panel; old links go to the dashboard */}
+        <Route path="today" element={<Navigate to="/admin" replace />} />
         <Route path="treasury" element={guard('products', <AdminTreasury />)} />
         <Route path="treasury/new" element={guard('products', <AdminTreasuryEdit />)} />
         <Route path="treasury/:id" element={guard('products', <AdminTreasuryEdit />)} />
