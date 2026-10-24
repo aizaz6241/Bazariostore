@@ -12,6 +12,7 @@ import ChatShortcutPicker from './ChatShortcutPicker.jsx';
 import ChatQuickReplies from './ChatQuickReplies.jsx';
 import ChatSellerInfo from './ChatSellerInfo.jsx';
 import ChatBroadcast from './ChatBroadcast.jsx';
+import ChatAutoReply, { AutoReplyPill } from './ChatAutoReply.jsx';
 
 /** How long a chat has waited for support: "4m", "2h 10m", "3d". */
 const waitLabel = (ms) => {
@@ -98,14 +99,9 @@ export default function ChatInbox() {
   const [selectedTeamId, setSelectedTeamId] = useState(null);
   const [selectedTeamTarget, setSelectedTeamTarget] = useState(null);
 
-  // Auto-Reply Settings State
-  const [autoReply, setAutoReply] = useState({
-    enabled: false,
-    message: 'Assalam o Alaikum! 👋 Thanks for reaching out. We are currently away from the desk, but we have received your inquiry and our support team will respond to you shortly.',
-    awayMode: false,
-  });
+  // Auto-reply settings ({ config, defaults } from the server; null until loaded)
+  const [autoReply, setAutoReply] = useState(null);
   const [autoReplyModal, setAutoReplyModal] = useState(false);
-  const [savingAutoReply, setSavingAutoReply] = useState(false);
 
   // Message Edit Modal State
   const [editModal, setEditModal] = useState(null); // { messageId, text }
@@ -191,13 +187,7 @@ export default function ChatInbox() {
 
     api('/chat/settings/auto-reply')
       .then((res) => {
-        if (res) {
-          setAutoReply({
-            enabled: Boolean(res.autoReplyEnabled ?? res.enabled),
-            message: res.autoReplyMessage || res.message || 'Assalam o Alaikum! 👋 Thanks for reaching out. We are currently away from the desk, but we have received your inquiry and our support team will respond to you shortly.',
-            awayMode: Boolean(res.awayMode),
-          });
-        }
+        if (res?.config) setAutoReply(res);
       })
       .catch((err) => console.error('Error loading auto-reply settings:', err));
   }, []);
@@ -470,14 +460,9 @@ export default function ChatInbox() {
       );
     };
 
+    // another admin saved the auto-reply settings
     const onSettingsUpdate = (s) => {
-      if (s) {
-        setAutoReply({
-          enabled: Boolean(s.autoReplyEnabled ?? s.enabled),
-          message: s.autoReplyMessage || s.message || '',
-          awayMode: Boolean(s.awayMode),
-        });
-      }
+      if (s?.config) setAutoReply(s);
     };
 
     // A chat was cleared (by this admin or another one): drop those messages from the open thread
@@ -690,34 +675,6 @@ export default function ChatInbox() {
     }
   };
 
-  const handleSaveAutoReply = async (e) => {
-    e.preventDefault();
-    setSavingAutoReply(true);
-    try {
-      const res = await api('/chat/settings/auto-reply', {
-        method: 'POST',
-        body: {
-          autoReplyEnabled: Boolean(autoReply.enabled),
-          autoReplyMessage: autoReply.message,
-          awayMode: Boolean(autoReply.awayMode),
-          enabled: Boolean(autoReply.enabled),
-          message: autoReply.message,
-        },
-      });
-      const s = res?.settings || res || {};
-      setAutoReply({
-        enabled: Boolean(s.autoReplyEnabled ?? s.enabled ?? autoReply.enabled),
-        message: s.autoReplyMessage || s.message || autoReply.message,
-        awayMode: Boolean(s.awayMode ?? autoReply.awayMode),
-      });
-      setAutoReplyModal(false);
-    } catch (err) {
-      alert(err.message || 'Failed to save auto-reply settings');
-    } finally {
-      setSavingAutoReply(false);
-    }
-  };
-
   const handleStartEdit = (msg) => {
     setEditModal({ messageId: msg._id, text: msg.text || '' });
   };
@@ -859,15 +816,7 @@ export default function ChatInbox() {
                   📣
                 </button>
               )}
-              <button
-                type="button"
-                className={`sci-auto ${autoReply.awayMode ? 'away' : autoReply.enabled ? 'on' : ''}`}
-                onClick={() => setAutoReplyModal(true)}
-                title="Auto-reply settings"
-              >
-                <i />
-                {autoReply.awayMode ? 'Away mode' : autoReply.enabled ? 'Auto-reply on' : 'Auto-reply off'}
-              </button>
+              {autoReply && <AutoReplyPill config={autoReply.config} onClick={() => setAutoReplyModal(true)} />}
             </div>
           </div>
 
@@ -1424,73 +1373,14 @@ export default function ChatInbox() {
         )}
       </div>
 
-      {/* AUTO-REPLY SETTINGS MODAL */}
-      {autoReplyModal && (
-        <div className="admin-modal-overlay" onClick={() => setAutoReplyModal(false)}>
-          <div className="admin-modal-box" style={{ maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
-            <div className="modal-top">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 24 }}>🤖</span>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 16 }}>Live Support Auto-Reply Settings</h3>
-                  <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>
-                    Automatically reply to sellers &amp; guests when admin support is away
-                  </p>
-                </div>
-              </div>
-              <button onClick={() => setAutoReplyModal(false)} className="btn-close-modal">✕</button>
-            </div>
-
-            <form onSubmit={handleSaveAutoReply} style={{ padding: '18px 22px' }}>
-              <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', padding: '12px 16px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                <div>
-                  <b style={{ fontSize: 13.5, display: 'block', color: '#0f172a' }}>Enable Automatic Response</b>
-                  <small style={{ color: '#64748b', fontSize: 12 }}>Send instant automated response on incoming inquiries</small>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={autoReply.enabled}
-                  onChange={(e) => setAutoReply({ ...autoReply, enabled: e.target.checked })}
-                  style={{ width: 20, height: 20, cursor: 'pointer' }}
-                />
-              </div>
-
-              <div style={{ marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fffbeb', padding: '12px 16px', borderRadius: 8, border: '1px solid #fef3c7' }}>
-                <div>
-                  <b style={{ fontSize: 13.5, color: '#92400e', display: 'block' }}>🌙 Away / Offline Mode</b>
-                  <small style={{ color: '#b45309', fontSize: 12 }}>Auto-reply when admin support is unavailable or off-duty</small>
-                </div>
-                <input
-                  type="checkbox"
-                  checked={autoReply.awayMode}
-                  onChange={(e) => setAutoReply({ ...autoReply, awayMode: e.target.checked })}
-                  style={{ width: 20, height: 20, cursor: 'pointer' }}
-                />
-              </div>
-
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: 12.5, fontWeight: 700, display: 'block', marginBottom: 6 }}>
-                  Auto-Reply Message Text:
-                </label>
-                <textarea
-                  rows={4}
-                  value={autoReply.message}
-                  onChange={(e) => setAutoReply({ ...autoReply, message: e.target.value })}
-                  placeholder="Type auto-reply message..."
-                  style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1.5px solid #cbd5e1', fontSize: 13, fontFamily: 'inherit' }}
-                  required
-                />
-              </div>
-
-              <div className="modal-bottom-actions">
-                <button type="button" onClick={() => setAutoReplyModal(false)} className="btn-cancel">Cancel</button>
-                <button type="submit" className="btn-primary" disabled={savingAutoReply}>
-                  {savingAutoReply ? 'Saving...' : '💾 Save Auto-Reply Settings'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* AUTO-REPLY SETTINGS */}
+      {autoReplyModal && autoReply && (
+        <ChatAutoReply
+          value={autoReply.config}
+          defaults={autoReply.defaults}
+          onSaved={(r) => r?.config && setAutoReply(r)}
+          onClose={() => setAutoReplyModal(false)}
+        />
       )}
 
       {/* SAVED REPLIES */}

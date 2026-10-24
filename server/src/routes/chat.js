@@ -16,6 +16,7 @@ import { clearAdminTyping } from '../realtime/adminTyping.js';
 import { SHORTCUT_PAGES, resolveShortcut, searchShortcutTargets, pageAction } from '../utils/chatShortcuts.js';
 import { sellerFacts, fillPlaceholders, PLACEHOLDERS } from '../utils/chatPlaceholders.js';
 import { chatNamesOf } from '../utils/sellerNameSync.js';
+import { autoReplyConfig, autoReplyNow, autoReplyText, autoReplyFields, AUTO_REPLY_DEFAULTS } from '../utils/autoReply.js';
 import Order from '../models/Order.js';
 import Withdrawal from '../models/Withdrawal.js';
 
@@ -32,12 +33,13 @@ const router = Router();
 export async function handleAutoReply(app, conv) {
   try {
     if (!conv) return;
-    const settings = await ChatSettings.findOne();
+    const settings = await ChatSettings.findOne().lean();
     if (!settings) return;
 
-    // Check if auto-reply is enabled or away mode is on
-    const isAutoReplyOn = Boolean(settings.autoReplyEnabled || settings.awayMode);
-    if (!isAutoReplyOn) return;
+    // Off / On / Away, the night schedule and a holiday decide what (if anything) is sent now
+    const cfg = autoReplyConfig(settings);
+    const { state } = autoReplyNow(cfg);
+    if (state === 'off') return;
 
     // Only when nobody from support is talking to this seller / guest: a real reply in the last
     // 30 minutes means support is here (the bot used to cut in every 3 minutes in a live chat).
@@ -59,15 +61,22 @@ export async function handleAutoReply(app, conv) {
     );
     if (!claimed.modifiedCount) return;
 
-    const autoReplyText =
-      settings.autoReplyMessage ||
-      'Assalam o Alaikum! 👋 Thanks for reaching out. We are currently away from the desk, but we have received your inquiry and our support team will respond to you shortly.';
-
     // Fast, realistic response (400ms)
     setTimeout(async () => {
       try {
         const sId = conv.seller?._id ? conv.seller._id.toString() : (conv.seller ? conv.seller.toString() : null);
         const gId = conv.guestId || '';
+
+        // stores and guests get their own message, with the owner's / guest's name in it
+        let name = '';
+        if (sId) {
+          const sel = await Seller.findById(sId).select('ownerName storeName').lean().catch(() => null);
+          name = sel?.ownerName || sel?.storeName || conv.sellerName || '';
+        } else {
+          // a guest who gave no name is saved as "Guest User": then no name is used
+          name = /^guest( user)?$/i.test(String(conv.name || '').trim()) ? '' : conv.name || '';
+        }
+        const replyText = autoReplyText(cfg, state, sId ? 'seller' : 'guest', name);
 
         const replyMsg = new Message({
           conversation: conv._id,
@@ -75,7 +84,7 @@ export async function handleAutoReply(app, conv) {
           guestId: gId,
           sender: 'admin',
           senderName: '🤖 Bazario Support Assistant (Auto-Reply)',
-          text: autoReplyText,
+          text: replyText,
           isAutoReply: true,
         });
         await replyMsg.save();
@@ -100,7 +109,7 @@ export async function handleAutoReply(app, conv) {
           io.to(adminRoom('chat')).emit('chat:notification', {
             conversationId: conv._id,
             storeName: conv.storeName || conv.name || 'Merchant/Guest',
-            text: `🤖 Auto-Reply: ${autoReplyText.slice(0, 50)}`,
+            text: `🤖 Auto-Reply: ${replyText.slice(0, 50)}`,
           });
         }
       } catch (e) {
@@ -1328,55 +1337,51 @@ router.post('/admin/team/:targetAdminId/clear', authAdmin('chat'), async (req, r
 // 4. CHAT SETTINGS & AUTO-REPLY ENDPOINTS
 // ----------------------------------------------------
 
+// What the admin screen gets: the clean settings, what happens right now, the default texts,
+// plus the old field names (enabled / message / awayMode) for anything that still reads them.
+const autoReplyPayload = (doc) => {
+  const config = autoReplyConfig(doc);
+  return {
+    config,
+    now: autoReplyNow(config),
+    defaults: AUTO_REPLY_DEFAULTS,
+    autoReplyEnabled: config.mode === 'on',
+    awayMode: config.mode === 'away',
+    enabled: config.mode === 'on',
+    autoReplyMessage: config.messages.sellerOn,
+    message: config.messages.sellerOn,
+  };
+};
+
 // GET /api/chat/settings/auto-reply (Admin gets auto-reply configuration)
 router.get('/settings/auto-reply', authAdmin('chat'), async (req, res) => {
   try {
-    let settings = await ChatSettings.findOne();
-    if (!settings) {
-      settings = await ChatSettings.create({
-        autoReplyEnabled: false,
-        autoReplyMessage:
-          'Assalam o Alaikum! 👋 Thanks for reaching out. We are currently away from the desk, but we have received your inquiry and our support team will respond to you shortly.',
-        awayMode: false,
-      });
-    }
-    const data = settings.toObject();
-    // Return backward-compatible field names
-    res.json({
-      ...data,
-      enabled: Boolean(data.autoReplyEnabled),
-      message: data.autoReplyMessage,
-    });
+    const settings = await ChatSettings.findOne().lean();
+    res.json(autoReplyPayload(settings || {}));
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
 // POST /api/chat/settings/auto-reply (Admin updates auto-reply settings)
+// Body: { mode: 'off'|'on'|'away', messages: { sellerOn, sellerAway, guestOn, guestAway },
+//         schedule: { enabled, from, to }, holiday: { enabled, name, start, end, message } }
+// Older screens may still send autoReplyEnabled / awayMode / enabled / message.
 router.post('/settings/auto-reply', authAdmin('chat'), async (req, res) => {
   try {
-    const { autoReplyEnabled, autoReplyMessage, awayMode, enabled, message } = req.body || {};
-    let settings = await ChatSettings.findOne();
-    if (!settings) {
-      settings = new ChatSettings();
+    const b = req.body || {};
+    const body = { ...b };
+    if (body.mode === undefined && (b.autoReplyEnabled !== undefined || b.enabled !== undefined || b.awayMode !== undefined)) {
+      body.mode = b.awayMode ? 'away' : (b.autoReplyEnabled ?? b.enabled) ? 'on' : 'off';
     }
+    if (!body.messages && (b.autoReplyMessage !== undefined || b.message !== undefined)) {
+      body.messages = { sellerOn: b.autoReplyMessage ?? b.message };
+    }
+    const { fields, error } = autoReplyFields(body);
+    if (error) return res.status(400).json({ message: error });
 
-    const targetEnabled = autoReplyEnabled !== undefined ? autoReplyEnabled : enabled;
-    const targetMessage = autoReplyMessage !== undefined ? autoReplyMessage : message;
-
-    if (targetEnabled !== undefined) settings.autoReplyEnabled = Boolean(targetEnabled);
-    if (targetMessage !== undefined) settings.autoReplyMessage = String(targetMessage).trim();
-    if (awayMode !== undefined) settings.awayMode = Boolean(awayMode);
-
-    await settings.save();
-
-    const data = settings.toObject();
-    const payload = {
-      ...data,
-      enabled: Boolean(data.autoReplyEnabled),
-      message: data.autoReplyMessage,
-    };
-
+    const settings = await ChatSettings.findOneAndUpdate({}, { $set: fields }, { new: true, upsert: true, setDefaultsOnInsert: true }).lean();
+    const payload = autoReplyPayload(settings);
     req.app.get('io')?.to(adminRoom('chat')).emit('chat:settings_update', payload);
     res.json({ message: 'Auto-reply settings updated successfully', settings: payload });
   } catch (err) {

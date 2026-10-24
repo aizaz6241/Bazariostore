@@ -113,6 +113,20 @@ const chatSettingsSchema = new mongoose.Schema(
       default: 'Assalam o Alaikum! 👋 Thanks for reaching out. We are currently away from the desk, but we have received your inquiry and our support team will respond to you shortly.',
     },
     awayMode: { type: Boolean, default: false },
+    // auto-reply messages (autoReplyMessage above = stores, On). Empty = the default text
+    awayMessage: { type: String, default: '' }, // stores, Away / night
+    guestMessage: { type: String, default: '' }, // guests, On
+    guestAwayMessage: { type: String, default: '' }, // guests, Away / night
+    // Away every night between these times (India time, HH:MM)
+    scheduleEnabled: { type: Boolean, default: false },
+    scheduleFrom: { type: String, default: '23:00' },
+    scheduleTo: { type: String, default: '10:00' },
+    // a holiday (India dates, YYYY-MM-DD) with one message for everyone
+    holidayEnabled: { type: Boolean, default: false },
+    holidayName: { type: String, default: '' },
+    holidayStart: { type: String, default: '' },
+    holidayEnd: { type: String, default: '' },
+    holidayMessage: { type: String, default: '' },
     // the ready saved replies were added once (deleting them all later does not bring them back)
     quickRepliesSeeded: { type: Boolean, default: false },
     // the default saved replies were shown to sellers as Quick Help once (admins can change it after)
