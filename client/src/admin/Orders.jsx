@@ -960,9 +960,8 @@ export default function Orders() {
                   <th>Order</th>
                   <th>Store</th>
                   <th>Customer</th>
-                  <th>Items</th>
+                  <th className="ost-col-items">Items</th>
                   <th className="num">Total</th>
-                  <th>Payment</th>
                   <th>Status</th>
                   <th />
                 </tr>
@@ -971,14 +970,14 @@ export default function Orders() {
                 {loading &&
                   Array.from({ length: 6 }).map((_, i) => (
                     <tr key={`sk-${i}`}>
-                      {Array.from({ length: 9 }).map((__, j) => (
+                      {Array.from({ length: 8 }).map((__, j) => (
                         <td key={j}><span className="ins-skel" style={{ width: `${45 + ((i + j) % 4) * 13}%` }} /></td>
                       ))}
                     </tr>
                   ))}
                 {!loading && orders.length === 0 && (
                   <tr>
-                    <td colSpan={9}>
+                    <td colSpan={8}>
                       <Empty icon="📦" text={hasActiveFilters ? 'No order matches these filters.' : 'No orders yet.'}>
                         {hasActiveFilters && (
                           <button type="button" className="ins-btn ins-btn-sm" onClick={handleClearAllFilters}>Clear filters</button>
@@ -1005,13 +1004,17 @@ export default function Orders() {
                             {fmtDate(o.createdAt)} · {ageLabel(o.createdAt)}
                           </span>
                           {o.placedBy && o.placedBy !== 'customer' && <span className="ins-sub">Placed by admin</span>}
+                          {/* shown instead of the Items column on narrower screens */}
+                          <span className="ins-sub ost-items-inline" title={o.items?.[0]?.name}>
+                            {o.items?.[0]?.name || 'Item'} · {itemsCount} item{itemsCount === 1 ? '' : 's'}
+                          </span>
                         </td>
                         <td>
                           {seller ? (
                             <div className="ins-cell-who">
                               <Avatar name={seller.storeName} size={30} />
                               <div>
-                                <b className="ins-clip" style={{ maxWidth: 160 }} title={seller.storeName}>
+                                <b className="ins-clip" style={{ maxWidth: 140 }} title={seller.storeName}>
                                   <StoreLink id={seller._id} name={seller.storeName} />
                                 </b>
                                 <span className="ins-sub">{storeCount > 1 ? `+${storeCount - 1} more store${storeCount > 2 ? 's' : ''}` : seller.ownerName || ''}</span>
@@ -1030,7 +1033,7 @@ export default function Orders() {
                           )}
                           {o.shippingAddress?.city && <span className="ins-sub">{o.shippingAddress.city}{o.shippingAddress.state ? `, ${o.shippingAddress.state}` : ''}</span>}
                         </td>
-                        <td>
+                        <td className="ost-col-items">
                           <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                             <span style={{ width: 38, height: 38, borderRadius: 9, background: '#f1f5f9', overflow: 'hidden', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
                               {o.items?.[0]?.image ? (
@@ -1048,10 +1051,9 @@ export default function Orders() {
                         <td className="num">
                           <b style={{ fontSize: 14, color: '#0f172a' }}>{money(o.total)}</b>
                           <span className="ins-sub">{o.shipping?.cost > 0 ? `incl. ${money(o.shipping.cost)} delivery` : 'Free delivery'}</span>
-                        </td>
-                        <td>
-                          <span className="ins-sub" style={{ fontWeight: 600, color: '#334155' }}>{PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod || 'COD'}</span>
-                          <Badge tone={o.paymentStatus === 'paid' ? 'good' : 'neutral'}>{o.paymentStatus === 'paid' ? 'Paid' : 'Unpaid'}</Badge>
+                          <span className={`ost-pay ${o.paymentStatus === 'paid' ? 'paid' : ''}`} title={PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod || 'Cash on Delivery'}>
+                            {o.paymentMethod === 'cod' || !o.paymentMethod ? 'COD' : PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod} · {o.paymentStatus === 'paid' ? 'Paid' : 'Unpaid'}
+                          </span>
                         </td>
                         <td>
                           <button type="button" className="ost-badge-btn" onClick={(e) => setMenu({ order: o, anchor: e.currentTarget })} aria-haspopup="menu" aria-expanded={menu?.order?._id === o._id} disabled={Boolean(busy)} title="Click to change the status">
@@ -1062,8 +1064,8 @@ export default function Orders() {
                         </td>
                         <td>
                           <div className="ins-actions" style={{ flexWrap: 'nowrap' }}>
-                            <button type="button" className="ins-btn ins-btn-sm" onClick={() => setInspectOrder(o)} title="Quick view">
-                              <Ic name="eye" size={13} /> View
+                            <button type="button" className="ins-btn ins-btn-sm ost-icon-btn" onClick={() => setInspectOrder(o)} title="Quick view" aria-label={`Quick view of order ${o.orderNumber}`}>
+                              <Ic name="eye" size={14} />
                             </button>
                             <Link to={`/admin/orders/${o._id}`} className="ins-btn ins-btn-sm" title="Open the full order page" onClick={() => rememberSpot(o._id)}>
                               Manage ↗
