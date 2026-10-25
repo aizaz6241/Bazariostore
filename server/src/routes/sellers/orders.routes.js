@@ -989,15 +989,23 @@ router.put('/orders/:id', authSellerOrAdmin, blockWhenFrozen('confirming or proc
 router.patch('/orders/:id', authSellerOrAdmin, blockWhenFrozen('confirming or processing orders'), handleStatusUpdate);
 router.post('/orders/:id', authSellerOrAdmin, blockWhenFrozen('confirming or processing orders'), handleStatusUpdate);
 
-// POST /api/sellers/place-order (Admin manually places an order for a specific seller)
-router.post('/place-order', authAdmin('orders'), async (req, res) => {
-  try {
-    const { sellerId, items, customer, shippingAddress, paymentMethod, adminNotes } = req.body;
-    if (!sellerId) return res.status(400).json({ message: 'Seller ID is required' });
-    if (!items || !items.length) return res.status(400).json({ message: 'At least one product item is required' });
+/**
+ * Create an order for one seller (the admin "Place order" form, and the automatic daily test
+ * orders in services/testOrderBot.js). Same steps for both: prices, stock reservation (Central
+ * Treasury included), a "pending" order the store has to confirm, seller stats, notifications.
+ *   req      { app, admin: { id, name, email } } — who places it (audit log, stock notes)
+ *   options  quiet: no admin notification (the automatic test orders would flood the bell / phone)
+ *            extra: fields added to the new order (e.g. autoTestOrder)
+ * Returns { status, json } like a route answer.
+ */
+export async function placeSellerOrder(req, body = {}, { quiet = false, extra = null } = {}) {
+    const fail = (status, message) => ({ status, json: { message } });
+    const { sellerId, items, customer, shippingAddress, paymentMethod, adminNotes } = body;
+    if (!sellerId) return fail(400, 'Seller ID is required');
+    if (!items || !items.length) return fail(400, 'At least one product item is required');
 
     const seller = await Seller.findById(sellerId);
-    if (!seller) return res.status(404).json({ message: 'Seller not found' });
+    if (!seller) return fail(404, 'Seller not found');
 
     const orderNumber = `ORD-${await nextSeq('order')}`;
 
@@ -1006,16 +1014,14 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
     const wanted = [];
 
     for (const item of items) {
-      if (!item.productId) return res.status(400).json({ message: 'Product ID is required for each line item' });
+      if (!item.productId) return fail(400, 'Product ID is required for each line item');
       const prod = await Product.findById(item.productId);
-      if (!prod) return res.status(404).json({ message: `Product not found: ${item.productId}` });
+      if (!prod) return fail(404, `Product not found: ${item.productId}`);
 
       // Ownership validation: verify that this product belongs to the selected seller
       const prodSellerId = prod.seller?._id ? prod.seller._id.toString() : (prod.seller ? prod.seller.toString() : '');
       if (prodSellerId && prodSellerId !== seller._id.toString()) {
-        return res.status(400).json({
-          message: `Product "${prod.name}" belongs to seller "${prod.sellerName || 'another merchant'}" and cannot be ordered under store "${seller.storeName}".`
-        });
+        return fail(400, `Product "${prod.name}" belongs to seller "${prod.sellerName || 'another merchant'}" and cannot be ordered under store "${seller.storeName}".`);
       }
 
       const price = item.price !== undefined ? Number(item.price) : prod ? prod.price : 0;
@@ -1064,7 +1070,7 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
       }
     }
 
-    const shippingCost = Number(req.body.shippingCost || 0);
+    const shippingCost = Number(body.shippingCost || 0);
     const total = subtotal + shippingCost;
 
     const order = new Order({
@@ -1086,7 +1092,7 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
         country: shippingAddress?.country || 'United States',
       },
       shipping: {
-        name: req.body.shippingMethodName || 'Standard Express Delivery',
+        name: body.shippingMethodName || 'Standard Express Delivery',
         cost: shippingCost,
         eta: '2-4 business days',
       },
@@ -1106,6 +1112,7 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
           by: 'Customer',
         },
       ],
+      ...(extra || {}),
     });
 
     await order.save();
@@ -1143,7 +1150,7 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
     ]);
 
     // Admin notification & live broadcast
-    notify(req.app, {
+    if (!quiet) notify(req.app, {
       recipientType: 'admin',
       type: 'order',
       title: `📦 Order #${orderNumber} Created`,
@@ -1154,7 +1161,14 @@ router.post('/place-order', authAdmin('orders'), async (req, res) => {
     req.app.get('io')?.to(adminRoom('orders')).emit('order:new', order);
     req.app.get('io')?.to(adminRoom('orders')).emit('order:update', order);
 
-    res.status(201).json(order);
+    return { status: 201, json: order, order };
+}
+
+// POST /api/sellers/place-order (Admin manually places an order for a specific seller)
+router.post('/place-order', authAdmin('orders'), async (req, res) => {
+  try {
+    const out = await placeSellerOrder(req, req.body || {});
+    res.status(out.status).json(out.json);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

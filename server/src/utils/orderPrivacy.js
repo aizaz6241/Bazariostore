@@ -64,6 +64,8 @@ export function sellerSafeOrder(order, ownItems) {
   }
   delete o.billingAddress;
   delete o.adminNotes;
+  delete o.autoTestOrder;
+  delete o.autoTestSlot;
   delete o.customerNote;
   if (Array.isArray(ownItems)) o.items = ownItems.map((it) => plain(it));
   o.privacyMasked = true;

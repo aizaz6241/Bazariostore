@@ -71,6 +71,7 @@ import Seller from './models/Seller.js';
 import { notify } from './utils/notify.js';
 import { processOrderPenalties, releaseLocksOfWaitingOrders } from './routes/sellers/orders.routes.js';
 import { processAutoProgressOrders } from './services/orderProgressionService.js';
+import { runTestOrderBot } from './services/testOrderBot.js';
 import { finishStuckWalletRequests } from './utils/walletRequests.js';
 import { encryptStoredPasswords, encryptionOn } from './utils/sellerPassword.js';
 import { PERMISSIONS, adminRoom, hasPermission } from './utils/permissions.js';
@@ -137,6 +138,14 @@ if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
   setTimeout(() => {
     processAutoProgressOrders(app);
   }, 12000);
+
+  // Automatic daily orders for TEST seller accounts + their 11:30 PM auto-confirm (every 5 minutes)
+  setInterval(() => {
+    runTestOrderBot(app);
+  }, 5 * 60 * 1000);
+  setTimeout(() => {
+    runTestOrderBot(app);
+  }, 45000);
 
   // Automated Hourly Database Backup Scheduler (runs every 60 minutes)
   const runHourlyBackupJob = async () => {

@@ -106,6 +106,10 @@ const orderSchema = new mongoose.Schema(
     // delivery payout): why, when, how many tries; it tries again after autoRetryAt
     autoIssue: { reason: String, at: Date, tries: Number },
     autoRetryAt: { type: Date, default: undefined },
+    // made by the automatic daily test orders (services/testOrderBot.js) for a TEST seller account;
+    // only these are confirmed automatically at 23:30. autoTestSlot = which planned order it is.
+    autoTestOrder: { type: Boolean, default: undefined },
+    autoTestSlot: { type: String, default: undefined },
   },
   { timestamps: true }
 );
@@ -118,6 +122,7 @@ orderSchema.index({ 'items.seller': 1, createdAt: -1 });
 orderSchema.index({ 'items.product': 1 });
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ user: 1, createdAt: -1 });
+orderSchema.index({ autoTestSlot: 1 }, { sparse: true });
 
 orderSchema.pre('save', async function (next) {
   try {
