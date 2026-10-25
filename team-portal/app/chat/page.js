@@ -294,6 +294,50 @@ function ChatGate({ gate, name, busy, reason, setReason, onRequest, onAnswer, on
 
 // The open conversation lives in the address (/chat?chatType=...), so the phone's "back" (and the
 // swipe from the left edge on iPhone) returns to the chat list instead of leaving the chat screen.
+// ── @mentions in the team group ───────────────────────────────────────────────────────────
+// Typing "@" in the group opens the member list; the chosen name is put in as "@Name ".
+// In messages, "@Name" of a real member is shown highlighted (stronger when it is you).
+const escRx = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** "@abc" right before the caret → { start, query }; null when the caret is not in a mention. */
+function mentionAt(value, caret) {
+  const before = String(value || '').slice(0, caret);
+  const m = before.match(/(^|\s)@([^\s@]{0,30})$/);
+  if (!m) return null;
+  return { start: caret - m[2].length - 1, query: m[2] };
+}
+/** Text with every "@Member Name" wrapped (longest names first, so "@Ali Khan" beats "@Ali"). */
+function renderMentions(text, names, myName, isMine) {
+  const str = String(text || '');
+  if (!str.includes('@') || !names?.length) return str;
+  const sorted = [...new Set(names.filter(Boolean))].sort((a, b) => b.length - a.length);
+  const rx = new RegExp(`@(${sorted.map(escRx).join('|')})(?![\\p{L}\\p{N}_])`, 'giu');
+  const out = [];
+  let last = 0;
+  let k = 0;
+  for (const m of str.matchAll(rx)) {
+    if (m.index > last) out.push(str.slice(last, m.index));
+    const me = myName && m[1].toLowerCase() === String(myName).toLowerCase();
+    out.push(
+      <span
+        key={`m${k++}`}
+        className={
+          me
+            ? 'rounded px-1 font-bold bg-amber-200 text-amber-900'
+            : isMine
+            ? 'font-bold underline decoration-white/50 underline-offset-2'
+            : 'font-bold text-emerald-700'
+        }
+      >
+        @{m[1]}
+      </span>
+    );
+    last = m.index + m[0].length;
+  }
+  if (!out.length) return str;
+  if (last < str.length) out.push(str.slice(last));
+  return out;
+}
+
 export default function ChatPage() {
   return (
     <Suspense fallback={null}>
@@ -370,6 +414,8 @@ function ChatPageInner() {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const composerRef = useRef(null);
+  // @mention picker in the team group: { start, query, index } while open
+  const [mention, setMention] = useState(null);
   // shrink the message box back to one line after sending
   useEffect(() => {
     if (!inputText && composerRef.current) composerRef.current.style.height = 'auto';
@@ -2278,6 +2324,40 @@ function ChatPageInner() {
   // Search filter across contacts, newest conversation first (like WhatsApp): a chat that gets a
   // message moves to the top; people never written to stay below, by name.
   const lastAt = (c) => (c.lastMessage?.createdAt ? new Date(c.lastMessage.createdAt).getTime() || 0 : 0);
+  // ── @mentions (team group only) ──
+  const mentionNames = [user?.name, ...contacts.map((c) => c.name)].filter(Boolean);
+  const mentionOptions = mention
+    ? contacts
+        .filter((c) => c.name && c.name.toLowerCase().includes(mention.query.toLowerCase()))
+        .sort((a, b) => {
+          const q = mention.query.toLowerCase();
+          const as = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+          const bs = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+          return as - bs || (a.role === 'admin' ? -1 : 0) - (b.role === 'admin' ? -1 : 0) || a.name.localeCompare(b.name);
+        })
+        .slice(0, 8)
+    : [];
+  const syncMention = (el) => {
+    if (activeChat.type !== 'group' || !el) return setMention(null);
+    const m = mentionAt(el.value, el.selectionStart ?? el.value.length);
+    setMention((prev) => (m ? { ...m, index: prev && prev.start === m.start ? Math.min(prev.index, 7) : 0 } : null));
+  };
+  const pickMention = (c) => {
+    const el = composerRef.current;
+    if (!el || !mention) return;
+    const caret = el.selectionStart ?? inputText.length;
+    const next = `${inputText.slice(0, mention.start)}@${c.name} ${inputText.slice(caret)}`;
+    const pos = mention.start + c.name.length + 2;
+    setInputText(next);
+    setMention(null);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(pos, pos);
+      el.style.height = 'auto';
+      el.style.height = `${Math.min(el.scrollHeight, 150)}px`;
+    });
+  };
+
   const filteredContacts = contacts
     .filter((c) =>
       String(c.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -3222,7 +3302,7 @@ function ChatPageInner() {
                               {/* Text Message */}
                               {msg.messageType === 'text' && (
                                 <p className="text-xs sm:text-sm whitespace-pre-wrap leading-relaxed break-words">
-                                  {msg.text}
+                                  {activeChat.type === 'group' ? renderMentions(msg.text, mentionNames, user?.name, isMe) : msg.text}
                                 </p>
                               )}
 
@@ -3270,7 +3350,7 @@ function ChatPageInner() {
                                   </div>
                                   {msg.text && (
                                     <p className="text-xs sm:text-sm whitespace-pre-wrap leading-relaxed break-words px-1">
-                                      {msg.text}
+                                      {activeChat.type === 'group' ? renderMentions(msg.text, mentionNames, user?.name, isMe) : msg.text}
                                     </p>
                                   )}
                                 </div>
@@ -3314,7 +3394,7 @@ function ChatPageInner() {
                                   </div>
                                   {msg.text && (
                                     <p className="text-xs sm:text-sm whitespace-pre-wrap leading-relaxed break-words px-1">
-                                      {msg.text}
+                                      {activeChat.type === 'group' ? renderMentions(msg.text, mentionNames, user?.name, isMe) : msg.text}
                                     </p>
                                   )}
                                 </div>
@@ -3491,7 +3571,55 @@ function ChatPageInner() {
               effect={voiceMask ? VOICE_EFFECT_HACKER : ''}
             />
           ) : (
-            <form onSubmit={handleTextSubmit} className="flex items-center space-x-2">
+            <form onSubmit={handleTextSubmit} className="relative flex items-center space-x-2">
+              {/* @mention list (team group): opens when "@" is typed */}
+              {activeChat.type === 'group' && mention && (
+                <div
+                  className="absolute bottom-full left-0 right-0 !ml-0 mb-2 z-30 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden"
+                  role="listbox"
+                  aria-label="Mention a team member"
+                >
+                  <div className="px-3 py-2 text-[10.5px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 flex items-center justify-between">
+                    <span>Mention a member</span>
+                    <span className="normal-case font-medium tracking-normal">↑ ↓ to move · Enter to pick · Esc to close</span>
+                  </div>
+                  {mentionOptions.length === 0 ? (
+                    <p className="px-4 py-3 text-xs text-slate-500">No member named “{mention.query}”.</p>
+                  ) : (
+                    <ul className="max-h-64 overflow-y-auto py-1">
+                      {mentionOptions.map((c, i) => (
+                        <li key={c._id}>
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={i === mention.index}
+                            // mousedown (not click) so the text box keeps its focus and caret
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              pickMention(c);
+                            }}
+                            onMouseEnter={() => setMention((m) => (m ? { ...m, index: i } : m))}
+                            className={`w-full flex items-center gap-3 px-3 py-2 text-left transition ${i === mention.index ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}
+                          >
+                            {c.avatar ? (
+                              <img src={c.avatar} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
+                            ) : (
+                              <span className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold shrink-0">
+                                {(c.name || '?').trim()[0]?.toUpperCase()}
+                              </span>
+                            )}
+                            <span className="min-w-0 flex-1">
+                              <span className="block text-sm font-semibold text-slate-900 truncate">{c.name}</span>
+                              <span className="block text-[11px] text-slate-500">{c.role === 'admin' ? 'Admin' : 'Member'}</span>
+                            </span>
+                            {i === mention.index && <span className="text-[10px] font-bold text-emerald-600 shrink-0">Enter ↵</span>}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -3563,11 +3691,32 @@ function ChatPageInner() {
                 onChange={(e) => {
                   setInputText(e.target.value);
                   reportTyping(e.target.value);
+                  syncMention(e.target);
                   // grow with the text (up to ~6 lines), like WhatsApp
                   e.target.style.height = 'auto';
                   e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
                 }}
+                onSelect={(e) => mention && syncMention(e.target)}
                 onKeyDown={(e) => {
+                  // the @mention list is open: arrows move, Enter / Tab pick, Esc closes
+                  if (mention && mentionOptions.length) {
+                    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      const d = e.key === 'ArrowDown' ? 1 : -1;
+                      setMention((m) => ({ ...m, index: (m.index + d + mentionOptions.length) % mentionOptions.length }));
+                      return;
+                    }
+                    if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
+                      e.preventDefault();
+                      pickMention(mentionOptions[Math.min(mention.index, mentionOptions.length - 1)]);
+                      return;
+                    }
+                  }
+                  if (mention && e.key === 'Escape') {
+                    e.preventDefault();
+                    setMention(null);
+                    return;
+                  }
                   // Enter sends on a computer; Shift+Enter (and Enter on a phone) adds a new line
                   const touch = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
                   if (e.key === 'Enter' && !e.shiftKey && !touch && !e.nativeEvent.isComposing) {
@@ -3575,7 +3724,10 @@ function ChatPageInner() {
                     if (inputText.trim()) e.currentTarget.form?.requestSubmit();
                   }
                 }}
-                onBlur={() => reportTyping('')}
+                onBlur={() => {
+                  reportTyping('');
+                  setTimeout(() => setMention(null), 150);
+                }}
                 onPaste={handlePasteEvent}
                 disabled={uploadingImage}
                 placeholder={
@@ -3584,7 +3736,7 @@ function ChatPageInner() {
                     : activeChat.type === 'materials'
                     ? 'Click 📷 or paste (Ctrl+V) picture — caption optional...'
                     : activeChat.type === 'group'
-                    ? 'Message team (Ctrl+V screenshot anywhere)...'
+                    ? 'Message team · type @ to mention (Ctrl+V screenshot)...'
                     : `Message ${activeChat.contact?.name || 'privately'} (Ctrl+V screenshot)...`
                 }
                 className="flex-1 min-w-0 px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-2xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition resize-none leading-snug max-h-[150px] overflow-y-auto"
