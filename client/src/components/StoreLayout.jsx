@@ -392,7 +392,9 @@ function Footer() {
         <div>
           <h4 className="footer-h">GET TO KNOW US</h4>
           <ul className="footer-links">
-            <li><Link to="/">About Bazario</Link></li>
+            <li><Link to="/about">About Bazario</Link></li>
+            <li><Link to="/dropshipping">Worldwide Dropshipping</Link></li>
+            <li><Link to="/faq">FAQ</Link></li>
             <li><Link to="/page/shipping-policy">Fast Express Delivery</Link></li>
             <li><Link to="/page/returns-policy">14-Day Easy Returns</Link></li>
             <li><Link to="/page/terms">Terms of Service</Link></li>
@@ -403,6 +405,7 @@ function Footer() {
           <h4 className="footer-h">MAKE MONEY WITH US</h4>
           <ul className="footer-links">
             <li><Link to="/seller/login"><b>Sell on Bazario (Seller Central)</b></Link></li>
+            <li><Link to="/sell-on-bazario">Start Dropshipping — No Inventory</Link></li>
             <li><Link to="/seller/login">Vendor Onboarding</Link></li>
             <li><Link to="/seller/login">Fulfillment & Shipping</Link></li>
             <li><Link to="/seller/login">Vendor Payouts & Support</Link></li>

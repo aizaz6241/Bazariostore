@@ -7,6 +7,8 @@ import Ic from '../components/Icons.jsx';
 import Stars from '../components/Stars.jsx';
 import ProductCard from '../components/ProductCard.jsx';
 import { Breadcrumb, TrustStrip } from '../components/Bits.jsx';
+import useSeo from '../seo/useSeo.js';
+import { productLd, productTitle, productDescription, productImages, breadcrumbLd, graph } from '../seo/site.js';
 
 // Product detail page (styles: styles/storefront/catalog-v2.css, scoped `.pv`)
 
@@ -77,6 +79,30 @@ export default function ProductPage() {
       .catch(() => setNotFound(true));
     api(`/products/related/${slug}`).then(setRelated).catch(() => {});
   }, [slug]);
+
+  // SEO: title, description, canonical, image and Product schema from the REAL product data
+  const seoPath = `/product/${slug}`;
+  useSeo(
+    notFound
+      ? { title: 'Product not found | Bazario', path: seoPath, robots: 'noindex,follow', ld: null }
+      : p
+        ? {
+            title: productTitle(p),
+            description: productDescription(p),
+            path: seoPath,
+            image: productImages(p)[0],
+            type: 'product',
+            ld: graph(
+              productLd(p, seoPath),
+              breadcrumbLd([
+                { name: 'Shop', path: '/shop' },
+                ...(p.category?.slug ? [{ name: p.category.name, path: `/shop?category=${p.category.slug}` }] : []),
+                { name: p.name, path: seoPath },
+              ])
+            ),
+          }
+        : null
+  );
 
   if (notFound)
     return (

@@ -6,6 +6,8 @@ import ProductCard from '../components/ProductCard.jsx';
 import { Breadcrumb, TrustStrip } from '../components/Bits.jsx';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
 import Ic from '../components/Icons.jsx';
+import useSeo from '../seo/useSeo.js';
+import { webPageLd, breadcrumbLd, graph } from '../seo/site.js';
 
 const PAGE_SIZE = 36;
 
@@ -48,6 +50,27 @@ export default function Shop() {
   const label = params.get('label') || params.get('badge') || '';
   const sort = params.get('sort') || '';
   const seller = params.get('seller') || '';
+
+  // SEO: plain shop + category pages are indexable; search / filter / seller views are not
+  const seoCatName = categories.find((c) => c.slug === category)?.name || '';
+  const seoPath = category ? `/shop?category=${encodeURIComponent(category)}` : '/shop';
+  const seoTitle = seoCatName
+    ? `${seoCatName} — Buy Online, Shipped Worldwide | Bazario`
+    : 'Shop All Products — Direct from China, Shipped Worldwide | Bazario';
+  const seoDesc = seoCatName
+    ? `Shop ${seoCatName} on Bazario — sourced direct from China and shipped to the USA, Canada, Australia, UK & Europe. Verified sellers, tracked delivery and 14-day returns.`
+    : 'Browse the Bazario marketplace — products sourced direct from China and shipped to the USA, Canada, Australia, UK & Europe. Verified sellers, verified reviews, tracked delivery and 14-day returns.';
+  const filtered = Boolean(q || seller || label || sort || params.get('page'));
+  useSeo({
+    title: seoTitle,
+    description: seoDesc,
+    path: filtered ? '/shop' : seoPath,
+    robots: filtered || (category && !seoCatName && categories.length) ? 'noindex,follow' : 'index,follow',
+    ld: graph(
+      webPageLd({ path: seoPath, title: seoTitle, description: seoDesc, type: 'CollectionPage' }),
+      breadcrumbLd(seoCatName ? [{ name: 'Shop', path: '/shop' }, { name: seoCatName, path: seoPath }] : [{ name: 'Shop', path: '/shop' }])
+    ),
+  });
 
   useEffect(() => {
     setLoading(true);

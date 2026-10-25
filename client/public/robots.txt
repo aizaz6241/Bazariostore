@@ -1,0 +1,52 @@
+# Bazario — https://bazariomarketplace.shop
+# Public storefront is open to all search engines and AI answer engines.
+# Private portals and checkout screens are kept out of search.
+
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /seller
+Disallow: /sellers
+Disallow: /account
+Disallow: /cart
+Disallow: /checkout
+Disallow: /order-success
+Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /api/
+Disallow: /downloads/
+
+# AI search & answer engines — explicitly welcome on the public storefront
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: GPTBot
+User-agent: ClaudeBot
+User-agent: Claude-SearchBot
+User-agent: Claude-User
+User-agent: PerplexityBot
+User-agent: Perplexity-User
+User-agent: Google-Extended
+User-agent: Applebot
+User-agent: Applebot-Extended
+User-agent: Bingbot
+User-agent: DuckAssistBot
+User-agent: CCBot
+User-agent: meta-externalagent
+Allow: /
+Disallow: /admin
+Disallow: /seller
+Disallow: /sellers
+Disallow: /account
+Disallow: /cart
+Disallow: /checkout
+Disallow: /order-success
+Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /api/
+Disallow: /downloads/
+
+Sitemap: https://bazariomarketplace.shop/sitemap.xml

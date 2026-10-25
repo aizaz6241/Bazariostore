@@ -3,9 +3,26 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Bazario — Premier Global Multi-Vendor Marketplace</title>
-    <meta name="description" content="Shop millions of products from verified global sellers. Express delivery, secure checkout, and 14-day easy returns." />
-    
+    <!--bz:seo-start-->
+    <title>Bazario — Global Dropshipping Marketplace | Direct from China to USA, Canada, UK, Australia &amp; Europe</title>
+    <meta name="description" content="Bazario is a global multi-vendor dropshipping marketplace operating since 2020. Shop products sourced directly from China and shipped worldwide to the USA, Canada, Australia, the UK and Europe — verified sellers, verified reviews, tracked delivery and 14-day returns." />
+    <meta name="robots" content="index,follow" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Bazario" />
+    <meta property="og:title" content="Bazario — Global Dropshipping Marketplace | Direct from China to USA, Canada, UK, Australia &amp; Europe" />
+    <meta property="og:description" content="Global multi-vendor dropshipping marketplace since 2020 — products direct from China, shipped to the USA, Canada, Australia, UK &amp; Europe. Verified sellers, verified reviews, tracked delivery." />
+    <meta property="og:image" content="https://bazariomarketplace.shop/og-image.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Bazario — Global Dropshipping Marketplace" />
+    <meta name="twitter:description" content="Products direct from China, shipped to the USA, Canada, Australia, UK &amp; Europe. Verified sellers, verified reviews, since 2020." />
+    <meta name="twitter:image" content="https://bazariomarketplace.shop/og-image.jpg" />
+    <script type="application/ld+json" id="bz-ld">{"@context":"https://schema.org","@graph":[{"@type":["Organization","OnlineStore"],"@id":"https://bazariomarketplace.shop/#organization","name":"Bazario","legalName":"Bazario Marketplace","url":"https://bazariomarketplace.shop","logo":"https://bazariomarketplace.shop/icon-512.png","foundingDate":"2020","description":"Global multi-vendor dropshipping marketplace operating since 2020 — products sourced directly from China and shipped to the USA, Canada, Australia, the UK and Europe."},{"@type":"WebSite","@id":"https://bazariomarketplace.shop/#website","url":"https://bazariomarketplace.shop/","name":"Bazario","publisher":{"@id":"https://bazariomarketplace.shop/#organization"},"potentialAction":{"@type":"SearchAction","target":{"@type":"EntryPoint","urlTemplate":"https://bazariomarketplace.shop/shop?q={search_term_string}"},"query-input":"required name=search_term_string"}}]}</script>
+    <!--bz:seo-end-->
+    <meta name="application-name" content="Bazario" />
+    <meta name="format-detection" content="telephone=no" />
+    <link rel="alternate" type="text/plain" title="LLM summary" href="/llms.txt" />
+    <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+
     <!-- PWA Web App Manifest -->
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#2563eb" />
@@ -14,20 +31,39 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Bazario" />
-    <link rel="apple-touch-icon" href="/icon-192.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
     <!-- Windows Phone / Tile Icons -->
-    <meta name="msapplication-TileImage" content="/icon-192.svg" />
+    <meta name="msapplication-TileImage" content="/icon-192.png" />
     <meta name="msapplication-TileColor" content="#2563eb" />
 
-    <!-- Standard Favicon -->
+    <!-- Favicons (SVG for browsers, PNG for Google search results) -->
     <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+
+    <!-- Crawlable summary below is for search engines / AI crawlers that do not run JavaScript.
+         Browsers running the app hide it instantly and React replaces it. -->
+    <script>document.documentElement.classList.add('js');</script>
+    <style>.js #bz-static{display:none}#bz-static{max-width:900px;margin:0 auto;padding:24px 16px;font-family:Inter,system-ui,sans-serif;line-height:1.6;color:#0f172a}#bz-static a{color:#2563eb}</style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><!--bz:static-start--><div id="bz-static">
+      <header><nav><a href="/">Bazario</a> · <a href="/shop">Shop</a> · <a href="/dropshipping">Worldwide Dropshipping</a> · <a href="/about">About</a> · <a href="/faq">FAQ</a> · <a href="/sell-on-bazario">Sell on Bazario</a> · <a href="/track-order">Track Order</a></nav></header>
+      <main>
+        <h1>Bazario — Global Dropshipping Marketplace, Direct from China to the USA, Canada, Australia, UK &amp; Europe</h1>
+        <p>Bazario is a global multi-vendor dropshipping marketplace operating since 2020. Products are sourced directly from manufacturers and suppliers in China and shipped worldwide — mainly to the United States, Canada, Australia, the United Kingdom and Europe.</p>
+        <ul>
+          <li>Operating in e-commerce and dropshipping since 2020.</li>
+          <li>Every seller store is reviewed and verified by Bazario before it can sell.</li>
+          <li>Product reviews come from verified customers.</li>
+          <li>Every order is tracked; 14-day easy returns; secure checkout; live chat support.</li>
+        </ul>
+        <p><a href="/shop">Shop all products</a> · <a href="/dropshipping">How dropshipping from China works</a> · <a href="/faq">FAQ</a></p>
+      </main>
+    </div><!--bz:static-end--></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

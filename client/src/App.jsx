@@ -11,6 +11,8 @@ import TrackOrder from './pages/TrackOrder.jsx';
 import PolicyPage from './pages/PolicyPage.jsx';
 import Account from './pages/Account.jsx';
 import { Login, Register, Forgot, Reset } from './pages/AuthPages.jsx';
+import InfoPage from './pages/InfoPage.jsx';
+import RouteSeoDefaults from './seo/RouteSeoDefaults.jsx';
 
 // ─── Seller Central ───────────────────────────────────────────
 import SellerLogin from './seller/SellerLogin.jsx';
@@ -67,6 +69,7 @@ export default function App() {
   return (
     <>
       <InstallAppBanner />
+      <RouteSeoDefaults />
       <Routes>
         {/* ─── Customer Storefront ─────────────────────────────── */}
       <Route element={<StoreLayout />}>
@@ -78,6 +81,10 @@ export default function App() {
         <Route path="/order-success" element={<OrderSuccess />} />
         <Route path="/track-order" element={<TrackOrder />} />
         <Route path="/page/:key" element={<PolicyPage />} />
+        <Route path="/about" element={<InfoPage key="about" pageKey="about" />} />
+        <Route path="/dropshipping" element={<InfoPage key="dropshipping" pageKey="dropshipping" />} />
+        <Route path="/sell-on-bazario" element={<InfoPage key="sell" pageKey="sell" />} />
+        <Route path="/faq" element={<InfoPage key="faq" pageKey="faq" />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<Forgot />} />

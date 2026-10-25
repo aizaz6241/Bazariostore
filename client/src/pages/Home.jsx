@@ -5,6 +5,9 @@ import { useContent } from '../content.jsx';
 import Ic from '../components/Icons.jsx';
 import ProductCard from '../components/ProductCard.jsx';
 import { SectionTitle } from '../components/Bits.jsx';
+import useSeo from '../seo/useSeo.js';
+import { SITE, FAQS, organizationLd, websiteLd, webPageLd, graph } from '../seo/site.js';
+import { FaqList, INFO_LINKS } from './InfoPage.jsx';
 
 const FALLBACK_SLIDE = {
   a: 'Mega Electronics &',
@@ -86,6 +89,13 @@ function Hero() {
 export default function Home() {
   const { content, categories } = useContent();
   const [featured, setFeatured] = useState([]);
+
+  useSeo({
+    title: SITE.defaultTitle,
+    description: SITE.defaultDescription,
+    path: '/',
+    ld: graph(organizationLd(), websiteLd(), webPageLd({ path: '/', title: SITE.defaultTitle, description: SITE.defaultDescription })),
+  });
 
   useEffect(() => {
     api('/products?limit=8').then(setFeatured).catch(() => {});
@@ -232,6 +242,30 @@ export default function Home() {
           </div>
           <img src={promo.right?.img || 'https://images.unsplash.com/photo-1695048133142-1a20484d2569?w=500&auto=format&fit=crop&q=80'} alt="" />
         </Link>
+      </section>
+
+      {/* About Bazario — crawlable summary for Google + AI answer engines */}
+      <section className="section container">
+        <div className="seo-home">
+          <div>
+            <h2>Bazario — Global Dropshipping Marketplace Since 2020</h2>
+            <p>
+              Bazario is a multi-vendor dropshipping marketplace. Products are sourced directly from manufacturers and
+              suppliers in China and shipped worldwide — mainly to the United States, Canada, Australia, the United
+              Kingdom and Europe.
+            </p>
+            <p>
+              Every seller store is verified by Bazario before it can sell, reviews come from verified customers, every
+              order is tracked and all purchases are covered by 14-day easy returns.
+            </p>
+            <nav className="seo-related" aria-label="About Bazario">
+              {INFO_LINKS.map((l) => (
+                <Link key={l.to} to={l.to}>{l.label} →</Link>
+              ))}
+            </nav>
+          </div>
+          <FaqList items={FAQS.slice(0, 5)} />
+        </div>
       </section>
     </>
   );

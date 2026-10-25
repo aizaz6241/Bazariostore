@@ -1,7 +1,7 @@
 {
   "name": "Bazario Global Marketplace",
   "short_name": "Bazario",
-  "description": "Shop millions of products from verified global sellers. Express delivery, secure checkout, and 14-day easy returns.",
+  "description": "Global dropshipping marketplace since 2020 — products direct from China, shipped to the USA, Canada, Australia, UK & Europe. Verified sellers, verified reviews, tracked delivery and 14-day returns.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -10,7 +10,11 @@
   "theme_color": "#2563eb",
   "lang": "en",
   "dir": "ltr",
-  "categories": ["shopping", "business", "lifestyle"],
+  "categories": [
+    "shopping",
+    "business",
+    "lifestyle"
+  ],
   "icons": [
     {
       "src": "/icon-192.svg",
@@ -23,6 +27,18 @@
       "sizes": "512x512",
       "type": "image/svg+xml",
       "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
     }
   ],
   "shortcuts": [
@@ -31,28 +47,48 @@
       "short_name": "Shop",
       "description": "Browse store products & deals",
       "url": "/",
-      "icons": [{ "src": "/icon-192.svg", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/icon-192.svg",
+          "sizes": "192x192"
+        }
+      ]
     },
     {
       "name": "Seller Central",
       "short_name": "Seller",
       "description": "Manage products, inventory & orders",
       "url": "/seller",
-      "icons": [{ "src": "/icon-192.svg", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/icon-192.svg",
+          "sizes": "192x192"
+        }
+      ]
     },
     {
       "name": "Track Orders",
       "short_name": "Orders",
       "description": "View tracking and order history",
       "url": "/account/orders",
-      "icons": [{ "src": "/icon-192.svg", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/icon-192.svg",
+          "sizes": "192x192"
+        }
+      ]
     },
     {
       "name": "Admin Hub",
       "short_name": "Admin",
       "description": "Super admin control portal",
       "url": "/admin",
-      "icons": [{ "src": "/icon-192.svg", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/icon-192.svg",
+          "sizes": "192x192"
+        }
+      ]
     }
   ],
   "prefer_related_applications": false
