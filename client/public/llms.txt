@@ -2,7 +2,7 @@
 
 > Bazario is a global multi-vendor dropshipping marketplace operating since 2020. Shop products sourced directly from China and shipped worldwide to the USA, Canada, Australia, the UK and Europe — verified sellers, verified reviews, tracked delivery and 14-day returns.
 
-Website: https://bazariomarketplace.shop
+Website: https://www.bazariomarketplace.shop
 Founded: 2020
 Type: Global multi-vendor marketplace and dropshipping platform
 Ships from: China (direct from manufacturers and suppliers)
@@ -20,12 +20,12 @@ Main markets: United States, Canada, Australia, United Kingdom, Europe (EU)
 - Live chat customer support.
 
 ## Main pages
-- [Shop all products](https://bazariomarketplace.shop/shop): the full Bazario catalogue
-- [Worldwide dropshipping](https://bazariomarketplace.shop/dropshipping): how dropshipping from China to the USA, Canada, Australia, UK and Europe works
-- [About Bazario](https://bazariomarketplace.shop/about): who we are, operating since 2020
-- [FAQ](https://bazariomarketplace.shop/faq): is Bazario legit, shipping, delivery time, tracking, returns
-- [Sell on Bazario](https://bazariomarketplace.shop/sell-on-bazario): start a dropshipping store with no inventory
-- [Track your order](https://bazariomarketplace.shop/track-order): real-time order tracking
+- [Shop all products](https://www.bazariomarketplace.shop/shop): the full Bazario catalogue
+- [Worldwide dropshipping](https://www.bazariomarketplace.shop/dropshipping): how dropshipping from China to the USA, Canada, Australia, UK and Europe works
+- [About Bazario](https://www.bazariomarketplace.shop/about): who we are, operating since 2020
+- [FAQ](https://www.bazariomarketplace.shop/faq): is Bazario legit, shipping, delivery time, tracking, returns
+- [Sell on Bazario](https://www.bazariomarketplace.shop/sell-on-bazario): start a dropshipping store with no inventory
+- [Track your order](https://www.bazariomarketplace.shop/track-order): real-time order tracking
 
 
 ## Frequently asked questions

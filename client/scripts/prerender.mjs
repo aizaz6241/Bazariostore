@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import {
   SITE, KEY_FACTS, FAQS, INFO_PAGES, abs,
   organizationLd, websiteLd, webPageLd, breadcrumbLd, faqLd, productLd,
-  productTitle, productDescription, productImages, graph,
+  productTitle, productDescription, productImages, graph, DEFAULT_POLICIES,
 } from '../src/seo/site.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -161,6 +161,13 @@ async function main() {
     content = (await getJson('/content')) || {};
   } catch (e) {
     console.log('[seo] content unavailable:', e.message);
+  }
+  // Policy pages: CMS text wins; otherwise the default text from site.js
+  {
+    const cms = content.pages || {};
+    const pages = { ...DEFAULT_POLICIES };
+    for (const [k, v] of Object.entries(cms)) if (v?.title && v?.body) pages[k] = v;
+    content = { ...content, pages };
   }
   try {
     const seen = new Set();

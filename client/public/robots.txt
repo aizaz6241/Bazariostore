@@ -1,4 +1,4 @@
-# Bazario — https://bazariomarketplace.shop
+# Bazario — https://www.bazariomarketplace.shop
 # Public storefront is open to all search engines and AI answer engines.
 # Private portals and checkout screens are kept out of search.
 
@@ -49,4 +49,4 @@ Disallow: /reset-password
 Disallow: /api/
 Disallow: /downloads/
 
-Sitemap: https://bazariomarketplace.shop/sitemap.xml
+Sitemap: https://www.bazariomarketplace.shop/sitemap.xml

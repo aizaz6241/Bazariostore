@@ -7,7 +7,7 @@
 // ─────────────────────────────────────────────────────────────
 
 export const SITE = {
-  url: 'https://bazariomarketplace.shop',
+  url: 'https://www.bazariomarketplace.shop',
   name: 'Bazario',
   legalName: 'Bazario Marketplace',
   alternateNames: ['Bazario Marketplace', 'Bazario Global Marketplace', 'Bazario Store'],
@@ -58,6 +58,7 @@ export const KEY_FACTS = [
   'Product reviews come from verified customers.',
   'Every order gets a tracking number and can be followed on the Track Order page.',
   '14-day easy returns and secure checkout.',
+  'Shipping, Returns, Terms and Privacy policies are published on the website.',
   'Live chat customer support.',
 ];
 
@@ -69,7 +70,7 @@ export const FAQS = [
   },
   {
     q: 'Is Bazario legit and safe to buy from?',
-    a: 'Yes. Bazario has been operating in e-commerce and dropshipping since 2020. Every seller store is reviewed and verified before it can sell, product reviews come from verified customers, every order is tracked, checkout is secure, and purchases are covered by a 14-day return policy.',
+    a: 'Bazario has been operating in e-commerce and dropshipping since 2020, and you can check the important things yourself before you buy: every order gets a tracking reference you can follow on the Track Order page, the Shipping, Returns, Terms and Privacy policies are published on the website, every seller store is reviewed by Bazario before it can sell, and live chat support is available on every page. Purchases are covered by a 14-day return policy.',
   },
   {
     q: 'How long has Bazario been in business?',
@@ -111,7 +112,113 @@ export const FAQS = [
     q: 'How do I contact Bazario customer support?',
     a: 'Use the live chat button on any page of bazariomarketplace.shop. The support team helps with orders, tracking, returns and seller questions.',
   },
+  {
+    q: 'Where can I read Bazario’s shipping, returns, terms and privacy policies?',
+    a: 'All policies are public on the website: Shipping Policy (bazariomarketplace.shop/page/shipping-policy), Returns & Refunds Policy (/page/returns-policy), Terms of Service (/page/terms) and Privacy Notice (/page/privacy).',
+  },
 ];
+
+// ─── Default policy pages (/page/:key) ───
+// Used when the admin CMS has no text for that page yet. If the team later
+// writes the page in the CMS, the CMS version is shown instead.
+// Plain facts only — no promises the business has not made.
+export const DEFAULT_POLICIES = {
+  'shipping-policy': {
+    title: 'Shipping Policy',
+    body: `Bazario is a global dropshipping marketplace. Products are sourced directly from manufacturers and suppliers in China and shipped to customers worldwide, mainly in the United States, Canada, Australia, the United Kingdom and the European Union.
+
+Processing
+Orders are processed after payment is confirmed. Most orders are dispatched within 1–2 business days.
+
+Delivery time
+The delivery time depends on the destination country, the shipping method and customs clearance in that country. Delays caused by customs, public holidays or the carrier can happen; we keep you informed through your tracking page and live chat.
+
+Tracking
+Every order receives a tracking reference. You can follow each step — confirmed, processing, packed, out from warehouse, out for delivery and delivered — on the Track Order page.
+
+Customs and import charges
+Some countries charge import duties or taxes on international parcels. Where these apply, they are set by the destination country.
+
+Wrong address
+Please check your shipping address before placing the order. Contact support through live chat as soon as possible if something needs to be changed.
+
+Questions
+Use the live chat button on any page of bazariomarketplace.shop.`,
+  },
+  'returns-policy': {
+    title: 'Returns & Refunds Policy',
+    body: `Bazario offers 14-day easy returns on purchases.
+
+How long you have
+You can request a return within 14 days of the date your order is delivered.
+
+How to request a return
+Contact support through the live chat on any page of bazariomarketplace.shop. Share your order number and the reason for the return. Photos help if the item arrived damaged, faulty or different from what you ordered.
+
+Condition of the item
+Items should be returned unused, in their original condition and packaging, with all accessories included.
+
+Damaged, faulty or wrong items
+If the item arrived damaged, faulty or not as described, tell us within 14 days of delivery and we will arrange a replacement or a refund.
+
+Refunds
+Once the return is approved, the refund is sent to the original payment method. How long it takes to appear depends on your bank or payment provider.
+
+Questions
+Our support team is available on live chat for any return or refund question.`,
+  },
+  terms: {
+    title: 'Terms of Service',
+    body: `These terms apply to everyone who uses bazariomarketplace.shop ("Bazario").
+
+About Bazario
+Bazario is a multi-vendor dropshipping marketplace operating since 2020. Independent sellers open stores on Bazario Seller Central. Products are sourced from manufacturers and suppliers in China and delivered to customers worldwide.
+
+Sellers
+Every seller store is reviewed and must be approved by Bazario before it can sell. Bazario may pause, freeze or close a store that breaks the marketplace rules.
+
+Orders and prices
+Prices are shown at checkout. An order is confirmed once payment is accepted. Bazario may cancel an order in case of an obvious pricing error, suspected fraud or if the product is no longer available; any payment for a cancelled order is refunded.
+
+Shipping and returns
+Shipping is covered by the Shipping Policy and returns by the Returns & Refunds Policy, both published on this website.
+
+Accounts
+You are responsible for keeping your login details safe and for the activity on your account.
+
+Acceptable use
+Do not misuse the website, try to access other people's accounts, or use the marketplace for illegal products or fraud.
+
+Changes
+Bazario may update these terms. The latest version is always on this page.
+
+Contact
+Use the live chat button on any page of bazariomarketplace.shop.`,
+  },
+  privacy: {
+    title: 'Privacy Notice',
+    body: `This notice explains what information Bazario collects and how it is used.
+
+What we collect
+Information you give us: your name, email address, phone number, shipping address and order details. Sellers also provide store and account details during registration.
+Information collected automatically: basic technical data such as device and browser type, needed to run and secure the website.
+
+How we use it
+To process and deliver orders, show order tracking, provide customer support, verify sellers, send account and order related messages, and keep the marketplace safe from fraud.
+
+Sharing
+Your shipping details are shared only with the parties needed to fulfil and deliver your order (the seller, the supplier and the shipping partner). Payments are handled by the payment provider. We do not sell your personal information.
+
+Security
+The website uses a secure HTTPS connection and account passwords are never stored in plain text.
+
+Your choices
+You can ask to see, correct or delete your personal information by contacting support through live chat.
+
+Changes
+We may update this notice. The latest version is always on this page.`,
+  },
+};
 
 // ─── Static info pages (rendered by React and pre-rendered to HTML) ───
 export const INFO_PAGES = {
@@ -305,7 +412,6 @@ export function returnPolicyLd() {
     returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
     merchantReturnDays: SITE.returnDays,
     returnMethod: 'https://schema.org/ReturnByMail',
-    returnFees: 'https://schema.org/FreeReturn',
     merchantReturnLink: SITE.url + '/page/returns-policy',
   };
 }

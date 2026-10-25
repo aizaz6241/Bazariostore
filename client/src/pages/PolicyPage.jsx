@@ -2,12 +2,14 @@ import { useParams, Link } from 'react-router-dom';
 import { useContent } from '../content.jsx';
 import { Breadcrumb, TrustStrip } from '../components/Bits.jsx';
 import useSeo from '../seo/useSeo.js';
-import { webPageLd, breadcrumbLd, graph } from '../seo/site.js';
+import { webPageLd, breadcrumbLd, graph, DEFAULT_POLICIES } from '../seo/site.js';
 
 export default function PolicyPage() {
   const { key } = useParams();
-  const { content, loading } = useContent();
-  const page = content.pages?.[key];
+  const { content, loading: contentLoading } = useContent();
+  const cmsPage = content.pages?.[key];
+  const page = cmsPage?.title && cmsPage?.body ? cmsPage : DEFAULT_POLICIES[key];
+  const loading = contentLoading && !page;
   const seoPath = `/page/${key}`;
   const seoDesc = page?.body
     ? page.body.replace(/\s+/g, ' ').trim().slice(0, 155)
