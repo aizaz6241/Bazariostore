@@ -306,17 +306,19 @@ function mentionAt(value, caret) {
   return { start: caret - m[2].length - 1, query: m[2] };
 }
 /** Text with every "@Member Name" wrapped (longest names first, so "@Ali Khan" beats "@Ali"). */
-function renderMentions(text, names, myName, isMine) {
+function renderMentions(text, names, myName, isMine, iAmMember = false) {
   const str = String(text || '');
   if (!str.includes('@') || !names?.length) return str;
   const sorted = [...new Set(names.filter(Boolean))].sort((a, b) => b.length - a.length);
-  const rx = new RegExp(`@(${sorted.map(escRx).join('|')})(?![\\p{L}\\p{N}_])`, 'giu');
+  const rx = new RegExp(`(?<![\\p{L}\\p{N}_])@(${sorted.map(escRx).join('|')})(?![\\p{L}\\p{N}_])`, 'giu');
   const out = [];
   let last = 0;
   let k = 0;
   for (const m of str.matchAll(rx)) {
     if (m.index > last) out.push(str.slice(last, m.index));
-    const me = myName && m[1].toLowerCase() === String(myName).toLowerCase();
+    const who = m[1].toLowerCase();
+    // @everyone = every member (the admins / partners are not in it)
+    const me = (myName && who === String(myName).toLowerCase()) || (who === 'everyone' && iAmMember);
     out.push(
       <span
         key={`m${k++}`}
@@ -416,6 +418,10 @@ function ChatPageInner() {
   const composerRef = useRef(null);
   // @mention picker in the team group: { start, query, index } while open
   const [mention, setMention] = useState(null);
+  const mentionListRef = useRef(null);
+  useEffect(() => {
+    mentionListRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' });
+  }, [mention?.index, mention?.query]);
   // shrink the message box back to one line after sending
   useEffect(() => {
     if (!inputText && composerRef.current) composerRef.current.style.height = 'auto';
@@ -2325,22 +2331,29 @@ function ChatPageInner() {
   // message moves to the top; people never written to stay below, by name.
   const lastAt = (c) => (c.lastMessage?.createdAt ? new Date(c.lastMessage.createdAt).getTime() || 0 : 0);
   // ── @mentions (team group only) ──
-  const mentionNames = [user?.name, ...contacts.map((c) => c.name)].filter(Boolean);
+  const mentionNames = ['everyone', user?.name, ...contacts.map((c) => c.name)].filter(Boolean);
+  const iAmMember = user?.role !== 'admin';
+  const EVERYONE = { _id: '__everyone', name: 'everyone', special: true };
   const mentionOptions = mention
-    ? contacts
-        .filter((c) => c.name && c.name.toLowerCase().includes(mention.query.toLowerCase()))
-        .sort((a, b) => {
-          const q = mention.query.toLowerCase();
-          const as = a.name.toLowerCase().startsWith(q) ? 0 : 1;
-          const bs = b.name.toLowerCase().startsWith(q) ? 0 : 1;
-          return as - bs || (a.role === 'admin' ? -1 : 0) - (b.role === 'admin' ? -1 : 0) || a.name.localeCompare(b.name);
-        })
-        .slice(0, 8)
+    ? [
+        // "@everyone": all members, not the admins / partners
+        ...('everyone'.startsWith(mention.query.toLowerCase()) ? [EVERYONE] : []),
+        // every matching member (the list scrolls; it used to stop at 8, which hid names)
+        ...contacts
+          .filter((c) => c.name && c.name.toLowerCase().includes(mention.query.toLowerCase()))
+          .sort((a, b) => {
+            const q = mention.query.toLowerCase();
+            const as = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+            const bs = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+            return as - bs || (a.role === 'admin' ? -1 : 0) - (b.role === 'admin' ? -1 : 0) || a.name.localeCompare(b.name);
+          }),
+      ]
     : [];
+  const membersCount = contacts.filter((c) => c.role !== 'admin').length + (iAmMember ? 1 : 0);
   const syncMention = (el) => {
     if (activeChat.type !== 'group' || !el) return setMention(null);
     const m = mentionAt(el.value, el.selectionStart ?? el.value.length);
-    setMention((prev) => (m ? { ...m, index: prev && prev.start === m.start ? Math.min(prev.index, 7) : 0 } : null));
+    setMention((prev) => (m ? { ...m, index: prev && prev.start === m.start && prev.query === m.query ? prev.index : 0 } : null));
   };
   const pickMention = (c) => {
     const el = composerRef.current;
@@ -3302,7 +3315,7 @@ function ChatPageInner() {
                               {/* Text Message */}
                               {msg.messageType === 'text' && (
                                 <p className="text-xs sm:text-sm whitespace-pre-wrap leading-relaxed break-words">
-                                  {activeChat.type === 'group' ? renderMentions(msg.text, mentionNames, user?.name, isMe) : msg.text}
+                                  {activeChat.type === 'group' ? renderMentions(msg.text, mentionNames, user?.name, isMe, iAmMember) : msg.text}
                                 </p>
                               )}
 
@@ -3350,7 +3363,7 @@ function ChatPageInner() {
                                   </div>
                                   {msg.text && (
                                     <p className="text-xs sm:text-sm whitespace-pre-wrap leading-relaxed break-words px-1">
-                                      {activeChat.type === 'group' ? renderMentions(msg.text, mentionNames, user?.name, isMe) : msg.text}
+                                      {activeChat.type === 'group' ? renderMentions(msg.text, mentionNames, user?.name, isMe, iAmMember) : msg.text}
                                     </p>
                                   )}
                                 </div>
@@ -3394,7 +3407,7 @@ function ChatPageInner() {
                                   </div>
                                   {msg.text && (
                                     <p className="text-xs sm:text-sm whitespace-pre-wrap leading-relaxed break-words px-1">
-                                      {activeChat.type === 'group' ? renderMentions(msg.text, mentionNames, user?.name, isMe) : msg.text}
+                                      {activeChat.type === 'group' ? renderMentions(msg.text, mentionNames, user?.name, isMe, iAmMember) : msg.text}
                                     </p>
                                   )}
                                 </div>
@@ -3580,13 +3593,13 @@ function ChatPageInner() {
                   aria-label="Mention a team member"
                 >
                   <div className="px-3 py-2 text-[10.5px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 flex items-center justify-between">
-                    <span>Mention a member</span>
+                    <span>Mention a member{mentionOptions.length > 1 ? ` · ${mentionOptions.filter((o) => !o.special).length}` : ''}</span>
                     <span className="normal-case font-medium tracking-normal">↑ ↓ to move · Enter to pick · Esc to close</span>
                   </div>
                   {mentionOptions.length === 0 ? (
                     <p className="px-4 py-3 text-xs text-slate-500">No member named “{mention.query}”.</p>
                   ) : (
-                    <ul className="max-h-64 overflow-y-auto py-1">
+                    <ul ref={mentionListRef} className="max-h-72 overflow-y-auto overscroll-contain py-1">
                       {mentionOptions.map((c, i) => (
                         <li key={c._id}>
                           <button
@@ -3601,7 +3614,11 @@ function ChatPageInner() {
                             onMouseEnter={() => setMention((m) => (m ? { ...m, index: i } : m))}
                             className={`w-full flex items-center gap-3 px-3 py-2 text-left transition ${i === mention.index ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}
                           >
-                            {c.avatar ? (
+                            {c.special ? (
+                              <span className="w-8 h-8 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center shrink-0" aria-hidden="true">
+                                <Users className="w-4 h-4" />
+                              </span>
+                            ) : c.avatar ? (
                               <img src={c.avatar} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
                             ) : (
                               <span className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold shrink-0">
@@ -3610,7 +3627,9 @@ function ChatPageInner() {
                             )}
                             <span className="min-w-0 flex-1">
                               <span className="block text-sm font-semibold text-slate-900 truncate">{c.name}</span>
-                              <span className="block text-[11px] text-slate-500">{c.role === 'admin' ? 'Admin' : 'Member'}</span>
+                              <span className="block text-[11px] text-slate-500">
+                                {c.special ? `All ${membersCount} members · not the admins / partners` : c.role === 'admin' ? 'Admin' : 'Member'}
+                              </span>
                             </span>
                             {i === mention.index && <span className="text-[10px] font-bold text-emerald-600 shrink-0">Enter ↵</span>}
                           </button>
