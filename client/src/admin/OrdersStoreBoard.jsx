@@ -6,7 +6,7 @@ import { Seg, Avatar, Empty } from './insights.jsx';
  * confirmed, in the warehouse, out for delivery, delivery problems, delivered (placed in the chosen
  * period), late (not delivered 7 days after the order) and stuck (the automatic step is overdue or
  * could not run). Every number is a button that filters the order list below.
- * Data: GET /orders/analytics/stores (test and previous-store accounts are left out here).
+ * Data: GET /orders/analytics/stores (test, previous-store and Inactive stores are left out here).
  */
 export const BOARD_COLUMNS = [
   { key: 'pending', label: 'Pending', filter: { status: 'pending' }, hint: 'Waiting for the store to confirm' },
@@ -28,10 +28,12 @@ export default function OrdersStoreBoard({ data, loading, days, onDays, onPick, 
   const [showAll, setShowAll] = useState(false);
   const rows = useMemo(() => {
     const t = q.trim().toLowerCase();
-    return (data?.stores || []).filter((s) => !s.isTest && (!t || `${s.storeName} ${s.ownerName}`.toLowerCase().includes(t)));
+    // test accounts and stores marked Inactive (Sellers page) are not listed here
+    return (data?.stores || []).filter((s) => !s.isTest && !s.isInactive && (!t || `${s.storeName} ${s.ownerName}`.toLowerCase().includes(t)));
   }, [data, q]);
   const shown = showAll || q ? rows : rows.slice(0, 12);
   const t = data?.totals;
+  const hidden = data?.hiddenInactive;
   const isActive = (sid, f) => (activeSeller || '') === (sid || '') && activeFilter && Object.entries(f).every(([k, v]) => activeFilter[k] === v);
 
   const chip = (key, label, f, tone = '') => (
@@ -56,7 +58,7 @@ export default function OrdersStoreBoard({ data, loading, days, onDays, onPick, 
       <div className="ins-card-head" style={{ paddingBottom: 10 }}>
         <div>
           <h3>🏪 Orders by store</h3>
-          <span className="ins-card-hint">Right now, real client stores only (no test accounts) · Delivered = orders placed in the last {days} days · click a number to see those orders</span>
+          <span className="ins-card-hint">Right now, active real client stores only (no test or inactive stores) · Delivered = orders placed in the last {days} days · click a number to see those orders</span>
         </div>
         <div className="ins-card-actions">
           <Seg small label="Delivered period" value={days} onChange={onDays} options={[{ value: 7, label: '7d' }, { value: 30, label: '30d' }, { value: 90, label: '90d' }]} />
@@ -92,6 +94,15 @@ export default function OrdersStoreBoard({ data, loading, days, onDays, onPick, 
           </div>
           <span className="ins-card-hint">{rows.length} {rows.length === 1 ? 'store' : 'stores'} with orders · late ones first</span>
         </div>
+
+        {hidden?.stores > 0 && (
+          <p className={`otl-hidden-note ${hidden.late ? 'has-late' : ''}`}>
+            💤 {hidden.stores} inactive {hidden.stores === 1 ? 'store is' : 'stores are'} hidden here
+            {hidden.open > 0 && <> · {hidden.open.toLocaleString('en-US')} open {hidden.open === 1 ? 'order' : 'orders'}</>}
+            {hidden.late > 0 && <> · <b>{hidden.late} late</b></>}
+            <span> — pick the store in the store filter to see them, or make it Active on the Sellers page.</span>
+          </p>
+        )}
 
         {!data && loading ? (
           <Empty icon="⏳" text="Loading stores…" />

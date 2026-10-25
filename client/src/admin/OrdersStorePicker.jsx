@@ -24,12 +24,13 @@ const saveRecent = (id) => {
 };
 
 function Counts({ c }) {
-  if (!c || (!c.pending && !c.late && !c.isTest)) return null;
+  if (!c || (!c.pending && !c.late && !c.isTest && !c.isInactive)) return null;
   return (
     <span className="opk-counts">
       {c.pending > 0 && <span className="opk-pill warn" title="Pending">{c.pending} pending</span>}
       {c.late > 0 && <span className="opk-pill bad" title="Not delivered after 7 days">{c.late} late</span>}
       {c.isTest && <span className="opk-pill test">Test</span>}
+      {!c.isTest && c.isInactive && <span className="opk-pill test" title="Marked Inactive on the Sellers page">Inactive</span>}
     </span>
   );
 }

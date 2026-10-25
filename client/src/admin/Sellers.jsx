@@ -634,6 +634,53 @@ export default function Sellers() {
     }
   };
 
+  // ─── ACTIVE / INACTIVE (admin view only) ───
+  // Inactive = left out of the Orders page "Orders by store" board and the Seller leaderboard.
+  // The seller's account, orders and wallet keep working exactly as before.
+  const [activeBusy, setActiveBusy] = useState('');
+  const handleToggleActive = async (s) => {
+    if (!s || s.isTestAccount || activeBusy) return;
+    const inactive = !s.isInactive;
+    setActiveBusy(s._id);
+    try {
+      const res = await api(`/sellers/${s._id}/active`, { method: 'PATCH', body: { inactive } });
+      const patch = {
+        isInactive: Boolean(res.seller?.isInactive),
+        inactiveAt: res.seller?.inactiveAt || null,
+        inactiveBy: res.seller?.inactiveBy || '',
+      };
+      setSellers((prev) => prev.map((x) => (x._id === s._id ? { ...x, ...patch } : x)));
+      if (profileSeller?._id === s._id) setProfileSeller((prev) => ({ ...prev, ...patch }));
+      setToggleToast(res.message || (inactive ? 'Store marked Inactive' : 'Store marked Active'));
+      setTimeout(() => setToggleToast(''), 3500);
+    } catch (err) {
+      alert('Could not change Active / Inactive: ' + err.message);
+    } finally {
+      setActiveBusy('');
+    }
+  };
+  const activeChip = (s, variant) => {
+    if (s.isTestAccount) return null; // test accounts are hidden from the boards anyway
+    const off = Boolean(s.isInactive);
+    const title = off
+      ? `Inactive${s.inactiveBy ? ` (set by ${s.inactiveBy})` : ''} — hidden from Orders by store and the Seller leaderboard. Click to make it Active again.`
+      : 'Active — shows on Orders by store and the Seller leaderboard. Click to make it Inactive (hide it there). The seller account itself is not affected.';
+    return (
+      <button
+        type="button"
+        onClick={() => handleToggleActive(s)}
+        disabled={activeBusy === s._id}
+        title={title}
+        aria-pressed={!off}
+        className={`${variant === 'card' ? 'scard-chip' : 'sact-chip'} ${off ? 'chip-inactive' : 'chip-live'}`}
+      >
+        <span className={`sact-dot ${off ? 'off' : 'on'}`} aria-hidden="true" />
+        {activeBusy === s._id ? 'Saving…' : off ? 'Inactive' : 'Active'}
+        <span className="scard-chip-swap">⇄</span>
+      </button>
+    );
+  };
+
   // ─── TOGGLE PREVIOUS STORE SELLER HANDLER ───
   const handleTogglePreviousStore = async (sellerId) => {
     try {
@@ -764,6 +811,7 @@ export default function Sellers() {
   const clientCount = activeSellers.filter((s) => !s.isTestAccount && !s.isPreviousStoreSeller).length;
   const testCount = activeSellers.filter((s) => s.isTestAccount).length;
   const previousCount = activeSellers.filter((s) => s.isPreviousStoreSeller).length;
+  const inactiveCount = activeSellers.filter((s) => s.isInactive && !s.isTestAccount).length;
   const activeCount = activeSellers.filter((s) => s.status === 'active').length;
   const warnedCount = activeSellers.filter((s) => s.warning?.active).length;
   const frozenOnlyCount = activeSellers.filter((s) => s.status === 'frozen').length;
@@ -779,6 +827,7 @@ export default function Sellers() {
     { key: 'client', label: '👤 Client', count: clientCount },
     { key: 'test', label: '🧪 Test', count: testCount },
     { key: 'previous', label: '🏛️ Previous', count: previousCount },
+    { key: 'inactive', label: '💤 Inactive', count: inactiveCount },
     { key: 'diamond', label: '💎 Diamond', count: diamondCount },
     { key: 'diamond_req', label: '⏳ Diamond requests', count: diamondRequestCount },
     { key: 'warned', label: '⚠️ Warned', count: warnedCount },
@@ -805,6 +854,7 @@ export default function Sellers() {
       if (statusFilter === 'client' && (s.isTestAccount || s.isPreviousStoreSeller)) return false;
       if (statusFilter === 'test' && !s.isTestAccount) return false;
       if (statusFilter === 'previous' && !s.isPreviousStoreSeller) return false;
+      if (statusFilter === 'inactive' && !(s.isInactive && !s.isTestAccount)) return false;
       if (statusFilter === 'diamond' && s.tier !== 'diamond') return false;
       if (statusFilter === 'diamond_req' && !(s.tier !== 'diamond' && s.tierRequest?.status === 'pending')) return false;
       if (statusFilter === 'frozen' && s.status !== 'frozen') return false;
@@ -939,7 +989,7 @@ export default function Sellers() {
             const locked = s.wallet?.processingFund || 0;
 
             return (
-              <article key={s._id} className={`scard scard-${statusKey}`}>
+              <article key={s._id} className={`scard scard-${statusKey}${s.isInactive && !s.isTestAccount ? ' scard-inactive' : ''}`}>
                 {/* Identity */}
                 <header className="scard-head">
                   <div className="scard-avatar" aria-hidden="true">
@@ -977,6 +1027,7 @@ export default function Sellers() {
                   >
                     {s.isPreviousStoreSeller ? '🏛️ Prev Store' : '✨ Current'} <span className="scard-chip-swap">⇄</span>
                   </button>
+                  {activeChip(s, 'card')}
                   {tierChip(s, 'card')}
                   {s.warning?.active && <span className="scard-chip chip-warn">⚠️ Warned</span>}
                 </div>
@@ -1185,6 +1236,7 @@ export default function Sellers() {
                             {s.isPreviousStoreSeller ? '🏛️ Prev Store' : '✨ Current Store'}
                             <span style={{ fontSize: 9, opacity: 0.7 }}>⇄</span>
                           </button>
+                          {activeChip(s, 'table')}
                           {tierChip(s, 'table')}
                           <span
                             style={{
@@ -1320,6 +1372,7 @@ export default function Sellers() {
                           </span>
                           <span className="spm-tag">{ps.isTestAccount ? '🧪 Test account' : '👤 Client account'}</span>
                           {ps.isPreviousStoreSeller && <span className="spm-tag">🏛️ Previous store</span>}
+                          {activeChip(ps, 'table')}
                           {tierChip(ps, 'table')}
                           {ps.warning?.active && <span className="spm-tag spm-tag-warn">⚠️ Warned</span>}
                         </div>

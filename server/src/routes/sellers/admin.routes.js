@@ -2058,6 +2058,38 @@ router.patch('/:id/toggle-test', authAdmin('sellers'), announceToAdmins('sellers
   }
 });
 
+// PATCH /api/sellers/:id/active  { inactive: true|false }
+// Active / Inactive for a real client store. Admin view only: an inactive store is left out of the
+// Orders page "Orders by store" board and the Seller leaderboard. The seller's account, orders,
+// wallet and finance are not touched (no partner approval needed for that reason).
+router.patch('/:id/active', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:changed'), async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Seller not found' });
+    const seller = await Seller.findById(req.params.id).select('storeName isTestAccount isInactive').lean();
+    if (!seller) return res.status(404).json({ message: 'Seller not found' });
+    if (seller.isTestAccount) return res.status(400).json({ message: 'Test accounts are already hidden from the Orders boards. Active / Inactive is only for client stores.' });
+
+    // the wanted state is sent (not "flip"), so two admins clicking at once can't undo each other
+    const inactive = req.body && typeof req.body.inactive === 'boolean' ? req.body.inactive : !seller.isInactive;
+    const by = req.admin?.name || 'Admin';
+    const set = inactive ? { isInactive: true, inactiveAt: new Date(), inactiveBy: by } : { isInactive: false, inactiveAt: null, inactiveBy: '' };
+    if (Boolean(seller.isInactive) !== inactive) {
+      await Seller.updateOne({ _id: seller._id }, { $set: set });
+      audit(req, 'update', 'seller', seller._id, `Marked store ${seller.storeName} as ${inactive ? 'INACTIVE (hidden from Orders by store / Seller leaderboard)' : 'ACTIVE'}`);
+    }
+
+    res.json({
+      ok: true,
+      message: inactive
+        ? `“${seller.storeName}” is now Inactive — hidden from Orders by store and the Seller leaderboard.`
+        : `“${seller.storeName}” is Active again — it shows on the Orders boards.`,
+      seller: { _id: String(seller._id), storeName: seller.storeName, ...set },
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // PATCH /api/sellers/:id/toggle-previous-store (Quick toggle Previous Store Seller)
 router.patch('/:id/toggle-previous-store', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:changed'), async (req, res) => {
   try {

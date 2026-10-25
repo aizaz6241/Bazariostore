@@ -2879,3 +2879,26 @@ button.scard-chip:hover { filter: brightness(0.96); }
   .scard .lbl-long { display: none; }
   .scard .lbl-short { display: inline; }
 }
+
+/* ─── Active / Inactive (admin view only: hides a client store from the Orders boards) ─── */
+.sact-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  line-height: 1.5;
+}
+.sact-chip .scard-chip-swap { font-size: 9px; opacity: 0.6; }
+.chip-live { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+.chip-inactive { background: #f1f5f9; border-color: #cbd5e1; color: #475569; }
+.sact-chip:disabled, .scard-chip:disabled { opacity: 0.6; cursor: wait; }
+.sact-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.sact-dot.on { background: #22c55e; box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.18); }
+.sact-dot.off { background: #94a3b8; }
+.scard.scard-inactive { opacity: 0.72; }
+.scard.scard-inactive:hover { opacity: 1; }

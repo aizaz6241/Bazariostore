@@ -22,6 +22,9 @@
 
 .otl-board-tools { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .otl-board-tools .ins-search input { padding-left: 12px; }
+.otl-hidden-note { margin: -2px 0 10px; padding: 7px 12px; border-radius: 8px; background: #f8fafc; border: 1px dashed #cbd5e1; color: #475569; font-size: 12px; line-height: 1.45; }
+.otl-hidden-note.has-late { background: #fff7ed; border-color: #fdba74; color: #9a3412; }
+.otl-hidden-note span { opacity: 0.8; }
 .otl-table td.num, .otl-table th.num { text-align: center; }
 .otl-table th, .otl-table td { padding-left: 8px !important; padding-right: 8px !important; }
 .otl-table th { white-space: nowrap; }

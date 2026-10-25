@@ -142,7 +142,7 @@ export default function OrdersAnalytics({ sellerId, refreshKey, onPickSeller }) 
               <SplitBar height={14} parts={mix} />
             </Card>
 
-            <Card title="Seller leaderboard" hint="Click a store to filter the orders below" full pad={false} empty={!lb.length && 'No seller orders in this period'}>
+            <Card title="Seller leaderboard" hint="Active real client stores only (no test or inactive stores) · click a store to filter the orders below" full pad={false} empty={!lb.length && 'No seller orders in this period'}>
               <div className="ins-table-scroll">
                 <table className="ins-table">
                   <thead>
@@ -166,7 +166,7 @@ export default function OrdersAnalytics({ sellerId, refreshKey, onPickSeller }) 
                             <Avatar name={r.storeName} size={30} />
                             <div>
                               <b className="ins-clip">{r.storeName}</b>
-                              <span className="ins-sub">{r.ownerName || (r.isTestAccount ? 'Test account' : '—')}</span>
+                              <span className="ins-sub">{r.ownerName || (r._id ? '—' : 'Orders without a store')}</span>
                             </div>
                           </div>
                         </td>

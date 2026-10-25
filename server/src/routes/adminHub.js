@@ -4,7 +4,7 @@ import Seller from '../models/Seller.js';
 import Order from '../models/Order.js';
 import Withdrawal from '../models/Withdrawal.js';
 import Refund from '../models/Refund.js';
-import { Conversation } from '../models/Chat.js';
+import { Conversation, ADMIN_VISIBLE_CHAT } from '../models/Chat.js';
 import { authAdmin } from '../middleware/auth.js';
 import { sellerFacts } from '../utils/chatPlaceholders.js';
 import { confirmHoursFor } from '../utils/sellerTier.js';
@@ -218,7 +218,7 @@ async function computeAll() {
       .select('storeName ownerName tierRequest')
       .lean(),
     Refund.find({ status: 'requested' }).select('order orderNumber amount createdAt seller customer.name').sort({ createdAt: 1 }).limit(200).lean().catch(() => []),
-    Conversation.find({ type: { $ne: 'internal' }, status: { $ne: 'resolved' }, lastSender: { $in: WAITING_CHAT }, lastMessage: { $nin: SYSTEM_PREVIEWS } })
+    Conversation.find({ type: { $ne: 'internal' }, status: { $ne: 'resolved' }, lastSender: { $in: WAITING_CHAT }, lastMessage: { $nin: SYSTEM_PREVIEWS }, ...ADMIN_VISIBLE_CHAT })
       .select('seller storeName name isGuest type lastMessage lastAt unreadForAdmin')
       .sort({ lastAt: 1 })
       .limit(300)
@@ -448,7 +448,7 @@ router.get('/search', authAdmin(), async (req, res) => {
         );
     }
     if (can(admin, 'chat')) {
-      jobs.chats = Conversation.find({ type: { $ne: 'internal' }, $or: [{ storeName: rx }, { name: rx }, { email: rx }, { sellerEmail: rx }, { sellerName: rx }] })
+      jobs.chats = Conversation.find({ type: { $ne: 'internal' }, $and: [{ $or: [{ storeName: rx }, { name: rx }, { email: rx }, { sellerEmail: rx }, { sellerName: rx }] }, ADMIN_VISIBLE_CHAT] })
         .select('storeName name isGuest type lastMessage lastAt status')
         .sort({ lastAt: -1 })
         .limit(6)

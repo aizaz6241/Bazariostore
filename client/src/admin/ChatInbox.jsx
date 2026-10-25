@@ -6,6 +6,7 @@ import Ic from '../components/Icons.jsx';
 import ChatMessageBubble from '../components/ChatMessageBubble.jsx';
 import AiRewriteBox from '../components/AiRewriteBox.jsx';
 import ClearChatModal from './ClearChatModal.jsx';
+import DeleteChatsModal from './DeleteChatsModal.jsx';
 import VoiceRecordButton from '../components/VoiceRecordButton.jsx';
 import { useAdminTyping, typingLabel } from './useAdminTyping.js';
 import ChatShortcutPicker from './ChatShortcutPicker.jsx';
@@ -57,6 +58,11 @@ const dayLabel = (d) => {
   if (dayKey(t) === dayKey(new Date(now.getTime() - 86400000))) return 'Yesterday';
   return t.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: t.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
 };
+/** "Quiet 30d+" filter: nothing written in the chat for 30 days (good candidates to delete). */
+const QUIET_MS = 30 * 86400000;
+/** Name of a chat as shown in the list. */
+const chatTitle = (c) => c.storeName || c.seller?.storeName || (c.isGuest || c.type === 'guest' ? 'Guest Visitor' : 'Unknown Store');
+
 /** The last word in this chat is the store's / guest's and support has not answered yet. */
 const isWaiting = (c) => c.status !== 'resolved' && ['seller', 'guest', 'customer'].includes(c.lastSender);
 
@@ -109,6 +115,11 @@ export default function ChatInbox() {
 
   // Clear chat dialog: 'seller' (the open seller / guest chat) | 'team' (the open team chat) | null
   const [clearChat, setClearChat] = useState(null);
+
+  // Delete chats: the open one (header button) or several ticked in the list ("Select")
+  const [selectMode, setSelectMode] = useState(false);
+  const [picked, setPicked] = useState(() => new Set());
+  const [deleteChats, setDeleteChats] = useState(null); // [{ _id, name }] while the dialog is open
 
   // Messages & Form State
   const [messages, setMessages] = useState([]);
@@ -479,6 +490,21 @@ export default function ChatInbox() {
       loadSellerConvos();
     };
 
+    // another admin (or this one on another device) deleted chats: drop them from the list
+    const onChatDeleted = (payload) => {
+      const gone = new Set((payload?.conversationIds || []).map(String));
+      if (!gone.size) return;
+      setSellerConvos((prev) => (Array.isArray(prev) ? prev.filter((c) => !gone.has(String(c._id))) : prev));
+      setPicked((prev) => {
+        if (![...prev].some((id) => gone.has(String(id)))) return prev;
+        return new Set([...prev].filter((id) => !gone.has(String(id))));
+      });
+      if (activeTab === 'sellers' && selectedSellerId && gone.has(String(selectedSellerId))) {
+        setSelectedSellerId(null);
+        setMessages([]);
+      }
+    };
+
     // the seller tapped a shortcut button: show "Opened" on it at once
     const onActionOpened = (p) => {
       if (!p?.messageId) return;
@@ -503,6 +529,7 @@ export default function ChatInbox() {
       socket.on('message:new', onNewSellerMsg);
       socket.on('admin:message:new', onNewTeamMsg);
       socket.on('chat:cleared', onChatCleared);
+      socket.on('chat:deleted', onChatDeleted);
       socket.on('message:edit', onMessageEdit);
       socket.on('message:delete', onMessageDelete);
       socket.on('messages:seen', onMessagesSeen);
@@ -514,6 +541,7 @@ export default function ChatInbox() {
         socket.off('message:action_done', onActionDone);
         socket.off('chat:broadcast_done', loadSellerConvos);
         socket.off('chat:cleared', onChatCleared);
+        socket.off('chat:deleted', onChatDeleted);
         socket.off('message:new', onNewSellerMsg);
         socket.off('admin:message:new', onNewTeamMsg);
         socket.off('message:edit', onMessageEdit);
@@ -780,6 +808,7 @@ export default function ChatInbox() {
     if (sellerFilter === 'sellers' && (c.isGuest || c.type === 'guest')) return false;
     if (sellerFilter === 'guests' && (!c.isGuest && c.type !== 'guest')) return false;
     if (sellerFilter === 'waiting' && !isWaiting(c)) return false;
+    if (sellerFilter === 'quiet' && !(c.lastAt && Date.now() - new Date(c.lastAt).getTime() > QUIET_MS)) return false;
     if (!q) return true;
     const name = (c.seller?.storeName || c.storeName || '').toLowerCase();
     const sub = (c.subject || '').toLowerCase();
@@ -864,12 +893,14 @@ export default function ChatInbox() {
 
           {/* Stores / guests / waiting */}
           {activeTab === 'sellers' && (
+            <div className="sci-filter-row">
             <div className="sci-filters" role="tablist">
               {[
                 { id: 'all', label: 'All', count: sellerConvos.length },
                 { id: 'waiting', label: 'Waiting', count: waitingCount, tone: 'warn' },
                 { id: 'sellers', label: 'Stores', count: sellerConvos.filter((c) => !c.isGuest && c.type !== 'guest').length },
                 { id: 'guests', label: 'Guests', count: sellerConvos.filter((c) => c.isGuest || c.type === 'guest').length },
+                { id: 'quiet', label: 'Quiet 30d+', count: sellerConvos.filter((c) => c.lastAt && nowTick - new Date(c.lastAt).getTime() > QUIET_MS).length },
               ].map((f) => (
                 <button
                   key={f.id}
@@ -883,6 +914,44 @@ export default function ChatInbox() {
                   <em>{f.count}</em>
                 </button>
               ))}
+            </div>
+              <button
+                type="button"
+                className={`sci-select-toggle ${selectMode ? 'on' : ''}`}
+                onClick={() => {
+                  setSelectMode((v) => !v);
+                  setPicked(new Set());
+                }}
+                title="Tick several chats to delete them together"
+              >
+                {selectMode ? 'Cancel' : '☑ Select'}
+              </button>
+            </div>
+          )}
+          {activeTab === 'sellers' && selectMode && (
+            <div className="sci-select-bar" role="toolbar" aria-label="Selected chats">
+              <span>
+                <b>{picked.size}</b> selected
+              </span>
+              <button
+                type="button"
+                className="sci-select-link"
+                onClick={() => {
+                  const allIds = filteredSellerConvos.map((c) => c._id);
+                  const allOn = allIds.length > 0 && allIds.every((id) => picked.has(id));
+                  setPicked(allOn ? new Set() : new Set(allIds.slice(0, 200)));
+                }}
+              >
+                {filteredSellerConvos.length > 0 && filteredSellerConvos.every((c) => picked.has(c._id)) ? 'Unselect all' : `Select all shown${filteredSellerConvos.length > 200 ? ' (first 200)' : ''}`}
+              </button>
+              <button
+                type="button"
+                className="sci-select-del"
+                disabled={!picked.size}
+                onClick={() => setDeleteChats(sellerConvos.filter((c) => picked.has(c._id)).map((c) => ({ _id: c._id, name: chatTitle(c) })))}
+              >
+                🗑️ Delete{picked.size ? ` ${picked.size}` : ''}
+              </button>
             </div>
           )}
         </div>
@@ -911,8 +980,17 @@ export default function ChatInbox() {
                 return (
                   <div
                     key={c._id}
-                    className={`admin-convo-item ${isSelected ? 'selected' : ''} ${hasUnread ? 'has-unread' : ''}`}
+                    className={`admin-convo-item ${isSelected && !selectMode ? 'selected' : ''} ${hasUnread ? 'has-unread' : ''} ${selectMode && picked.has(c._id) ? 'is-picked' : ''}`}
                     onClick={() => {
+                      if (selectMode) {
+                        setPicked((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(c._id)) next.delete(c._id);
+                          else if (next.size < 200) next.add(c._id);
+                          return next;
+                        });
+                        return;
+                      }
                       setSelectedSellerId(c._id);
                       if (hasUnread) {
                         setSellerConvos((prev) =>
@@ -922,6 +1000,11 @@ export default function ChatInbox() {
                       }
                     }}
                   >
+                    {selectMode && (
+                      <span className={`sci-pick ${picked.has(c._id) ? 'on' : ''}`} role="checkbox" aria-checked={picked.has(c._id)} aria-label={`Select ${storeTitle}`}>
+                        {picked.has(c._id) ? '✓' : ''}
+                      </span>
+                    )}
                     <div className={`convo-avatar sci-av ${isGuestConvo ? 'is-guest' : `tone-${avatarTone(storeTitle)}`}`}>
                       <span>{isGuestConvo ? '👤' : initialsOf(storeTitle)}</span>
                       {hasUnread && <span className="avatar-unread-dot" />}
@@ -1047,6 +1130,14 @@ export default function ChatInbox() {
                 )}
                 <button type="button" className="sci-btn danger" onClick={() => setClearChat('seller')} title="Delete messages and their pictures / files for good">
                   🧹<span className="sci-btn-txt">Clear</span>
+                </button>
+                <button
+                  type="button"
+                  className="sci-btn danger"
+                  onClick={() => setDeleteChats([{ _id: selectedSellerConv._id, name: title }])}
+                  title="Delete the whole chat and remove it from the list"
+                >
+                  🗑️<span className="sci-btn-txt">Delete</span>
                 </button>
                 <button
                   type="button"
@@ -1426,6 +1517,24 @@ export default function ChatInbox() {
           onClose={() => setClearChat(null)}
           onCleared={() => {
             loadSellerMessages(selectedSellerId, false);
+            loadSellerConvos();
+          }}
+        />
+      )}
+      {/* DELETE CHAT(S): messages + files removed, and the chat leaves the list */}
+      {deleteChats && deleteChats.length > 0 && (
+        <DeleteChatsModal
+          chats={deleteChats}
+          onClose={() => setDeleteChats(null)}
+          onDeleted={(res) => {
+            const gone = new Set((res?.deletedIds || []).map(String));
+            setSellerConvos((prev) => (Array.isArray(prev) ? prev.filter((c) => !gone.has(String(c._id))) : prev));
+            if (selectedSellerId && gone.has(String(selectedSellerId))) {
+              setSelectedSellerId(null);
+              setMessages([]);
+            }
+            setPicked(new Set());
+            setSelectMode(false);
             loadSellerConvos();
           }}
         />

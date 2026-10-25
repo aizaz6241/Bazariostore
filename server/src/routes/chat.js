@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
-import { Conversation, Message, ChatSettings, ChatQuickReply, ChatBroadcast } from '../models/Chat.js';
+import { Conversation, Message, ChatSettings, ChatQuickReply, ChatBroadcast, ADMIN_VISIBLE_CHAT } from '../models/Chat.js';
 import Seller from '../models/Seller.js';
 import Admin from '../models/Admin.js';
 import { authAdmin, authSeller, authSellerOrAdmin } from '../middleware/auth.js';
@@ -409,7 +409,8 @@ router.post('/seller/read', authSeller, async (req, res) => {
 // GET /api/chat/admin/conversations (Admin gets list of all seller chats)
 router.get('/admin/conversations', authAdmin('chat'), async (req, res) => {
   try {
-    const allConvos = await Conversation.find({ type: { $ne: 'internal' } })
+    // chats an admin deleted stay out until the store / guest writes again (ADMIN_VISIBLE_CHAT)
+    const allConvos = await Conversation.find({ type: { $ne: 'internal' }, ...ADMIN_VISIBLE_CHAT })
       .populate('seller', 'storeName ownerName email phone rating')
       .populate('assignedStaff', 'name email title')
       .sort({ lastAt: -1 });
@@ -1308,6 +1309,78 @@ router.post('/admin/conversations/:id/clear', authAdmin('chat'), async (req, res
     if (conv.type === 'internal') return res.status(400).json({ message: 'Use the team chat to clear a team conversation' });
     const out = await clearConversation(req, conv, req.body || {});
     res.status(out.status).json(out.json);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/chat/admin/conversations/delete  { ids: [...], dryRun }
+// Delete one or many seller / guest chats from the Support Desk: every message and its pictures /
+// PDFs are removed for good (same as "Clear → Whole chat"), and the chat leaves the list. If the
+// store or guest writes again later, the chat comes back with only the new messages.
+// dryRun only counts (chats, messages, files) so the admin sees what will go before confirming.
+const MAX_DELETE_AT_ONCE = 200;
+router.post('/admin/conversations/delete', authAdmin('chat'), async (req, res) => {
+  try {
+    const raw = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    const ids = [...new Set(raw.map(String))].filter((x) => mongoose.Types.ObjectId.isValid(x));
+    if (!ids.length) return res.status(400).json({ message: 'Choose at least one chat to delete' });
+    if (ids.length > MAX_DELETE_AT_ONCE) return res.status(400).json({ message: `At most ${MAX_DELETE_AT_ONCE} chats can be deleted at once` });
+    const dryRun = Boolean(req.body?.dryRun);
+
+    const convs = await Conversation.find({ _id: { $in: ids }, type: { $ne: 'internal' } });
+    if (!convs.length) return res.status(404).json({ message: 'Those chats were not found (maybe already deleted)' });
+
+    const total = { chats: 0, messages: 0, files: 0, filesDeleted: 0, filesFailed: 0 };
+    const failed = [];
+    const deletedIds = [];
+    for (const conv of convs) {
+      const name = conv.storeName || conv.name || (conv.guestId ? 'Guest' : 'Chat');
+      try {
+        if (dryRun) {
+          const out = await clearConversation(req, conv, { mode: 'all', dryRun: true });
+          total.chats += 1;
+          total.messages += out.json?.messages || 0;
+          total.files += out.json?.files || 0;
+          continue;
+        }
+        // the moment of deletion is taken BEFORE clearing: a message the store sends while this
+        // runs is newer, so its chat shows up again instead of being hidden
+        const at = new Date();
+        const out = await clearConversation(req, conv, { mode: 'all' });
+        if (out.status !== 200) throw new Error(out.json?.message || 'Could not clear');
+        await Conversation.updateOne(
+          { _id: conv._id },
+          { $set: { adminDeletedAt: at, unreadForAdmin: 0 } }
+        );
+        total.chats += 1;
+        total.messages += out.json?.deleted || 0;
+        total.filesDeleted += out.json?.files?.deleted || 0;
+        total.filesFailed += out.json?.files?.failed || 0;
+        deletedIds.push(String(conv._id));
+        await audit(req, 'chat_deleted', 'conversation', conv._id, { with: name, messages: out.json?.deleted || 0, filesDeleted: out.json?.files?.deleted || 0 });
+      } catch (e) {
+        failed.push({ id: String(conv._id), name, error: e.message });
+      }
+    }
+
+    if (dryRun) return res.json({ ok: true, dryRun: true, ...total });
+
+    const io = req.app.get('io');
+    if (io && deletedIds.length) io.to(adminRoom('chat')).emit('chat:deleted', { conversationIds: deletedIds });
+
+    res.json({
+      ok: failed.length === 0,
+      deleted: total.chats,
+      messages: total.messages,
+      files: { deleted: total.filesDeleted, failed: total.filesFailed },
+      deletedIds,
+      failed,
+      message:
+        `${total.chats} chat${total.chats === 1 ? '' : 's'} deleted (${total.messages} messages, ${total.filesDeleted} files)` +
+        (failed.length ? ` · ${failed.length} could not be deleted: ${failed.map((f) => f.name).join(', ')}` : '') +
+        (total.filesFailed ? ` · ${total.filesFailed} file(s) could not be removed from storage` : ''),
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

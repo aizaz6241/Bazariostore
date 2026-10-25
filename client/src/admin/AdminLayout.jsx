@@ -128,7 +128,7 @@ export default function AdminLayout() {
     window.addEventListener('focus', soon);
     window.addEventListener(HUB_REFRESH_EVENT, soon);
     const socket = getSocket();
-    const events = ['notify', 'message:new', 'order:new', 'order:update', 'withdrawal:new', 'sellers:changed', 'chat:broadcast_done'];
+    const events = ['notify', 'message:new', 'order:new', 'order:update', 'withdrawal:new', 'sellers:changed', 'chat:broadcast_done', 'chat:deleted'];
     events.forEach((ev) => socket.on(ev, soon));
     return () => {
       clearInterval(every);

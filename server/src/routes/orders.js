@@ -379,8 +379,8 @@ router.get('/', authAdmin('orders'), async (req, res) => {
     }
     if (late || stuck) and.push({ status: { $nin: CLOSED_STATUSES } });
     if (req.query.clients === '1') {
-      // real client stores only (the "Orders by store" totals): no test / previous-store accounts
-      const testIds = (await Seller.find({ $or: [{ isTestAccount: true }, { isPreviousStoreSeller: true }] }).select('_id').lean()).map((x) => x._id);
+      // real client stores only (the "Orders by store" totals): no test / previous-store / inactive accounts
+      const testIds = (await Seller.find({ $or: [{ isTestAccount: true }, { isPreviousStoreSeller: true }, { isInactive: true }] }).select('_id').lean()).map((x) => x._id);
       if (testIds.length) and.push({ seller: { $nin: testIds }, 'items.seller': { $nin: testIds } });
     }
     if (late) and.push({ createdAt: { $lt: new Date(Date.now() - LATE_AFTER_MS) } });
@@ -416,8 +416,9 @@ router.get('/analytics/stores', authAdmin('orders'), async (req, res) => {
     const lateBefore = new Date(now - LATE_AFTER_MS);
     const stuckBefore = new Date(now - STUCK_AFTER_MS);
     const notDelivered = { $ne: ['$status', 'delivered'] };
-    const sellers = await Seller.find({ status: { $ne: 'pending_approval' } }).select('storeName ownerName tier status isTestAccount isPreviousStoreSeller').lean();
-    const clientIds = sellers.filter((x) => !x.isTestAccount && !x.isPreviousStoreSeller).map((x) => x._id);
+    const sellers = await Seller.find({ status: { $ne: 'pending_approval' } }).select('storeName ownerName tier status isTestAccount isPreviousStoreSeller isInactive').lean();
+    // inactive client stores (Sellers page → Active / Inactive) are left out like test accounts
+    const clientIds = sellers.filter((x) => !x.isTestAccount && !x.isPreviousStoreSeller && !x.isInactive).map((x) => x._id);
     const late = { $sum: { $cond: [{ $and: [notDelivered, { $lt: ['$createdAt', lateBefore] }] }, 1, 0] } };
     const stuck = {
       $sum: {
@@ -466,7 +467,7 @@ router.get('/analytics/stores', authAdmin('orders'), async (req, res) => {
       const s = info.get(sid);
       let row = stores.get(sid);
       if (!row) {
-        row = { _id: sid, storeName: s?.storeName || 'Removed store', ownerName: s?.ownerName || '', tier: s?.tier || 'basic', storeStatus: s?.status || '', isTest: Boolean(s?.isTestAccount || s?.isPreviousStoreSeller || !s), oldestOpenAt: null, ...blank() };
+        row = { _id: sid, storeName: s?.storeName || 'Removed store', ownerName: s?.ownerName || '', tier: s?.tier || 'basic', storeStatus: s?.status || '', isTest: Boolean(s?.isTestAccount || s?.isPreviousStoreSeller || !s), isInactive: Boolean(s?.isInactive), oldestOpenAt: null, ...blank() };
         stores.set(sid, row);
       }
       const g = group(r._id.st);
@@ -488,7 +489,15 @@ router.get('/analytics/stores', authAdmin('orders'), async (req, res) => {
       totals.stuck += r.stuck;
       (r.lateSellers || []).flat().forEach((sid) => sid && clientSet.has(String(sid)) && lateStoreIds.add(String(sid)));
     }
-    res.json({ days, lateDays: 7, totals: { ...totals, lateStores: lateStoreIds.size }, stores: list });
+    // what the board leaves out because the store is marked inactive (so an order there isn't missed)
+    const hidden = { stores: 0, open: 0, late: 0 };
+    for (const r of list) {
+      if (r.isTest || !r.isInactive) continue;
+      hidden.stores += 1;
+      hidden.open += r.open;
+      hidden.late += r.late;
+    }
+    res.json({ days, lateDays: 7, totals: { ...totals, lateStores: lateStoreIds.size }, hiddenInactive: hidden, stores: list });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -514,7 +523,7 @@ router.get('/analytics/overview', authAdmin('orders'), async (req, res) => {
     const prevSince = new Date(since.getTime() - days * 86400000);
 
     const sellerQuery = scope === 'client' ? { isTestAccount: { $ne: true }, isPreviousStoreSeller: { $ne: true } } : {};
-    const sellers = await Seller.find(sellerQuery).select('storeName ownerName status isTestAccount').lean();
+    const sellers = await Seller.find(sellerQuery).select('storeName ownerName status isTestAccount isPreviousStoreSeller isInactive').lean();
     const sellerMap = new Map(sellers.map((s) => [String(s._id), s]));
 
     const match = { createdAt: { $gte: prevSince } };
@@ -672,7 +681,15 @@ router.get('/analytics/overview', authAdmin('orders'), async (req, res) => {
     });
 
     const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
+    // the leaderboard lists real client stores only: no test / previous-store / inactive accounts
+    // (whatever the "All stores / Real clients" switch says — that one is for the charts)
+    const onBoard = (r) => {
+      if (!r._id) return true; // Bazario Direct (orders without a store)
+      const s = sellerMap.get(r._id);
+      return Boolean(s && !s.isTestAccount && !s.isPreviousStoreSeller && !s.isInactive);
+    };
     const leaderboard = [...perSeller.values()]
+      .filter(onBoard)
       .map((r) => ({
         ...r,
         gmv: round(r.gmv),
@@ -694,7 +711,7 @@ router.get('/analytics/overview', authAdmin('orders'), async (req, res) => {
         aov: liveOrders > 0 ? round(totals.gmv / liveOrders) : 0,
         deliveryRate: pct(totals.delivered, totals.orders),
         cancelRate: pct(totals.cancelled, totals.orders),
-        activeSellers: leaderboard.length,
+        activeSellers: perSeller.size,
       },
       previous: { ...prev, gmv: round(prev.gmv) },
       statusCounts: Object.fromEntries(statusAgg.map((x) => [x._id || 'pending', x.n])),

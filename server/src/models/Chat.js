@@ -45,9 +45,16 @@ const conversationSchema = new mongoose.Schema(
     lastSender: { type: String, enum: ['seller', 'admin', 'staff', 'guest', 'customer'], default: 'seller' },
     lastSenderId: { type: mongoose.Schema.Types.ObjectId, default: null },
     lastAt: { type: Date, default: Date.now },
+    // An admin deleted this chat from the Seller Support Desk (its messages and files were removed).
+    // It stays out of the admin chat list until something new is written in it (lastAt > this),
+    // like WhatsApp: when the store / guest writes again, the chat comes back with only the new message.
+    adminDeletedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
+
+// What the admin chat list shows: chats never deleted, or written in again after being deleted
+export const ADMIN_VISIBLE_CHAT = { $or: [{ adminDeletedAt: null }, { $expr: { $gt: ['$lastAt', '$adminDeletedAt'] } }] };
 
 const messageSchema = new mongoose.Schema(
   {

@@ -86,6 +86,12 @@ const sellerSchema = new mongoose.Schema(
     // Account Classification: Client (Real Merchant) vs Test (Internal QA & Feature Testing)
     isTestAccount: { type: Boolean, default: false },
     accountType: { type: String, enum: ['client', 'test'], default: 'client' },
+    // Active / Inactive (admin view only): an inactive client store is left out of the admin
+    // "Orders by store" board and the Seller leaderboard, so stores that stopped working don't
+    // fill those pages. Nothing else changes: the seller can log in, sell and use his wallet.
+    isInactive: { type: Boolean, default: false },
+    inactiveAt: { type: Date, default: null },
+    inactiveBy: { type: String, default: '' },
     // Previous Store Seller Flag (Amounts in wallet must NOT be converted to USDT / added to Admin USDT Wallet)
     isPreviousStoreSeller: { type: Boolean, default: false },
     // Seller account tier (see utils/sellerTier.js): 'basic' (default) or 'diamond'.
