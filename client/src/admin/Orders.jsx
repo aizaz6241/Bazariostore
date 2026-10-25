@@ -61,6 +61,161 @@ const ageLabel = (d) => {
   return `${days}d ago`;
 };
 
+const PAGE_SIZE = 50;
+const fmtNum = (n) => Number(n || 0).toLocaleString('en-US');
+
+/** "Showing 51–100 of 1,234 orders" */
+function rangeLabel(page, info, count) {
+  if (!count) return '0 shown';
+  const from = (page - 1) * (info.limit || PAGE_SIZE) + 1;
+  const to = from + count - 1;
+  const of = info.total != null ? ` of ${fmtNum(info.total)}` : info.hasMore ? ' of many' : '';
+  return `Showing ${fmtNum(from)}–${fmtNum(to)}${of} orders${info.sort === 'oldest' ? ' · oldest first' : ' · newest first'}`;
+}
+
+/** 2d 4h · 5h 10m · 12m */
+function span(ms) {
+  const m = Math.max(0, Math.round(ms / 60000));
+  const d = Math.floor(m / 1440);
+  const h = Math.floor((m % 1440) / 60);
+  const mm = m % 60;
+  if (d) return `${d}d ${h}h`;
+  if (h) return `${h}h ${mm}m`;
+  return `${mm}m`;
+}
+
+/**
+ * How long this store still has to confirm the order (Basic: warning 24h, freeze 48h;
+ * Diamond: warning 48h, freeze 72h — counted from when the order became pending).
+ */
+function ConfirmClock({ w, now, showStore }) {
+  const since = new Date(w.since).getTime();
+  const warnAt = new Date(w.warnAt).getTime();
+  const deadAt = new Date(w.deadlineAt).getTime();
+  const total = Math.max(1, deadAt - since);
+  const used = Math.min(1, Math.max(0, (now - since) / total));
+  const tierTxt = w.tier === 'diamond' ? '💎 Diamond · 72h' : 'Basic · 48h';
+  let tone;
+  let main;
+  let sub;
+  if (w.suspended) {
+    tone = 'paused';
+    main = '⏸ Store suspended — clock paused';
+    sub = `waiting ${span(now - since)}`;
+  } else if (now < warnAt) {
+    tone = used < 0.25 ? 'ok' : 'soon';
+    main = `⏳ ${span(deadAt - now)} left to confirm`;
+    sub = `waiting ${span(now - since)} · warning in ${span(warnAt - now)}`;
+  } else if (now < deadAt) {
+    tone = 'warn';
+    main = `⚠ Freeze in ${span(deadAt - now)}`;
+    sub = `waiting ${span(now - since)} · ${w.warned ? 'warning sent' : 'warning due'}`;
+  } else {
+    tone = 'late';
+    main = `⛔ Deadline passed ${span(now - deadAt)} ago`;
+    sub = `waiting ${span(now - since)} · ${w.penalized ? 'store frozen / penalised' : 'penalty due on the next check'}`;
+  }
+  const deadTxt = new Date(deadAt).toLocaleString('en-US', { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  return (
+    <span className={`ost-cw ost-cw-${tone}`} title={`${w.storeName} (${tierTxt}) must confirm by ${deadTxt}`}>
+      <b>{main}</b>
+      <small>
+        {showStore ? `${w.storeName} · ` : ''}
+        {sub} · {tierTxt}
+      </small>
+      <i className="ost-cw-bar" aria-hidden="true">
+        <i style={{ width: `${Math.round(used * 100)}%` }} />
+      </i>
+    </span>
+  );
+}
+
+/** Page buttons under the list: « 1 … 4 5 [6] 7 8 … 120 » */
+function Pager({ page, info, count, loading, onPage }) {
+  const [jump, setJump] = useState('');
+  const last = info.pages || (info.hasMore ? page + 1 : page);
+  if (last <= 1 && page <= 1) return null;
+  const nums = [];
+  const add = (n) => nums[nums.length - 1] !== n && nums.push(n);
+  add(1);
+  if (page - 2 > 2) nums.push('…');
+  for (let n = Math.max(2, page - 2); n <= Math.min(last - 1, page + 2); n += 1) add(n);
+  if (info.pages && page + 2 < last - 1) nums.push('…');
+  if (last > 1) add(last);
+  const go = (n) => !loading && n >= 1 && n !== page && (!info.pages || n <= info.pages) && onPage(n);
+  return (
+    <nav className="ost-pager" aria-label="Order pages">
+      <button type="button" onClick={() => go(page - 1)} disabled={loading || page <= 1}>‹ Prev</button>
+      {nums.map((n, i) =>
+        n === '…' ? (
+          <span key={`g${i}`} className="ost-pager-gap">…</span>
+        ) : (
+          <button type="button" key={n} className={n === page ? 'on' : ''} aria-current={n === page ? 'page' : undefined} onClick={() => go(n)} disabled={loading}>
+            {fmtNum(n)}
+          </button>
+        )
+      )}
+      <button type="button" onClick={() => go(page + 1)} disabled={loading || !(info.hasMore || (info.pages && page < info.pages)) || !count}>Next ›</button>
+      {info.pages > 7 && (
+        <form
+          className="ost-pager-jump"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const n = parseInt(jump, 10);
+            if (n) go(Math.min(info.pages, n));
+            setJump('');
+          }}
+        >
+          <input inputMode="numeric" value={jump} onChange={(e) => setJump(e.target.value.replace(/\D/g, ''))} placeholder="Page" aria-label="Go to page" />
+          <button type="submit" disabled={!jump}>Go</button>
+        </form>
+      )}
+    </nav>
+  );
+}
+
+/**
+ * Real clients (default) · Test accounts · All. Test stores = Test account / Previous-store
+ * accounts (incl. the automatic daily test orders); a chosen store is always shown.
+ */
+const ACCOUNT_TABS = [
+  { value: 'real', label: 'Real clients', icon: 'users', hint: 'Orders of real client stores' },
+  { value: 'test', label: 'Test accounts', icon: 'flask', hint: 'Test & previous-store accounts, incl. automatic daily test orders' },
+  { value: 'all', label: 'All', icon: 'layers', hint: 'Every store' },
+];
+const TAB_ICON = { users: '👥', flask: '🧪', layers: '▦' };
+function AccountsSwitch({ value, totals, onChange, storeName, onClearStore }) {
+  return (
+    <div className="oacc">
+      <div className={`oacc-tabs${storeName ? ' is-muted' : ''}`} role="tablist" aria-label="Which accounts">
+        {ACCOUNT_TABS.map((t) => (
+          <button
+            key={t.value}
+            type="button"
+            role="tab"
+            aria-selected={value === t.value}
+            className={`oacc-tab oacc-${t.value}${value === t.value ? ' on' : ''}`}
+            onClick={() => value !== t.value && onChange(t.value)}
+            title={t.hint}
+          >
+            <span className="oacc-ic" aria-hidden="true">{TAB_ICON[t.icon]}</span>
+            <span className="oacc-lbl">{t.label}</span>
+            <span className="oacc-num">{totals ? fmtNum(totals[t.value]) : '–'}</span>
+          </button>
+        ))}
+      </div>
+      {storeName ? (
+        <p className="oacc-note">
+          Showing every order of <b>{storeName}</b>.{' '}
+          <button type="button" onClick={onClearStore}>Show all {value === 'test' ? 'test accounts' : value === 'all' ? 'stores' : 'real clients'}</button>
+        </p>
+      ) : value === 'test' ? (
+        <p className="oacc-note oacc-note-test">🧪 Test accounts only — includes the automatic daily test orders. These are not real customers.</p>
+      ) : null}
+    </div>
+  );
+}
+
 export default function Orders() {
   // every filter lives in the page address, so it is still there after Manage → Back
   const [params, setParams] = useSearchParams();
@@ -69,10 +224,15 @@ export default function Orders() {
   const late = params.get('late') === '1';
   const stuck = params.get('stuck') === '1';
   const clientsOnly = params.get('clients') === '1';
+  const page = Math.max(1, parseInt(params.get('page'), 10) || 1);
+  // which accounts: real client stores (default) · test stores · all
+  const accounts = ['test', 'all'].includes(params.get('acc')) ? params.get('acc') : 'real';
+  // any filter change starts again at page 1 (only a page change keeps the other filters + page)
   const setParam = (patch) =>
     setParams(
       (prev) => {
         const n = new URLSearchParams(prev);
+        if (!('page' in patch)) n.delete('page');
         Object.entries(patch).forEach(([k, v]) => (v ? n.set(k, v === true ? '1' : String(v)) : n.delete(k)));
         return n;
       },
@@ -81,17 +241,24 @@ export default function Orders() {
   const setSellerFilter = (id) => setParam({ store: id });
   const [q, setQ] = useState(() => params.get('q') || '');
   const [orders, setOrders] = useState([]);
+  const [pageInfo, setPageInfo] = useState({ total: null, pages: null, hasMore: false, limit: PAGE_SIZE, sort: 'newest' });
+  // ticks every 30 s so the "confirm in …" countdowns stay current
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
   const [sellers, setSellers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copiedId, setCopiedId] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState('auto'); // 'auto' | 'table' | 'cards'
-  const [statusCounts, setStatusCounts] = useState({});
+  const [counts, setCounts] = useState(null); // { real: {status: n}, test: {…}, all: {…}, totals }
   const [analyticsKey, setAnalyticsKey] = useState(0);
   // live filters for the socket handlers (their effect is not re-created on every keystroke)
-  const filtersRef = useRef({ status, sellerFilter, q, late, stuck, clientsOnly });
-  filtersRef.current = { status, sellerFilter, q, late, stuck, clientsOnly };
+  const filtersRef = useRef({ status, sellerFilter, q, late, stuck, clientsOnly, page, accounts });
+  filtersRef.current = { status, sellerFilter, q, late, stuck, clientsOnly, page, accounts };
 
   // "Orders by store" numbers (also the counts in the store picker)
   const [boardDays, setBoardDays] = useState(30);
@@ -196,12 +363,18 @@ export default function Orders() {
     if (f.late) query.set('late', '1');
     if (f.stuck) query.set('stuck', '1');
     if (f.clientsOnly) query.set('clients', '1');
+    query.set('accounts', f.accounts || 'real');
+    // one page at a time (the store will have millions of orders)
+    query.set('paged', '1');
+    query.set('page', String(f.page || 1));
+    query.set('limit', String(PAGE_SIZE));
     const reqId = ++loadReq.current;
 
     return api('/orders?' + query.toString())
       .then((res) => {
         if (reqId !== loadReq.current) return; // an older request answering late
         setOrders(Array.isArray(res) ? res : res.orders || []);
+        if (!Array.isArray(res)) setPageInfo({ total: res.total ?? null, pages: res.pages ?? null, hasMore: Boolean(res.hasMore), limit: res.limit || PAGE_SIZE, sort: res.sort || 'newest' });
       })
       .catch((e) => reqId === loadReq.current && setError(e.message))
       .finally(() => {
@@ -211,8 +384,8 @@ export default function Orders() {
 
   const loadStatusCounts = () => {
     const f = filtersRef.current;
-    api(`/orders/analytics/overview?days=7${f.sellerFilter ? `&sellerId=${f.sellerFilter}` : ''}`)
-      .then((d) => setStatusCounts(d.statusCounts || {}))
+    api(`/orders/counts${f.sellerFilter ? `?sellerId=${f.sellerFilter}` : ''}`)
+      .then((d) => setCounts(d || null))
       .catch(() => {});
   };
 
@@ -223,7 +396,7 @@ export default function Orders() {
   useEffect(() => {
     loadOrders();
     setPicked(new Set());
-  }, [status, sellerFilter, late, stuck, clientsOnly]);
+  }, [status, sellerFilter, late, stuck, clientsOnly, page, accounts]);
 
   useEffect(() => {
     let alive = true;
@@ -303,7 +476,7 @@ export default function Orders() {
 
     const handleOrderUpdate = (payload) => {
       const updatedOrder = payload?.order || payload;
-      const { status, sellerFilter, q, late, stuck } = filtersRef.current;
+      const { status, sellerFilter, q, late, stuck, page: onPage, accounts: acc } = filtersRef.current;
       refreshInsightsSoon();
       if (!updatedOrder?._id) {
         reloadOrdersSoon();
@@ -325,9 +498,12 @@ export default function Orders() {
           // If order wasn't in the list, but matches current filters, add it
           // (with a search active the server decides, through the re-sync below)
           if (
+            onPage === 1 &&
+            (acc === 'all' || sellerFilter) &&
             !q.trim() &&
             !late &&
             !stuck &&
+            status !== 'pending' &&
             statusMatches(status, updatedOrder.status) &&
             (!sellerFilter ||
               String(updatedOrder.seller?._id || updatedOrder.seller) === String(sellerFilter) ||
@@ -547,7 +723,8 @@ export default function Orders() {
     if (o.autoIssue?.reason) out.push(<span key="i" className="ost-issue" title={o.autoIssue.reason}>⚠ Can’t move: {o.autoIssue.reason.length > 60 ? `${o.autoIssue.reason.slice(0, 60)}…` : o.autoIssue.reason}</span>);
     else if (o.nextStatusAt && Date.now() - new Date(o.nextStatusAt).getTime() > 3600000) out.push(<span key="o" className="ost-issue">⚠ Next step overdue {Math.round((Date.now() - new Date(o.nextStatusAt).getTime()) / 3600000)}h</span>);
     else if (o.nextStatus && o.nextStatusAt) out.push(<span key="n" className="ost-next">Next: {STATUS_LABELS[o.nextStatus] || o.nextStatus} · {shortTime(o.nextStatusAt)}</span>);
-    else if (o.status === 'pending') out.push(<span key="p" className="ost-next">Waiting for the store to confirm</span>);
+    else if (o.status === 'pending' && !o.confirmWindow?.length) out.push(<span key="p" className="ost-next">Waiting for the store to confirm</span>);
+    (o.confirmWindow || []).forEach((w) => out.push(<ConfirmClock key={`cw-${w.seller}`} w={w} now={now} showStore={o.confirmWindow.length > 1} />));
     return out.length ? <div className="ost-notes">{out}</div> : null;
   };
 
@@ -606,13 +783,20 @@ export default function Orders() {
   // a number in "Orders by store": that store (or all) + that group, late or stopped orders
   const pickFromBoard = (sid, f) => {
     // the totals count real client stores only: the list then leaves test stores out as well
-    setParam({ store: sid, status: f.status || '', late: f.late || '', stuck: f.stuck || '', clients: sid ? '' : true });
+    setParam({ store: sid, status: f.status || '', late: f.late || '', stuck: f.stuck || '', clients: sid ? '' : true, acc: sid ? accounts === 'real' ? '' : accounts : '' });
     scrollToList();
   };
   const setStatus = (st) => setParam({ status: st, late: '', stuck: '', clients: '' });
   const viewLabel = late ? 'Late — not delivered after 7 days' : stuck ? 'Stopped moving by themselves' : GROUP_LABELS[status] || (clientsOnly ? STATUS_LABELS[status] || 'All statuses' : '');
-  const allCount = Object.values(statusCounts).reduce((a, b) => a + b, 0);
   const chosenSeller = sellers.find((s) => s._id === sellerFilter);
+  // a chosen store is shown whatever the accounts switch says → its counts are "all"
+  const countsSide = sellerFilter ? 'all' : accounts;
+  const statusCounts = counts?.[countsSide] || {};
+  const allCount = Object.values(statusCounts).reduce((a, b) => a + b, 0);
+  const setAccounts = (v) => setParam({ acc: v === 'real' ? '' : v, store: '', clients: '' });
+  const isTestStore = (s) => Boolean(s?.isTestAccount || s?.isPreviousStoreSeller || storeCounts.get(String(s?._id))?.isTest);
+  const pickerSellers = accounts === 'all' ? sellers : sellers.filter((s) => (accounts === 'test' ? isTestStore(s) : !isTestStore(s)));
+  const scopeText = accounts === 'test' ? 'test accounts' : accounts === 'all' ? 'all stores' : 'real client stores';
   const showTable = viewMode === 'auto' || viewMode === 'table';
   const showCards = viewMode === 'auto' || viewMode === 'cards';
 
@@ -642,7 +826,7 @@ export default function Orders() {
         }
       >
         <MetaChip live>Live sync</MetaChip>
-        <MetaChip>{allCount.toLocaleString('en-US')} orders in total</MetaChip>
+        <MetaChip>{allCount.toLocaleString('en-US')} orders · {chosenSeller ? chosenSeller.storeName : scopeText}</MetaChip>
         {(statusCounts.pending || 0) > 0 && <MetaChip>⏳ {statusCounts.pending} waiting for confirmation</MetaChip>}
       </Hero>
 
@@ -666,7 +850,7 @@ export default function Orders() {
             <div>
               <h3>📋 Customer orders</h3>
               <span className="ins-card-hint">
-                {loading ? 'Loading…' : `${orders.length}${orders.length >= 300 ? '+ (newest 300 shown — narrow the filters to see older ones)' : ''} shown`}
+                {loading ? 'Loading…' : rangeLabel(page, pageInfo, orders.length)}
                 {chosenSeller ? ` · ${chosenSeller.storeName}` : ''}
               </span>
             </div>
@@ -677,6 +861,14 @@ export default function Orders() {
               </button>
             </div>
           </div>
+
+          <AccountsSwitch
+            value={accounts}
+            totals={counts?.totals}
+            onChange={setAccounts}
+            storeName={chosenSeller?.storeName}
+            onClearStore={() => setParam({ store: '' })}
+          />
 
           <form
             className="ins-toolbar"
@@ -706,7 +898,7 @@ export default function Orders() {
                 </button>
               )}
             </div>
-            <OrdersStorePicker sellers={sellers} counts={storeCounts} value={sellerFilter} onChange={setSellerFilter} />
+            <OrdersStorePicker sellers={pickerSellers} counts={storeCounts} value={sellerFilter} onChange={setSellerFilter} />
             <button type="submit" className="ins-btn ins-btn-primary">
               <Ic name="search" size={14} /> Search
             </button>
@@ -731,7 +923,7 @@ export default function Orders() {
           </div>
           {viewLabel && (
             <div className="ost-view">
-              <span>Showing: <b>{viewLabel}</b>{chosenSeller ? ` · ${chosenSeller.storeName}` : clientsOnly ? ' · all client stores (no test accounts)' : ' · all stores'}{late || stuck ? ' · oldest first' : ''}</span>
+              <span>Showing: <b>{viewLabel}</b>{chosenSeller ? ` · ${chosenSeller.storeName}` : clientsOnly ? ' · active client stores' : ` · ${scopeText}`}{late || stuck ? ' · oldest first' : ''}</span>
               <button type="button" onClick={() => setParam({ status: '', late: '', stuck: '', clients: '' })} aria-label="Show all statuses">✕</button>
             </div>
           )}
@@ -937,6 +1129,17 @@ export default function Orders() {
               })}
           </div>
         )}
+
+        <Pager
+          page={page}
+          info={pageInfo}
+          count={orders.length}
+          loading={loading}
+          onPage={(n) => {
+            setParam({ page: n > 1 ? n : '' });
+            scrollToList();
+          }}
+        />
 
         {picked.size > 0 && (
           <BulkBar count={picked.size} busy={busy} onClear={() => setPicked(new Set())} onApply={(st) => askChange(orders.filter((o) => picked.has(o._id)), st)} />

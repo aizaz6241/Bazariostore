@@ -148,3 +148,53 @@ tr.ost-row-last td { box-shadow: inset 0 0 0 9999px rgba(250, 204, 21, 0.1); }
   .ost-bulk select { flex: 1; min-width: 0; }
   .ost-notes { max-width: none; }
 }
+
+/* ── Confirmation countdown on waiting orders (Basic 24h warning / 48h freeze, Diamond 48h / 72h) ── */
+.ost-cw { display: flex; flex-direction: column; gap: 2px; padding: 5px 8px 6px; border-radius: 8px; border: 1px solid transparent; font-size: 11.5px; line-height: 1.3; }
+.ost-cw b { font-size: 12px; font-weight: 700; }
+.ost-cw small { font-size: 10.5px; opacity: 0.85; }
+.ost-cw-bar { display: block; height: 4px; margin-top: 3px; border-radius: 999px; background: rgba(15, 23, 42, 0.08); overflow: hidden; }
+.ost-cw-bar > i { display: block; height: 100%; border-radius: inherit; background: currentColor; }
+.ost-cw-ok { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+.ost-cw-soon { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.ost-cw-warn { background: #fff7ed; border-color: #fdba74; color: #c2410c; }
+.ost-cw-late { background: #fef2f2; border-color: #fca5a5; color: #b91c1c; }
+.ost-cw-paused { background: #f1f5f9; border-color: #cbd5e1; color: #475569; }
+
+/* ── Page buttons under the orders list ── */
+.ost-pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; padding: 14px 12px 6px; }
+.ost-pager button { min-width: 36px; height: 34px; padding: 0 10px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; color: #0f172a; font-size: 13px; font-weight: 600; cursor: pointer; }
+.ost-pager button:hover:not(:disabled) { border-color: #2a78d6; color: #2a78d6; }
+.ost-pager button.on { background: #2a78d6; border-color: #2a78d6; color: #fff; }
+.ost-pager button:disabled { opacity: 0.45; cursor: default; }
+.ost-pager-gap { padding: 0 2px; color: #94a3b8; }
+.ost-pager-jump { display: inline-flex; gap: 4px; margin-left: 6px; }
+.ost-pager-jump input { width: 64px; height: 34px; padding: 0 8px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 13px; }
+@media (max-width: 640px) {
+  .ost-pager button { min-width: 32px; height: 32px; padding: 0 8px; }
+}
+
+/* ── Real clients / Test accounts / All switch (above the order list filters) ── */
+.oacc { display: flex; flex-direction: column; gap: 8px; margin: 2px 0 4px; }
+.oacc-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 12px; background: #f1f5f9; border: 1px solid #e2e8f0; max-width: 620px; }
+.oacc-tabs.is-muted { opacity: 0.75; }
+.oacc-tab { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 12px; border: 0; border-radius: 9px; background: transparent; color: #475569; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; text-align: left; transition: background 0.15s, color 0.15s, box-shadow 0.15s; }
+.oacc-tab:hover { color: #0f172a; background: rgba(255, 255, 255, 0.6); }
+.oacc-tab:focus-visible { outline: 2px solid #2a78d6; outline-offset: 1px; }
+.oacc-tab.on { background: #fff; color: #0f172a; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 1px 1px rgba(15, 23, 42, 0.04); }
+.oacc-ic { flex: none; font-size: 14px; line-height: 1; }
+.oacc-lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oacc-num { flex: none; padding: 2px 8px; border-radius: 999px; background: #e2e8f0; color: #334155; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.oacc-real.on .oacc-num { background: #dbeafe; color: #1d4ed8; }
+.oacc-test.on { color: #6d28d9; }
+.oacc-test.on .oacc-num { background: #ede9fe; color: #6d28d9; }
+.oacc-all.on .oacc-num { background: #0f172a; color: #fff; }
+.oacc-note { max-width: 620px; box-sizing: border-box; margin: 0; padding: 7px 12px; border-radius: 9px; background: #f8fafc; border: 1px solid #e2e8f0; color: #475569; font-size: 12.5px; }
+.oacc-note b { color: #0f172a; }
+.oacc-note button { border: 0; background: none; padding: 0; color: #2a78d6; font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.oacc-note-test { background: #f5f3ff; border-color: #ddd6fe; color: #5b21b6; }
+@media (max-width: 640px) {
+  .oacc-tabs { max-width: none; }
+  .oacc-tab { flex-direction: column; align-items: center; gap: 3px; padding: 7px 4px; font-size: 12px; text-align: center; }
+  .oacc-lbl { white-space: normal; line-height: 1.15; }
+}

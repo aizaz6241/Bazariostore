@@ -26,6 +26,7 @@ import { publicOrder } from '../utils/publicOrder.js';
 import { adminRoom } from '../utils/permissions.js';
 import { announceToAdmins, toSellers } from '../utils/realtime.js';
 import { sellerOrderPing, maskName } from '../utils/orderPrivacy.js';
+import { confirmHoursFor, warnHoursFor, tierOf } from '../utils/sellerTier.js';
 
 const router = Router();
 
@@ -359,9 +360,69 @@ const CLOSED_STATUSES = ['delivered', 'cancelled', 'refunded'];
 const LATE_AFTER_MS = 7 * 24 * 60 * 60 * 1000; // not delivered 7 days after the order was placed
 const STUCK_AFTER_MS = 60 * 60 * 1000; // the next automatic step is more than an hour overdue
 
+/**
+ * Test / demo stores (Test account or Previous-store account), the same group the
+ * "Orders by store" board treats as test. Cached 30 s (the flags change rarely).
+ */
+let testIdsCache = { at: 0, ids: [] };
+async function testSellerIds() {
+  if (Date.now() - testIdsCache.at < 30000) return testIdsCache.ids;
+  const ids = await Seller.find({ $or: [{ isTestAccount: true }, { isPreviousStoreSeller: true }] }).distinct('_id');
+  testIdsCache = { at: Date.now(), ids };
+  return ids;
+}
+/** accounts=real → real client stores only · accounts=test → test stores only · else all. */
+async function accountsFilter(accounts) {
+  if (accounts !== 'real' && accounts !== 'test') return null;
+  const ids = await testSellerIds();
+  if (accounts === 'real') return ids.length ? { seller: { $nin: ids }, 'items.seller': { $nin: ids } } : null;
+  return ids.length ? { $or: [{ seller: { $in: ids } }, { 'items.seller': { $in: ids } }] } : { _id: null };
+}
+
+/**
+ * For every store that still has to confirm items of this order: since when it waits, when the
+ * warning goes (Basic 24h / Diamond 48h) and when the deadline / freeze is (Basic 48h / Diamond 72h).
+ * Same rules as the penalty job (routes/sellers/orders.routes.js + utils/sellerTier.js).
+ */
+function confirmWindowsFor(order, sellersById) {
+  if (CLOSED_STATUSES.includes(order.status)) return [];
+  const waiting = new Set();
+  for (const it of order.items || []) {
+    if (it.itemStatus && it.itemStatus !== 'pending') continue;
+    const sid = String(it.seller?._id || it.seller || order.seller?._id || order.seller || '');
+    if (sid) waiting.add(sid);
+  }
+  if (!waiting.size) return [];
+  const since = new Date(order.pendingSince || order.createdAt);
+  const warned = new Set((order.warnedSellers || []).map(String));
+  const penalized = new Set((order.penalizedSellers || []).map(String));
+  return [...waiting].map((sid) => {
+    const s = sellersById.get(sid);
+    const confirmH = confirmHoursFor(s);
+    const warnH = warnHoursFor(s);
+    return {
+      seller: sid,
+      storeName: s?.storeName || 'Store',
+      tier: tierOf(s).key,
+      suspended: s?.status === 'suspended',
+      since,
+      warnAt: new Date(since.getTime() + warnH * 3600000),
+      deadlineAt: new Date(since.getTime() + confirmH * 3600000),
+      warned: warned.has(sid) || Boolean(order.warning24hSent),
+      penalized: penalized.has(sid) || Boolean(order.penalty48hApplied),
+    };
+  });
+}
+
 // GET /api/orders?status=&sellerId=&q=&late=1&stuck=1
 // status: one status, a group (warehouse / problem) or a comma list
+// paged=1&page=N&limit=50 → { orders, page, limit, total, pages, hasMore } (the admin Orders list).
+// Without paged=1 the old answer (array of the newest 300) is kept for any other caller.
 router.get('/', authAdmin('orders'), async (req, res) => {
+  const paged = req.query.paged === '1';
+  const pageSize = Math.min(100, Math.max(10, parseInt(req.query.limit, 10) || 50));
+  const page = Math.min(100000, Math.max(1, parseInt(req.query.page, 10) || 1));
+  const emptyPage = { orders: [], page: 1, limit: pageSize, total: 0, pages: 1, hasMore: false };
   try {
     const { sellerId } = req.query;
     const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 80) : '';
@@ -374,10 +435,15 @@ router.get('/', authAdmin('orders'), async (req, res) => {
     else if (statuses.length > 1) and.push({ status: { $in: statuses } });
     if (sellerId) {
       // an unknown id matches nothing (it used to crash the request and the screen waited 30 s)
-      if (!mongoose.Types.ObjectId.isValid(String(sellerId))) return res.json([]);
+      if (!mongoose.Types.ObjectId.isValid(String(sellerId))) return res.json(paged ? emptyPage : []);
       and.push({ $or: [{ seller: sellerId }, { 'items.seller': sellerId }] });
     }
     if (late || stuck) and.push({ status: { $nin: CLOSED_STATUSES } });
+    // Real clients / Test accounts / All (a chosen store is shown whatever this says)
+    if (!sellerId) {
+      const acc = await accountsFilter(req.query.accounts);
+      if (acc) and.push(acc);
+    }
     if (req.query.clients === '1') {
       // real client stores only (the "Orders by store" totals): no test / previous-store / inactive accounts
       const testIds = (await Seller.find({ $or: [{ isTestAccount: true }, { isPreviousStoreSeller: true }, { isInactive: true }] }).select('_id').lean()).map((x) => x._id);
@@ -386,18 +452,111 @@ router.get('/', authAdmin('orders'), async (req, res) => {
     if (late) and.push({ createdAt: { $lt: new Date(Date.now() - LATE_AFTER_MS) } });
     if (stuck) and.push({ $or: [{ nextStatusAt: { $ne: null, $lt: new Date(Date.now() - STUCK_AFTER_MS) } }, { 'autoIssue.reason': { $exists: true } }] });
     if (q) {
-      // typed text is matched literally: "(" or "+" in a search no longer breaks the request
-      const rx = { $regex: escapeRx(q), $options: 'i' };
-      and.push({ $or: [{ orderNumber: rx }, { 'contact.phone': rx }, { 'contact.email': rx }, { 'shippingAddress.fullName': rx }, { 'items.sellerName': rx }] });
+      const num = q.replace(/^#/, '').toUpperCase();
+      if (/^NG-\d/.test(num)) {
+        // an order number: a "starts with" match uses the orderNumber index (fast with millions)
+        and.push({ orderNumber: { $regex: '^' + escapeRx(num) } });
+      } else {
+        // typed text is matched literally: "(" or "+" in a search no longer breaks the request
+        const rx = { $regex: escapeRx(q), $options: 'i' };
+        and.push({ $or: [{ orderNumber: rx }, { 'contact.phone': rx }, { 'contact.email': rx }, { 'shippingAddress.fullName': rx }, { 'items.sellerName': rx }] });
+      }
     }
     const filter = and.length ? { $and: and } : {};
-    const orders = await Order.find(filter)
-      .populate('seller', 'storeName ownerName email phone')
-      .populate('items.product', 'name price image')
-      // late / stuck: the oldest first (those waited longest)
-      .sort({ createdAt: late || stuck ? 1 : -1 })
-      .limit(300);
-    res.json(orders);
+    // late / stuck / waiting for confirmation: the oldest first (closest to / past their deadline)
+    const pendingOnly = statuses.length === 1 && statuses[0] === 'pending';
+    const sort = { createdAt: late || stuck || pendingOnly ? 1 : -1 };
+
+    if (!paged) {
+      const orders = await Order.find(filter)
+        .populate('seller', 'storeName ownerName email phone')
+        .populate('items.product', 'name price image')
+        .sort(sort)
+        .limit(300);
+      return res.json(orders);
+    }
+
+    const [docs, total] = await Promise.all([
+      Order.find(filter)
+        .populate('seller', 'storeName ownerName email phone')
+        .populate('items.product', 'name price image')
+        .sort(sort)
+        .skip((page - 1) * pageSize)
+        .limit(pageSize + 1)
+        .lean(),
+      // the exact total; with millions of orders and a slow filter it may give up (then: null)
+      (and.length ? Order.countDocuments(filter).maxTimeMS(4000) : Order.estimatedDocumentCount()).catch(() => null),
+    ]);
+    const hasMore = docs.length > pageSize;
+    const orders = hasMore ? docs.slice(0, pageSize) : docs;
+
+    // confirmation countdown for orders still waiting for a store
+    const waitingIds = new Set();
+    for (const o of orders) {
+      if (CLOSED_STATUSES.includes(o.status)) continue;
+      for (const it of o.items || []) {
+        if (it.itemStatus && it.itemStatus !== 'pending') continue;
+        const sid = String(it.seller?._id || it.seller || o.seller?._id || o.seller || '');
+        if (mongoose.Types.ObjectId.isValid(sid)) waitingIds.add(sid);
+      }
+    }
+    const sellersById = new Map();
+    if (waitingIds.size) {
+      const list = await Seller.find({ _id: { $in: [...waitingIds] } }).select('storeName tier status').lean();
+      list.forEach((s) => sellersById.set(String(s._id), s));
+    }
+    for (const o of orders) {
+      const w = confirmWindowsFor(o, sellersById);
+      if (w.length) o.confirmWindow = w;
+    }
+
+    const pages = total != null ? Math.max(1, Math.ceil(total / pageSize)) : null;
+    res.json({ orders, page, limit: pageSize, total, pages, hasMore, sort: sort.createdAt === 1 ? 'oldest' : 'newest' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/orders/counts?sellerId=
+// Order count per status, split into real client stores and test stores, in ONE pass over the
+// orders (status index). For the status tabs and the Real clients / Test accounts switch.
+// An order with any test-store item counts as test (same rule as the list filter). Cached 10 s.
+const countsCache = new Map();
+router.get('/counts', authAdmin('orders'), async (req, res) => {
+  try {
+    const sellerId = req.query.sellerId && mongoose.Types.ObjectId.isValid(String(req.query.sellerId)) ? String(req.query.sellerId) : '';
+    const key = sellerId || '-';
+    const hit = countsCache.get(key);
+    if (hit && Date.now() - hit.at < 10000) return res.json(hit.data);
+    const testIds = await testSellerIds();
+    const match = sellerId ? { $or: [{ seller: new mongoose.Types.ObjectId(sellerId) }, { 'items.seller': new mongoose.Types.ObjectId(sellerId) }] } : {};
+    const rows = await Order.aggregate([
+      { $match: match },
+      {
+        $project: {
+          status: 1,
+          t: {
+            $or: [
+              { $in: [{ $ifNull: ['$seller', null] }, testIds] },
+              { $gt: [{ $size: { $setIntersection: [{ $ifNull: ['$items.seller', []] }, testIds] } }, 0] },
+            ],
+          },
+        },
+      },
+      { $group: { _id: { s: '$status', t: '$t' }, n: { $sum: 1 } } },
+    ]);
+    const data = { real: {}, test: {}, all: {}, totals: { real: 0, test: 0, all: 0 } };
+    for (const r of rows) {
+      const st = r._id.s || 'pending';
+      const side = r._id.t ? 'test' : 'real';
+      data[side][st] = (data[side][st] || 0) + r.n;
+      data.all[st] = (data.all[st] || 0) + r.n;
+      data.totals[side] += r.n;
+      data.totals.all += r.n;
+    }
+    countsCache.set(key, { at: Date.now(), data });
+    if (countsCache.size > 200) countsCache.delete(countsCache.keys().next().value);
+    res.json(data);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
