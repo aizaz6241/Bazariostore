@@ -67,7 +67,6 @@ export default function OrdersAnalytics({ sellerId, refreshKey, onPickSeller }) 
     : [];
   const stuck = d ? d.aging.slice(1).reduce((acc, x) => acc + x.count, 0) : 0;
   const lb = d?.leaderboard || [];
-  const lbMax = Math.max(1, ...lb.map((r) => r.gmv));
 
   return (
     <section className="ins-card" style={{ overflow: 'visible' }}>
@@ -142,51 +141,6 @@ export default function OrdersAnalytics({ sellerId, refreshKey, onPickSeller }) 
               <SplitBar height={14} parts={mix} />
             </Card>
 
-            <Card title="Seller leaderboard" hint="Active real client stores only (no test or inactive stores) · click a store to filter the orders below" full pad={false} empty={!lb.length && 'No seller orders in this period'}>
-              <div className="ins-table-scroll">
-                <table className="ins-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Store</th>
-                      <th className="num">Orders</th>
-                      <th style={{ minWidth: 170 }}>Order value</th>
-                      <th className="num">Avg order</th>
-                      <th className="num">Delivered</th>
-                      <th className="num">Cancelled</th>
-                      <th className="num">Open</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lb.slice(0, 10).map((r, i) => (
-                      <tr key={r._id || i} onClick={() => r._id && onPickSeller?.(r._id)} style={{ cursor: r._id ? 'pointer' : 'default' }} title={r._id ? 'Show only this store’s orders' : undefined}>
-                        <td><span className="ins-rank-n" style={i === 0 ? { background: '#0f172a', color: '#fff' } : undefined}>{i + 1}</span></td>
-                        <td>
-                          <div className="ins-cell-who">
-                            <Avatar name={r.storeName} size={30} />
-                            <div>
-                              <b className="ins-clip">{r.storeName}</b>
-                              <span className="ins-sub">{r.ownerName || (r._id ? '—' : 'Orders without a store')}</span>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="num">{r.orders}</td>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <b style={{ minWidth: 82, fontVariantNumeric: 'tabular-nums' }}>{money(r.gmv)}</b>
-                            <Meter value={r.gmv} max={lbMax} color={SERIES[0]} height={6} label="Share of the top store" />
-                          </div>
-                        </td>
-                        <td className="num">{money(r.aov)}</td>
-                        <td className="num" style={{ color: r.deliveryRate >= 60 ? '#006300' : undefined }}>{r.deliveryRate}%</td>
-                        <td className="num" style={{ color: r.cancelRate >= 20 ? '#a72929' : undefined, fontWeight: r.cancelRate >= 20 ? 700 : 400 }}>{r.cancelRate}%</td>
-                        <td className="num">{r.open}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
 
           </ChartGrid>
         )}
