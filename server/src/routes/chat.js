@@ -1386,6 +1386,101 @@ router.post('/admin/conversations/delete', authAdmin('chat'), async (req, res) =
   }
 });
 
+// ── Start a chat with a store (also after the chat was deleted) ─────────────────────────────
+// Like WhatsApp "new chat": an admin picks a store and writes to it. A deleted chat comes back
+// (empty — its old messages were removed when it was deleted); a store that never had a chat gets
+// one. A chat that is already in the list is simply opened.
+const rxText = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const chatShownToAdmin = (c) => !c?.adminDeletedAt || (c.lastAt && new Date(c.lastAt) > new Date(c.adminDeletedAt));
+
+// GET /api/chat/admin/start-targets?q= → stores to start a chat with (max 40)
+router.get('/admin/start-targets', authAdmin('chat'), async (req, res) => {
+  try {
+    const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 60) : '';
+    const filter = { status: { $ne: 'pending_approval' } };
+    if (q) {
+      const rx = { $regex: rxText(q), $options: 'i' };
+      filter.$or = [{ storeName: rx }, { ownerName: rx }, { email: rx }, { phone: rx }];
+    }
+    const sellers = await Seller.find(filter)
+      .select('storeName ownerName status tier isTestAccount isPreviousStoreSeller')
+      .sort({ storeName: 1 })
+      .limit(40)
+      .lean();
+    const convs = sellers.length
+      ? await Conversation.find({ seller: { $in: sellers.map((s) => s._id) }, type: { $ne: 'internal' } }).select('seller adminDeletedAt lastAt').lean()
+      : [];
+    const chatOf = new Map();
+    for (const c of convs) {
+      const k = String(c.seller);
+      const state = chatShownToAdmin(c) ? 'open' : 'deleted';
+      if (chatOf.get(k) !== 'open') chatOf.set(k, state);
+    }
+    res.json(
+      sellers.map((s) => ({
+        _id: s._id,
+        storeName: s.storeName || 'Store',
+        ownerName: s.ownerName || '',
+        status: s.status || 'active',
+        tier: s.tier || 'basic',
+        isTest: Boolean(s.isTestAccount || s.isPreviousStoreSeller),
+        chat: chatOf.get(String(s._id)) || 'none', // open | deleted | none
+      }))
+    );
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/chat/admin/conversations/start { sellerId } → { conversation, created, restored }
+router.post('/admin/conversations/start', authAdmin('chat'), async (req, res) => {
+  try {
+    const sellerId = String(req.body?.sellerId || '');
+    if (!mongoose.Types.ObjectId.isValid(sellerId)) return res.status(400).json({ message: 'Choose a store' });
+    const seller = await Seller.findById(sellerId).select('storeName ownerName email phone status').lean();
+    if (!seller) return res.status(404).json({ message: 'Store not found' });
+    if (seller.status === 'pending_approval') return res.status(400).json({ message: 'This store is not approved yet' });
+
+    let conv = await Conversation.findOne({ seller: seller._id, type: { $ne: 'internal' } }).sort({ lastAt: -1 });
+    let created = false;
+    let restored = false;
+    if (!conv) {
+      conv = await Conversation.create({
+        type: 'seller',
+        seller: seller._id,
+        ...chatNamesOf(seller),
+        subject: 'General Seller Support & Operations',
+        status: 'open',
+        lastMessage: '',
+        lastSender: 'admin',
+        lastAt: new Date(),
+      });
+      created = true;
+    } else if (!chatShownToAdmin(conv)) {
+      // back in the list, at the top; not "waiting" (the team starts this chat)
+      conv.adminDeletedAt = null;
+      conv.lastAt = new Date();
+      conv.lastSender = 'admin';
+      conv.unreadForAdmin = 0;
+      Object.assign(conv, chatNamesOf(seller));
+      await conv.save();
+      restored = true;
+    }
+    if (created || restored) await audit(req, 'chat_started', 'conversation', conv._id, { with: seller.storeName, created, restored });
+
+    const out = await Conversation.findById(conv._id)
+      .populate('seller', 'storeName ownerName email phone rating')
+      .populate('assignedStaff', 'name email title');
+    if (created || restored) {
+      const io = req.app.get('io');
+      if (io) io.to(adminRoom('chat')).emit('chat:started', { conversationId: String(conv._id) });
+    }
+    res.json({ conversation: out, created, restored });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // POST /api/chat/admin/team/:targetAdminId/clear (Admin clears their own 1-on-1 chat with a team member)
 router.post('/admin/team/:targetAdminId/clear', authAdmin('chat'), async (req, res) => {
   try {

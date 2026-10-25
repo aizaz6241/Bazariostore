@@ -7,6 +7,7 @@ import ChatMessageBubble from '../components/ChatMessageBubble.jsx';
 import AiRewriteBox from '../components/AiRewriteBox.jsx';
 import ClearChatModal from './ClearChatModal.jsx';
 import DeleteChatsModal from './DeleteChatsModal.jsx';
+import NewChatModal from './NewChatModal.jsx';
 import VoiceRecordButton from '../components/VoiceRecordButton.jsx';
 import { useAdminTyping, typingLabel } from './useAdminTyping.js';
 import ChatShortcutPicker from './ChatShortcutPicker.jsx';
@@ -120,6 +121,8 @@ export default function ChatInbox() {
   const [selectMode, setSelectMode] = useState(false);
   const [picked, setPicked] = useState(() => new Set());
   const [deleteChats, setDeleteChats] = useState(null); // [{ _id, name }] while the dialog is open
+  // New chat: write to any store (also after its chat was deleted)
+  const [newChatOpen, setNewChatOpen] = useState(false);
 
   // Messages & Form State
   const [messages, setMessages] = useState([]);
@@ -530,6 +533,7 @@ export default function ChatInbox() {
       socket.on('admin:message:new', onNewTeamMsg);
       socket.on('chat:cleared', onChatCleared);
       socket.on('chat:deleted', onChatDeleted);
+      socket.on('chat:started', loadSellerConvos);
       socket.on('message:edit', onMessageEdit);
       socket.on('message:delete', onMessageDelete);
       socket.on('messages:seen', onMessagesSeen);
@@ -542,6 +546,7 @@ export default function ChatInbox() {
         socket.off('chat:broadcast_done', loadSellerConvos);
         socket.off('chat:cleared', onChatCleared);
         socket.off('chat:deleted', onChatDeleted);
+        socket.off('chat:started', loadSellerConvos);
         socket.off('message:new', onNewSellerMsg);
         socket.off('admin:message:new', onNewTeamMsg);
         socket.off('message:edit', onMessageEdit);
@@ -840,6 +845,11 @@ export default function ChatInbox() {
               </span>
             </div>
             <div className="sci-head-actions">
+              {activeTab === 'sellers' && (
+                <button type="button" className="sci-new-btn" onClick={() => setNewChatOpen(true)} title="Start a chat with any store (also after its chat was deleted)">
+                  <span aria-hidden="true">＋</span> New chat
+                </button>
+              )}
               {activeTab === 'sellers' && (
                 <button type="button" className="sci-icon-btn" onClick={() => setBroadcastOpen(true)} title="Broadcast: one message (+ button) to a group of stores" aria-label="Broadcast">
                   📣
@@ -1521,6 +1531,25 @@ export default function ChatInbox() {
           }}
         />
       )}
+      {/* NEW CHAT: pick a store and write to it (a deleted chat comes back, empty) */}
+      {newChatOpen && (
+        <NewChatModal
+          onClose={() => setNewChatOpen(false)}
+          onStarted={(res) => {
+            const conv = res?.conversation;
+            setNewChatOpen(false);
+            if (!conv?._id) return;
+            setSellerConvos((prev) => [conv, ...(Array.isArray(prev) ? prev.filter((c) => String(c._id) !== String(conv._id)) : [])]);
+            setActiveTab('sellers');
+            setSellerFilter('all');
+            setQ('');
+            setSelectMode(false);
+            setPicked(new Set());
+            setSelectedSellerId(conv._id);
+          }}
+        />
+      )}
+
       {/* DELETE CHAT(S): messages + files removed, and the chat leaves the list */}
       {deleteChats && deleteChats.length > 0 && (
         <DeleteChatsModal
