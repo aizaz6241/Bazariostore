@@ -1,16 +1,13 @@
 import { useEffect, useState } from 'react';
-import { ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { api, money } from '../api.js';
-import { PAYMENT_LABELS } from '../data.js';
 import { ErrorBox } from './ui.jsx';
 import {
-  Kpi, KpiGrid, Card, ChartGrid, Seg, RankList, SplitBar, ChartTip, Avatar, Meter, Empty,
+  Kpi, KpiGrid, Card, ChartGrid, Seg, SplitBar, ChartTip, Avatar, Meter, Empty,
   SERIES, STATUS, GRID, AXIS, shortMoney, delta,
 } from './insights.jsx';
 
 const FULFILLMENT = ['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery', 'delivery_failed', 'returned_to_warehouse'];
-// one hue, lighter → darker as open orders get older
-const AGE_STEPS = ['#fed7aa', '#fb923c', '#ea580c', '#9a3412'];
 
 const COLLAPSE_KEY = 'admin.orders.analytics.collapsed';
 const readCollapsed = () => {
@@ -69,7 +66,6 @@ export default function OrdersAnalytics({ sellerId, refreshKey, onPickSeller }) 
       ]
     : [];
   const stuck = d ? d.aging.slice(1).reduce((acc, x) => acc + x.count, 0) : 0;
-  const busiest = d ? d.hours.reduce((best, h) => (h.orders > best.orders ? h : best), { orders: -1 }) : null;
   const lb = d?.leaderboard || [];
   const lbMax = Math.max(1, ...lb.map((r) => r.gmv));
 
@@ -192,62 +188,6 @@ export default function OrdersAnalytics({ sellerId, refreshKey, onPickSeller }) 
               </div>
             </Card>
 
-            <Card title="Open orders by age" hint="Every order not yet delivered or cancelled" empty={!d.openTotal && 'No open orders 🎉'}>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={d.aging} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
-                  <CartesianGrid stroke={GRID} vertical={false} />
-                  <XAxis dataKey="label" {...AXIS} />
-                  <YAxis {...AXIS} allowDecimals={false} />
-                  <Tooltip cursor={{ fill: '#f1f5f9' }} content={<ChartTip />} />
-                  <Bar dataKey="count" name="Open orders" radius={[4, 4, 0, 0]} maxBarSize={38}>
-                    {d.aging.map((a, i) => (
-                      <Cell key={a.label} fill={AGE_STEPS[i]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </Card>
-
-            <Card title="Busiest hours" hint={busiest && busiest.orders > 0 ? `Peak around ${busiest.label} (your time)` : 'Your local time'} empty={!t.orders && 'No orders'}>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={d.hours} margin={{ top: 6, right: 4, left: -24, bottom: 0 }} barCategoryGap={2}>
-                  <CartesianGrid stroke={GRID} vertical={false} />
-                  <XAxis dataKey="label" {...AXIS} interval={5} />
-                  <YAxis {...AXIS} allowDecimals={false} />
-                  <Tooltip cursor={{ fill: '#f1f5f9' }} content={<ChartTip />} />
-                  <Bar dataKey="orders" name="Orders" fill={SERIES[6]} radius={[3, 3, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </Card>
-
-            <Card title="Payment methods">
-              <RankList
-                rows={d.payment.map((p) => ({ key: p.method, label: PAYMENT_LABELS[p.method] || p.method, value: p.orders, sub: `${money(p.gmv)} order value` }))}
-                color={SERIES[2]}
-                format={(v) => `${v} orders`}
-                empty="No orders"
-              />
-            </Card>
-
-            <Card title="Top products" hint="By order value">
-              <RankList
-                rows={d.topProducts.map((p, i) => ({ key: `${p.name}-${i}`, label: p.name, value: p.gmv, sub: `${p.qty} sold${p.storeName ? ` · ${p.storeName}` : ''}` }))}
-                color={SERIES[1]}
-                empty="No products sold"
-              />
-            </Card>
-
-            <Card title="Top cities" hint="By number of orders">
-              {d.topCities.length ? (
-                <RankList
-                  rows={d.topCities.map((c) => ({ key: c.city, label: `${c.city}${c.state ? `, ${c.state}` : ''}`, value: c.orders, sub: money(c.gmv) }))}
-                  color={SERIES[3]}
-                  format={(v) => `${v}`}
-                />
-              ) : (
-                <Empty text="No delivery cities yet" />
-              )}
-            </Card>
           </ChartGrid>
         )}
 

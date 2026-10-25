@@ -9,8 +9,8 @@ export const STATUSES = [
   'delivery_warehouse',
   'shipped',
   'out_for_delivery',
-  // the courier could not deliver (customer did not answer / was not there): the admin sets the
-  // next step — out for delivery again, delivered, or cancelled. These never move by themselves.
+  // the courier could not deliver (customer did not answer / was not there): set by the admin;
+  // then automatic: back to the warehouse that evening, out for delivery again the next morning
   'delivery_failed',
   'returned_to_warehouse',
   'delivered',
@@ -102,6 +102,10 @@ const orderSchema = new mongoose.Schema(
     // when the order last became "pending" (empty: since it was placed); the 24h / 48h confirmation
     // deadlines count from here, so an order moved back to pending gets a fresh 48 hours
     pendingSince: { type: Date, default: null },
+    // the automatic lifecycle could not move this order (e.g. the seller's wallet cannot cover the
+    // delivery payout): why, when, how many tries; it tries again after autoRetryAt
+    autoIssue: { reason: String, at: Date, tries: Number },
+    autoRetryAt: { type: Date, default: undefined },
   },
   { timestamps: true }
 );

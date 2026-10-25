@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import StoreLink from './hub/StoreLink.jsx';
 import { api, money, fmtDate, getCurrencyRate } from '../api.js';
@@ -10,6 +10,9 @@ import { MOCK_CUSTOMERS, getRandomCustomer } from './mockCustomers.js';
 import AddFundsModal from './AddFundsModal.jsx';
 import SellerSelectDropdown from './SellerSelectDropdown.jsx';
 import OrdersAnalytics from './OrdersAnalytics.jsx';
+import OrdersStoreBoard from './OrdersStoreBoard.jsx';
+import OrdersStorePicker from './OrdersStorePicker.jsx';
+import { StatusMenu, ConfirmBox, BulkBar, changeText, needsConfirm, runStatusChanges, choicesFor } from './OrdersStatusTools.jsx';
 import { Hero, MetaChip, Seg, Badge, Avatar, Empty } from './insights.jsx';
 
 // status → badge tone (state colours, always shown with the status name)
@@ -28,6 +31,28 @@ const STATUS_TONE = {
   cancelled: 'critical',
   refunded: 'neutral',
 };
+// status groups (from the "Orders by store" table) → the statuses they cover
+const STATUS_GROUPS = {
+  warehouse: ['processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped'],
+  problem: ['delivery_failed', 'returned_to_warehouse'],
+};
+const GROUP_LABELS = { warehouse: 'In warehouse', problem: 'Delivery problem' };
+const statusMatches = (f, st) => !f || (STATUS_GROUPS[f] ? STATUS_GROUPS[f].includes(st) : f === st);
+const CLOSED = ['delivered', 'cancelled', 'refunded'];
+const LATE_MS = 7 * 86400000;
+const SCROLL_KEY = 'admin.orders.back';
+// the element the admin page scrolls in (the layout scrolls inside, not the window)
+const scroller = () => {
+  let el = document.querySelector('.admin-orders-page');
+  while (el && el !== document.body) {
+    const oy = getComputedStyle(el).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight) return el;
+    el = el.parentElement;
+  }
+  return document.scrollingElement;
+};
+const shortTime = (d) =>
+  new Date(d).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
 const ageLabel = (d) => {
   const h = (Date.now() - new Date(d).getTime()) / 3600000;
   if (h < 1) return 'just now';
@@ -37,9 +62,23 @@ const ageLabel = (d) => {
 };
 
 export default function Orders() {
+  // every filter lives in the page address, so it is still there after Manage → Back
   const [params, setParams] = useSearchParams();
   const status = params.get('status') || '';
-  const [sellerFilter, setSellerFilter] = useState('');
+  const sellerFilter = params.get('store') || '';
+  const late = params.get('late') === '1';
+  const stuck = params.get('stuck') === '1';
+  const clientsOnly = params.get('clients') === '1';
+  const setParam = (patch) =>
+    setParams(
+      (prev) => {
+        const n = new URLSearchParams(prev);
+        Object.entries(patch).forEach(([k, v]) => (v ? n.set(k, v === true ? '1' : String(v)) : n.delete(k)));
+        return n;
+      },
+      { replace: true }
+    );
+  const setSellerFilter = (id) => setParam({ store: id });
   const [q, setQ] = useState(() => params.get('q') || '');
   const [orders, setOrders] = useState([]);
   const [sellers, setSellers] = useState([]);
@@ -51,8 +90,28 @@ export default function Orders() {
   const [statusCounts, setStatusCounts] = useState({});
   const [analyticsKey, setAnalyticsKey] = useState(0);
   // live filters for the socket handlers (their effect is not re-created on every keystroke)
-  const filtersRef = useRef({ status, sellerFilter, q });
-  filtersRef.current = { status, sellerFilter, q };
+  const filtersRef = useRef({ status, sellerFilter, q, late, stuck, clientsOnly });
+  filtersRef.current = { status, sellerFilter, q, late, stuck, clientsOnly };
+
+  // "Orders by store" numbers (also the counts in the store picker)
+  const [boardDays, setBoardDays] = useState(30);
+  const [storeStats, setStoreStats] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const storeCounts = useMemo(() => new Map((storeStats?.stores || []).map((x) => [String(x._id), x])), [storeStats]);
+
+  // ticked orders, the row status menu, the "are you sure?" box and the last result
+  const [picked, setPicked] = useState(() => new Set());
+  const [menu, setMenu] = useState(null); // { order, anchor }
+  const [ask, setAsk] = useState(null); // { orders, status, skipped }
+  const [busy, setBusy] = useState('');
+  const [result, setResult] = useState(null); // { status, done, failed, skipped }
+  const [lastOpened, setLastOpened] = useState(() => {
+    try {
+      return JSON.parse(sessionStorage.getItem(SCROLL_KEY) || 'null')?.orderId || '';
+    } catch {
+      return '';
+    }
+  });
 
   // Add Funds Modal state
   const [addFundsOpen, setAddFundsOpen] = useState(false);
@@ -134,6 +193,9 @@ export default function Orders() {
     if (f.status) query.set('status', f.status);
     if (f.sellerFilter) query.set('sellerId', f.sellerFilter);
     if (f.q.trim()) query.set('q', f.q.trim());
+    if (f.late) query.set('late', '1');
+    if (f.stuck) query.set('stuck', '1');
+    if (f.clientsOnly) query.set('clients', '1');
     const reqId = ++loadReq.current;
 
     return api('/orders?' + query.toString())
@@ -160,7 +222,49 @@ export default function Orders() {
 
   useEffect(() => {
     loadOrders();
-  }, [status, sellerFilter]);
+    setPicked(new Set());
+  }, [status, sellerFilter, late, stuck, clientsOnly]);
+
+  useEffect(() => {
+    let alive = true;
+    setStatsLoading(true);
+    api(`/orders/analytics/stores?days=${boardDays}`)
+      .then((d) => alive && setStoreStats(d))
+      .catch(() => {})
+      .finally(() => alive && setStatsLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [boardDays, analyticsKey]);
+
+  // back from an order page: the same filters (they are in the address) and the same scroll spot
+  const restored = useRef(false);
+  useEffect(() => {
+    if (loading || restored.current) return;
+    restored.current = true;
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(SCROLL_KEY) || 'null');
+      if (saved && saved.qs === params.toString()) {
+        requestAnimationFrame(() => {
+          const el = scroller();
+          if (el) el.scrollTop = saved.y || 0;
+        });
+      }
+      sessionStorage.removeItem(SCROLL_KEY);
+    } catch {
+      /* storage blocked */
+    }
+  }, [loading]);
+  const paramsRef = useRef('');
+  paramsRef.current = params.toString();
+  const rememberSpot = (orderId) => {
+    try {
+      sessionStorage.setItem(SCROLL_KEY, JSON.stringify({ qs: paramsRef.current, y: scroller()?.scrollTop || 0, orderId }));
+    } catch {
+      /* storage blocked */
+    }
+    setLastOpened(orderId);
+  };
 
   useEffect(() => {
     loadStatusCounts();
@@ -199,7 +303,7 @@ export default function Orders() {
 
     const handleOrderUpdate = (payload) => {
       const updatedOrder = payload?.order || payload;
-      const { status, sellerFilter, q } = filtersRef.current;
+      const { status, sellerFilter, q, late, stuck } = filtersRef.current;
       refreshInsightsSoon();
       if (!updatedOrder?._id) {
         reloadOrdersSoon();
@@ -211,7 +315,7 @@ export default function Orders() {
         const idx = prev.findIndex((o) => o._id === updatedOrder._id);
         if (idx !== -1) {
           // If a status filter is active and the order no longer matches, remove it
-          if (status && updatedOrder.status !== status) {
+          if (!statusMatches(status, updatedOrder.status) || ((late || stuck) && CLOSED.includes(updatedOrder.status))) {
             return prev.filter((o) => o._id !== updatedOrder._id);
           }
           const next = [...prev];
@@ -222,7 +326,9 @@ export default function Orders() {
           // (with a search active the server decides, through the re-sync below)
           if (
             !q.trim() &&
-            (!status || updatedOrder.status === status) &&
+            !late &&
+            !stuck &&
+            statusMatches(status, updatedOrder.status) &&
             (!sellerFilter ||
               String(updatedOrder.seller?._id || updatedOrder.seller) === String(sellerFilter) ||
               (updatedOrder.items || []).some((it) => String(it.seller?._id || it.seller) === String(sellerFilter)))
@@ -398,6 +504,53 @@ export default function Orders() {
     }
   };
 
+  // ── status change from the list (one row or the ticked orders) ──
+  const askChange = (list, newStatus) => {
+    setMenu(null);
+    setResult(null);
+    const can = list.filter((o) => choicesFor(o.status).includes(newStatus));
+    const skipped = list.length - can.length;
+    if (!can.length) {
+      setResult({ status: newStatus, done: 0, failed: [], skipped });
+      return;
+    }
+    if (can.length === 1 && !needsConfirm(newStatus)) return doChange(can, newStatus, skipped);
+    setAsk({ orders: can, status: newStatus, skipped });
+  };
+  const doChange = async (list, newStatus, skipped = 0) => {
+    setBusy(list.length > 1 ? `Changing 0 / ${list.length}…` : 'Changing…');
+    const r = await runStatusChanges(list, newStatus, (d, t) => t > 1 && setBusy(`Changing ${d} / ${t}…`));
+    setBusy('');
+    setAsk(null);
+    setResult({ status: newStatus, ...r, skipped });
+    // the ones that failed stay ticked, to try again after fixing them
+    setPicked(new Set(r.failed.map((x) => x.id)));
+    loadOrders(true);
+    setAnalyticsKey((k) => k + 1);
+  };
+  const togglePick = (id) =>
+    setPicked((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const allPicked = orders.length > 0 && orders.every((o) => picked.has(o._id));
+  const pickAll = () => setPicked(allPicked ? new Set() : new Set(orders.map((o) => o._id)));
+
+  // what is special about this order right now: late, stopped, or the next automatic step
+  const orderNote = (o) => {
+    if (CLOSED.includes(o.status)) return null;
+    const out = [];
+    const age = Date.now() - new Date(o.createdAt).getTime();
+    if (age > LATE_MS) out.push(<span key="l" className="ost-late">Late · {Math.floor(age / 86400000)}d</span>);
+    if (o.autoIssue?.reason) out.push(<span key="i" className="ost-issue" title={o.autoIssue.reason}>⚠ Can’t move: {o.autoIssue.reason.length > 60 ? `${o.autoIssue.reason.slice(0, 60)}…` : o.autoIssue.reason}</span>);
+    else if (o.nextStatusAt && Date.now() - new Date(o.nextStatusAt).getTime() > 3600000) out.push(<span key="o" className="ost-issue">⚠ Next step overdue {Math.round((Date.now() - new Date(o.nextStatusAt).getTime()) / 3600000)}h</span>);
+    else if (o.nextStatus && o.nextStatusAt) out.push(<span key="n" className="ost-next">Next: {STATUS_LABELS[o.nextStatus] || o.nextStatus} · {shortTime(o.nextStatusAt)}</span>);
+    else if (o.status === 'pending') out.push(<span key="p" className="ost-next">Waiting for the store to confirm</span>);
+    return out.length ? <div className="ost-notes">{out}</div> : null;
+  };
+
   // Helper to extract seller info from order
   const getOrderSeller = (order) => {
     if (order.seller && typeof order.seller === 'object' && order.seller.storeName) {
@@ -433,24 +586,31 @@ export default function Orders() {
     }
   };
 
-  const hasActiveFilters = Boolean(status || sellerFilter || q.trim());
+  const hasActiveFilters = Boolean(status || sellerFilter || q.trim() || late || stuck || clientsOnly);
   const handleClearAllFilters = () => {
-    const onlySearch = !status && !sellerFilter;
+    const onlySearch = !status && !sellerFilter && !late && !stuck && !clientsOnly;
     setQ('');
-    setSellerFilter('');
-    setParams({});
+    setParams({}, { replace: true });
     // with only a search active no filter effect fires, so reload here
     if (onlySearch) {
-      filtersRef.current = { status: '', sellerFilter: '', q: '' };
+      filtersRef.current = { status: '', sellerFilter: '', q: '', late: false, stuck: false, clientsOnly: false };
       loadOrders();
     }
   };
 
+  const scrollToList = () => setTimeout(() => document.querySelector('.ins-orders-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
   const pickSeller = (id) => {
     setSellerFilter(id);
-    window.scrollTo?.({ top: document.querySelector('.ins-orders-list')?.offsetTop || 0, behavior: 'smooth' });
+    scrollToList();
   };
-  const setStatus = (st) => setParams(st ? { status: st } : {});
+  // a number in "Orders by store": that store (or all) + that group, late or stopped orders
+  const pickFromBoard = (sid, f) => {
+    // the totals count real client stores only: the list then leaves test stores out as well
+    setParam({ store: sid, status: f.status || '', late: f.late || '', stuck: f.stuck || '', clients: sid ? '' : true });
+    scrollToList();
+  };
+  const setStatus = (st) => setParam({ status: st, late: '', stuck: '', clients: '' });
+  const viewLabel = late ? 'Late — not delivered after 7 days' : stuck ? 'Stopped moving by themselves' : GROUP_LABELS[status] || (clientsOnly ? STATUS_LABELS[status] || 'All statuses' : '');
   const allCount = Object.values(statusCounts).reduce((a, b) => a + b, 0);
   const chosenSeller = sellers.find((s) => s._id === sellerFilter);
   const showTable = viewMode === 'auto' || viewMode === 'table';
@@ -486,6 +646,16 @@ export default function Orders() {
         {(statusCounts.pending || 0) > 0 && <MetaChip>⏳ {statusCounts.pending} waiting for confirmation</MetaChip>}
       </Hero>
 
+      <OrdersStoreBoard
+        data={storeStats}
+        loading={statsLoading}
+        days={boardDays}
+        onDays={setBoardDays}
+        onPick={pickFromBoard}
+        activeSeller={sellerFilter}
+        activeFilter={{ status: status || undefined, late: late || undefined, stuck: stuck || undefined }}
+      />
+
       <OrdersAnalytics sellerId={sellerFilter} refreshKey={analyticsKey} onPickSeller={pickSeller} />
 
       <ErrorBox error={error} />
@@ -513,6 +683,7 @@ export default function Orders() {
             style={{ justifyContent: 'flex-start' }}
             onSubmit={(e) => {
               e.preventDefault();
+              setParam({ q: q.trim() });
               loadOrders();
             }}
           >
@@ -525,6 +696,7 @@ export default function Orders() {
                   className="ins-search-clear"
                   onClick={() => {
                     setQ('');
+                    setParam({ q: '' });
                     filtersRef.current = { ...filtersRef.current, q: '' };
                     loadOrders();
                   }}
@@ -534,14 +706,7 @@ export default function Orders() {
                 </button>
               )}
             </div>
-            <select className="ins-select" value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)} aria-label="Store" style={{ minWidth: 200 }}>
-              <option value="">All stores ({sellers.length})</option>
-              {sellers.map((s) => (
-                <option key={s._id} value={s._id}>
-                  {s.storeName} · {s.ownerName}
-                </option>
-              ))}
-            </select>
+            <OrdersStorePicker sellers={sellers} counts={storeCounts} value={sellerFilter} onChange={setSellerFilter} />
             <button type="submit" className="ins-btn ins-btn-primary">
               <Ic name="search" size={14} /> Search
             </button>
@@ -564,6 +729,32 @@ export default function Orders() {
               ]}
             />
           </div>
+          {viewLabel && (
+            <div className="ost-view">
+              <span>Showing: <b>{viewLabel}</b>{chosenSeller ? ` · ${chosenSeller.storeName}` : clientsOnly ? ' · all client stores (no test accounts)' : ' · all stores'}{late || stuck ? ' · oldest first' : ''}</span>
+              <button type="button" onClick={() => setParam({ status: '', late: '', stuck: '', clients: '' })} aria-label="Show all statuses">✕</button>
+            </div>
+          )}
+          {result && (
+            <div className={`ost-result ${result.failed.length ? 'has-fail' : ''}`} role="status">
+              <div>
+                {result.done > 0 && <b>✓ {result.done} {result.done === 1 ? 'order' : 'orders'} changed to “{STATUS_LABELS[result.status] || result.status}”. </b>}
+                {result.skipped > 0 && <span>{result.skipped} skipped (already there, or a delivered order cannot be cancelled). </span>}
+                {result.failed.length > 0 && (
+                  <>
+                    <b>{result.failed.length} could not change</b> (still ticked):
+                    <ul>
+                      {result.failed.slice(0, 6).map((f) => (
+                        <li key={f.id}>#{f.orderNumber} — {f.error}</li>
+                      ))}
+                      {result.failed.length > 6 && <li>…and {result.failed.length - 6} more</li>}
+                    </ul>
+                  </>
+                )}
+              </div>
+              <button type="button" onClick={() => setResult(null)} aria-label="Close">✕</button>
+            </div>
+          )}
         </div>
 
         {showTable && (
@@ -571,6 +762,9 @@ export default function Orders() {
             <table className="ins-table">
               <thead>
                 <tr>
+                  <th className="ost-pick">
+                    <input type="checkbox" checked={allPicked} onChange={pickAll} aria-label="Tick all orders shown" disabled={!orders.length} />
+                  </th>
                   <th>Order</th>
                   <th>Store</th>
                   <th>Customer</th>
@@ -585,14 +779,14 @@ export default function Orders() {
                 {loading &&
                   Array.from({ length: 6 }).map((_, i) => (
                     <tr key={`sk-${i}`}>
-                      {Array.from({ length: 8 }).map((__, j) => (
+                      {Array.from({ length: 9 }).map((__, j) => (
                         <td key={j}><span className="ins-skel" style={{ width: `${45 + ((i + j) % 4) * 13}%` }} /></td>
                       ))}
                     </tr>
                   ))}
                 {!loading && orders.length === 0 && (
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={9}>
                       <Empty icon="📦" text={hasActiveFilters ? 'No order matches these filters.' : 'No orders yet.'}>
                         {hasActiveFilters && (
                           <button type="button" className="ins-btn ins-btn-sm" onClick={handleClearAllFilters}>Clear filters</button>
@@ -607,7 +801,10 @@ export default function Orders() {
                     const itemsCount = o.items?.reduce((sum, it) => sum + (it.qty || 1), 0) || 0;
                     const storeCount = new Set((o.items || []).map((it) => String(it.seller?._id || it.seller || ''))).size;
                     return (
-                      <tr key={o._id}>
+                      <tr key={o._id} className={`${picked.has(o._id) ? 'ost-row-on' : ''} ${lastOpened === o._id ? 'ost-row-last' : ''}`}>
+                        <td className="ost-pick">
+                          <input type="checkbox" checked={picked.has(o._id)} onChange={() => togglePick(o._id)} aria-label={`Tick order ${o.orderNumber}`} />
+                        </td>
                         <td>
                           <button type="button" className="ins-badge ins-badge-neutral" style={{ cursor: 'pointer', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }} onClick={(e) => handleCopyOrder(e, o.orderNumber)} title="Copy order number">
                             {copiedId === o.orderNumber ? '✓ Copied' : `#${o.orderNumber}`}
@@ -664,13 +861,19 @@ export default function Orders() {
                           <span className="ins-sub" style={{ fontWeight: 600, color: '#334155' }}>{PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod || 'COD'}</span>
                           <Badge tone={o.paymentStatus === 'paid' ? 'good' : 'neutral'}>{o.paymentStatus === 'paid' ? 'Paid' : 'Unpaid'}</Badge>
                         </td>
-                        <td>{orderBadge(o)}</td>
+                        <td>
+                          <button type="button" className="ost-badge-btn" onClick={(e) => setMenu({ order: o, anchor: e.currentTarget })} aria-haspopup="menu" aria-expanded={menu?.order?._id === o._id} disabled={Boolean(busy)} title="Click to change the status">
+                            {orderBadge(o)}
+                            <span className="ost-caret" aria-hidden="true">▾</span>
+                          </button>
+                          {orderNote(o)}
+                        </td>
                         <td>
                           <div className="ins-actions" style={{ flexWrap: 'nowrap' }}>
                             <button type="button" className="ins-btn ins-btn-sm" onClick={() => setInspectOrder(o)} title="Quick view">
                               <Ic name="eye" size={13} /> View
                             </button>
-                            <Link to={`/admin/orders/${o._id}`} className="ins-btn ins-btn-sm" title="Open the full order page">
+                            <Link to={`/admin/orders/${o._id}`} className="ins-btn ins-btn-sm" title="Open the full order page" onClick={() => rememberSpot(o._id)}>
                               Manage ↗
                             </Link>
                           </div>
@@ -692,13 +895,17 @@ export default function Orders() {
                 const seller = getOrderSeller(o);
                 const itemsCount = o.items?.reduce((sum, it) => sum + (it.qty || 1), 0) || 0;
                 return (
-                  <div key={o._id} className="ins-mcard">
+                  <div key={o._id} className={`ins-mcard ${picked.has(o._id) ? 'ost-row-on' : ''} ${lastOpened === o._id ? 'ost-row-last' : ''}`}>
                     <div className="ins-mcard-row">
-                      <button type="button" className="ins-badge ins-badge-neutral" style={{ cursor: 'pointer' }} onClick={(e) => handleCopyOrder(e, o.orderNumber)}>
-                        {copiedId === o.orderNumber ? '✓ Copied' : `#${o.orderNumber}`}
-                      </button>
+                      <label className="ost-card-pick">
+                        <input type="checkbox" checked={picked.has(o._id)} onChange={() => togglePick(o._id)} aria-label={`Tick order ${o.orderNumber}`} />
+                        <button type="button" className="ins-badge ins-badge-neutral" style={{ cursor: 'pointer' }} onClick={(e) => handleCopyOrder(e, o.orderNumber)}>
+                          {copiedId === o.orderNumber ? '✓ Copied' : `#${o.orderNumber}`}
+                        </button>
+                      </label>
                       {orderBadge(o)}
                     </div>
+                    {orderNote(o)}
                     <div className="ins-mcard-row">
                       <span>Store</span>
                       <b className="ins-clip" style={{ maxWidth: 180 }}>{seller ? <StoreLink id={seller._id} name={seller.storeName} /> : 'Bazario Direct'}</b>
@@ -715,10 +922,13 @@ export default function Orders() {
                       <b style={{ fontSize: 15 }}>{money(o.total)}</b>
                     </div>
                     <div className="ins-actions" style={{ justifyContent: 'stretch' }}>
-                      <button type="button" className="ins-btn ins-btn-sm" style={{ flex: 1 }} onClick={() => setInspectOrder(o)}>
-                        <Ic name="eye" size={13} /> Quick view
+                      <button type="button" className="ins-btn ins-btn-sm ost-status-btn" style={{ flex: 1 }} onClick={(e) => setMenu({ order: o, anchor: e.currentTarget })} disabled={Boolean(busy)}>
+                        Status ▾
                       </button>
-                      <Link to={`/admin/orders/${o._id}`} className="ins-btn ins-btn-sm" style={{ flex: 1 }}>
+                      <button type="button" className="ins-btn ins-btn-sm" style={{ flex: 1 }} onClick={() => setInspectOrder(o)}>
+                        <Ic name="eye" size={13} /> View
+                      </button>
+                      <Link to={`/admin/orders/${o._id}`} className="ins-btn ins-btn-sm" style={{ flex: 1 }} onClick={() => rememberSpot(o._id)}>
                         Manage ↗
                       </Link>
                     </div>
@@ -727,7 +937,32 @@ export default function Orders() {
               })}
           </div>
         )}
+
+        {picked.size > 0 && (
+          <BulkBar count={picked.size} busy={busy} onClear={() => setPicked(new Set())} onApply={(st) => askChange(orders.filter((o) => picked.has(o._id)), st)} />
+        )}
       </div>
+
+      {menu && <StatusMenu anchor={menu.anchor} current={menu.order.status} onClose={() => setMenu(null)} onPick={(st) => askChange([menu.order], st)} />}
+      {ask && (
+        <ConfirmBox
+          title={ask.orders.length === 1 ? `Change order #${ask.orders[0].orderNumber} to “${STATUS_LABELS[ask.status] || ask.status}”?` : `Change ${ask.orders.length} orders to “${STATUS_LABELS[ask.status] || ask.status}”?`}
+          tone={ask.status === 'delivered' ? 'good' : ask.status === 'cancelled' ? 'bad' : 'dark'}
+          confirmLabel={ask.orders.length === 1 ? 'Yes, change it' : `Yes, change ${ask.orders.length} orders`}
+          busy={busy}
+          onCancel={() => setAsk(null)}
+          onConfirm={() => doChange(ask.orders, ask.status, ask.skipped)}
+        >
+          <p>{changeText(ask.status, ask.orders.length)}</p>
+          {ask.orders.length > 1 && (
+            <p className="ost-confirm-list">
+              {ask.orders.slice(0, 8).map((o) => `#${o.orderNumber}`).join(', ')}
+              {ask.orders.length > 8 ? ` and ${ask.orders.length - 8} more` : ''}
+            </p>
+          )}
+          {ask.skipped > 0 && <p className="ost-confirm-skip">{ask.skipped} ticked {ask.skipped === 1 ? 'order is' : 'orders are'} skipped (already there, or delivered and cannot be cancelled).</p>}
+        </ConfirmBox>
+      )}
 
       {/* ─── Modal 1: Place Order on Behalf of Seller ─── */}
       {placeOrderOpen && (() => {

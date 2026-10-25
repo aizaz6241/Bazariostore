@@ -350,34 +350,145 @@ router.post('/:id/refund-request', authUser, announceToAdmins('refunds', 'refund
 // ---------- admin ----------
 const escapeRx = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// Status groups used by the Orders page (the seller-wise table): one click shows that group
+const STATUS_GROUPS = {
+  warehouse: ['processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped'],
+  problem: ['delivery_failed', 'returned_to_warehouse'],
+};
+const CLOSED_STATUSES = ['delivered', 'cancelled', 'refunded'];
+const LATE_AFTER_MS = 7 * 24 * 60 * 60 * 1000; // not delivered 7 days after the order was placed
+const STUCK_AFTER_MS = 60 * 60 * 1000; // the next automatic step is more than an hour overdue
+
+// GET /api/orders?status=&sellerId=&q=&late=1&stuck=1
+// status: one status, a group (warehouse / problem) or a comma list
 router.get('/', authAdmin('orders'), async (req, res) => {
   try {
-    const { status, sellerId } = req.query;
+    const { sellerId } = req.query;
     const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 80) : '';
-    const filter = {};
-    if (status && STATUSES.includes(status)) filter.status = status;
+    const late = req.query.late === '1';
+    const stuck = req.query.stuck === '1';
+    const rawStatus = typeof req.query.status === 'string' ? req.query.status : '';
+    const statuses = (STATUS_GROUPS[rawStatus] || rawStatus.split(',')).map((x) => x.trim()).filter((x) => STATUSES.includes(x));
+    const and = [];
+    if (statuses.length === 1) and.push({ status: statuses[0] });
+    else if (statuses.length > 1) and.push({ status: { $in: statuses } });
     if (sellerId) {
       // an unknown id matches nothing (it used to crash the request and the screen waited 30 s)
       if (!mongoose.Types.ObjectId.isValid(String(sellerId))) return res.json([]);
-      filter.$or = [{ seller: sellerId }, { 'items.seller': sellerId }];
+      and.push({ $or: [{ seller: sellerId }, { 'items.seller': sellerId }] });
     }
+    if (late || stuck) and.push({ status: { $nin: CLOSED_STATUSES } });
+    if (req.query.clients === '1') {
+      // real client stores only (the "Orders by store" totals): no test / previous-store accounts
+      const testIds = (await Seller.find({ $or: [{ isTestAccount: true }, { isPreviousStoreSeller: true }] }).select('_id').lean()).map((x) => x._id);
+      if (testIds.length) and.push({ seller: { $nin: testIds }, 'items.seller': { $nin: testIds } });
+    }
+    if (late) and.push({ createdAt: { $lt: new Date(Date.now() - LATE_AFTER_MS) } });
+    if (stuck) and.push({ $or: [{ nextStatusAt: { $ne: null, $lt: new Date(Date.now() - STUCK_AFTER_MS) } }, { 'autoIssue.reason': { $exists: true } }] });
     if (q) {
       // typed text is matched literally: "(" or "+" in a search no longer breaks the request
       const rx = { $regex: escapeRx(q), $options: 'i' };
-      const qFilters = [{ orderNumber: rx }, { 'contact.phone': rx }, { 'contact.email': rx }, { 'shippingAddress.fullName': rx }, { 'items.sellerName': rx }];
-      if (filter.$or) {
-        filter.$and = [{ $or: filter.$or }, { $or: qFilters }];
-        delete filter.$or;
-      } else {
-        filter.$or = qFilters;
-      }
+      and.push({ $or: [{ orderNumber: rx }, { 'contact.phone': rx }, { 'contact.email': rx }, { 'shippingAddress.fullName': rx }, { 'items.sellerName': rx }] });
     }
+    const filter = and.length ? { $and: and } : {};
     const orders = await Order.find(filter)
       .populate('seller', 'storeName ownerName email phone')
       .populate('items.product', 'name price image')
-      .sort({ createdAt: -1 })
+      // late / stuck: the oldest first (those waited longest)
+      .sort({ createdAt: late || stuck ? 1 : -1 })
       .limit(300);
     res.json(orders);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/orders/analytics/stores?days=30
+// Per store, right now: orders pending / confirmed / in the warehouse / out for delivery /
+// delivery problem, delivered (placed in the last `days` days), late (not delivered 7 days after
+// the order) and stuck (the automatic step is overdue or could not run). Multi-store orders
+// count for each store. Test / previous-store accounts are marked (left out of the totals).
+router.get('/analytics/stores', authAdmin('orders'), async (req, res) => {
+  try {
+    const days = Math.min(365, Math.max(1, parseInt(req.query.days, 10) || 30));
+    const now = Date.now();
+    const open = STATUSES.filter((x) => !CLOSED_STATUSES.includes(x));
+    const lateBefore = new Date(now - LATE_AFTER_MS);
+    const stuckBefore = new Date(now - STUCK_AFTER_MS);
+    const notDelivered = { $ne: ['$status', 'delivered'] };
+    const sellers = await Seller.find({ status: { $ne: 'pending_approval' } }).select('storeName ownerName tier status isTestAccount isPreviousStoreSeller').lean();
+    const clientIds = sellers.filter((x) => !x.isTestAccount && !x.isPreviousStoreSeller).map((x) => x._id);
+    const late = { $sum: { $cond: [{ $and: [notDelivered, { $lt: ['$createdAt', lateBefore] }] }, 1, 0] } };
+    const stuck = {
+      $sum: {
+        $cond: [
+          { $and: [notDelivered, { $or: [{ $and: [{ $ne: ['$nextStatusAt', null] }, { $lt: ['$nextStatusAt', stuckBefore] }] }, { $ne: ['$issue', null] }] }] },
+          1,
+          0,
+        ],
+      },
+    };
+    const [facet] = await Order.aggregate([
+        { $match: { $or: [{ status: { $in: open } }, { status: 'delivered', createdAt: { $gte: new Date(now - days * 86400000) } }] } },
+        {
+          $project: {
+            status: 1,
+            createdAt: 1,
+            nextStatusAt: 1,
+            issue: { $ifNull: ['$autoIssue.reason', null] },
+            sellers: { $setUnion: [{ $map: { input: { $ifNull: ['$items', []] }, as: 'i', in: { $ifNull: ['$$i.seller', '$seller'] } } }, []] },
+          },
+        },
+        {
+          $facet: {
+            // per store (an order with two stores counts for both)
+            perStore: [
+              { $unwind: '$sellers' },
+              { $match: { sellers: { $ne: null } } },
+              { $group: { _id: { s: '$sellers', st: '$status' }, n: { $sum: 1 }, late, stuck, oldest: { $min: { $cond: [notDelivered, '$createdAt', null] } } } },
+            ],
+            // the totals: each order once, real client stores only
+            totals: [
+              { $match: { sellers: { $in: clientIds } } },
+              { $group: { _id: '$status', n: { $sum: 1 }, late, stuck, lateSellers: { $addToSet: { $cond: [{ $and: [notDelivered, { $lt: ['$createdAt', lateBefore] }] }, '$sellers', null] } } } },
+            ],
+          },
+        },
+      ]);
+    const rows = facet?.perStore || [];
+
+    const info = new Map(sellers.map((x) => [String(x._id), x]));
+    const group = (st) => (st === 'pending' ? 'pending' : st === 'confirmed' ? 'confirmed' : STATUS_GROUPS.warehouse.includes(st) ? 'warehouse' : st === 'out_for_delivery' ? 'ofd' : STATUS_GROUPS.problem.includes(st) ? 'problem' : st === 'delivered' ? 'delivered' : 'other');
+    const blank = () => ({ pending: 0, confirmed: 0, warehouse: 0, ofd: 0, problem: 0, delivered: 0, late: 0, stuck: 0, open: 0 });
+    const stores = new Map();
+    for (const r of rows) {
+      const sid = String(r._id.s);
+      const s = info.get(sid);
+      let row = stores.get(sid);
+      if (!row) {
+        row = { _id: sid, storeName: s?.storeName || 'Removed store', ownerName: s?.ownerName || '', tier: s?.tier || 'basic', storeStatus: s?.status || '', isTest: Boolean(s?.isTestAccount || s?.isPreviousStoreSeller || !s), oldestOpenAt: null, ...blank() };
+        stores.set(sid, row);
+      }
+      const g = group(r._id.st);
+      if (g !== 'other') row[g] += r.n;
+      if (r._id.st !== 'delivered') row.open += r.n;
+      row.late += r.late;
+      row.stuck += r.stuck;
+      if (r.oldest && (!row.oldestOpenAt || r.oldest < row.oldestOpenAt)) row.oldestOpenAt = r.oldest;
+    }
+    const list = [...stores.values()].sort((a, b) => b.late - a.late || b.stuck - a.stuck || b.open - a.open || b.delivered - a.delivered);
+    const totals = blank();
+    const clientSet = new Set(clientIds.map(String));
+    const lateStoreIds = new Set();
+    for (const r of facet?.totals || []) {
+      const g = group(r._id);
+      if (g !== 'other') totals[g] += r.n;
+      if (r._id !== 'delivered') totals.open += r.n;
+      totals.late += r.late;
+      totals.stuck += r.stuck;
+      (r.lateSellers || []).flat().forEach((sid) => sid && clientSet.has(String(sid)) && lateStoreIds.add(String(sid)));
+    }
+    res.json({ days, lateDays: 7, totals: { ...totals, lateStores: lateStoreIds.size }, stores: list });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -725,14 +836,19 @@ const orderStatusHandler = async (req, res) => {
   }
 
   order.status = status;
-  // a failed delivery / return to warehouse waits for the admin: no automatic next step (an
-  // order left "out for delivery" is otherwise marked delivered — and paid out — by itself)
-  if (['pending', 'cancelled', 'refunded', 'delivered', 'delivery_failed', 'returned_to_warehouse'].includes(status)) {
+  // the automatic lifecycle continues from the status set here (India time, see
+  // services/orderProgressionService.js): a failed delivery goes back to the warehouse that
+  // evening and out for delivery again the next morning. Pending / delivered / cancelled /
+  // refunded never move by themselves.
+  if (['pending', 'cancelled', 'refunded', 'delivered'].includes(status)) {
     order.nextStatus = null;
     order.nextStatusAt = null;
-  } else if (['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery'].includes(status)) {
+  } else if (['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery', 'delivery_failed', 'returned_to_warehouse'].includes(status)) {
     scheduleNextOrderStep(order);
   }
+  // a person moved it: any earlier "could not move" note is old news
+  order.autoIssue = undefined;
+  order.autoRetryAt = undefined;
   order.statusHistory.push({ status, note: note || '', by });
   await order.save();
   // a refunded (delivered) order no longer counts toward the seller's running targets
