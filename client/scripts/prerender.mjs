@@ -211,7 +211,7 @@ ${faqInner(FAQS.slice(0, 6))}`
   // ─── Shop ───
   const shopTitle = 'Shop All Products — Direct from China, Shipped Worldwide | Bazario';
   const shopDesc =
-    'Browse the Bazario marketplace — products sourced direct from China and shipped to the USA, Canada, Australia, UK & Europe. Verified sellers, verified reviews, tracked delivery and 14-day returns.';
+    'Browse the Bazario marketplace — products sourced direct from China and shipped to the USA, Canada, Australia, UK & Europe. Verified sellers, tracked delivery, cash on delivery and 14-day returns.';
   writeRoute(
     '/shop',
     headHtml({

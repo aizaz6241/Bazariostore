@@ -395,8 +395,8 @@ function Footer() {
             <li><Link to="/about">About Bazario</Link></li>
             <li><Link to="/dropshipping">Worldwide Dropshipping</Link></li>
             <li><Link to="/faq">FAQ</Link></li>
-            <li><Link to="/page/shipping-policy">Fast Express Delivery</Link></li>
-            <li><Link to="/page/returns-policy">14-Day Easy Returns</Link></li>
+            <li><Link to="/page/shipping-policy">Shipping Policy</Link></li>
+            <li><Link to="/page/returns-policy">Returns &amp; Refunds (14 days)</Link></li>
             <li><Link to="/page/terms">Terms of Service</Link></li>
             <li><Link to="/page/privacy">Privacy Notice</Link></li>
           </ul>
@@ -421,10 +421,10 @@ function Footer() {
         </div>
         <div className="footer-contact">
           <h4 className="footer-h">HELP & CUSTOMER CARE</h4>
-          <p><Ic name="truck" size={15} /> Express Worldwide Delivery</p>
-          <p><Ic name="shield" size={15} /> 100% Genuine Verified Sellers</p>
-          <p><Ic name="banknote" size={15} /> Secure Online Payments</p>
-          <p><Ic name="headset" size={15} /> 24/7 Platform Support Desk</p>
+          <p><Ic name="truck" size={15} /> Worldwide Tracked Delivery</p>
+          <p><Ic name="shield" size={15} /> Verified Sellers</p>
+          <p><Ic name="banknote" size={15} /> Cash on Delivery</p>
+          <p><Ic name="headset" size={15} /> Live Chat Support</p>
           <div className="mt-3">
             <Link to="/track-order" className="footer-track-btn">Track Your Order →</Link>
           </div>
@@ -438,12 +438,9 @@ function Footer() {
           </div>
           <span>© 2026 Bazario Multi-Vendor Marketplace. All Rights Reserved.</span>
           <span className="footer-pay">
-            Safe & Secure Payments:
-            <i className="pay pay-visa">VISA</i>
-            <i className="pay pay-mc"><s /><s /></i>
-            <i className="pay pay-stripe">Stripe</i>
-            <i className="pay pay-pp">PayPal</i>
-            <i className="pay pay-cod">COD</i>
+            {/* Only payment methods that are switched on at checkout (today: COD only). */}
+            Payment:
+            <i className="pay pay-cod">Cash on Delivery</i>
           </span>
         </div>
       </div>

@@ -12,7 +12,7 @@ import { FaqList, INFO_LINKS } from './InfoPage.jsx';
 const FALLBACK_SLIDE = {
   a: 'Mega Electronics &',
   b: 'Flagship Mobiles',
-  sub: 'Explore Top Verified Sellers with Express Worldwide Delivery',
+  sub: 'Shop Verified Sellers with Tracked Worldwide Delivery',
   imgs: [
     'https://images.unsplash.com/photo-1695048133142-1a20484d2569?w=600&auto=format&fit=crop&q=80',
     'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=600&auto=format&fit=crop&q=80',
@@ -25,10 +25,10 @@ function Hero() {
   const hero = content.hero || {};
   const slides = hero.slides?.length ? hero.slides : [FALLBACK_SLIDE];
   const features = hero.features || [
-    { icon: 'badgeCheck', l1: '100% Genuine', l2: 'Verified Sellers' },
-    { icon: 'truck', l1: 'Express Prime', l2: '1-2 Day Dispatch' },
-    { icon: 'shield', l1: 'Buyer Protection', l2: 'Money Back Guarantee' },
-    { icon: 'headset', l1: '24/7 Support', l2: 'Live Chat Support' },
+    { icon: 'badgeCheck', l1: 'Verified', l2: 'Sellers' },
+    { icon: 'truck', l1: 'Tracked', l2: 'Delivery' },
+    { icon: 'refresh', l1: '14-Day', l2: 'Easy Returns' },
+    { icon: 'headset', l1: 'Live Chat', l2: 'Support' },
   ];
   const [i, setI] = useState(0);
   useEffect(() => {
@@ -104,49 +104,6 @@ export default function Home() {
   const sec = content.sections || {};
   const promo = content.promoRow || {};
 
-  const FEATURED_SELLERS = [
-    {
-      name: 'TechZone Gadgets',
-      slug: 'techzone-gadgets',
-      category: 'Smartphones, Laptops & Audio',
-      rating: 4.9,
-      reviews: 128,
-      location: 'Verified Seller',
-      badge: 'Top Tech Merchant',
-      logo: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=200&auto=format&fit=crop&q=80',
-    },
-    {
-      name: 'Urban Vogue Fashion',
-      slug: 'urban-vogue-fashion',
-      category: 'Jackets, Hoodies & Sneakers',
-      rating: 4.8,
-      reviews: 94,
-      location: 'Verified Seller',
-      badge: 'Trending Streetwear',
-      logo: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=200&auto=format&fit=crop&q=80',
-    },
-    {
-      name: 'Apex Living & Home',
-      slug: 'apex-living-home',
-      category: 'Smart Blenders & Air Fryers',
-      rating: 4.7,
-      reviews: 62,
-      location: 'Verified Seller',
-      badge: 'Home Appliances',
-      logo: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?w=200&auto=format&fit=crop&q=80',
-    },
-    {
-      name: 'Glow & Aura Cosmetics',
-      slug: 'glow-aura-cosmetics',
-      category: '100% Authentic Serums & Perfumes',
-      rating: 4.9,
-      reviews: 140,
-      location: 'Verified Seller',
-      badge: 'Luxury Beauty',
-      logo: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=200&auto=format&fit=crop&q=80',
-    },
-  ];
-
   return (
     <>
       <Hero />
@@ -182,33 +139,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Featured Marketplace Sellers */}
-      <section className="section container">
-        <SectionTitle>FEATURED VERIFIED MARKETPLACE SELLERS</SectionTitle>
-        <div className="featured-sellers-grid">
-          {FEATURED_SELLERS.map((s, idx) => (
-            <div key={idx} className="seller-showcase-card">
-              <div className="showcase-top">
-                <img src={s.logo} alt={s.name} className="showcase-logo" />
-                <div>
-                  <span className="showcase-badge">{s.badge}</span>
-                  <h3 className="showcase-name">{s.name}</h3>
-                  <small className="muted">{s.category}</small>
-                </div>
-              </div>
-              <div className="showcase-footer">
-                <div className="showcase-rating">
-                  ⭐ <b>{s.rating}</b> <span className="muted">({s.reviews} ratings)</span>
-                </div>
-                <Link to={`/shop?q=${encodeURIComponent(s.name)}`} className="btn-visit-merchant">
-                  Shop Store →
-                </Link>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
       {/* Promotional Banner Row */}
       <section className="section container promo-row">
         <Link to="/shop?label=sale" className="promo-card promo-left">
@@ -222,9 +152,9 @@ export default function Home() {
         </Link>
         <div className="promo-mid">
           {(promo.middle || [
-            { icon: 'badgeCheck', t: '100% Genuine', s: 'Verified Sellers' },
+            { icon: 'badgeCheck', t: 'Verified', s: 'Sellers' },
             { icon: 'tag', t: 'Affordable', s: 'Competitive Prices' },
-            { icon: 'truck', t: 'Express Prime', s: '1-2 Days Delivery' },
+            { icon: 'truck', t: 'Tracked', s: 'Delivery' },
             { icon: 'banknote', t: 'Cash on', s: 'Delivery' },
             { icon: 'refresh', t: '14 Days Easy', s: 'Returns & Refund' },
           ]).map((f, idx) => (
@@ -255,7 +185,7 @@ export default function Home() {
               Kingdom and Europe.
             </p>
             <p>
-              Every seller store is verified by Bazario before it can sell, reviews come from verified customers, every
+              Every seller store is verified by Bazario before it can sell, cash on delivery is available, every
               order is tracked and all purchases are covered by 14-day easy returns.
             </p>
             <nav className="seo-related" aria-label="About Bazario">

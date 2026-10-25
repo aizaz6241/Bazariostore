@@ -27,11 +27,11 @@ export function StepsBar({ active }) {
 }
 
 const DEFAULT_TRUST = [
-  { icon: 'badgeCheck', title: '100% Original', sub: 'Authentic Products' },
-  { icon: 'truck', title: 'Fast Delivery', sub: 'Express Worldwide Shipping' },
-  { icon: 'banknote', title: 'Secure Payments', sub: 'Multiple Payment Options' },
+  { icon: 'badgeCheck', title: 'Verified Sellers', sub: 'Every Store Checked' },
+  { icon: 'truck', title: 'Worldwide Shipping', sub: 'Tracked Delivery' },
+  { icon: 'banknote', title: 'Cash on Delivery', sub: 'Pay When It Arrives' },
   { icon: 'refresh', title: 'Easy Returns', sub: '14-Day Return Policy' },
-  { icon: 'shield', title: 'Buyer Protection', sub: '100% Money-Back Guarantee' },
+  { icon: 'headset', title: 'Live Chat', sub: 'Support on Every Page' },
 ];
 
 export function TrustStrip() {

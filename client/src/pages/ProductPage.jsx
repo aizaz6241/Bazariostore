@@ -4,7 +4,6 @@ import { api } from '../api.js';
 import { useCart } from '../cart.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 import Ic from '../components/Icons.jsx';
-import Stars from '../components/Stars.jsx';
 import ProductCard from '../components/ProductCard.jsx';
 import { Breadcrumb, TrustStrip } from '../components/Bits.jsx';
 import useSeo from '../seo/useSeo.js';
@@ -12,16 +11,11 @@ import { productLd, productTitle, productDescription, productImages, breadcrumbL
 
 // Product detail page (styles: styles/storefront/catalog-v2.css, scoped `.pv`)
 
-const SAMPLE_REVIEWS = [
-  { name: 'Ahmad K.', rating: 5, text: '100% Original and authentic product! Arrived in 2 days via Express Prime shipping. Packaging was great.' },
-  { name: 'Fatima R.', rating: 4.5, text: 'Very happy with my order. Seller dispatched the item immediately with real tracking code.' },
-  { name: 'Usman S.', rating: 5, text: 'Top quality and reasonable price. Cash on delivery was smooth and driver was polite.' },
-];
-
+// Only claims that are true today (no fake reviews / speed promises).
 const PERKS = [
-  { icon: 'badgeCheck', t: '100% Genuine', s: 'Authentic items' },
+  { icon: 'badgeCheck', t: 'Verified Seller', s: 'Store checked by Bazario' },
   { icon: 'banknote', t: 'Cash on Delivery', s: 'Pay when it arrives' },
-  { icon: 'truck', t: 'Fast Delivery', s: '1-2 days express' },
+  { icon: 'truck', t: 'Tracked Delivery', s: 'Follow every step' },
   { icon: 'refresh', t: '14-Day Returns', s: 'Easy return policy' },
 ];
 
@@ -128,9 +122,8 @@ export default function ProductPage() {
   const sellerName = p.seller?.storeName || p.sellerName || 'Bazario Verified Store';
   const sellerId = p.seller?._id || '';
   const sellerPlace = [p.seller?.address?.city, p.seller?.address?.country].filter(Boolean).join(', ');
-  const sellerRated = p.seller?.rating && p.seller?.numReviews > 0;
-  const rating = p.rating || 4.8;
-  const reviews = p.numReviews || 35;
+  // No customer review system yet → no star ratings (DB rating numbers are not real reviews).
+  const sellerRated = false;
   const save = p.oldPrice > activePrice ? p.oldPrice - activePrice : 0;
 
   const tabs = [
@@ -138,7 +131,6 @@ export default function ProductPage() {
     p.specifications?.length > 0 && { key: 'specs', label: 'Specifications' },
     p.howToUse && { key: 'use', label: 'How to use' },
     p.ingredients && { key: 'ingr', label: 'Ingredients' },
-    { key: 'reviews', label: `Reviews (${reviews})` },
     { key: 'ship', label: 'Shipping & returns' },
   ].filter(Boolean);
   const curTab = tabs.some((t) => t.key === tab) ? tab : 'desc';
@@ -208,14 +200,11 @@ export default function ProductPage() {
 
             <h1 className="pv-title">{p.name}</h1>
 
-            <div className="pv-rating">
-              <Stars value={rating} />
-              <b>{Number(rating).toFixed(1)}</b>
-              <button type="button" className="pv-rating-link" onClick={() => { setTab('reviews'); document.getElementById('pv-details')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
-                {reviews} reviews
-              </button>
-              {p.sold > 0 && <><i>·</i><span>{p.sold} sold</span></>}
-            </div>
+            {p.sold > 0 && (
+              <div className="pv-rating">
+                <span>{p.sold} sold</span>
+              </div>
+            )}
 
             <div className="pv-price">
               <b>{formatMoney(activePrice)}</b>
@@ -371,31 +360,10 @@ export default function ProductPage() {
             )}
             {curTab === 'use' && <p>{p.howToUse}</p>}
             {curTab === 'ingr' && <p>{p.ingredients}</p>}
-            {curTab === 'reviews' && (
-              <div className="pv-reviews">
-                <div className="pv-rev-sum">
-                  <b>{Number(rating).toFixed(1)}</b>
-                  <Stars value={rating} />
-                  <span>{reviews} reviews</span>
-                </div>
-                <div className="pv-rev-list">
-                  {SAMPLE_REVIEWS.map((r, i) => (
-                    <div key={i} className="pv-rev">
-                      <div className="pv-rev-head">
-                        <span className="pv-rev-av">{r.name[0]}</span>
-                        <b>{r.name}</b>
-                        <Stars value={r.rating} />
-                      </div>
-                      <p>{r.text}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
             {curTab === 'ship' && (
               <div className="pv-ship">
-                <p>We deliver orders worldwide using trusted international couriers. Standard delivery takes 3-7 business days depending on your location. Express delivery takes 1-3 business days.</p>
-                <p>Enjoy a 14-day hassle-free return window if you receive a damaged or incorrect item. Full buyer protection on every order.</p>
+                <p>Products are sourced from suppliers in China and shipped worldwide. Most orders are dispatched within 1–2 business days; the delivery time depends on your country and customs. Every order has a tracking reference you can follow on the <Link to="/track-order">Track Order</Link> page.</p>
+                <p>You can request a return within 14 days of delivery through live chat. Read the <Link to="/page/shipping-policy">Shipping Policy</Link> and <Link to="/page/returns-policy">Returns &amp; Refunds Policy</Link>.</p>
               </div>
             )}
           </div>

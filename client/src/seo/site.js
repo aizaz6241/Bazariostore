@@ -15,7 +15,7 @@ export const SITE = {
   tagline: 'Global dropshipping marketplace — direct from China to the US, Canada, Australia, UK & Europe',
   defaultTitle: 'Bazario — Global Dropshipping Marketplace | Direct from China to USA, Canada, UK, Australia & Europe',
   defaultDescription:
-    'Bazario is a global multi-vendor dropshipping marketplace operating since 2020. Shop products sourced directly from China and shipped worldwide to the USA, Canada, Australia, the UK and Europe — verified sellers, verified reviews, tracked delivery and 14-day returns.',
+    'Bazario is a global multi-vendor dropshipping marketplace operating since 2020. Shop products sourced directly from China and shipped worldwide to the USA, Canada, Australia, the UK and Europe — verified sellers, tracked delivery, cash on delivery and 14-day returns.',
   ogImage: '/og-image.jpg',
   logo: '/icon-512.png',
   themeColor: '#2563eb',
@@ -55,10 +55,10 @@ export const KEY_FACTS = [
   'Products are sourced directly from manufacturers and suppliers in China.',
   'Ships worldwide, with a focus on the United States, Canada, Australia, the United Kingdom and Europe.',
   'Every seller store is reviewed and verified by Bazario before it can sell.',
-  'Product reviews come from verified customers.',
   'Every order gets a tracking number and can be followed on the Track Order page.',
   '14-day easy returns and secure checkout.',
   'Shipping, Returns, Terms and Privacy policies are published on the website.',
+  'Cash on delivery is available at checkout.',
   'Live chat customer support.',
 ];
 
@@ -101,8 +101,8 @@ export const FAQS = [
     a: 'Bazario offers 14-day easy returns. If something is wrong with an order, contact support through live chat within 14 days of delivery and the team will arrange a return or refund under the returns policy.',
   },
   {
-    q: 'Are Bazario sellers and reviews verified?',
-    a: 'Yes. Every seller goes through a store registration review and must be approved by Bazario before listing products. Reviews on the marketplace come from verified customers.',
+    q: 'Are Bazario sellers verified?',
+    a: 'Every seller goes through a store registration review and must be approved by Bazario before listing products. Stores that break the marketplace rules can be paused, frozen or closed.',
   },
   {
     q: 'Can I start dropshipping or sell on Bazario?',
@@ -162,7 +162,7 @@ Damaged, faulty or wrong items
 If the item arrived damaged, faulty or not as described, tell us within 14 days of delivery and we will arrange a replacement or a refund.
 
 Refunds
-Once the return is approved, the refund is sent to the original payment method. How long it takes to appear depends on your bank or payment provider.
+Once the return is approved, the refund is processed. Support will confirm on live chat how the refund is paid, including for cash on delivery orders.
 
 Questions
 Our support team is available on live chat for any return or refund question.`,
@@ -207,7 +207,7 @@ How we use it
 To process and deliver orders, show order tracking, provide customer support, verify sellers, send account and order related messages, and keep the marketplace safe from fraud.
 
 Sharing
-Your shipping details are shared only with the parties needed to fulfil and deliver your order (the seller, the supplier and the shipping partner). Payments are handled by the payment provider. We do not sell your personal information.
+Your shipping details are shared only with the parties needed to fulfil and deliver your order (the seller, the supplier and the shipping partner). Cash on delivery payments are collected at the door by the delivery partner. We do not sell your personal information.
 
 Security
 The website uses a secure HTTPS connection and account passwords are never stored in plain text.
@@ -241,7 +241,6 @@ export const INFO_PAGES = {
         h2: 'What makes Bazario authentic',
         list: [
           'Verified sellers — every store is reviewed and approved by Bazario before it can sell.',
-          'Verified reviews — product reviews come from real, verified customers.',
           'Tracked orders — every order has a tracking reference you can follow step by step.',
           '14-day easy returns — a clear returns policy on every purchase.',
           'Secure checkout and live chat support.',
@@ -294,7 +293,7 @@ export const INFO_PAGES = {
         h2: 'Why buy direct from China through Bazario',
         list: [
           'Factory-direct prices with no extra middlemen.',
-          'Verified sellers and verified customer reviews.',
+          'Verified sellers — every store is checked before it can sell.',
           'Most orders dispatched within 1–2 business days.',
           'Tracking on every order.',
           'Secure checkout and live chat support.',
@@ -474,7 +473,8 @@ export function productTitle(p) {
   return clip(`${p.name} | Bazario`, 70);
 }
 
-// Only REAL data goes into Product schema. Ratings appear only when the product has real reviews.
+// Only REAL data goes into Product schema. No star rating: the storefront has no customer review system yet,
+// so the rating / numReviews numbers in the database are not real reviews and must not be shown to Google.
 export function productLd(p, path) {
   const price = Number(p.price);
   const ld = {
@@ -501,17 +501,6 @@ export function productLd(p, path) {
         ? { '@type': 'Organization', name: sellerName }
         : { '@id': SITE.url + '/#organization' },
       hasMerchantReturnPolicy: returnPolicyLd(),
-    };
-  }
-  const rating = Number(p.rating);
-  const count = Number(p.numReviews);
-  if (count > 0 && rating > 0 && rating <= 5) {
-    ld.aggregateRating = {
-      '@type': 'AggregateRating',
-      ratingValue: rating.toFixed(1),
-      reviewCount: count,
-      bestRating: '5',
-      worstRating: '1',
     };
   }
   return ld;

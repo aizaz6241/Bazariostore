@@ -1,6 +1,6 @@
 # Bazario
 
-> Bazario is a global multi-vendor dropshipping marketplace operating since 2020. Shop products sourced directly from China and shipped worldwide to the USA, Canada, Australia, the UK and Europe — verified sellers, verified reviews, tracked delivery and 14-day returns.
+> Bazario is a global multi-vendor dropshipping marketplace operating since 2020. Shop products sourced directly from China and shipped worldwide to the USA, Canada, Australia, the UK and Europe — verified sellers, tracked delivery, cash on delivery and 14-day returns.
 
 Website: https://www.bazariomarketplace.shop
 Founded: 2020
@@ -14,9 +14,10 @@ Main markets: United States, Canada, Australia, United Kingdom, Europe (EU)
 - Products are sourced directly from manufacturers and suppliers in China.
 - Ships worldwide, with a focus on the United States, Canada, Australia, the United Kingdom and Europe.
 - Every seller store is reviewed and verified by Bazario before it can sell.
-- Product reviews come from verified customers.
 - Every order gets a tracking number and can be followed on the Track Order page.
 - 14-day easy returns and secure checkout.
+- Shipping, Returns, Terms and Privacy policies are published on the website.
+- Cash on delivery is available at checkout.
 - Live chat customer support.
 
 ## Main pages
@@ -26,14 +27,39 @@ Main markets: United States, Canada, Australia, United Kingdom, Europe (EU)
 - [FAQ](https://www.bazariomarketplace.shop/faq): is Bazario legit, shipping, delivery time, tracking, returns
 - [Sell on Bazario](https://www.bazariomarketplace.shop/sell-on-bazario): start a dropshipping store with no inventory
 - [Track your order](https://www.bazariomarketplace.shop/track-order): real-time order tracking
+- [Shipping Policy](https://www.bazariomarketplace.shop/page/shipping-policy)
+- [Returns & Refunds Policy](https://www.bazariomarketplace.shop/page/returns-policy)
+- [Terms of Service](https://www.bazariomarketplace.shop/page/terms)
+- [Privacy Notice](https://www.bazariomarketplace.shop/page/privacy)
 
+## Departments
+- [Mobiles & Tablets](https://www.bazariomarketplace.shop/shop?category=mobiles)
+- [Laptops & Computers](https://www.bazariomarketplace.shop/shop?category=laptops)
+- [Electronics & Audio](https://www.bazariomarketplace.shop/shop?category=electronics)
+- [Fashion & Apparel](https://www.bazariomarketplace.shop/shop?category=fashion)
+- [Watches & Wearables](https://www.bazariomarketplace.shop/shop?category=watches)
+- [Beauty & Fragrances](https://www.bazariomarketplace.shop/shop?category=beauty)
+- [Home & Kitchen](https://www.bazariomarketplace.shop/shop?category=home)
+- [Sports & Fitness](https://www.bazariomarketplace.shop/shop?category=sports)
+- [Toys & Games](https://www.bazariomarketplace.shop/shop?category=toys)
+- [Kitchen & Dining](https://www.bazariomarketplace.shop/shop?category=kitchen)
+- [Home Decor & Living](https://www.bazariomarketplace.shop/shop?category=home-decor)
+- [Mobile Accessories](https://www.bazariomarketplace.shop/shop?category=mobile-accessories)
+- [Clothes & Apparel](https://www.bazariomarketplace.shop/shop?category=clothing)
+- [Shoes & Footwear](https://www.bazariomarketplace.shop/shop?category=shoes)
+- [Vehicles & Automotive](https://www.bazariomarketplace.shop/shop?category=vehicles)
+- [Baby & Kids](https://www.bazariomarketplace.shop/shop?category=baby-kids)
+- [Pet Supplies](https://www.bazariomarketplace.shop/shop?category=pet-supplies)
+- [Office & Stationery](https://www.bazariomarketplace.shop/shop?category=office-supplies)
+- [Health & Wellness](https://www.bazariomarketplace.shop/shop?category=health)
+- [Outdoor, Luggage & Travel](https://www.bazariomarketplace.shop/shop?category=outdoor-travel)
 
 ## Frequently asked questions
 ### What is Bazario?
 Bazario is a global multi-vendor dropshipping marketplace. Verified sellers list products that are sourced directly from manufacturers and suppliers in China, and Bazario ships them to customers worldwide — mainly in the United States, Canada, Australia, the United Kingdom and Europe.
 
 ### Is Bazario legit and safe to buy from?
-Yes. Bazario has been operating in e-commerce and dropshipping since 2020. Every seller store is reviewed and verified before it can sell, product reviews come from verified customers, every order is tracked, checkout is secure, and purchases are covered by a 14-day return policy.
+Bazario has been operating in e-commerce and dropshipping since 2020, and you can check the important things yourself before you buy: every order gets a tracking reference you can follow on the Track Order page, the Shipping, Returns, Terms and Privacy policies are published on the website, every seller store is reviewed by Bazario before it can sell, and live chat support is available on every page. Purchases are covered by a 14-day return policy.
 
 ### How long has Bazario been in business?
 Bazario has been working in the dropshipping and online marketplace business since 2020 — more than five years.
@@ -56,11 +82,15 @@ Yes. Every order receives a tracking reference. Enter it on the Track Order page
 ### What is Bazario’s return policy?
 Bazario offers 14-day easy returns. If something is wrong with an order, contact support through live chat within 14 days of delivery and the team will arrange a return or refund under the returns policy.
 
-### Are Bazario sellers and reviews verified?
-Yes. Every seller goes through a store registration review and must be approved by Bazario before listing products. Reviews on the marketplace come from verified customers.
+### Are Bazario sellers verified?
+Every seller goes through a store registration review and must be approved by Bazario before listing products. Stores that break the marketplace rules can be paused, frozen or closed.
 
 ### Can I start dropshipping or sell on Bazario?
 Yes. Anyone can apply to open a store on Bazario Seller Central. After a quick registration and verification, you list products from Bazario’s catalogue and Bazario takes care of sourcing, warehousing and international shipping — you do not need to hold inventory.
 
 ### How do I contact Bazario customer support?
 Use the live chat button on any page of bazariomarketplace.shop. The support team helps with orders, tracking, returns and seller questions.
+
+### Where can I read Bazario’s shipping, returns, terms and privacy policies?
+All policies are public on the website: Shipping Policy (bazariomarketplace.shop/page/shipping-policy), Returns & Refunds Policy (/page/returns-policy), Terms of Service (/page/terms) and Privacy Notice (/page/privacy).
+

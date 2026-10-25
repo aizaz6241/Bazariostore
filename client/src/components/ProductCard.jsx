@@ -4,7 +4,6 @@ import { useCart } from '../cart.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 import { badgeFor } from '../data.js';
 import Ic from './Icons.jsx';
-import Stars from './Stars.jsx';
 
 // Storefront product card (styles: styles/storefront/catalog-v2.css, scoped `.pc`)
 export default function ProductCard({ p }) {
@@ -19,8 +18,6 @@ export default function ProductCard({ p }) {
   const sellerName = p.sellerName || p.seller?.storeName || 'Bazario Verified';
   const discountPercent = p.oldPrice > p.price ? Math.round(((p.oldPrice - p.price) / p.oldPrice) * 100) : 0;
   const img = p.image || p.images?.[0]?.url || '/img/products/serum.svg';
-  const rating = p.rating || 4.8;
-  const reviews = p.numReviews || 18;
 
   const handleAdd = (e) => {
     if (e) {
@@ -72,12 +69,6 @@ export default function ProductCard({ p }) {
 
         <Link to={`/product/${p.slug}`} className="pc-name">{p.name}</Link>
 
-        <div className="pc-rating">
-          <Stars value={rating} />
-          <span className="pc-rating-num">{Number(rating).toFixed(1)}</span>
-          <span className="pc-rating-count">({reviews})</span>
-        </div>
-
         <div className="pc-price">
           <b>{formatMoney(p.price)}</b>
           {p.oldPrice > p.price && <s>{formatMoney(p.oldPrice)}</s>}
@@ -85,7 +76,7 @@ export default function ProductCard({ p }) {
 
         <div className="pc-ship">
           <Ic name="truck" size={13} />
-          <span>Express delivery</span>
+          <span>Tracked delivery</span>
         </div>
 
         <button
