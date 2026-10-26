@@ -121,21 +121,76 @@ export async function compareCounts(src, dst) {
   return diff;
 }
 
+/** Copy one document from the source as it is NOW (used when a change can't be applied as a delta). */
+async function copyOneFromSource(src, d, name, id) {
+  if (!src) return 'skipped';
+  const full = await src.collection(name).findOne({ _id: id });
+  // gone in the source: it was deleted right after; its delete event follows
+  if (!full) return 'gone';
+  await d.replaceOne({ _id: id }, full, { upsert: true });
+  return 'copied';
+}
+
+/**
+ * An update as ONLY the changed fields ($set / $unset), so a small change to a big document (a
+ * seller with KYC photos, a chat message with a voice note) does not send the whole document
+ * again: not from Atlas to the server, and not from the server to the mirror (Render bills that
+ * outbound traffic). Returns null when the change cannot be expressed safely; the caller then
+ * copies the whole document from the source.
+ */
+export function updateAsDelta(ev) {
+  const u = ev.updateDescription;
+  if (!u) return null;
+  // array cut short by $push/$slice etc., or a field name with a dot / number that is ambiguous
+  if (u.truncatedArrays?.length) return null;
+  if (u.disambiguatedPaths && Object.keys(u.disambiguatedPaths).length) return null;
+  const set = u.updatedFields || {};
+  const unset = {};
+  for (const f of u.removedFields || []) unset[f] = '';
+  const op = {};
+  if (Object.keys(set).length) op.$set = set;
+  if (Object.keys(unset).length) op.$unset = unset;
+  return op;
+}
+
 /**
  * Apply one change-stream event to the copy. Idempotent: applying the same event twice, or an
- * older event after a newer full copy, still ends with the source's content.
+ * older event after a newer full copy, still ends with the source's content (all later events are
+ * replayed too).
+ *
+ * opts.src    – the source database: needed for updates that come without the full document
+ * opts.delta  – the stream gives exact field paths (MongoDB 6.1+, showExpandedEvents): updates are
+ *               applied as $set / $unset. Without it every update copies the whole document.
  */
-export async function applyChange(dst, ev) {
+export async function applyChange(dst, ev, opts = {}) {
   const name = ev.ns?.coll;
   if (!name || SKIP(name)) return;
   const d = dst.collection(name);
   switch (ev.operationType) {
     case 'insert':
     case 'replace':
-    case 'update':
       if (ev.fullDocument) await d.replaceOne({ _id: ev.documentKey._id }, ev.fullDocument, { upsert: true });
       // no fullDocument: the document was deleted right after; its delete event follows
       break;
+    case 'update': {
+      if (ev.fullDocument) {
+        await d.replaceOne({ _id: ev.documentKey._id }, ev.fullDocument, { upsert: true });
+        break;
+      }
+      const op = opts.delta ? updateAsDelta(ev) : null;
+      if (op && !op.$set && !op.$unset) break; // nothing changed
+      if (op) {
+        try {
+          const r = await d.updateOne({ _id: ev.documentKey._id }, op);
+          if (r.matchedCount === 1) break;
+          // not in the copy (should not happen): fall through to a full copy of the document
+        } catch {
+          // e.g. a path that does not fit the copy's shape: copy the whole document instead
+        }
+      }
+      await copyOneFromSource(opts.src, d, name, ev.documentKey._id);
+      break;
+    }
     case 'delete':
       await d.deleteOne({ _id: ev.documentKey._id });
       break;

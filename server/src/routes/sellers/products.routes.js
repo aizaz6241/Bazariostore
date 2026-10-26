@@ -3,6 +3,7 @@ import Seller from '../../models/Seller.js';
 import Product from '../../models/Product.js';
 import Order from '../../models/Order.js';
 import { isDiamond } from '../../utils/sellerTier.js';
+import { removedKeys, deleteUnusedKeys } from '../../services/uploads.js';
 import { authSeller } from '../../middleware/auth.js';
 import { slugify, blockWhenFrozen, ownProductFilter } from './helpers.js';
 
@@ -161,12 +162,16 @@ router.put('/products/:id', authSeller, blockWhenFrozen('editing products'), asy
       product.costs.purchase = Number(data.costs.purchase);
     }
 
+    let droppedImageKeys = [];
     if (data.images && Array.isArray(data.images)) {
+      droppedImageKeys = removedKeys(product.images, data.images);
       product.images = data.images.map((img) => (typeof img === 'string' ? { url: img, key: null } : img));
       if (product.images.length) product.image = product.images[0].url;
     }
 
     await product.save();
+    // pictures taken off: freed on UploadThing, unless still used elsewhere (Product Treasury)
+    if (droppedImageKeys.length) await deleteUnusedKeys(droppedImageKeys);
     res.json(product);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -205,6 +210,8 @@ router.delete('/products/:id', authSeller, blockWhenFrozen('deleting products'),
     }
 
     await Product.deleteOne({ _id: product._id });
+    // its pictures are freed too — except Product Treasury pictures that other stores still show
+    await deleteUnusedKeys((product.images || []).map((i) => i.key));
     res.json({ ok: true, message: 'Product deleted' });
   } catch (err) {
     res.status(500).json({ message: err.message });

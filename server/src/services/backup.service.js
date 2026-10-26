@@ -11,6 +11,20 @@ const __dirname = path.dirname(__filename);
 // Backups folder located outside MongoDB, directly on server physical disk
 export const BACKUPS_DIR = path.resolve(__dirname, '../../backups');
 
+/**
+ * How often the automatic snapshot on the Render disk is made (it was every hour).
+ * Every snapshot reads the WHOLE database from Atlas. The free Atlas cluster allows 10 GB out per
+ * 7 days and is slowed down after that; 24 full reads a day of a ~60–100 MB database is ~10–17 GB
+ * a week. Every 6 hours = 4 reads a day. Change on Render → Environment: LOCAL_BACKUP_EVERY_HOURS
+ * (1–24). The files are still named "backup-hourly-…" so older files and restore keep working.
+ * The Render disk is wiped on every deploy / restart: these are quick undo points, not the safe
+ * copies (those are the cloud backups, the mirror and the PC copy).
+ */
+export function localEveryHours() {
+  const n = Number(String(process.env.LOCAL_BACKUP_EVERY_HOURS ?? '').trim() || 6);
+  return Number.isFinite(n) ? Math.min(24, Math.max(1, n)) : 6;
+}
+
 export function ensureBackupDir() {
   if (!fs.existsSync(BACKUPS_DIR)) {
     fs.mkdirSync(BACKUPS_DIR, { recursive: true });
@@ -219,10 +233,11 @@ export async function deleteBackupFile(filename) {
 }
 
 /**
- * Enforce retention policy: keeps latest N hourly backups, removes older ones.
+ * Enforce retention policy. The setting is in HOURS ("keep the latest 48 hours"); with a snapshot
+ * every N hours that is ceil(hours / N) files (48 h at every 6 h = 8 files).
  */
 export async function enforceHourlyRetention() {
-  const retentionCount = await getHourlyRetentionLimit();
+  const retentionCount = Math.max(1, Math.ceil((await getHourlyRetentionLimit()) / localEveryHours()));
   ensureBackupDir();
 
   const hourlyFiles = fs

@@ -224,7 +224,7 @@ export default function Backup() {
             gap: 4,
           }}
         >
-          <Ic name="clock" size={13} /> Hourly Auto
+          <Ic name="clock" size={13} /> Auto
         </span>
       );
     }
@@ -283,7 +283,7 @@ export default function Backup() {
             <Ic name="database" size={26} /> Database Backup & Disaster Recovery
           </h1>
           <p className="muted" style={{ margin: '4px 0 0', fontSize: 14 }}>
-            Complete database protection, automated hourly snapshots, and single-click disaster recovery
+            Live mirror, a server snapshot every {stats?.localEveryHours || 6} hours, an encrypted cloud copy every night, and single-click disaster recovery
           </p>
         </div>
 
@@ -383,6 +383,30 @@ export default function Backup() {
             Physical directory: <code>server/backups/</code>
           </small>
         </div>
+
+        {stats?.dbSize && (() => {
+          const used = stats.dbSize.dataBytes + stats.dbSize.indexBytes;
+          const pct = Math.min(100, Math.round((used / stats.dbSize.limitBytes) * 100));
+          const color = pct >= 85 ? '#dc2626' : pct >= 70 ? '#f59e0b' : '#10b981';
+          return (
+            <div className="card" style={{ padding: '16px 20px', borderLeft: `4px solid ${color}` }}>
+              <small className="muted" style={{ fontWeight: 600, textTransform: 'uppercase', fontSize: 11 }}>
+                Database Size (free Atlas limit)
+              </small>
+              <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4, color: '#0f172a' }}>
+                {formatBytes(used)} <span style={{ fontSize: 13, fontWeight: 500, color: '#64748b' }}>of 512 MB · {pct}%</span>
+              </div>
+              <div style={{ height: 6, borderRadius: 3, background: '#e2e8f0', marginTop: 6, overflow: 'hidden' }}>
+                <div style={{ width: `${pct}%`, height: '100%', background: color }} />
+              </div>
+              {stats.biggestCollections?.length > 0 && (
+                <small className="muted" style={{ display: 'block', marginTop: 6, fontSize: 11, lineHeight: 1.5 }}>
+                  Biggest: {stats.biggestCollections.slice(0, 3).map((c) => `${c.name} ${formatBytes(c.bytes)}`).join(' · ')}
+                </small>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Hourly Auto-Backup Configuration Box */}
@@ -390,16 +414,16 @@ export default function Backup() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
           <div>
             <h3 style={{ margin: 0, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Ic name="clock" size={18} /> Automated Hourly Backup & Retention Schedule
+              <Ic name="clock" size={18} /> Automatic Server Snapshot & Retention Schedule
             </h3>
             <p className="muted-sm" style={{ margin: '4px 0 0', fontSize: 13 }}>
-              The system automatically captures a full snapshot of the entire database every 60 minutes in the background.
+              A full snapshot of the database is saved on the server every {stats?.localEveryHours || 6} hours (quick undo points). The server disk is wiped on every deploy / restart, so the safe copies are the cloud backups, the mirror and the PC copy.
             </p>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 14, fontWeight: 600 }}>Hourly Scheduler:</span>
+              <span style={{ fontSize: 14, fontWeight: 600 }}>Auto snapshots:</span>
               <Toggle on={autoEnabled} onChange={() => setAutoEnabled(!autoEnabled)} />
               <b style={{ color: autoEnabled ? '#15803d' : '#94a3b8', fontSize: 13 }}>
                 {autoEnabled ? 'ENABLED' : 'PAUSED'}
@@ -441,7 +465,7 @@ export default function Backup() {
 
         {stats?.settings?.lastHourlyBackupAt && (
           <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #e2e8f0', fontSize: 12, color: '#64748b' }}>
-            <span>🕒 Last automated hourly backup taken: <b>{fmtDate(stats.settings.lastHourlyBackupAt)}</b></span>
+            <span>🕒 Last automatic snapshot: <b>{fmtDate(stats.settings.lastHourlyBackupAt)}</b></span>
           </div>
         )}
       </div>
@@ -483,13 +507,18 @@ export default function Backup() {
           <div>
             <h3 style={{ margin: 0, fontSize: 16 }}>☁️ Cloud backups — safe copies ({cloud.backups.length})</h3>
             <p style={{ margin: '4px 0 0', fontSize: 12, color: '#64748b' }}>
-              Every 6 hours, encrypted, stored outside the Render server (they survive restarts and deploys). Kept: all from the last 7 days, one per day for 90 days, one per month for ever.
+              {(cloud.everyHours || 24) >= 24 ? `Once ${(cloud.everyHours || 24) === 24 ? 'a day' : `every ${Math.round((cloud.everyHours || 24) / 24)} days`} at night (India time)` : `Every ${cloud.everyHours} hours`}, encrypted, stored outside the Render server (they survive restarts and deploys). Kept: all from the last 7 days, one per week for 5 weeks, one per month for {cloud.keepMonths === 0 ? 'ever' : `${cloud.keepMonths || 12} months`}. The PC backup keeps every file for ever.{cloud.storedBytes ? ` Cloud space used: ${formatBytes(cloud.storedBytes)} (free UploadThing space is 2 GB, shared with chat pictures).` : ''}
             </p>
           </div>
           <button className="btn-primary" onClick={runCloudNow} disabled={cloudBusy}>
             {cloudBusy ? 'Backing up…' : '☁️ Back up now'}
           </button>
         </div>
+        {cloud.lastFailure && (
+          <div style={{ padding: '12px 20px', background: '#fef2f2', color: '#b91c1c', fontSize: 13, fontWeight: 600 }}>
+            ⚠️ The last automatic cloud backup failed ({fmtDate(cloud.lastFailure.at)}): {cloud.lastFailure.error}. It tries again after 3 hours — or press "Back up now".
+          </div>
+        )}
         {!cloud.ready && (
           <div style={{ padding: '12px 20px', background: '#fef2f2', color: '#b91c1c', fontSize: 13, fontWeight: 600 }}>
             ⚠️ Cloud backups are OFF: set UPLOADTHING_TOKEN and BACKUP_ENCRYPTION_KEY on the server (Render → Environment).
@@ -693,16 +722,16 @@ export default function Backup() {
               1. Where are backup files stored?
             </b>
             <p style={{ margin: 0, fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
-              Backup files are stored directly on the web server's physical drive (<code>server/backups/</code>), completely isolated from MongoDB. Even if your cloud or production database cluster is deleted or corrupted, all snapshots on disk remain 100% safe.
+              Four places: the live mirror database (seconds behind), snapshots on the web server's drive (<code>server/backups/</code> — wiped on every deploy / restart), encrypted cloud copies every night (UploadThing), and the PC / Google Drive copy (<code>server\scripts\backup-to-pc.bat</code>), which keeps every file for ever.
             </p>
           </div>
 
           <div style={{ background: '#1e293b', padding: '16px 20px', borderRadius: 10, border: '1px solid #334155' }}>
             <b style={{ color: '#a78bfa', fontSize: 15, display: 'block', marginBottom: 8 }}>
-              2. Automated Hourly Snapshots
+              2. Automatic Snapshots
             </b>
             <p style={{ margin: 0, fontSize: 13, color: '#cbd5e1', lineHeight: 1.6 }}>
-              The background scheduler takes a full database snapshot every 60 minutes, naming each file with the exact date and timestamp. Older snapshots are automatically pruned according to your retention policy to keep server storage clean.
+              The server saves a full snapshot every {stats?.localEveryHours || 6} hours and the encrypted cloud copy once a night. Fewer full reads keep the free Atlas cluster under its 10 GB / week transfer limit and the Render server under its 5 GB / month bandwidth. Older snapshots are pruned automatically.
             </p>
           </div>
 

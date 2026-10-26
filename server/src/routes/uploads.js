@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { authSellerOrAdmin } from '../middleware/auth.js';
-import { uploadBuffers, deleteKeys } from '../services/uploads.js';
+import { uploadBuffers, deleteKeys, keysStillUsed } from '../services/uploads.js';
 import mongoose from 'mongoose';
 import crypto from 'crypto';
 import { limit } from '../utils/rateLimit.js';
@@ -178,6 +178,15 @@ router.delete('/:key', authSellerOrAdmin, async (req, res) => {
     // anybody's picture just by knowing or guessing its key).
     if (!req.admin && !(await sellerOwnsKey(req.seller?.id, safeKey))) {
       return res.status(403).json({ message: 'You can only remove your own files' });
+    }
+
+    // Still shown somewhere (a saved product, a Product Treasury picture other stores share, a
+    // logo, a chat message)? Then the file stays: the page asks to remove it while the record
+    // still uses it (e.g. a picture taken off in a form that is never saved). The record frees
+    // it itself once it is saved without it / deleted.
+    if ((await keysStillUsed([safeKey])).has(safeKey)) {
+      recentUploads.delete(safeKey);
+      return res.json({ ok: true, kept: true });
     }
 
     if (process.env.UPLOADTHING_TOKEN) {

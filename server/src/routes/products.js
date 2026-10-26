@@ -4,7 +4,7 @@ import Category from '../models/Category.js';
 import Seller from '../models/Seller.js';
 import { authAdmin } from '../middleware/auth.js';
 import { audit } from '../utils/audit.js';
-import { deleteKeys, removedKeys } from '../services/uploads.js';
+import { removedKeys, deleteUnusedKeys } from '../services/uploads.js';
 import { escapeRegex } from '../utils/sanitize.js';
 
 const router = Router();
@@ -183,11 +183,13 @@ router.put('/:id', authAdmin('products'), async (req, res) => {
     if (body.price != null && Number(body.price) !== product.price) {
       await audit(req, 'price_changed', 'product', product._id, { name: product.name, from: product.price, to: Number(body.price) });
     }
-    // free removed images on UploadThing
-    if (body.images) await deleteKeys(removedKeys(product.images, body.images));
+    // pictures taken off this product: freed on UploadThing AFTER saving, and only when nothing
+    // else uses them (a seller's imported copy shares the Product Treasury picture)
+    const dropped = body.images ? removedKeys(product.images, body.images) : [];
 
     Object.assign(product, body);
     await product.save();
+    if (dropped.length) await deleteUnusedKeys(dropped);
     await audit(req, 'product_updated', 'product', product._id, { name: product.name });
     res.json(product);
   } catch (e) {
@@ -207,8 +209,10 @@ router.patch('/:id/active', authAdmin('products'), async (req, res) => {
 router.delete('/:id', authAdmin('products'), async (req, res) => {
   const product = await Product.findById(req.params.id);
   if (!product) return res.status(404).json({ message: 'Product not found' });
-  await deleteKeys((product.images || []).map((i) => i.key));
+  const keys = (product.images || []).map((i) => i.key);
   await product.deleteOne();
+  // after the delete, so this product no longer counts; shared pictures are kept
+  await deleteUnusedKeys(keys);
   await audit(req, 'product_deleted', 'product', req.params.id, { name: product.name });
   res.json({ ok: true });
 });

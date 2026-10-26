@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import mongoose from 'mongoose';
 import { UTApi, UTFile } from 'uploadthing/server';
 
 let utapi = null;
@@ -33,6 +34,69 @@ export async function deleteKeys(keys) {
     console.error('UploadThing delete failed:', e.message);
   }
 }
+
+/**
+ * Which of these UploadThing keys are STILL used somewhere? A picture can be shared: a product a
+ * seller imported from Product Treasury points at the treasury item's picture (same key), and so
+ * do the copies of every other seller who imported it. Deleting such a key would break the
+ * treasury item and all those stores. Checked: products, treasury products, categories, store
+ * logos / banners and chat attachments. If the check itself fails, every key counts as used
+ * (nothing is deleted — a file left behind costs a little space; a deleted one is lost).
+ */
+export async function keysStillUsed(keys) {
+  const list = [...new Set((keys || []).filter((k) => typeof k === 'string' && k.trim()))];
+  const used = new Set();
+  if (!list.length) return used;
+  const db = mongoose.connection?.db;
+  if (!db || mongoose.connection.readyState !== 1) return new Set(list);
+  try {
+    for (const [col, field] of [['products', 'images.key'], ['treasuryproducts', 'images.key'], ['categories', 'image.key']]) {
+      for (const k of await db.collection(col).distinct(field, { [field]: { $in: list } })) used.add(k);
+    }
+    const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const left = () => list.filter((k) => !used.has(k));
+    const urlChecks = [
+      ['products', ['image', 'images.url']],
+      ['treasuryproducts', ['image', 'images.url']],
+      ['categories', ['image.url']],
+      ['sellers', ['logo', 'banner']],
+      ['messages', ['attachment']],
+    ];
+    for (let i = 0; i < left().length; i += 40) {
+      const chunk = left().slice(i, i + 40);
+      if (!chunk.length) break;
+      const re = new RegExp(chunk.map(esc).join('|'));
+      for (const [col, fields] of urlChecks) {
+        const proj = Object.fromEntries(fields.map((f) => [f, 1]));
+        const docs = await db.collection(col).find({ $or: fields.map((f) => ({ [f]: re })) }, { projection: proj }).toArray();
+        const text = JSON.stringify(docs);
+        for (const k of chunk) if (text.includes(k)) used.add(k);
+      }
+    }
+    return used;
+  } catch (e) {
+    console.error('[uploads] could not check whether files are still used — nothing deleted:', e.message);
+    return new Set(list);
+  }
+}
+
+/**
+ * Free the storage of pictures that NOTHING uses any more. Call it AFTER the record that used
+ * them was deleted / saved without them. Never throws.
+ * @returns {{ freed: number, kept: number }}
+ */
+export async function deleteUnusedKeys(keys) {
+  const list = [...new Set((keys || []).filter(Boolean))];
+  if (!list.length || !process.env.UPLOADTHING_TOKEN) return { freed: 0, kept: list.length };
+  const used = await keysStillUsed(list);
+  const free = list.filter((k) => !used.has(k));
+  await deleteKeys(free);
+  return { freed: free.length, kept: list.length - free.length };
+}
+
+/** UploadThing keys behind a list of picture URLs (logo, banner, …). Other links give nothing. */
+export const keysOfUrls = (urls) =>
+  (urls || []).map((u) => attachmentLocation(u)).filter((l) => l?.kind === 'uploadthing').map((l) => l.key);
 
 // helper: keys that were in `before` images but are gone from `after`
 export function removedKeys(before = [], after = []) {

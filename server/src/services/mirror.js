@@ -22,6 +22,30 @@ import { syncAll, syncCollection, compareCounts, applyChange, STATE, ARCHIVE } f
 const { MongoClient } = mongoose.mongo;
 const CHECK_MS = 6 * 60 * 60 * 1000;
 
+/**
+ * Bandwidth: with `fullDocument: 'updateLookup'` EVERY update made Atlas send the whole document
+ * to the server, and the server then sent the whole document again to the mirror (Render bills
+ * that as outbound bandwidth). A big document (a seller with KYC photos, a message with a voice
+ * note) changed a little = megabytes each time. On MongoDB 6.1+ the stream is now opened with
+ * `showExpandedEvents`, which gives exact field paths, and updates are copied as only the changed
+ * fields. Older servers (or if that option is refused) keep the old full-document way.
+ */
+let deltaMode = null; // null = not decided yet
+async function decideDeltaMode() {
+  if (deltaMode !== null) return deltaMode;
+  try {
+    const info = await src.admin().command({ buildInfo: 1 });
+    const [maj, min] = String(info.version || '0.0').split('.').map(Number);
+    deltaMode = maj > 6 || (maj === 6 && min >= 1);
+  } catch {
+    deltaMode = false;
+  }
+  console.log(`🪞 [Mirror] updates copied as ${deltaMode ? 'changed fields only' : 'whole documents'}`);
+  return deltaMode;
+}
+const streamOptions = () => (deltaMode ? { showExpandedEvents: true } : { fullDocument: 'updateLookup' });
+const optionRefused = (e) => e?.code === 40415 || /showExpandedEvents/i.test(String(e?.message || ''));
+
 const status = {
   enabled: false,
   state: 'off', // off | starting | full-copy | live | error
@@ -84,14 +108,15 @@ async function fullCopy(reason) {
 }
 
 async function follow(token) {
-  const stream = src.watch([], { fullDocument: 'updateLookup', ...(token ? { resumeAfter: token } : {}) });
+  await decideDeltaMode();
+  const stream = src.watch([], { ...streamOptions(), ...(token ? { resumeAfter: token } : {}) });
   status.state = 'live';
   status.error = '';
   let lastSave = Date.now();
   let unsaved = 0;
   try {
     for await (const ev of stream) {
-      await applyChange(dst, ev);
+      await applyChange(dst, ev, { src, delta: deltaMode });
       status.lastEventAt = new Date();
       status.eventsApplied += 1;
       unsaved += 1;
@@ -126,7 +151,12 @@ async function loop() {
       status.state = 'error';
       status.error = e.message;
       console.error('🪞 [Mirror] error:', e.message);
-      if (historyLost(e)) {
+      if (deltaMode && optionRefused(e)) {
+        // this database does not accept the option: back to whole documents (nothing is lost —
+        // the stream continues from the same saved position)
+        deltaMode = false;
+        console.warn('🪞 [Mirror] changed-fields mode not supported here: copying whole documents');
+      } else if (historyLost(e)) {
         // the saved position is too old for the main database's change history: copy everything again
         await saveState({ fullCopyRunning: true }).catch(() => {});
       }

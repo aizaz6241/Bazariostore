@@ -14,8 +14,9 @@ import {
   restoreDatabaseFromData,
   getBackupSettings,
   updateBackupSettings,
+  localEveryHours,
 } from '../services/backup.service.js';
-import { runCloudBackup, listCloudBackups, cloudBackupReady } from '../services/cloudBackup.js';
+import { runCloudBackup, listCloudBackups, cloudBackupReady, cloudBackupInfo } from '../services/cloudBackup.js';
 import { mirrorStatus } from '../services/mirror.js';
 
 const router = Router();
@@ -48,6 +49,10 @@ router.get('/stats', checkBackupAuth, async (req, res) => {
     let collectionsCount = 0;
     let documentsCount = 0;
     let dbName = 'bazario';
+    // Size as the free Atlas cluster counts it (data + indexes, limit 512 MB) and the biggest
+    // collections — the ones that make every backup / copy heavy
+    let dbSize = null;
+    const biggest = [];
 
     if (isConnected) {
       const db = mongoose.connection.db;
@@ -60,8 +65,17 @@ router.get('/stats', checkBackupAuth, async (req, res) => {
           try {
             documentsCount += await db.collection(c.name).countDocuments();
           } catch {}
+          try {
+            const [s] = await db.collection(c.name).aggregate([{ $collStats: { storageStats: {} } }]).toArray();
+            if (s?.storageStats) biggest.push({ name: c.name, bytes: Number(s.storageStats.size || 0), count: Number(s.storageStats.count || 0) });
+          } catch {}
         }
       }
+      try {
+        const st = await db.stats();
+        dbSize = { dataBytes: Number(st.dataSize || 0), indexBytes: Number(st.indexSize || 0), limitBytes: 512 * 1024 * 1024 };
+      } catch {}
+      biggest.sort((a, b) => b.bytes - a.bytes);
     }
 
     const backups = await listBackups();
@@ -77,6 +91,9 @@ router.get('/stats', checkBackupAuth, async (req, res) => {
       totalDiskBytes: totalBytes,
       latestBackup: backups[0] || null,
       settings,
+      localEveryHours: localEveryHours(),
+      dbSize,
+      biggestCollections: biggest.slice(0, 6),
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -207,8 +224,10 @@ router.get('/mirror', checkBackupAuth, (req, res) => res.json(mirrorStatus()));
 router.get('/cloud', checkBackupAuth, async (req, res) => {
   try {
     const list = await listCloudBackups();
+    const info = await cloudBackupInfo(list).catch(() => ({}));
     res.json({
       ready: cloudBackupReady(),
+      ...info,
       backups: list.map((b) => ({ id: String(b._id), name: b.name, size: b.size, rawSize: b.rawSize, documentsCount: b.documentsCount, createdAt: b.createdAt, reason: b.reason })),
     });
   } catch (err) {

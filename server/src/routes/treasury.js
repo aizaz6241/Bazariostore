@@ -6,7 +6,7 @@ import Category from '../models/Category.js';
 import { authAdmin } from '../middleware/auth.js';
 import { audit } from '../utils/audit.js';
 import { escapeRegex } from '../utils/sanitize.js';
-import { deleteKeys, removedKeys } from '../services/uploads.js';
+import { removedKeys, deleteUnusedKeys } from '../services/uploads.js';
 import { setTreasuryStock, adjustTreasuryStock, announceTreasuryChange } from '../utils/stockSync.js';
 import { toSellers } from '../utils/realtime.js';
 
@@ -255,14 +255,16 @@ router.put('/:id', authAdmin('products'), async (req, res) => {
     if (Array.isArray(data.labels)) product.labels = data.labels;
     if (Array.isArray(data.tags)) product.tags = data.tags;
 
+    let droppedImageKeys = [];
     if (Array.isArray(data.images) && data.images.length) {
-      // free removed UploadThing images if needed
-      await deleteKeys(removedKeys(product.images, data.images));
+      // pictures taken off: freed after saving, and only if no seller's imported copy still shows them
+      droppedImageKeys = removedKeys(product.images, data.images);
       product.images = data.images.map((img) => (typeof img === 'string' ? { url: img, key: null } : img));
       product.image = product.images[0]?.url || '';
     }
 
     await product.save();
+    if (droppedImageKeys.length) await deleteUnusedKeys(droppedImageKeys);
 
     // A new stock level: set in one step (and shown on every seller listing)
     if (newStockProvided !== null && newStockProvided !== previousStock) {
@@ -370,8 +372,8 @@ router.delete('/:id', authAdmin('products'), async (req, res) => {
     const product = await TreasuryProduct.findById(req.params.id);
     if (!product) return res.status(404).json({ message: 'Treasury product not found' });
 
-    // Clean up images
-    await deleteKeys((product.images || []).map((i) => i.key));
+    // its pictures are freed after the delete below — except the ones sellers' listings still show
+    const imageKeys = (product.images || []).map((i) => i.key);
 
     // the sellers listing it are told (their listing goes off sale below)
     const listingSellers = await Product.distinct('seller', { treasuryProduct: product._id });
@@ -384,6 +386,7 @@ router.delete('/:id', authAdmin('products'), async (req, res) => {
     );
 
     await product.deleteOne();
+    await deleteUnusedKeys(imageKeys);
     await audit(req, 'treasury_product_deleted', 'treasury_product', req.params.id, { name: product.name });
     toSellers(listingSellers, 'products:changed', { treasuryProduct: String(req.params.id) });
 

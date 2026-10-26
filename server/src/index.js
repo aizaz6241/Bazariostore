@@ -62,7 +62,7 @@ import sellerRoutes from './routes/sellers.js';
 import treasuryRoutes from './routes/treasury.js';
 import backupRoutes from './routes/backup.js';
 import adminHubRoutes from './routes/adminHub.js';
-import { createBackup, getBackupSettings, updateBackupSettings } from './services/backup.service.js';
+import { createBackup, getBackupSettings, updateBackupSettings, localEveryHours } from './services/backup.service.js';
 import { scheduleCloudBackups } from './services/cloudBackup.js';
 import { startMirror } from './services/mirror.js';
 
@@ -147,7 +147,8 @@ if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
     runTestOrderBot(app);
   }, 45000);
 
-  // Automated Hourly Database Backup Scheduler (runs every 60 minutes)
+  // Automatic snapshot on the Render disk: checked every hour, made every LOCAL_BACKUP_EVERY_HOURS
+  // (default 6 — it was every hour, and each one reads the whole database from Atlas)
   const runHourlyBackupJob = async () => {
     try {
       if (mongoose.connection.readyState !== 1) return;
@@ -155,9 +156,9 @@ if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
       if (!settings.autoBackupEnabled) return;
       // A restart must not trigger an extra backup right away (it did every time, 30 s after start)
       const last = settings.lastHourlyBackupAt ? new Date(settings.lastHourlyBackupAt).getTime() : 0;
-      if (last && Date.now() - last < 55 * 60 * 1000) return;
+      if (last && Date.now() - last < (localEveryHours() * 60 - 5) * 60 * 1000) return;
 
-      console.log('⏰ [Backup Scheduler] Triggering automated hourly database backup...');
+      console.log(`⏰ [Backup Scheduler] Automatic database snapshot (every ${localEveryHours()} h)...`);
       const backup = await createBackup('hourly');
       await updateBackupSettings({ lastHourlyBackupAt: new Date().toISOString() });
       console.log(`✅ [Backup Scheduler] Automated hourly backup complete: ${backup.filename} (${(backup.sizeBytes / 1024).toFixed(1)} KB, ${backup.documentsCount} documents)`);
@@ -175,7 +176,8 @@ if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
   // First check 10 minutes after start (not while the server is still warming up)
   setTimeout(runHourlyBackupJob, 10 * 60 * 1000);
 
-  // Encrypted copy of the database in the cloud every 6 hours (survives Render restarts / deploys)
+  // Encrypted copy of the database in the cloud once a day at night, India time (survives Render
+  // restarts / deploys). CLOUD_BACKUP_EVERY_HOURS changes the rhythm — see services/cloudBackup.js
   scheduleCloudBackups();
 
   // Live mirror: every change also written to the second database (MIRROR_MONGO_URI)

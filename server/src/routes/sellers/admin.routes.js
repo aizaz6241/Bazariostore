@@ -24,6 +24,7 @@ import { restartSellerDeadlines, releaseFrozenFund } from './orders.routes.js';
 import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
 import { setScoreAsAdjustment, bandOf, recomputeHealth, MONITOR_NAME } from '../../utils/healthEngine.js';
 import { emailSellerApproved, emailAccountStatus } from '../../utils/sellerEmails.js';
+import { deleteUnusedKeys, deleteAttachmentFiles, keysOfUrls, attachmentLocation } from '../../services/uploads.js';
 
 /** Setting a seller's password or login email: the same rank as viewing the saved password. */
 const canTouchSellerLogin = (admin) => ['super_admin', 'admin'].includes(admin?.role);
@@ -2351,14 +2352,36 @@ router.delete('/:id', authAdmin('sellers'), announceToAdmins('sellers', 'sellers
       });
     }
 
+    // What this store keeps on the file storage (UploadThing): product pictures, logo / banner and
+    // the pictures / PDFs of its support chat. Collected BEFORE the records go.
+    const productKeys = (await Product.find({ seller: seller._id }).select('images.key').lean()).flatMap((p) => (p.images || []).map((i) => i.key));
+    const convIds = await Conversation.distinct('_id', { seller: seller._id });
+    const chatScope = { $or: [{ seller: seller._id }, { conversation: { $in: convIds } }] };
+    const chatFiles = await Message.distinct('attachment', { ...chatScope, attachment: { $nin: [null, ''] } });
+
     await Seller.findByIdAndDelete(req.params.id);
 
     // Also remove or clean up products, transactions, and chat conversations associated with deleted seller
     await Product.deleteMany({ seller: req.params.id }).catch(() => {});
     await Withdrawal.deleteMany({ seller: req.params.id }).catch(() => {});
     await Conversation.deleteMany({ seller: req.params.id }).catch(() => {});
+    // the chat's messages too (they used to stay behind in the database with nobody to see them)
+    await Message.deleteMany(chatScope).catch(() => {});
 
-    audit(req, 'delete', 'seller', req.params.id, `Deleted seller: ${storeName} (${email})`);
+    // Free the files. Shared ones are kept: a Product Treasury picture other stores still show,
+    // or a chat file another message still points to. Never fails the delete.
+    let filesFreed = 0;
+    try {
+      filesFreed += (await deleteUnusedKeys([...productKeys, ...keysOfUrls([seller.logo, seller.banner]), ...keysOfUrls(chatFiles)])).freed;
+      // files kept on the server's own disk (/uploads, older fallback)
+      const localFiles = chatFiles.filter((u) => attachmentLocation(u)?.kind === 'local');
+      const stillUsed = new Set(localFiles.length ? await Message.distinct('attachment', { attachment: { $in: localFiles } }) : []);
+      filesFreed += (await deleteAttachmentFiles(localFiles.filter((u) => !stillUsed.has(u)))).deleted;
+    } catch (e) {
+      console.error('[seller delete] files could not all be freed:', e.message);
+    }
+
+    audit(req, 'delete', 'seller', req.params.id, `Deleted seller: ${storeName} (${email}); ${filesFreed} stored file(s) freed`);
     await finLog(req, {
       action: 'seller.deleted',
       summary: `Deleted seller “${storeName}” (${email}). It had no approved deposits or withdrawals.`,
