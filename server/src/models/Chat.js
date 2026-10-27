@@ -56,6 +56,22 @@ const conversationSchema = new mongoose.Schema(
 // What the admin chat list shows: chats never deleted, or written in again after being deleted
 export const ADMIN_VISIBLE_CHAT = { $or: [{ adminDeletedAt: null }, { $expr: { $gt: ['$lastAt', '$adminDeletedAt'] } }] };
 
+// A shortcut button sent by support (utils/chatShortcuts.js)
+const shortcutActionSchema = new mongoose.Schema(
+  {
+    kind: { type: String, enum: ['page', 'order', 'product'] },
+    key: { type: String, default: '' }, // page key (kind 'page')
+    refId: { type: String, default: '' }, // order / product id
+    label: { type: String, default: '' }, // button text
+    sub: { type: String, default: '' }, // small line under it
+    openedAt: { type: Date, default: null }, // first time the seller tapped it (shown to support)
+    amount: { type: Number, default: undefined }, // deposit card: the amount to deposit
+    doneAt: { type: Date, default: null }, // the seller did what it asked (request sent, order confirmed…)
+    doneText: { type: String, default: '' },
+  },
+  { _id: false }
+);
+
 const messageSchema = new mongoose.Schema(
   {
     conversation: { type: mongoose.Schema.Types.ObjectId, ref: 'Conversation', index: true, required: true },
@@ -91,23 +107,10 @@ const messageSchema = new mongoose.Schema(
     broadcastId: { type: mongoose.Schema.Types.ObjectId, default: undefined, index: { sparse: true } },
     // A shortcut button sent by support (utils/chatShortcuts.js): opens a page of the seller panel,
     // one of the store's orders or one of its products. Only admins send it; the server checks it.
-    action: {
-      type: new mongoose.Schema(
-        {
-          kind: { type: String, enum: ['page', 'order', 'product'] },
-          key: { type: String, default: '' }, // page key (kind 'page')
-          refId: { type: String, default: '' }, // order / product id
-          label: { type: String, default: '' }, // button text
-          sub: { type: String, default: '' }, // small line under it
-          openedAt: { type: Date, default: null }, // first time the seller tapped it (shown to support)
-          amount: { type: Number, default: undefined }, // deposit card: the amount to deposit
-          doneAt: { type: Date, default: null }, // the seller did what it asked (request sent, order confirmed…)
-          doneText: { type: String, default: '' },
-        },
-        { _id: false }
-      ),
-      default: undefined,
-    },
+    action: { type: shortcutActionSchema, default: undefined },
+    // several buttons in one message (e.g. 3 orders): all of them, in order. `action` above is
+    // always the first one, so older screens and older messages keep working.
+    actions: { type: [shortcutActionSchema], default: undefined },
   },
   { timestamps: true }
 );

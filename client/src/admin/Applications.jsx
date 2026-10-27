@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend, Cell } from 'recharts';
 import { api, fmtDate } from '../api.js';
 import { ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
 import useLiveReload from '../useLiveReload.js';
+import StoreClosures from './StoreClosures.jsx';
 import {
   Hero, MetaChip, Kpi, KpiGrid, Card, ChartGrid, Seg, Badge, Avatar, RankList, SplitBar, ChartTip,
   Toolbar, SearchBox, Empty, Meter, SERIES, STATUS, GRID, AXIS, legendText, pctOf, delta,
@@ -74,7 +75,39 @@ const OUTCOME_META = {
 const affiliateOf = (s) => s.securityDeposit?.referralCode || s.referralCode || '';
 const waitingDays = (s) => Math.max(0, Math.floor((Date.now() - new Date(s.createdAt).getTime()) / DAY));
 
+/**
+ * APPLICATIONS — two tabs: new store applications, and store closure requests
+ * (`?tab=closures`, see StoreClosures.jsx).
+ */
 export default function Applications() {
+  const [params, setParams] = useSearchParams();
+  const view = params.get('tab') === 'closures' ? 'closures' : 'new';
+  const go = (v) =>
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (v === 'closures') next.set('tab', 'closures');
+        else next.delete('tab');
+        return next;
+      },
+      { replace: true }
+    );
+  return (
+    <div className="apx">
+      <div className="apx-tabs" role="tablist" aria-label="Applications">
+        <button type="button" role="tab" aria-selected={view === 'new'} className={view === 'new' ? 'on' : ''} onClick={() => go('new')}>
+          <Ic name="badgeCheck" size={15} /> New applications
+        </button>
+        <button type="button" role="tab" aria-selected={view === 'closures'} className={view === 'closures' ? 'on' : ''} onClick={() => go('closures')}>
+          <Ic name="lock" size={15} /> Store closures
+        </button>
+      </div>
+      {view === 'closures' ? <StoreClosures /> : <NewApplications />}
+    </div>
+  );
+}
+
+function NewApplications() {
   const [sellers, setSellers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

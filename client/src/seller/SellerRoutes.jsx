@@ -15,6 +15,7 @@ import SellerSettings from './SellerSettings.jsx';
 import SellerTreasury from './SellerTreasury.jsx';
 import SellerDiamond from './SellerDiamond.jsx';
 import SellerHealth from './SellerHealth.jsx';
+import SellerCloseStore from './SellerCloseStore.jsx';
 
 export default function SellerRoutes() {
   return (
@@ -35,6 +36,7 @@ export default function SellerRoutes() {
         <Route path="settings" element={<SellerSettings />} />
         <Route path="diamond" element={<SellerDiamond />} />
         <Route path="health" element={<SellerHealth />} />
+        <Route path="close-store" element={<SellerCloseStore />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

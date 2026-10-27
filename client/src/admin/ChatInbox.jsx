@@ -132,8 +132,22 @@ export default function ChatInbox() {
   const [file, setFile] = useState(null);
   const [filePreview, setFilePreview] = useState(null);
   const [replyingTo, setReplyingTo] = useState(null);
-  // a shortcut button to send with the next message (page / order / product of this store)
-  const [pendingAction, setPendingAction] = useState(null);
+  // shortcut buttons to send with the next message (pages / orders / products of this store);
+  // several can go in one message (e.g. 3 orders), at most 6
+  const [pendingActions, setPendingActions] = useState([]);
+  const pendingAction = pendingActions[0] || null;
+  const sameAction = (a, b) => a.kind === b.kind && (a.key || '') === (b.key || '') && (a.refId || '') === (b.refId || '') && (Number(a.amount) || 0) === (Number(b.amount) || 0);
+  const addPendingAction = (a) => {
+    const list = (Array.isArray(a) ? a : [a]).filter((x) => x && x.kind);
+    if (!list.length) return;
+    setPendingActions((prev) => {
+      const next = [...prev];
+      for (const x of list) if (!next.some((y) => sameAction(x, y))) next.push(x);
+      if (next.length > 6) alert('At most 6 buttons in one message — the extra ones were not added.');
+      return next.slice(0, 6);
+    });
+  };
+  const removePendingAction = (i) => setPendingActions((prev) => prev.filter((_, j) => j !== i));
   const [shortcutOpen, setShortcutOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [shortcutPages, setShortcutPages] = useState([]);
@@ -155,7 +169,7 @@ export default function ChatInbox() {
   }, []);
   // a button picked for one chat never goes to another
   useEffect(() => {
-    setPendingAction(null);
+    setPendingActions([]);
     setShortcutOpen(false);
   }, [selectedSellerId, activeTab]);
   const [uploading, setUploading] = useState(false);
@@ -511,8 +525,17 @@ export default function ChatInbox() {
     // the seller tapped a shortcut button: show "Opened" on it at once
     const onActionOpened = (p) => {
       if (!p?.messageId) return;
+      const i = Number(p.index) || 0;
       setMessages((prev) =>
-        Array.isArray(prev) ? prev.map((m) => (m._id === p.messageId && m.action ? { ...m, action: { ...m.action, openedAt: p.openedAt } } : m)) : prev
+        Array.isArray(prev)
+          ? prev.map((m) => {
+              if (m._id !== p.messageId) return m;
+              const out = { ...m };
+              if (i === 0 && m.action) out.action = { ...m.action, openedAt: m.action.openedAt || p.openedAt };
+              if (Array.isArray(m.actions) && m.actions[i]) out.actions = m.actions.map((a, j) => (j === i ? { ...a, openedAt: a.openedAt || p.openedAt } : a));
+              return out;
+            })
+          : prev
       );
     };
 
@@ -520,8 +543,19 @@ export default function ChatInbox() {
     const onActionDone = (p) => {
       const ids = new Set((p?.messageIds || []).map(String));
       if (!ids.size) return;
+      // only the button(s) that asked for it (a message can carry several)
+      const fits = (a) => a && !a.doneAt && (!p.match || (a.kind === p.match.kind && (p.match.refId ? String(a.refId) === String(p.match.refId) : a.key === p.match.key)));
+      const mark = (a) => (fits(a) ? { ...a, doneAt: p.doneAt, doneText: p.doneText } : a);
       setMessages((prev) =>
-        Array.isArray(prev) ? prev.map((m) => (ids.has(String(m._id)) && m.action ? { ...m, action: { ...m.action, doneAt: p.doneAt, doneText: p.doneText } } : m)) : prev
+        Array.isArray(prev)
+          ? prev.map((m) => {
+              if (!ids.has(String(m._id))) return m;
+              const out = { ...m };
+              if (m.action) out.action = mark(m.action);
+              if (Array.isArray(m.actions)) out.actions = m.actions.map(mark);
+              return out;
+            })
+          : prev
       );
     };
 
@@ -594,8 +628,8 @@ export default function ChatInbox() {
   const handleSend = async (e, overrideText = null) => {
     if (e?.preventDefault) e.preventDefault();
     const clean = (overrideText !== null ? overrideText : text).trim();
-    const actionToSend = activeTab === 'sellers' ? pendingAction : null;
-    if (!clean && !file && !actionToSend) return;
+    const actionsToSend = activeTab === 'sellers' ? pendingActions : [];
+    if (!clean && !file && !actionsToSend.length) return;
 
     if (activeTab === 'sellers' && !selectedSellerId) return;
     if (activeTab === 'team' && !selectedTeamId) return;
@@ -643,7 +677,7 @@ export default function ChatInbox() {
       setText('');
       removeFile();
       setReplyingTo(null);
-      setPendingAction(null);
+      setPendingActions([]);
 
       if (activeTab === 'sellers') {
         // Send to Seller Support Thread
@@ -656,7 +690,7 @@ export default function ChatInbox() {
             attachmentName,
             attachmentSize,
             replyTo: targetReply,
-            action: actionToSend ? { kind: actionToSend.kind, key: actionToSend.key, refId: actionToSend.refId } : undefined,
+            actions: actionsToSend.length ? actionsToSend.map((a) => ({ kind: a.kind, key: a.key, refId: a.refId, amount: a.amount })) : undefined,
           },
         });
         if (newMsg?._id) {
@@ -685,7 +719,7 @@ export default function ChatInbox() {
       }
     } catch (err) {
       setText(clean);
-      if (actionToSend) setPendingAction(actionToSend);
+      if (actionsToSend.length) setPendingActions(actionsToSend);
       alert('Failed to send message: ' + err.message);
     } finally {
       sendingRef.current = false;
@@ -1166,7 +1200,7 @@ export default function ChatInbox() {
                 conversationId={selectedSellerId}
                 onClose={() => setInfoOpen(false)}
                 onButton={(a) => {
-                  setPendingAction(a);
+                  addPendingAction(a);
                   textInputRef.current?.focus();
                 }}
               />
@@ -1329,7 +1363,7 @@ export default function ChatInbox() {
                   className="sg"
                   onClick={() => {
                     const { id, ...a } = suggestion;
-                    setPendingAction(a);
+                    addPendingAction(a);
                     setSuggestion(null);
                     textInputRef.current?.focus();
                   }}
@@ -1342,19 +1376,32 @@ export default function ChatInbox() {
               </div>
             )}
 
-            {/* Shortcut button that goes with the next message */}
-            {pendingAction && activeTab === 'sellers' && (
+            {/* Shortcut button(s) that go with the next message */}
+            {pendingActions.length > 0 && activeTab === 'sellers' && (
               <div className="chat-replying-bar csp-pending">
                 <div className="crb-left">
                   <div className="crb-indicator" style={{ background: '#0891b2' }}></div>
                   <div className="crb-info">
                     <span className="crb-title">
-                      Button: <b>{pendingAction.label}</b>
+                      {pendingActions.length === 1 ? 'Button' : `${pendingActions.length} buttons`} in this message
+                      <button type="button" className="csp-add-more" onClick={() => setShortcutOpen(true)} disabled={pendingActions.length >= 6} title="Add another order / product / page">
+                        + Add more
+                      </button>
                     </span>
-                    <span className="crb-snippet">Add a message (optional) and press Send — the seller taps the button to open it.</span>
+                    <span className="csp-chips">
+                      {pendingActions.map((a, i) => (
+                        <span key={`${a.kind}-${a.key || a.refId}-${i}`} className="csp-chip">
+                          {a.label}
+                          <button type="button" onClick={() => removePendingAction(i)} aria-label={`Remove ${a.label}`} title="Remove">
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                    </span>
+                    <span className="crb-snippet">Add a message (optional) and press Send — the seller taps a button to open it.</span>
                   </div>
                 </div>
-                <button type="button" className="crb-close" onClick={() => setPendingAction(null)} title="Remove button">
+                <button type="button" className="crb-close" onClick={() => setPendingActions([])} title="Remove all buttons">
                   <Ic name="x" size={16} />
                 </button>
               </div>
@@ -1495,7 +1542,7 @@ export default function ChatInbox() {
               setText(r.text);
               noteSellerTyping(r.text);
             }
-            if (isStoreChat && page) setPendingAction({ kind: 'page', key: page.key, label: page.label, sub: page.sub });
+            if (isStoreChat && page) addPendingAction({ kind: 'page', key: page.key, label: page.label, sub: page.sub });
             setQuickOpen(false);
             setTimeout(() => textInputRef.current?.focus(), 30);
           }}
@@ -1511,8 +1558,9 @@ export default function ChatInbox() {
           conversationId={selectedSellerId}
           storeName={selectedSellerConv?.seller?.storeName || selectedSellerConv?.storeName || ''}
           onClose={() => setShortcutOpen(false)}
+          already={pendingActions.length}
           onPick={(a) => {
-            setPendingAction(a);
+            addPendingAction(a);
             setShortcutOpen(false);
             textInputRef.current?.focus();
           }}

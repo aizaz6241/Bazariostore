@@ -1006,6 +1006,8 @@ export async function placeSellerOrder(req, body = {}, { quiet = false, extra = 
 
     const seller = await Seller.findById(sellerId);
     if (!seller) return fail(404, 'Seller not found');
+    // a closed store (utils/storeClosure.js) takes no new orders
+    if (seller.storeClosure?.status === 'closed') return fail(400, `“${seller.storeName}” is closed and takes no new orders.`);
 
     const orderNumber = `ORD-${await nextSeq('order')}`;
 

@@ -27,6 +27,7 @@ import { adminRoom } from '../utils/permissions.js';
 import { announceToAdmins, toSellers } from '../utils/realtime.js';
 import { sellerOrderPing, maskName } from '../utils/orderPrivacy.js';
 import { confirmHoursFor, warnHoursFor, tierOf } from '../utils/sellerTier.js';
+import { closedStoreIds } from '../utils/storeClosure.js';
 
 const router = Router();
 
@@ -119,6 +120,12 @@ router.post('/', placeOrderLimit, softUser, async (req, res) => {
     // stock check
     for (const l of q.lines) {
       if (l.product.stock < l.qty) return res.status(400).json({ message: `"${l.product.name}" ka sirf ${Math.max(0, l.product.stock)} stock reh gaya hai` });
+    }
+    // a closed store (utils/storeClosure.js) takes no new orders
+    const closedStores = new Set(await closedStoreIds());
+    if (closedStores.size) {
+      const closedLine = q.lines.find((l) => closedStores.has(String(l.product?.seller?._id || l.product?.seller || '')));
+      if (closedLine) return res.status(400).json({ message: `"${closedLine.product.name}" is no longer available` });
     }
 
     // Idempotency: Prevent duplicate orders placed within 5 seconds due to rapid clicks or network retransmission

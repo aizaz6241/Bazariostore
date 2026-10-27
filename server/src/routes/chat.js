@@ -351,14 +351,17 @@ router.post('/seller/action-opened', authSeller, async (req, res) => {
   try {
     const id = String(req.body?.messageId || '');
     if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ message: 'Message not found' });
+    // which button of the message (a message can carry several); 0 = the first / only one
+    const index = Math.max(0, Math.min(9, parseInt(req.body?.index, 10) || 0));
+    const msg = await Message.findOne({ _id: id, seller: req.seller.id }).select('conversation action actions').lean();
+    if (!msg) return res.json({ ok: true });
     const at = new Date();
-    const msg = await Message.findOneAndUpdate(
-      { _id: id, seller: req.seller.id, 'action.label': { $exists: true }, $or: [{ 'action.openedAt': null }, { 'action.openedAt': { $exists: false } }] },
-      { $set: { 'action.openedAt': at } },
-      { new: true, projection: { conversation: 1, action: 1 } }
-    ).lean();
-    if (msg) {
-      req.app.get('io')?.to(adminRoom('chat')).emit('message:action_opened', { messageId: String(msg._id), conversation: String(msg.conversation), openedAt: at });
+    const set = {};
+    if (index === 0 && msg.action?.label && !msg.action.openedAt) set['action.openedAt'] = at;
+    if (Array.isArray(msg.actions) && msg.actions[index] && !msg.actions[index].openedAt) set[`actions.${index}.openedAt`] = at;
+    if (Object.keys(set).length) {
+      await Message.updateOne({ _id: msg._id }, { $set: set });
+      req.app.get('io')?.to(adminRoom('chat')).emit('message:action_opened', { messageId: String(msg._id), conversation: String(msg.conversation), openedAt: at, index });
     }
     res.json({ ok: true });
   } catch (err) {
@@ -515,24 +518,35 @@ router.post('/admin/conversations/:id/reply', authAdmin('chat'), async (req, res
   try {
     const { text, attachment, attachmentType, attachmentName, attachmentSize, replyTo } = req.body;
     let cleanText = (text || '').trim();
-    if (!cleanText && !attachment && !req.body?.action) return res.status(400).json({ message: 'Message or attachment is required' });
+    // buttons: `actions` (several) or `action` (one, older screens)
+    const rawActions = (Array.isArray(req.body?.actions) && req.body.actions.length ? req.body.actions : req.body?.action ? [req.body.action] : []).slice(0, 7);
+    if (rawActions.length > 6) return res.status(400).json({ message: 'At most 6 buttons in one message.' });
+    if (!cleanText && !attachment && !rawActions.length) return res.status(400).json({ message: 'Message or attachment is required' });
 
     const conv = await Conversation.findById(req.params.id);
     if (!conv) return res.status(404).json({ message: 'Conversation not found' });
 
-    // a shortcut button (page / order / product of this store), checked before anything is saved
-    let action = null;
-    if (req.body?.action) {
-      try {
-        action = await resolveShortcut(req.body.action, conv);
-      } catch (e) {
-        return res.status(e.status || 400).json({ message: e.message });
+    // shortcut buttons (pages / orders / products of this store), checked before anything is saved
+    const actionList = [];
+    try {
+      const seen = new Set();
+      for (const raw of rawActions) {
+        const a = await resolveShortcut(raw, conv);
+        if (!a) continue;
+        const k = `${a.kind}:${a.key}:${a.refId}:${a.amount || ''}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        actionList.push(a);
       }
+    } catch (e) {
+      return res.status(e.status || 400).json({ message: e.message });
     }
+    const action = actionList[0] || null;
+    const actions = actionList.length > 1 ? actionList : undefined;
     // {storeName}, {balance}, {pendingOrders}… → this store's values
     if (conv.seller && cleanText.includes('{')) cleanText = fillPlaceholders(cleanText, await sellerFacts(conv.seller));
 
-    const previewMsg = cleanText || (action ? `🔗 ${action.label}` : attachmentType === 'pdf' ? `📄 ${attachmentName || 'PDF Document'}` : '📷 Image Attachment');
+    const previewMsg = cleanText || (actions ? `🔗 ${actions.length} buttons` : action ? `🔗 ${action.label}` : attachmentType === 'pdf' ? `📄 ${attachmentName || 'PDF Document'}` : '📷 Image Attachment');
     conv.lastMessage = previewMsg;
     conv.lastSender = 'admin';
     conv.lastAt = new Date();
@@ -566,6 +580,7 @@ router.post('/admin/conversations/:id/reply', authAdmin('chat'), async (req, res
         attachmentName: replyTo.attachmentName || '',
       } : null,
       ...(action ? { action } : {}),
+      ...(actions ? { actions } : {}),
     });
     await message.save();
 
@@ -575,7 +590,7 @@ router.post('/admin/conversations/:id/reply', authAdmin('chat'), async (req, res
         to: 'seller',
         sellerId: conv.seller,
         title: '💬 Bazario Support',
-        body: cleanText ? cleanText.slice(0, 140) : action ? `🔗 ${action.label}` : (message.attachment ? '📎 Sent an attachment' : 'New message'),
+        body: cleanText ? cleanText.slice(0, 140) : actions ? `🔗 ${actions.length} buttons` : action ? `🔗 ${action.label}` : (message.attachment ? '📎 Sent an attachment' : 'New message'),
         url: '/seller/support',
         tag: `chat-${conv._id}`,
       });

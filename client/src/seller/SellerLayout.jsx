@@ -32,6 +32,7 @@ const SELLER_NAV = [
   { to: '/seller/support', icon: 'chat', label: 'Support & Helpline', badgeKey: 'unreadChat' },
   { to: '/seller/settings', icon: 'shield', label: 'Store Settings' },
   { to: '/seller/diamond', icon: 'star', label: 'Diamond Plan', badgeKey: 'tier' },
+  { to: '/seller/close-store', icon: 'lock', label: 'Close Store' },
 ];
 
 export default function SellerLayout() {

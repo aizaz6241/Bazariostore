@@ -273,6 +273,23 @@ const sellerSchema = new mongoose.Schema(
       // a bonus / level-up the store has not seen yet (celebration on its next screen)
       pendingCelebration: { type: mongoose.Schema.Types.Mixed, default: null },
     },
+    // STORE CLOSURE (utils/storeClosure.js): the store asks to close; after a 7-day review in which
+    // every order is confirmed on time, it closes and takes no new orders. Nothing is deleted.
+    //   none → review → closed   (or review → failed / cancelled / rejected; closed → none = reopened)
+    storeClosure: {
+      status: { type: String, enum: ['none', 'review', 'closed', 'failed', 'cancelled', 'rejected'], default: 'none' },
+      reason: { type: String, default: '' }, // the store's reason
+      requestedAt: { type: Date, default: null },
+      reviewEndsAt: { type: Date, default: null },
+      closedAt: { type: Date, default: null },
+      endedAt: { type: Date, default: null }, // review ended without closing
+      endNote: { type: String, default: '' }, // why it ended / admin note
+      by: { type: String, default: '' }, // who made the last change (admin name or 'system' / 'store')
+      history: {
+        type: [{ status: String, at: Date, by: String, note: String, _id: false }],
+        default: undefined,
+      },
+    },
     // Tiered Withdrawal Limit & Upgrade System (Banking Model)
     withdrawalLimit: {
       maxAmount: { type: Number, default: 500 }, // Maximum single withdrawal amount (USD)

@@ -228,7 +228,7 @@ async function recoverSlot(plan, index) {
 async function placeDueOrders(app, now) {
   const dayKey = dayKeyOf(now);
   const nowMin = minuteOfDay(now);
-  const sellers = await Seller.find({ isTestAccount: true, status: { $in: ['active', 'frozen'] }, registrationRejectedAt: null })
+  const sellers = await Seller.find({ isTestAccount: true, status: { $in: ['active', 'frozen'] }, registrationRejectedAt: null, 'storeClosure.status': { $ne: 'closed' } })
     .select('_id storeName storeSlug status')
     .lean();
   for (const seller of sellers) {

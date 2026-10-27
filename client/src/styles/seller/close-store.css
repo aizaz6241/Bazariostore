@@ -1,0 +1,82 @@
+/* ==========================================================================
+   SELLER CLOSE STORE — client/src/seller/SellerCloseStore.jsx
+   ========================================================================== */
+.cs { max-width: 860px; margin: 0 auto; width: 100%; display: flex; flex-direction: column; gap: 14px; color: #0f172a; font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; }
+.cs * { box-sizing: border-box; }
+.cs .t-green { color: #059669; }
+.cs .t-red { color: #dc2626; }
+.cs .t-amber { color: #d97706; }
+.cs-head h1 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.02em; display: flex; align-items: center; gap: 8px; }
+.cs-head p { margin: 6px 0 0; font-size: 13.5px; color: #64748b; line-height: 1.5; }
+.cs-card { background: #fff; border: 1px solid #e7ecf3; border-radius: 14px; padding: 18px 20px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); }
+.cs-muted { color: #94a3b8; display: flex; align-items: center; gap: 8px; }
+.cs-h { margin: 0 0 12px; font-size: 15px; font-weight: 800; }
+.cs-sub { margin: 10px 0 0; font-size: 12.5px; color: #64748b; }
+.cs-sub a { color: #2563eb; font-weight: 700; }
+.cs-ok { padding: 10px 12px; border-radius: 10px; background: #ecfdf5; border: 1px solid #bbf7d0; color: #065f46; font-size: 13px; font-weight: 600; }
+.cs-err { padding: 10px 12px; border-radius: 10px; background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+
+.cs-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.cs-steps li { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border-radius: 12px; border: 1px solid #e7ecf3; background: #fff; }
+.cs-steps li.now { border-color: #f59e0b; box-shadow: 0 0 0 2px #fef3c7; }
+.cs-steps li.done { background: #f0fdf4; border-color: #bbf7d0; }
+.cs-step-n { width: 26px; height: 26px; border-radius: 50%; flex: none; display: grid; place-items: center; background: #f1f5f9; color: #334155; font-weight: 800; font-size: 13px; }
+.cs-steps li.now .cs-step-n { background: #f59e0b; color: #fff; }
+.cs-steps li.done .cs-step-n { background: #059669; color: #fff; }
+.cs-steps b { display: block; font-size: 13px; font-weight: 800; }
+.cs-steps small { display: block; font-size: 12px; color: #64748b; margin-top: 2px; line-height: 1.4; }
+
+.cs-checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.cs-checks li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; border: 1px solid #e7ecf3; }
+.cs-checks li.ok { background: #f0fdf4; border-color: #bbf7d0; }
+.cs-checks li.no { background: #fff7f7; border-color: #fecaca; }
+.cs-ck { width: 22px; height: 22px; border-radius: 50%; flex: none; display: grid; place-items: center; color: #fff; }
+.cs-checks li.ok .cs-ck { background: #059669; }
+.cs-checks li.no .cs-ck { background: #dc2626; }
+.cs-checks b { display: block; font-size: 13.5px; }
+.cs-checks small { display: block; font-size: 12px; color: #64748b; margin-top: 2px; }
+
+.cs-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.cs-field span { font-size: 13px; font-weight: 700; }
+.cs-field em { font-style: normal; color: #94a3b8; font-weight: 500; }
+.cs-field textarea { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; font: inherit; font-size: 14px; resize: vertical; }
+.cs-field textarea:disabled { background: #f8fafc; }
+
+.cs-btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 10px 16px; border-radius: 10px; border: 1px solid transparent; font-weight: 800; font-size: 13.5px; cursor: pointer; text-decoration: none; }
+.cs-btn.danger { background: #dc2626; color: #fff; }
+.cs-btn.danger:hover:not(:disabled) { background: #b91c1c; }
+.cs-btn.ghost { background: #fff; border-color: #e2e8f0; color: #0f172a; }
+.cs-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.cs-link-btn { border: 0; background: none; color: #dc2626; font-weight: 700; font-size: 13px; cursor: pointer; padding: 6px 0; margin-top: 8px; display: block; }
+.cs-confirm { margin-top: 10px; padding: 12px; border-radius: 10px; background: #fff7ed; border: 1px solid #fed7aa; }
+.cs-confirm p { margin: 0 0 10px; font-size: 13px; line-height: 1.5; }
+.cs-confirm > div { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.cs-review { border-color: #fde68a; background: linear-gradient(180deg, #fffdf5 0%, #fff 60%); }
+.cs-kicker { font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #b45309; }
+.cs-review h3 { margin: 2px 0 0; font-size: 20px; font-weight: 800; }
+.cs-review p { margin: 4px 0 0; font-size: 13px; color: #475569; }
+.cs-bar { height: 8px; border-radius: 999px; background: #f1f5f9; overflow: hidden; margin: 14px 0; }
+.cs-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #f59e0b, #d97706); }
+.cs-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.cs-stats > div { padding: 10px 12px; border-radius: 10px; background: #f8fafc; border: 1px solid #edf0f5; }
+.cs-stats span { display: block; font-size: 11.5px; color: #64748b; }
+.cs-stats b { font-size: 18px; font-weight: 800; }
+.cs-note { display: flex; align-items: center; gap: 6px; margin-top: 12px !important; padding: 8px 10px; border-radius: 8px; background: #fef3c7; color: #92400e !important; font-weight: 600; }
+.cs-rules { margin: 12px 0; padding-left: 18px; font-size: 12.5px; color: #475569; line-height: 1.55; }
+.cs-rules li.warn { color: #b91c1c; }
+
+.cs-closed { display: flex; gap: 14px; align-items: flex-start; border-color: #cbd5e1; }
+.cs-big-ico { font-size: 34px; line-height: 1; }
+.cs-closed h3 { margin: 0; font-size: 18px; font-weight: 800; }
+.cs-closed p { margin: 6px 0 0; font-size: 13.5px; color: #475569; line-height: 1.55; }
+.cs-last { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: 10px; border: 1px solid #e2e8f0; background: #f8fafc; font-size: 13px; }
+.cs-last.failed, .cs-last.rejected { background: #fff7f7; border-color: #fecaca; }
+.cs-last b { font-weight: 800; }
+.cs-last span { color: #475569; }
+
+@media (max-width: 640px) {
+  .cs-steps { grid-template-columns: 1fr; }
+  .cs-stats { grid-template-columns: 1fr; }
+  .cs-card { padding: 14px; }
+}

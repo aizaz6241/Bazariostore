@@ -6,6 +6,7 @@ import { authAdmin } from '../middleware/auth.js';
 import { audit } from '../utils/audit.js';
 import { removedKeys, deleteUnusedKeys } from '../services/uploads.js';
 import { escapeRegex } from '../utils/sanitize.js';
+import { closedStoreIds } from '../utils/storeClosure.js';
 
 const router = Router();
 
@@ -27,6 +28,15 @@ router.get('/', async (req, res) => {
       filter.seller = seller;
     } else if (sellerSlug) {
       filter.sellerSlug = sellerSlug;
+    }
+    // products of a closed store (utils/storeClosure.js) are not shown
+    const closed = await closedStoreIds();
+    if (closed.length) {
+      if (seller) {
+        if (closed.includes(String(seller))) filter.seller = null;
+      } else {
+        filter.seller = { $nin: closed };
+      }
     }
 
     if (featured) filter.labels = { $in: ['featured'] };

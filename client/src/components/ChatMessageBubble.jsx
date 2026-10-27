@@ -3,7 +3,7 @@ import Ic from './Icons.jsx';
 import ChatAttachment from './ChatAttachment.jsx';
 import { fmtDate, sapi } from '../api.js';
 import { useNavigate } from 'react-router-dom';
-import { shortcutPath } from '../utils/chatShortcuts.js';
+import { shortcutPath, adminShortcutPath, messageActions } from '../utils/chatShortcuts.js';
 
 export function scrollToQuotedMessage(messageId) {
   if (!messageId) return;
@@ -186,37 +186,45 @@ export default function ChatMessageBubble({ msg, isMe, myRole = 'seller', onRepl
             <div className="chat-text-content">{msg.text}</div>
           )}
 
-          {/* Shortcut button from support: the seller taps it and lands on that page / order / product */}
-          {msg.action && msg.action.label && (() => {
-            const path = shortcutPath(msg.action);
-            const canOpen = myRole === 'seller' && !!path;
-            const Tag = canOpen ? 'button' : 'div';
-            const open = () => {
-              // the first tap is shown to support as "Opened" (never blocks the page from opening)
-              if (!msg.action.openedAt && msg._id) sapi('/chat/seller/action-opened', { method: 'POST', body: { messageId: msg._id } }).catch(() => {});
-              navigate(path);
-            };
+          {/* Shortcut buttons from support (one or several): the seller taps one and lands on that
+              page / order / product; support can open the same order / product in the admin panel */}
+          {(() => {
+            const list = messageActions(msg);
+            if (!list.length) return null;
             const supportView = myRole !== 'seller' && myRole !== 'guest' && myRole !== 'customer';
             return (
-              <Tag
-                {...(canOpen ? { type: 'button', onClick: open } : {})}
-                className={`chat-action-card ${canOpen ? 'is-link' : ''}`}
-                title={canOpen ? 'Open' : 'The seller sees this as a button'}
-              >
-                <span className="cac-txt">
-                  <b>{msg.action.label}</b>
-                  {msg.action.sub && <small>{msg.action.sub}</small>}
-                  {supportView && (
-                    <small className={`cac-opened ${msg.action.openedAt ? 'yes' : ''}`}>
-                      {msg.action.openedAt ? `✓ Opened by the seller · ${fmtDate(msg.action.openedAt)}` : 'Not opened yet'}
-                    </small>
-                  )}
-                  {supportView && msg.action.doneAt && (
-                    <small className="cac-opened cac-done">✅ Done: {msg.action.doneText || 'Done'} · {fmtDate(msg.action.doneAt)}</small>
-                  )}
-                </span>
-                {canOpen ? <span className="cac-go">Open →</span> : <span className="cac-note">Button</span>}
-              </Tag>
+              <div className={`chat-action-list ${list.length > 1 ? 'is-multi' : ''}`}>
+                {list.map((act, i) => {
+                  const path = myRole === 'seller' ? shortcutPath(act) : supportView ? adminShortcutPath(act) : '';
+                  const canOpen = !!path;
+                  const Tag = canOpen ? 'button' : 'div';
+                  const open = () => {
+                    // the seller's first tap is shown to support as "Opened" (never blocks the page from opening)
+                    if (myRole === 'seller' && !act.openedAt && msg._id) sapi('/chat/seller/action-opened', { method: 'POST', body: { messageId: msg._id, index: i } }).catch(() => {});
+                    navigate(path);
+                  };
+                  return (
+                    <Tag
+                      key={`${act.kind}-${act.key || act.refId}-${i}`}
+                      {...(canOpen ? { type: 'button', onClick: open } : {})}
+                      className={`chat-action-card ${canOpen ? 'is-link' : ''}`}
+                      title={myRole === 'seller' ? 'Open' : canOpen ? (act.kind === 'order' ? 'Open this order in the admin panel' : 'Open this product in the admin panel') : 'The seller sees this as a button'}
+                    >
+                      <span className="cac-txt">
+                        <b>{act.label}</b>
+                        {act.sub && <small>{act.sub}</small>}
+                        {supportView && (
+                          <small className={`cac-opened ${act.openedAt ? 'yes' : ''}`}>
+                            {act.openedAt ? `✓ Opened by the seller · ${fmtDate(act.openedAt)}` : 'Not opened yet'}
+                          </small>
+                        )}
+                        {supportView && act.doneAt && <small className="cac-opened cac-done">✅ Done: {act.doneText || 'Done'} · {fmtDate(act.doneAt)}</small>}
+                      </span>
+                      {myRole === 'seller' && canOpen ? <span className="cac-go">Open →</span> : canOpen ? <span className="cac-go cac-admin">Open ↗</span> : <span className="cac-note">Button</span>}
+                    </Tag>
+                  );
+                })}
+              </div>
             );
           })()}
 

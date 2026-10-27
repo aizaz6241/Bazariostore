@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { api, fmtDay } from '../api.js';
 
 /**
- * Support picks a button to send in a store's chat: a page of the seller panel, one of the
- * store's orders, or one of its products. `onPick({ kind, key|refId, label, sub })`.
+ * Support picks buttons to send in a store's chat: a page of the seller panel, or one or more of
+ * the store's orders / products (ticked, then "Add N buttons" — they all go in ONE message).
+ * `onPick({ kind, key|refId, label, sub })` or `onPick([ … ])`. `already` = buttons already chosen.
  */
-export default function ChatShortcutPicker({ conversationId, storeName, onPick, onClose }) {
+const MAX = 6;
+export default function ChatShortcutPicker({ conversationId, storeName, onPick, onClose, already = 0 }) {
   const [tab, setTab] = useState('page');
   const [pages, setPages] = useState([]);
   const [q, setQ] = useState('');
@@ -13,6 +15,21 @@ export default function ChatShortcutPicker({ conversationId, storeName, onPick, 
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
   const [depAmount, setDepAmount] = useState('');
+  // ticked orders / products (kept while searching), in the order they were ticked
+  const [picked, setPicked] = useState([]);
+  const room = Math.max(0, MAX - already);
+  const toButton = (kind, it) => ({
+    kind,
+    refId: it.id,
+    label: kind === 'order' ? `🧾 Open order ${it.title}` : `📦 ${it.title}`,
+    sub: kind === 'order' ? 'Tap to see this order' : 'Tap to open it in My Store Products',
+  });
+  const togglePick = (kind, it) =>
+    setPicked((prev) => {
+      if (prev.some((p) => p.kind === kind && p.refId === it.id)) return prev.filter((p) => !(p.kind === kind && p.refId === it.id));
+      if (prev.length >= room) return prev;
+      return [...prev, toButton(kind, it)];
+    });
   const seq = useRef(0);
   const depNum = Math.round((Number(depAmount) || 0) * 100) / 100;
   const depOk = depNum >= 1 && depNum <= 1000000;
@@ -42,6 +59,7 @@ export default function ChatShortcutPicker({ conversationId, storeName, onPick, 
     setItems([]);
     setErr('');
   };
+  const isPicked = (kind, id) => picked.some((p) => p.kind === kind && p.refId === id);
 
   return (
     <div className="admin-modal-overlay" onClick={onClose}>
@@ -49,7 +67,9 @@ export default function ChatShortcutPicker({ conversationId, storeName, onPick, 
         <div className="csp-head">
           <div>
             <h3>🔗 Send a shortcut button</h3>
-            <p>{storeName ? <>To <b>{storeName}</b> — </> : null}the seller taps it and lands right there.</p>
+            <p>
+              {storeName ? <>To <b>{storeName}</b> — </> : null}the seller taps it and lands right there. Tick several orders / products to send them in one message.
+            </p>
           </div>
           <button type="button" className="csp-x" onClick={onClose} aria-label="Close">✕</button>
         </div>
@@ -108,31 +128,51 @@ export default function ChatShortcutPicker({ conversationId, storeName, onPick, 
             <ul className="csp-list">
               {loading && !items.length && <li className="csp-muted">Searching…</li>}
               {!loading && !items.length && <li className="csp-muted">{q ? 'Nothing found in this store.' : 'No items yet.'}</li>}
-              {items.map((it) => (
-                <li key={it.id}>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onPick({
-                        kind: tab,
-                        refId: it.id,
-                        label: tab === 'order' ? `🧾 Open order ${it.title}` : `📦 ${it.title}`,
-                        sub: tab === 'order' ? 'Tap to see this order' : 'Tap to open it in My Store Products',
-                      })
-                    }
-                  >
-                    {it.image ? <img src={it.image} alt="" /> : <span className="csp-ico">{tab === 'order' ? '🧾' : '📦'}</span>}
-                    <span className="csp-txt">
-                      <b>{it.title}</b>
-                      <small>
-                        {it.sub}
-                        {it.date ? ` · ${fmtDay(it.date)}` : ''}
-                      </small>
-                    </span>
-                  </button>
-                </li>
-              ))}
+              {items.map((it) => {
+                const on = isPicked(tab, it.id);
+                const full = !on && picked.length >= room;
+                return (
+                  <li key={it.id}>
+                    <button type="button" className={`${on ? 'is-on' : ''} ${full ? 'is-full' : ''}`} onClick={() => togglePick(tab, it)} aria-pressed={on} disabled={full} title={full ? `At most ${MAX} buttons in one message` : on ? 'Remove' : 'Add'}>
+                      <span className={`csp-tick ${on ? 'on' : ''}`} aria-hidden="true">
+                        {on ? '✓' : ''}
+                      </span>
+                      {it.image ? <img src={it.image} alt="" /> : <span className="csp-ico">{tab === 'order' ? '🧾' : '📦'}</span>}
+                      <span className="csp-txt">
+                        <b>
+                          {it.title}
+                          {tab === 'order' && it.unconfirmed && <em className="csp-unconf">Unconfirmed</em>}
+                        </b>
+                        <small>
+                          {it.sub}
+                          {it.date ? ` · ${fmtDay(it.date)}` : ''}
+                        </small>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
+            <div className="csp-foot">
+              <span>
+                {picked.length ? (
+                  <>
+                    <b>{picked.length}</b> selected{picked.length > 1 ? ' — they go in one message' : ''}
+                  </>
+                ) : (
+                  'Tick one or more'
+                )}
+                {already > 0 && ` · ${already} already added`}
+              </span>
+              {picked.length > 0 && (
+                <button type="button" className="csp-clear" onClick={() => setPicked([])}>
+                  Clear
+                </button>
+              )}
+              <button type="button" className="csp-add" disabled={!picked.length} onClick={() => onPick(picked)}>
+                Add {picked.length > 1 ? `${picked.length} buttons` : 'button'}
+              </button>
+            </div>
           </>
         )}
       </div>

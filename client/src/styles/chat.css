@@ -2116,3 +2116,30 @@
 .sp-help-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .sp-help-go { padding: 7px 12px; border-radius: 8px; border: 0; background: #0891b2; color: #fff; font-weight: 800; font-size: 12.5px; cursor: pointer; }
 .sp-help-ask { padding: 7px 12px; border-radius: 8px; border: 1px solid #e2e8f0; background: #fff; color: #334155; font-weight: 700; font-size: 12.5px; cursor: pointer; }
+
+/* several buttons in one message (orders / products / pages) */
+.chat-action-list { display: flex; flex-direction: column; gap: 0; }
+.chat-action-list.is-multi .chat-action-card { margin-top: 5px; }
+.chat-action-card .cac-go.cac-admin { background: #0f172a; }
+
+/* admin composer: the buttons going with the next message */
+.csp-pending .crb-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.csp-add-more { border: 1px solid #a5f3fc; background: #ecfeff; color: #0e7490; border-radius: 999px; padding: 2px 9px; font-size: 11.5px; font-weight: 800; cursor: pointer; }
+.csp-add-more:disabled { opacity: 0.45; cursor: not-allowed; }
+.csp-chips { display: flex; flex-wrap: wrap; gap: 5px; margin: 4px 0 2px; }
+.csp-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 3px 4px 3px 9px; border-radius: 999px; background: #ecfeff; border: 1px solid #a5f3fc; color: #164e63; font-size: 12px; font-weight: 700; }
+.csp-chip button { border: 0; background: transparent; color: #0e7490; cursor: pointer; font-size: 11px; width: 18px; height: 18px; border-radius: 50%; line-height: 1; }
+.csp-chip button:hover { background: #cffafe; }
+
+/* picker: tick several, unconfirmed orders */
+.csp-list li > button.is-on { border-color: #0891b2; background: #ecfeff; }
+.csp-list li > button.is-full { opacity: 0.5; cursor: not-allowed; }
+.csp-tick { width: 20px; height: 20px; flex: none; border-radius: 6px; border: 2px solid #cbd5e1; display: grid; place-items: center; font-size: 12px; font-weight: 900; color: #fff; }
+.csp-tick.on { background: #0891b2; border-color: #0891b2; }
+.csp-txt b { display: flex; align-items: center; gap: 6px; }
+.csp-unconf { flex: none; font-style: normal; font-size: 10.5px; font-weight: 800; color: #b45309; background: #fef3c7; border: 1px solid #fde68a; border-radius: 999px; padding: 1px 7px; }
+.csp-foot { display: flex; align-items: center; gap: 8px; padding-top: 10px; margin-top: 8px; border-top: 1px solid #e2e8f0; font-size: 12.5px; color: #475569; }
+.csp-foot > span { flex: 1; min-width: 0; }
+.csp-clear { border: 1px solid #e2e8f0; background: #fff; border-radius: 8px; padding: 7px 10px; font-weight: 700; font-size: 12.5px; cursor: pointer; }
+.csp-add { border: 0; background: #0891b2; color: #fff; border-radius: 8px; padding: 8px 14px; font-weight: 800; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.csp-add:disabled { opacity: 0.45; cursor: not-allowed; }

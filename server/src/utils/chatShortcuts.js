@@ -27,6 +27,7 @@ export const SHORTCUT_PAGES = {
   analytics: { label: '📊 Analytics & Reports', sub: 'Sales and profit' },
   settings: { label: '⚙️ Store Settings', sub: 'Store details and payout methods' },
   dashboard: { label: '🏠 Dashboard', sub: 'Store overview' },
+  closeStore: { label: '🏁 Close my store', sub: 'Requirements and the 7-day closing review' },
 };
 
 const oid = (v) => (mongoose.Types.ObjectId.isValid(String(v || '')) ? new mongoose.Types.ObjectId(String(v)) : null);
@@ -81,10 +82,15 @@ export async function searchShortcutTargets(conv, kind, q = '') {
   if (kind === 'order') {
     const filter = { ...ownsOrder(sellerId) };
     if (rx) filter.$and = [{ $or: [{ orderNumber: rx }, { 'items.name': rx }, { 'shippingAddress.fullName': rx }] }];
-    const list = await Order.find(filter).select('orderNumber status createdAt items.name items.seller').sort({ createdAt: -1 }).limit(20).lean();
+    const list = await Order.find(filter).select('orderNumber status createdAt seller items.name items.seller items.itemStatus').sort({ createdAt: -1 }).limit(20).lean();
+    const sid = String(sellerId);
     return list.map((o) => ({
       id: String(o._id),
       title: o.orderNumber,
+      // the store has not confirmed its part of this order yet
+      unconfirmed:
+        o.status === 'pending' &&
+        (o.items || []).some((it) => (it.seller ? String(it.seller) === sid : String(o.seller || '') === sid) && (!it.itemStatus || it.itemStatus === 'pending')),
       sub: `${o.status} · ${(o.items || [])
         .filter((it) => !it.seller || String(it.seller) === String(sellerId))
         .map((it) => it.name)
@@ -125,20 +131,33 @@ export function orderAction(order, over = {}) {
 export async function markShortcutDone(sellerId, match, text) {
   try {
     if (!sellerId || !mongoose.Types.ObjectId.isValid(String(sellerId))) return;
+    // a message can carry several buttons (`actions`); `action` is always the first one
+    const one = match.refId ? { kind: 'order', refId: String(match.refId) } : { kind: 'page', key: String(match.key || '') };
+    const fits = (a) => a && a.label && !a.doneAt && a.kind === one.kind && (one.refId ? String(a.refId) === one.refId : a.key === one.key);
+    const elem = one.refId ? { kind: 'order', refId: one.refId } : { kind: 'page', key: one.key };
+    const plain = one.refId ? { 'action.kind': 'order', 'action.refId': one.refId } : { 'action.kind': 'page', 'action.key': one.key };
     const filter = {
       seller: new mongoose.Types.ObjectId(String(sellerId)),
-      'action.label': { $exists: true },
-      $or: [{ 'action.doneAt': null }, { 'action.doneAt': { $exists: false } }],
       createdAt: { $gte: new Date(Date.now() - 30 * 86400000) },
       isDeleted: { $ne: true },
+      $or: [{ 'action.label': { $exists: true }, ...plain }, { actions: { $elemMatch: elem } }],
     };
-    if (match.refId) Object.assign(filter, { 'action.kind': 'order', 'action.refId': String(match.refId) });
-    else Object.assign(filter, { 'action.kind': 'page', 'action.key': String(match.key || '') });
-    const ids = (await Message.find(filter).select('_id conversation').limit(50).lean()).map((m) => ({ id: String(m._id), conversation: String(m.conversation) }));
-    if (!ids.length) return;
+    const msgs = await Message.find(filter).select('_id conversation action actions').limit(50).lean();
     const at = new Date();
-    await Message.updateMany({ _id: { $in: ids.map((x) => x.id) } }, { $set: { 'action.doneAt': at, 'action.doneText': String(text || 'Done').slice(0, 80) } });
-    toAdmins('chat', 'message:action_done', { messageIds: ids.map((x) => x.id), doneAt: at, doneText: text });
+    const doneText = String(text || 'Done').slice(0, 80);
+    const touched = [];
+    for (const m of msgs) {
+      const set = {};
+      if (fits(m.action)) Object.assign(set, { 'action.doneAt': at, 'action.doneText': doneText });
+      (m.actions || []).forEach((a, i) => {
+        if (fits(a)) Object.assign(set, { [`actions.${i}.doneAt`]: at, [`actions.${i}.doneText`]: doneText });
+      });
+      if (!Object.keys(set).length) continue;
+      await Message.updateOne({ _id: m._id }, { $set: set });
+      touched.push({ id: String(m._id), indexes: (m.actions || []).map((a, i) => (fits(a) ? i : -1)).filter((i) => i >= 0) });
+    }
+    if (!touched.length) return;
+    toAdmins('chat', 'message:action_done', { messageIds: touched.map((x) => x.id), match: one, doneAt: at, doneText });
   } catch (e) {
     console.error('[chat shortcuts] done mark failed:', e.message);
   }
