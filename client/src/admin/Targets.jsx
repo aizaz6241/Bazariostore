@@ -135,6 +135,7 @@ export default function Targets() {
   const [sellerQ, setSellerQ] = useState('');
   const [pickTest, setPickTest] = useState(false);
   const [totals, setTotals] = useState(null); // sellerId → orders delivered in its whole life
+  const [storeStats, setStoreStats] = useState({}); // sellerId → { delivered, inProgress, pending, d7, d30, …Value }
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
@@ -188,7 +189,10 @@ export default function Targets() {
     setFormError('');
     setModalOpen(true);
     api('/sellers/targets/delivered-totals')
-      .then((r) => setTotals(r?.totals || {}))
+      .then((r) => {
+        setTotals(r?.totals || {});
+        setStoreStats(r?.stats || {});
+      })
       .catch(() => setTotals({}));
   };
 
@@ -465,6 +469,63 @@ export default function Targets() {
     if (fTotal && oneDone !== null && goalNum <= oneDone) setF({ targetOrderCount: oneDone + 50 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [totalKey]);
+
+  // ── store snapshot & goal suggestions (one store at a time) ──
+  const statOf = (id) => storeStats[id] || { delivered: totals?.[id] || 0, inProgress: 0, pending: 0, d7: 0, d30: 0, pendingValue: 0, inProgressValue: 0, d30Value: 0 };
+  const days = Number(form.durationDays) || 30;
+  const snap = oneStore && totals ? statOf(oneStore._id) : null;
+  const plan = useMemo(() => {
+    if (!snap) return null;
+    const pace = snap.d30 / 30; // orders a day
+    const paceV = snap.d30Value / 30; // $ a day
+    const pipe = snap.inProgress + snap.pending;
+    const pipeV = snap.inProgressValue + snap.pendingValue;
+    const up = (n, step) => Math.max(step, Math.ceil(n / step) * step);
+    let levels;
+    if (fSales) {
+      const exp = Math.max(pipeV, paceV * days);
+      levels = exp > 0 ? [0.8, 1, 1.3].map((f) => up(exp * f, 50)) : [500, 1000, 2000];
+    } else {
+      const exp = Math.max(pipe, pace * days);
+      const add = exp > 0 ? [0.8, 1, 1.3].map((f) => Math.max(1, Math.round(exp * f))) : [Math.max(5, pipe + 5), pipe + 10, pipe + 20];
+      levels = fTotal ? add.map((a) => up(snap.delivered + a, 5)) : add.map((a) => (a >= 10 ? up(a, 5) : a));
+    }
+    levels = [...new Set(levels)].sort((a, b) => a - b);
+    // how long the chosen goal takes at the current pace
+    const need = fSales ? goalNum : fTotal ? goalNum - snap.delivered : goalNum;
+    const rate = fSales ? paceV : pace;
+    const eta = need > 0 && rate > 0 ? Math.ceil(need / rate) : null;
+    return { pace, paceV, pipe, pipeV, levels, eta, need };
+  }, [snap, fSales, fTotal, days, goalNum]);
+  const levelNames = ['Easy', 'Fair', 'Push'];
+  const setGoal = (v) => setF(fSales ? { targetAmount: v } : { targetOrderCount: v });
+  const fmtNum = (n) => (fSales ? usd(n) : String(n));
+  const goalLabel = fSales ? 'Delivered sales to reach (USD)' : fTotal ? 'Total delivered orders to reach' : 'New orders to deliver';
+  // what the store will see on its dashboard the moment it gets the target
+  // several stores: the preview shows the first one that gets it (each store sees its own number)
+  const previewStore = oneStore || (totals ? sellers.find((x) => form.sellerIds.includes(x._id) && !(fTotal && statOf(x._id).delivered >= goalNum)) : null);
+  const previewSnap = previewStore && totals ? statOf(previewStore._id) : null;
+  const preview = (() => {
+    const base = fTotal && previewSnap ? previewSnap.delivered : 0;
+    const cur = fTotal ? base : 0;
+    const pct = goalNum > 0 ? Math.min(100, Math.floor((cur / goalNum) * 100)) : 0;
+    const left = Math.max(0, goalNum - cur);
+    return {
+      kind: fSales ? '💵 Sales from today' : fTotal ? '🏁 Total delivered orders' : '📦 New orders from today',
+      progress: fSales ? `$0 / ${usd(goalNum)} delivered` : fTotal ? `${previewSnap ? cur : '…'} / ${goalNum} total delivered` : `0 / ${goalNum} delivered`,
+      left: fSales ? `${usd(left)} more in delivered orders` : fTotal ? `${previewSnap ? left : '…'} more orders to reach ${goalNum} in total` : `${left} more orders to deliver`,
+      pct,
+    };
+  })();
+  const bonusN = Number(form.bonusAmount) || 0;
+  const perUnit = fSales
+    ? `${pctOf(bonusN, Math.max(1, goalNum))}% of the sales`
+    : fTotal
+      ? snap && goalNum > snap.delivered
+        ? `${usd(bonusN / (goalNum - snap.delivered))} per new order`
+        : 'per store that reaches the total'
+      : `${usd(bonusN / Math.max(1, goalNum))} per order`;
+  const DEADLINES = [7, 14, 30, 60, 90];
 
   const actionsFor = (t, small = true) => {
     const s = stateOf(t);
@@ -792,230 +853,364 @@ export default function Targets() {
 
       {/* ── New target (one store or many) ── */}
       {modalOpen && (
-        <div className="admin-modal-overlay" onClick={() => !saving && setModalOpen(false)}>
-          <div className="admin-modal-box tg-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="ins-modal-head">
+        <div className="tg-overlay" onClick={() => !saving && setModalOpen(false)}>
+          <div className="tg-dialog" role="dialog" aria-modal="true" aria-label="New target and bonus" onClick={(e) => e.stopPropagation()}>
+            <header className="tg-dialog-head">
+              <span className="tg-dialog-icon" aria-hidden="true">🎯</span>
               <div>
-                <h3>🎯 New target &amp; bonus</h3>
-                <p>Every chosen store gets a chat message and a notification right away.</p>
+                <h3>New target &amp; bonus</h3>
+                <p>Choose the stores, the goal and the reward. Each store gets a chat message and a notification right away.</p>
               </div>
-              <button type="button" className="ins-modal-close" onClick={() => setModalOpen(false)} aria-label="Close">✕</button>
-            </div>
+              <button type="button" className="tg-x" onClick={() => setModalOpen(false)} aria-label="Close">✕</button>
+            </header>
 
-            <form className="ins-form" onSubmit={submit}>
-              <div className="ins-field">
-                <div className="tg-pick-head">
-                  <label>Stores * <span className="tg-count">{form.sellerIds.length} chosen</span></label>
-                  <label className="tg-inline">
-                    <input type="checkbox" checked={pickTest} onChange={(e) => setPickTest(e.target.checked)} /> show test stores
-                  </label>
-                </div>
-                <div className="tg-pick-tools">
-                  <input className="ins-input" type="search" value={sellerQ} onChange={(e) => setSellerQ(e.target.value)} placeholder="Type to filter stores…" />
-                  <button type="button" className="ins-btn ins-btn-sm" onClick={chooseShown} disabled={!sellerOptions.length}>
-                    {allShownChosen ? 'Unselect shown' : `Select all shown (${sellerOptions.length})`}
-                  </button>
-                </div>
-                <div className="tg-pick-list" role="listbox" aria-multiselectable="true">
-                  {sellerOptions.length === 0 && <div className="tg-pick-empty">No store matches “{sellerQ.trim()}”.</div>}
-                  {sellerOptions.map((s) => {
-                    const running = activeBySeller.get(s._id) || 0;
-                    const flag = storeFlag(s);
-                    return (
-                      <label key={s._id} className={`tg-pick-item${chosen.has(s._id) ? ' on' : ''}`}>
-                        <input type="checkbox" checked={chosen.has(s._id)} onChange={() => toggleSeller(s._id)} />
-                        <span className="tg-pick-name">
-                          <b>{s.storeName}</b>
-                          <small>
-                            {s.ownerName}{isTestStore(s) ? ' · test' : ''}
-                            {totals && ` · ${doneOf(s._id)} delivered`}
-                          </small>
-                        </span>
-                        {fTotal && totals && doneOf(s._id) >= goalNum && goalNum > 0 && <span className="tg-pick-busy" title="Already at or past the total goal — will be skipped">already {doneOf(s._id)}</span>}
-                        {flag && <span className="tg-pick-flag" title={flag.title}>{flag.label}</span>}
-                        {running > 0 && <span className="tg-pick-busy" title="Targets already running for this store">{running} running</span>}
-                      </label>
-                    );
-                  })}
-                </div>
-                {hiddenTest > 0 && (
-                  <small>
-                    {hiddenTest} test store{hiddenTest === 1 ? '' : 's'} hidden — type a name or tick “show test stores”.
-                  </small>
-                )}
-                {chosenFrozen > 0 && (
-                  <small style={{ color: '#475569', fontWeight: 700 }}>
-                    🔒 {chosenFrozen === 1 && form.sellerIds.length === 1 ? 'This store is' : `${chosenFrozen} of the chosen stores are`} frozen. Deliveries still count; the bonus is held until the store is active again.
-                  </small>
-                )}
-                {chosenBusy > 0 && (
-                  <small style={{ color: '#b45309', fontWeight: 700 }}>
-                    ⚠️ {chosenBusy === 1 && form.sellerIds.length === 1 ? 'This store already has' : `${chosenBusy} of the chosen stores already have`} a target in progress. Every delivery counts towards ALL of them, so the bonuses add up.
-                  </small>
-                )}
-              </div>
-
-              <div className="ins-field">
-                <span className="ins-label">Type of target</span>
-                <div className="tg-kinds" role="radiogroup" aria-label="Type of target">
-                  {KINDS.map((k) => (
-                    <button
-                      key={k.value}
-                      type="button"
-                      role="radio"
-                      aria-checked={form.metric === k.value}
-                      className={`tg-kind${form.metric === k.value ? ' on' : ''}`}
-                      onClick={() => {
-                        if (form.metric === k.value) return;
-                        const p = PRESETS[k.value][0];
-                        setF(k.value === 'sales' ? { metric: k.value, targetAmount: p.goal, bonusAmount: p.bonus, durationDays: p.days } : { metric: k.value, targetOrderCount: p.goal, bonusAmount: p.bonus, durationDays: p.days });
-                      }}
-                    >
-                      <span className="tg-kind-icon" aria-hidden="true">{k.icon}</span>
-                      <b>{k.label}</b>
-                      <small>{k.example}</small>
+            <form className="tg-dialog-body" onSubmit={submit} id="tg-new-form">
+              <div className="tg-main">
+                {/* 1 — stores */}
+                <section className="tg-step">
+                  <div className="tg-step-head">
+                    <span className="tg-step-n">1</span>
+                    <h4>Who gets it</h4>
+                    <span className="tg-count">{form.sellerIds.length} chosen</span>
+                    <label className="tg-inline tg-push">
+                      <input type="checkbox" checked={pickTest} onChange={(e) => setPickTest(e.target.checked)} /> test stores
+                    </label>
+                  </div>
+                  <div className="tg-pick-tools">
+                    <input className="ins-input" type="search" value={sellerQ} onChange={(e) => setSellerQ(e.target.value)} placeholder="Search a store or owner…" />
+                    <button type="button" className="ins-btn ins-btn-sm" onClick={chooseShown} disabled={!sellerOptions.length}>
+                      {allShownChosen ? 'Unselect shown' : `Select all (${sellerOptions.length})`}
                     </button>
-                  ))}
-                </div>
-                <small>
-                  {fSales
-                    ? 'Counts the value of every order delivered from today. Bigger orders bring the store closer faster.'
-                    : fTotal
-                      ? "Counts the store's whole history: the orders it has already delivered plus every new one. The bonus comes when the total is reached."
-                      : 'Counts only orders delivered from today — every order counts as one.'}
-                </small>
-              </div>
+                  </div>
+                  <div className="tg-pick-list" role="listbox" aria-multiselectable="true">
+                    {sellerOptions.length === 0 && <div className="tg-pick-empty">No store matches “{sellerQ.trim()}”.</div>}
+                    {sellerOptions.map((s) => {
+                      const running = activeBySeller.get(s._id) || 0;
+                      const flag = storeFlag(s);
+                      const st = totals ? statOf(s._id) : null;
+                      return (
+                        <label key={s._id} className={`tg-pick-item${chosen.has(s._id) ? ' on' : ''}`}>
+                          <input type="checkbox" checked={chosen.has(s._id)} onChange={() => toggleSeller(s._id)} />
+                          <span className="tg-pick-name">
+                            <b>{s.storeName}</b>
+                            <small>{s.ownerName}{isTestStore(s) ? ' · test' : ''}</small>
+                          </span>
+                          {st && (
+                            <span className="tg-mini" title="Delivered · on the way · waiting to confirm">
+                              <span className="ok">✓ {st.delivered}</span>
+                              <span className="way">🚚 {st.inProgress}</span>
+                              <span className="wait">⏳ {st.pending}</span>
+                            </span>
+                          )}
+                          {fTotal && totals && doneOf(s._id) >= goalNum && goalNum > 0 && <span className="tg-pick-busy" title="Already at or past the total goal — will be skipped">past goal</span>}
+                          {flag && <span className="tg-pick-flag" title={flag.title}>{flag.label}</span>}
+                          {running > 0 && <span className="tg-pick-busy" title="Targets already running for this store">{running} running</span>}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <div className="tg-legend">
+                    <span>✓ delivered</span>
+                    <span>🚚 on the way</span>
+                    <span>⏳ waiting to confirm</span>
+                    {hiddenTest > 0 && <span className="tg-push">{hiddenTest} test store{hiddenTest === 1 ? '' : 's'} hidden</span>}
+                  </div>
+                </section>
 
-              <div className="ins-field">
-                <span className="ins-label">Quick presets</span>
-                <Seg
-                  small
-                  label="Target presets"
-                  value={`${goalNum}-${form.bonusAmount}`}
-                  onChange={(v) => {
-                    const p = PRESETS[form.metric].find((x) => `${x.goal}-${x.bonus}` === v);
-                    if (p) setF(fSales ? { targetAmount: p.goal, bonusAmount: p.bonus, durationDays: p.days } : { targetOrderCount: p.goal, bonusAmount: p.bonus, durationDays: p.days });
-                  }}
-                  options={PRESETS[form.metric].map((p) => ({ value: `${p.goal}-${p.bonus}`, label: fSales ? `${usd(p.goal)} → ${usd(p.bonus)}` : fTotal ? `${p.goal} total → $${p.bonus}` : `${p.goal} orders → $${p.bonus}` }))}
-                />
-              </div>
+                {/* 2 — type */}
+                <section className="tg-step">
+                  <div className="tg-step-head">
+                    <span className="tg-step-n">2</span>
+                    <h4>What counts</h4>
+                  </div>
+                  <div className="tg-kinds" role="radiogroup" aria-label="Type of target">
+                    {KINDS.map((k) => (
+                      <button
+                        key={k.value}
+                        type="button"
+                        role="radio"
+                        aria-checked={form.metric === k.value}
+                        className={`tg-kind${form.metric === k.value ? ' on' : ''}`}
+                        onClick={() => {
+                          if (form.metric === k.value) return;
+                          const p = PRESETS[k.value][0];
+                          setF(k.value === 'sales' ? { metric: k.value, targetAmount: p.goal, bonusAmount: p.bonus, durationDays: p.days } : { metric: k.value, targetOrderCount: p.goal, bonusAmount: p.bonus, durationDays: p.days });
+                        }}
+                      >
+                        <span className="tg-kind-icon" aria-hidden="true">{k.icon}</span>
+                        <b>{k.label}</b>
+                        <small>{k.example}</small>
+                      </button>
+                    ))}
+                  </div>
+                </section>
 
-              <div className="ins-field">
-                <label>Title *</label>
-                <input className="ins-input" value={form.title} onChange={(e) => setF({ title: e.target.value, titleTouched: true })} maxLength={120} required />
-              </div>
+                {/* 3 — goal & reward */}
+                <section className="tg-step">
+                  <div className="tg-step-head">
+                    <span className="tg-step-n">3</span>
+                    <h4>Goal &amp; reward</h4>
+                  </div>
 
-              <div className="ins-form-grid">
-                <div className="ins-field">
-                  {fSales ? (
-                    <>
-                      <label>Delivered sales needed (USD) *</label>
-                      <input className="ins-input" type="number" min="1" step="0.01" value={form.targetAmount} onChange={(e) => setF({ targetAmount: e.target.value })} required />
-                    </>
-                  ) : (
-                    <>
-                      <label>{fTotal ? 'Total delivered orders to reach *' : 'New orders needed *'}</label>
-                      <input className="ins-input" type="number" min="1" step="1" value={form.targetOrderCount} onChange={(e) => setF({ targetOrderCount: e.target.value })} required />
-                    </>
-                  )}
-                </div>
-                <div className="ins-field">
-                  <label>Cash bonus (USD) *</label>
-                  <input className="ins-input" type="number" min="1" step="0.01" value={form.bonusAmount} onChange={(e) => setF({ bonusAmount: e.target.value })} required />
-                </div>
-              </div>
-
-              {fTotal && form.sellerIds.length > 0 && (
-                <div className="tg-total">
-                  {!totals ? (
-                    <span>Counting delivered orders…</span>
-                  ) : oneStore ? (
-                    <>
-                      <div className="tg-total-line">
-                        <span><b>{oneStore.storeName}</b> has delivered</span>
-                        <b className="tg-total-num">{oneDone}</b>
-                        <span>orders</span>
-                        {goalNum > oneDone ? (
-                          <span className="tg-total-need">→ needs <b>{goalNum - oneDone}</b> more to reach {goalNum}</span>
-                        ) : (
-                          <span className="tg-total-bad">→ already past {goalNum}, choose a higher total</span>
-                        )}
+                  {/* where the chosen store stands — to pick a goal it can really reach */}
+                  {oneStore && (
+                    <div className="tg-snap">
+                      <div className="tg-snap-title">
+                        <b>{oneStore.storeName}</b> right now
                       </div>
-                      <div className="tg-total-quick">
-                        <span>Set goal:</span>
-                        {[20, 50, 100].map((n) => (
-                          <button key={n} type="button" className={`ins-btn ins-btn-sm${goalNum === oneDone + n ? ' tg-on' : ''}`} onClick={() => setF({ targetOrderCount: oneDone + n })}>
-                            +{n} → {oneDone + n}
-                          </button>
-                        ))}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="tg-total-line">
-                      <span>
-                        The {form.sellerIds.length} stores have delivered <b>{Math.min(...chosenDone)}–{Math.max(...chosenDone)}</b> orders so far.
-                      </span>
-                      {pastGoal > 0 && <span className="tg-total-bad">{pastGoal} already at or past {goalNum} — they will be skipped.</span>}
+                      {!snap ? (
+                        <div className="tg-snap-loading">Counting its orders…</div>
+                      ) : (
+                        <>
+                          <div className="tg-snap-grid">
+                            <div className="tg-tile ok">
+                              <span>Delivered</span>
+                              <b>{snap.delivered}</b>
+                              <small>whole life</small>
+                            </div>
+                            <div className="tg-tile way">
+                              <span>On the way</span>
+                              <b>{snap.inProgress}</b>
+                              <small>{usd(snap.inProgressValue)}</small>
+                            </div>
+                            <div className="tg-tile wait">
+                              <span>Waiting to confirm</span>
+                              <b>{snap.pending}</b>
+                              <small>{usd(snap.pendingValue)}</small>
+                            </div>
+                            <div className="tg-tile pace">
+                              <span>Last 30 days</span>
+                              <b>{snap.d30}</b>
+                              <small>≈ {plan.pace.toFixed(1)} a day · 7 days: {snap.d7}</small>
+                            </div>
+                          </div>
+                          <p className="tg-snap-note">
+                            {plan.pipe > 0 ? (
+                              <>
+                                <b>{plan.pipe}</b> order{plan.pipe === 1 ? ' is' : 's are'} already in its hands ({usd(plan.pipeV)}) — {fTotal ? 'they add to its total' : 'they count'} when delivered.{' '}
+                              </>
+                            ) : (
+                              'No order in its hands right now. '
+                            )}
+                            {plan.pace > 0
+                              ? `At its pace, in ${days} days it delivers ≈ ${fSales ? usd(plan.paceV * days) : Math.round(plan.pace * days)}${fSales ? '' : ' orders'}.`
+                              : 'No delivery in the last 30 days — keep the goal small.'}
+                          </p>
+                          <div className="tg-suggest">
+                            <span>Suggested {fTotal ? 'milestones' : 'goals'} for {days} days:</span>
+                            {plan.levels.map((v, i) => (
+                              <button key={v} type="button" className={`tg-chip${goalNum === v ? ' on' : ''}`} onClick={() => setGoal(v)}>
+                                <small>{levelNames[i] || 'Goal'}</small>
+                                <b>{fmtNum(v)}</b>
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
+                  {form.sellerIds.length > 1 && totals && (
+                    <div className="tg-snap">
+                      <div className="tg-snap-title">
+                        The <b>{form.sellerIds.length}</b> chosen stores right now
+                      </div>
+                      <table className="tg-snap-table">
+                        <thead>
+                          <tr>
+                            <th>Store</th>
+                            <th>Delivered</th>
+                            <th>On the way</th>
+                            <th>Waiting</th>
+                            <th>30 days</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {form.sellerIds.slice(0, 6).map((id) => {
+                            const st = statOf(id);
+                            const past = fTotal && st.delivered >= goalNum;
+                            return (
+                              <tr key={id} className={past ? 'past' : ''}>
+                                <td>{sellers.find((x) => x._id === id)?.storeName || 'Store'}</td>
+                                <td>{st.delivered}</td>
+                                <td>{st.inProgress}</td>
+                                <td>{st.pending}</td>
+                                <td>{st.d30}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      {form.sellerIds.length > 6 && <p className="tg-snap-note">+ {form.sellerIds.length - 6} more · delivered {Math.min(...chosenDone)}–{Math.max(...chosenDone)}</p>}
+                      {pastGoal > 0 && <p className="tg-snap-note tg-bad">{pastGoal} store{pastGoal === 1 ? ' is' : 's are'} already at or past {goalNum} — skipped.</p>}
+                    </div>
+                  )}
+
+                  <div className="tg-goal-row">
+                    <div className="ins-field">
+                      <label>{goalLabel} *</label>
+                      <div className="tg-input-wrap">
+                        {fSales && <span className="tg-prefix">$</span>}
+                        <input
+                          className="ins-input"
+                          type="number"
+                          min="1"
+                          step={fSales ? '0.01' : '1'}
+                          value={fSales ? form.targetAmount : form.targetOrderCount}
+                          onChange={(e) => setGoal(e.target.value)}
+                          required
+                        />
+                      </div>
+                      <small className={plan?.eta && plan.eta > days ? 'tg-bad' : ''}>
+                        {fTotal && snap
+                          ? goalNum > snap.delivered
+                            ? `${goalNum - snap.delivered} more than today${plan?.eta ? ` · ≈ ${plan.eta} days at its pace` : ''}`
+                            : `Must be more than ${snap.delivered} (already delivered)`
+                          : plan?.eta
+                            ? `≈ ${plan.eta} days at its pace${plan.eta > days ? ` — longer than the ${days}-day deadline` : ''}`
+                            : fTotal
+                              ? 'Counts the orders it already delivered + every new one'
+                              : 'Only orders delivered from today count'}
+                      </small>
+                    </div>
+                    <div className="ins-field">
+                      <label>Cash bonus *</label>
+                      <div className="tg-input-wrap">
+                        <span className="tg-prefix">$</span>
+                        <input className="ins-input" type="number" min="1" step="0.01" value={form.bonusAmount} onChange={(e) => setF({ bonusAmount: e.target.value })} required />
+                      </div>
+                      <small>{perUnit}</small>
+                    </div>
+                  </div>
+                  {!oneStore && (
+                    <div className="tg-suggest">
+                      <span>Presets:</span>
+                      {PRESETS[form.metric].map((p) => (
+                        <button
+                          key={`${p.goal}-${p.bonus}`}
+                          type="button"
+                          className={`tg-chip${goalNum === p.goal && bonusN === p.bonus ? ' on' : ''}`}
+                          onClick={() => setF(fSales ? { targetAmount: p.goal, bonusAmount: p.bonus, durationDays: p.days } : { targetOrderCount: p.goal, bonusAmount: p.bonus, durationDays: p.days })}
+                        >
+                          <small>{fSales ? usd(p.goal) : fTotal ? `${p.goal} total` : `${p.goal} orders`}</small>
+                          <b>${p.bonus}</b>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </section>
+
+                {/* 4 — time & message */}
+                <section className="tg-step">
+                  <div className="tg-step-head">
+                    <span className="tg-step-n">4</span>
+                    <h4>Time &amp; message</h4>
+                  </div>
+                  <div className="ins-field">
+                    <label>Deadline</label>
+                    <div className="tg-days">
+                      {DEADLINES.map((d) => (
+                        <button key={d} type="button" className={`tg-day${Number(form.durationDays) === d ? ' on' : ''}`} onClick={() => setF({ durationDays: d })}>
+                          {d} days
+                        </button>
+                      ))}
+                      <button type="button" className={`tg-day${!form.durationDays ? ' on' : ''}`} onClick={() => setF({ durationDays: '' })}>
+                        No deadline
+                      </button>
+                      <input
+                        className="ins-input tg-day-input"
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={form.durationDays}
+                        onChange={(e) => setF({ durationDays: e.target.value })}
+                        placeholder="Days"
+                        aria-label="Deadline in days"
+                      />
+                    </div>
+                    <small>
+                      {form.durationDays
+                        ? `Ends ${new Date(Date.now() + Number(form.durationDays) * DAY).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} · the store gets a reminder 1 day before.`
+                        : 'Stays open until it is reached or cancelled.'}
+                    </small>
+                  </div>
+                  <div className="ins-field">
+                    <label>Title (the store sees it)</label>
+                    <input className="ins-input" value={form.title} onChange={(e) => setF({ title: e.target.value, titleTouched: true })} maxLength={120} required />
+                  </div>
+                  <div className="ins-field">
+                    <label>Message to the seller</label>
+                    <textarea className="ins-input" rows={2} value={form.description} maxLength={500} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value, descTouched: true }))} />
+                  </div>
+                </section>
+              </div>
+
+              {/* preview & cost — always in view */}
+              <aside className="tg-side">
+                <div className="tg-side-label">
+                  {form.sellerIds.length > 1 && previewStore ? `${previewStore.storeName} will see` : 'The store will see'}
                 </div>
-              )}
+                <div className="tg-preview">
+                  <div className="tg-preview-top">
+                    <b>{form.title || 'Target'}</b>
+                    <span>{preview.pct}%</span>
+                  </div>
+                  <span className="tg-preview-kind">{preview.kind}</span>
+                  <div className="tg-preview-bar">
+                    <span style={{ width: `${preview.pct}%` }} />
+                  </div>
+                  <div className="tg-preview-foot">
+                    <span>{preview.progress}</span>
+                    <b>+{usd(bonusN)}</b>
+                  </div>
+                  <small>
+                    {preview.left}
+                    {form.durationDays ? ` · ${form.durationDays} days left` : ''}
+                  </small>
+                </div>
 
-              <div className="ins-field">
-                <label>Deadline (days)</label>
-                <input className="ins-input" type="number" min="1" step="1" value={form.durationDays} onChange={(e) => setF({ durationDays: e.target.value })} placeholder="Leave empty for no deadline" />
-                <small>
-                  {form.durationDays
-                    ? `Ends on ${new Date(Date.now() + Number(form.durationDays) * DAY).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}. The store gets a "1 day left" reminder; deliveries after the end no longer count.`
-                    : 'No deadline: the target stays open until it is reached or cancelled.'}
-                </small>
-              </div>
+                <div className="tg-side-label">Cost</div>
+                <dl className="tg-cost">
+                  <div>
+                    <dt>Bonus per store</dt>
+                    <dd>{usd(bonusN)}</dd>
+                  </div>
+                  <div>
+                    <dt>{fSales ? 'Share of sales' : fTotal ? 'Per new order' : 'Per order'}</dt>
+                    <dd>
+                      {fSales
+                        ? `${pctOf(bonusN, Math.max(1, goalNum))}%`
+                        : fTotal
+                          ? snap && goalNum > snap.delivered
+                            ? usd(bonusN / (goalNum - snap.delivered))
+                            : '—'
+                          : usd(bonusN / Math.max(1, goalNum))}
+                    </dd>
+                  </div>
+                  <div className="tg-cost-total">
+                    <dt>Most it can cost</dt>
+                    <dd>
+                      {usd(bonusN * Math.max(1, form.sellerIds.length - pastGoal))}
+                      {form.sellerIds.length > 1 && <small> · {form.sellerIds.length - pastGoal} store{form.sellerIds.length - pastGoal === 1 ? '' : 's'}</small>}
+                    </dd>
+                  </div>
+                </dl>
 
-              <div className="ins-field">
-                <label>Message to the seller</label>
-                <textarea className="ins-input" rows={2} value={form.description} maxLength={500} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value, descTouched: true }))} />
-              </div>
-
-              <div className="ins-callout ins-callout-info">
-                <span aria-hidden="true">💡</span>
-                <span>
-                  {fSales ? (
-                    <>
-                      Cost: <b>{usd(form.bonusAmount)}</b> for <b>{usd(goalNum)}</b> of delivered orders — <b>{pctOf(Number(form.bonusAmount) || 0, Math.max(1, goalNum))}%</b> of the sales.
-                    </>
-                  ) : fTotal ? (
-                    oneStore && oneDone !== null && goalNum > oneDone ? (
-                      <>
-                        Cost: <b>{usd(form.bonusAmount)}</b> for <b>{goalNum - oneDone}</b> new delivered orders — <b>{usd((Number(form.bonusAmount) || 0) / (goalNum - oneDone))}</b> per new order.
-                      </>
-                    ) : (
-                      <>
-                        Cost: <b>{usd(form.bonusAmount)}</b> per store that reaches <b>{goalNum}</b> delivered orders in total.
-                      </>
-                    )
-                  ) : (
-                    <>
-                      Cost: <b>{usd(form.bonusAmount)}</b> for <b>{goalNum}</b> delivered orders — <b>{usd((Number(form.bonusAmount) || 0) / Math.max(1, goalNum))}</b> per order.
-                    </>
-                  )}
-                  {form.sellerIds.length > 1 && (
-                    <>
-                      {' '}
-                      For {form.sellerIds.length} stores: up to <b>{usd((Number(form.bonusAmount) || 0) * form.sellerIds.length)}</b> if every store reaches it.
-                    </>
-                  )}
-                </span>
-              </div>
-
-              {formError && <ErrorBox error={formError} />}
-
-              <div className="ins-modal-foot">
-                <button type="button" className="ins-btn" onClick={() => setModalOpen(false)} disabled={saving}>Cancel</button>
-                <button type="submit" className="ins-btn ins-btn-primary" disabled={saving || !form.sellerIds.length}>
-                  {saving ? 'Saving…' : form.sellerIds.length > 1 ? `Give to ${form.sellerIds.length} stores` : 'Assign target'}
-                </button>
-              </div>
+                {(chosenFrozen > 0 || chosenBusy > 0) && (
+                  <div className="tg-notes">
+                    {chosenFrozen > 0 && <p>🔒 {chosenFrozen === 1 && form.sellerIds.length === 1 ? 'This store is' : `${chosenFrozen} stores are`} frozen — deliveries count, the bonus is held until active.</p>}
+                    {chosenBusy > 0 && <p>⚠️ {chosenBusy === 1 && form.sellerIds.length === 1 ? 'This store already has' : `${chosenBusy} stores already have`} a running target — every delivery counts for all of them.</p>}
+                  </div>
+                )}
+              </aside>
             </form>
+
+            <footer className="tg-dialog-foot">
+              {formError ? <div className="tg-foot-error">{formError}</div> : <span className="tg-foot-hint">{form.sellerIds.length ? `${form.sellerIds.length} store${form.sellerIds.length === 1 ? '' : 's'} · ${goalWords(form)} · ${usd(bonusN)}` : 'Choose at least one store'}</span>}
+              <button type="button" className="ins-btn" onClick={() => setModalOpen(false)} disabled={saving}>Cancel</button>
+              <button type="submit" form="tg-new-form" className="ins-btn ins-btn-primary" disabled={saving || !form.sellerIds.length}>
+                {saving ? 'Saving…' : form.sellerIds.length > 1 ? `Give to ${form.sellerIds.length} stores` : 'Give target'}
+              </button>
+            </footer>
           </div>
         </div>
       )}

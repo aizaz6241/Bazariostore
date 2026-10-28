@@ -62,39 +62,78 @@ export function goalText(t) {
   return `Deliver ${Number(t.targetOrders) || 0} order${Number(t.targetOrders) === 1 ? '' : 's'}`;
 }
 
+// the store's FIRST item in an order decides its status for the store, as on its dashboard
+const FIRST_ITEM = { $arrayElemAt: [{ $filter: { input: '$items', cond: { $eq: ['$$this.seller', '$stores'] } } }, 0] };
+const WAITING = ['pending'];
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 /**
- * How many orders each store has delivered in its whole life — counted EXACTLY like the
- * "Delivered" number on the store's own dashboard (an order counts once per store, by the status
- * of the store's first item in it), so the seller sees the same number in both places. A
- * refunded or cancelled order never counts.
+ * Where every store's orders stand — counted EXACTLY like the store's own dashboard (an order
+ * counts once per store, by the status of the store's first item in it; refunded / cancelled
+ * orders never count), so the seller sees the same "Delivered" number in both places.
+ *   delivered      orders delivered in its whole life
+ *   inProgress     confirmed and on their way (processing … out for delivery, failed attempt)
+ *   pending        still waiting for the store to confirm
+ *   d7 / d30       delivered in the last 7 / 30 days (its pace)
+ *   *Value         the same in $ (the store's own items)
  * @param {string[]|null} sellerIds  null = every store
- * @returns {Promise<Map<string, number>>}
+ * @returns {Promise<Map<string, object>>}
  */
-export async function deliveredTotals(sellerIds = null) {
+export async function orderStatsBySellers(sellerIds = null) {
   const { default: Order } = await import('../models/Order.js');
   const ids = Array.isArray(sellerIds) ? sellerIds.filter((id) => mongoose.Types.ObjectId.isValid(String(id))).map((id) => new mongoose.Types.ObjectId(String(id))) : null;
   const sellerMatch = ids ? { $in: ids } : { $ne: null };
+  const now = Date.now();
+  const d7 = new Date(now - 7 * DAY_MS);
+  const d30 = new Date(now - 30 * DAY_MS);
   const rows = await Order.aggregate([
     { $match: { 'items.seller': sellerMatch, status: { $nin: ['refunded', 'cancelled'] } } },
-    { $project: { status: 1, items: { seller: 1, itemStatus: 1 }, stores: { $setUnion: [{ $ifNull: ['$items.seller', []] }] } } },
+    { $project: { status: 1, updatedAt: 1, items: { seller: 1, itemStatus: 1, settledAt: 1, price: 1, qty: 1 }, stores: { $setUnion: [{ $ifNull: ['$items.seller', []] }] } } },
     { $unwind: '$stores' },
     { $match: { stores: sellerMatch } },
-    // the store's FIRST item in the order decides, as on its dashboard
     {
       $project: {
         s: '$stores',
-        st: {
-          $ifNull: [
-            { $let: { vars: { first: { $arrayElemAt: [{ $filter: { input: '$items', cond: { $eq: ['$$this.seller', '$stores'] } } }, 0] } }, in: '$$first.itemStatus' } },
-            '$status',
-          ],
+        st: { $ifNull: [{ $let: { vars: { f: FIRST_ITEM }, in: '$$f.itemStatus' } }, '$status'] },
+        at: { $ifNull: [{ $let: { vars: { f: FIRST_ITEM }, in: '$$f.settledAt' } }, '$updatedAt'] },
+        value: {
+          $sum: {
+            $map: {
+              input: { $filter: { input: '$items', cond: { $eq: ['$$this.seller', '$stores'] } } },
+              in: { $multiply: [{ $ifNull: ['$$this.price', 0] }, { $max: [{ $ifNull: ['$$this.qty', 1] }, 1] }] },
+            },
+          },
         },
       },
     },
-    { $match: { st: 'delivered' } },
-    { $group: { _id: '$s', n: { $sum: 1 } } },
+    { $match: { st: { $nin: ['cancelled', 'refunded'] } } },
+    {
+      $group: {
+        _id: '$s',
+        delivered: { $sum: { $cond: [{ $eq: ['$st', 'delivered'] }, 1, 0] } },
+        pending: { $sum: { $cond: [{ $in: ['$st', WAITING] }, 1, 0] } },
+        inProgress: { $sum: { $cond: [{ $and: [{ $ne: ['$st', 'delivered'] }, { $not: [{ $in: ['$st', WAITING] }] }] }, 1, 0] } },
+        d7: { $sum: { $cond: [{ $and: [{ $eq: ['$st', 'delivered'] }, { $gte: ['$at', d7] }] }, 1, 0] } },
+        d30: { $sum: { $cond: [{ $and: [{ $eq: ['$st', 'delivered'] }, { $gte: ['$at', d30] }] }, 1, 0] } },
+        pendingValue: { $sum: { $cond: [{ $in: ['$st', WAITING] }, '$value', 0] } },
+        inProgressValue: { $sum: { $cond: [{ $and: [{ $ne: ['$st', 'delivered'] }, { $not: [{ $in: ['$st', WAITING] }] }] }, '$value', 0] } },
+        d30Value: { $sum: { $cond: [{ $and: [{ $eq: ['$st', 'delivered'] }, { $gte: ['$at', d30] }] }, '$value', 0] } },
+      },
+    },
   ]);
-  return new Map(rows.map((r) => [String(r._id), r.n]));
+  const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  return new Map(
+    rows.map((r) => [
+      String(r._id),
+      { delivered: r.delivered, inProgress: r.inProgress, pending: r.pending, d7: r.d7, d30: r.d30, pendingValue: r2(r.pendingValue), inProgressValue: r2(r.inProgressValue), d30Value: r2(r.d30Value) },
+    ])
+  );
+}
+
+/** Lifetime delivered orders per store (see orderStatsBySellers). @returns {Promise<Map<string, number>>} */
+export async function deliveredTotals(sellerIds = null) {
+  const stats = await orderStatsBySellers(sellerIds);
+  return new Map([...stats].map(([id, st]) => [id, st.delivered]));
 }
 
 /** A date as the stores read it (India time), e.g. "30 Nov 2026". */

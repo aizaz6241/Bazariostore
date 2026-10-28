@@ -24,7 +24,7 @@ import { restartSellerDeadlines, releaseFrozenFund } from './orders.routes.js';
 import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
 import { setScoreAsAdjustment, bandOf, recomputeHealth, MONITOR_NAME } from '../../utils/healthEngine.js';
 import { emailSellerApproved, emailAccountStatus } from '../../utils/sellerEmails.js';
-import { pushTargets, progressOf, deliveredTotals, indiaDate } from '../../utils/sellerTargets.js';
+import { pushTargets, progressOf, deliveredTotals, orderStatsBySellers, indiaDate } from '../../utils/sellerTargets.js';
 import { deleteUnusedKeys, deleteAttachmentFiles, keysOfUrls, attachmentLocation } from '../../services/uploads.js';
 
 /** Setting a seller's password or login email: the same rank as viewing the saved password. */
@@ -2424,8 +2424,10 @@ router.post('/:id/targets', authAdmin('sellers'), async (req, res) => {
 // shown in the "New target" window, and the starting point of a "total delivered" target)
 router.get('/targets/delivered-totals', authAdmin('sellers'), async (req, res) => {
   try {
-    const totals = await deliveredTotals(null);
-    res.json({ totals: Object.fromEntries(totals) });
+    // + where each store's orders stand (on the way, waiting, pace) to help choose a goal
+    const stats = await orderStatsBySellers(null);
+    const totals = Object.fromEntries([...stats].map(([id, st]) => [id, st.delivered]));
+    res.json({ totals, stats: Object.fromEntries(stats) });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
