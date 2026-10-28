@@ -1365,3 +1365,4 @@
   .tg-kind-icon { margin: 0; }
   .tg-kind small { flex-basis: 100%; }
 }
+.tg-pick-flag { flex: none; font-size: 11px; font-weight: 700; color: #475569; background: #eef2f7; border-radius: 999px; padding: 2px 8px; }

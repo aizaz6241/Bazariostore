@@ -145,8 +145,14 @@ export default function Targets() {
       .then(([tgtRes, sellersRes]) => {
         setAllTargets(Array.isArray(tgtRes?.targets) ? tgtRes.targets : Array.isArray(tgtRes) ? tgtRes : []);
         const sList = Array.isArray(sellersRes) ? sellersRes : sellersRes?.sellers || [];
-        // only approved, active stores can work towards a target
-        setSellers(sList.filter((s) => s.status === 'active').sort((a, b) => (a.storeName || '').localeCompare(b.storeName || '')));
+        // every approved store can get a target — also a FROZEN one (it used to be left out of the
+        // list, so a store that got frozen could not be found again); its bonus is then held until
+        // it is active again. Not: applications still waiting, or registrations that were rejected.
+        setSellers(
+          sList
+            .filter((s) => s.status !== 'pending_approval' && !s.registrationRejectedAt)
+            .sort((a, b) => (a.storeName || '').localeCompare(b.storeName || ''))
+        );
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -392,12 +398,26 @@ export default function Targets() {
     return [t.storeName, t.ownerName, t.title, t.email].some((v) => String(v || '').toLowerCase().includes(needle));
   });
 
-  const pickable = sellers.filter((s) => pickTest || !isTestStore(s));
+  // typing a name searches EVERY store (test ones too); without a search, test stores show only
+  // when "show test stores" is on
+  const searching = sellerQ.trim().length > 0;
+  const pickable = sellers.filter((s) => pickTest || searching || !isTestStore(s));
   const sellerOptions = pickable.filter((s) => {
-    if (!sellerQ.trim()) return true;
+    if (!searching) return true;
     const needle = sellerQ.trim().toLowerCase();
     return [s.storeName, s.ownerName, s.email].some((v) => String(v || '').toLowerCase().includes(needle));
   });
+  const hiddenTest = !pickTest && !searching ? sellers.filter(isTestStore).length : 0;
+  const storeFlag = (s) =>
+    s.status === 'frozen'
+      ? { label: 'Frozen', title: 'Store is frozen: it can work on the target; the bonus is held until it is active again' }
+      : s.status === 'suspended'
+        ? { label: 'Suspended', title: 'Store is suspended: it cannot process orders now' }
+        : s.storeClosure?.status === 'closed'
+          ? { label: 'Closed', title: 'Store is closed: it gets no new orders' }
+          : s.isInactive
+            ? { label: 'Inactive', title: 'Marked inactive by an admin' }
+            : null;
   const chosen = new Set(form.sellerIds);
   const toggleSeller = (id) => setForm((p) => ({ ...p, sellerIds: chosen.has(id) ? p.sellerIds.filter((x) => x !== id) : [...p.sellerIds, id] }));
   const allShownChosen = sellerOptions.length > 0 && sellerOptions.every((s) => chosen.has(s._id));
@@ -407,6 +427,7 @@ export default function Targets() {
       sellerIds: allShownChosen ? p.sellerIds.filter((id) => !sellerOptions.some((s) => s._id === id)) : [...new Set([...p.sellerIds, ...sellerOptions.map((s) => s._id)])],
     }));
   const chosenBusy = form.sellerIds.filter((id) => activeBySeller.get(id)).length;
+  const chosenFrozen = form.sellerIds.filter((id) => sellers.find((x) => x._id === id)?.status === 'frozen').length;
   const hasWeeks = stats.weeks.some((w) => w.assigned || w.completed);
   const fSales = form.metric === 'sales';
   const fTotal = form.metric === 'total';
@@ -768,9 +789,10 @@ export default function Targets() {
                   </button>
                 </div>
                 <div className="tg-pick-list" role="listbox" aria-multiselectable="true">
-                  {sellerOptions.length === 0 && <div className="tg-pick-empty">No active store matches.</div>}
+                  {sellerOptions.length === 0 && <div className="tg-pick-empty">No store matches “{sellerQ.trim()}”.</div>}
                   {sellerOptions.map((s) => {
                     const running = activeBySeller.get(s._id) || 0;
+                    const flag = storeFlag(s);
                     return (
                       <label key={s._id} className={`tg-pick-item${chosen.has(s._id) ? ' on' : ''}`}>
                         <input type="checkbox" checked={chosen.has(s._id)} onChange={() => toggleSeller(s._id)} />
@@ -782,11 +804,22 @@ export default function Targets() {
                           </small>
                         </span>
                         {fTotal && totals && doneOf(s._id) >= goalNum && goalNum > 0 && <span className="tg-pick-busy" title="Already at or past the total goal — will be skipped">already {doneOf(s._id)}</span>}
+                        {flag && <span className="tg-pick-flag" title={flag.title}>{flag.label}</span>}
                         {running > 0 && <span className="tg-pick-busy" title="Targets already running for this store">{running} running</span>}
                       </label>
                     );
                   })}
                 </div>
+                {hiddenTest > 0 && (
+                  <small>
+                    {hiddenTest} test store{hiddenTest === 1 ? '' : 's'} hidden — type a name or tick “show test stores”.
+                  </small>
+                )}
+                {chosenFrozen > 0 && (
+                  <small style={{ color: '#475569', fontWeight: 700 }}>
+                    🔒 {chosenFrozen === 1 && form.sellerIds.length === 1 ? 'This store is' : `${chosenFrozen} of the chosen stores are`} frozen. Deliveries still count; the bonus is held until the store is active again.
+                  </small>
+                )}
                 {chosenBusy > 0 && (
                   <small style={{ color: '#b45309', fontWeight: 700 }}>
                     ⚠️ {chosenBusy === 1 && form.sellerIds.length === 1 ? 'This store already has' : `${chosenBusy} of the chosen stores already have`} a target in progress. Every delivery counts towards ALL of them, so the bonuses add up.
