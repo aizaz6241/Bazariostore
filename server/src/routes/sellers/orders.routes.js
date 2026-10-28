@@ -334,15 +334,7 @@ async function advanceSellerTargets(app, sellerId, amount = 0) {
           : `You completed "${target.title}"! $${bonusAmt} cash bonus has been credited to your wallet balance.`,
         link: '/seller/wallet',
       });
-      // the admins see it too (they gave the target)
-      notify(app, {
-        recipientType: 'admin',
-        type: 'system',
-        title: `🎯 Target reached: ${seller.storeName}`,
-        body: `"${target.title}" — $${bonusAmt} bonus ${held ? 'held (store is frozen)' : 'paid to the wallet'}.`,
-        link: '/admin/targets',
-        push: false,
-      });
+      // (the admins see this one too: the admin bell lists store notifications with the store's name)
     }
   }
 
@@ -379,6 +371,14 @@ export async function undoTargetProgressForOrder(app, order) {
         { arrayFilters: [{ 't.status': 'active', 't.createdAt': { $lte: at }, 't.currentOrders': { $gt: 0 } }] }
       );
       let changed = r.modifiedCount > 0;
+      // a "total delivered" target given AFTER this order was delivered had it in its starting
+      // number (baseOrders): one less there
+      const b = await Seller.updateOne(
+        { _id: sid },
+        { $inc: { 'targets.$[t].baseOrders': -1 } },
+        { arrayFilters: [{ 't.status': 'active', 't.metric': 'total', 't.createdAt': { $gt: at }, 't.baseOrders': { $gt: 0 } }] }
+      );
+      if (b.modifiedCount) changed = true;
       if (amt > 0) {
         const a = await Seller.updateOne(
           { _id: sid },

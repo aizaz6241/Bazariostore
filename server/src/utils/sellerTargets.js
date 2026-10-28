@@ -63,25 +63,42 @@ export function goalText(t) {
 }
 
 /**
- * How many orders each store has delivered in its whole life (an order counts once per store,
- * a refunded order does not count). The same way a target counts a delivery.
+ * How many orders each store has delivered in its whole life — counted EXACTLY like the
+ * "Delivered" number on the store's own dashboard (an order counts once per store, by the status
+ * of the store's first item in it), so the seller sees the same number in both places. A
+ * refunded or cancelled order never counts.
  * @param {string[]|null} sellerIds  null = every store
  * @returns {Promise<Map<string, number>>}
  */
 export async function deliveredTotals(sellerIds = null) {
   const { default: Order } = await import('../models/Order.js');
   const ids = Array.isArray(sellerIds) ? sellerIds.filter((id) => mongoose.Types.ObjectId.isValid(String(id))).map((id) => new mongoose.Types.ObjectId(String(id))) : null;
-  const itemMatch = { 'items.payoutSettled': true, 'items.seller': ids ? { $in: ids } : { $ne: null } };
+  const sellerMatch = ids ? { $in: ids } : { $ne: null };
   const rows = await Order.aggregate([
-    { $match: { status: { $ne: 'refunded' }, ...itemMatch } },
-    { $project: { items: { seller: 1, payoutSettled: 1 } } },
-    { $unwind: '$items' },
-    { $match: itemMatch },
-    { $group: { _id: { o: '$_id', s: '$items.seller' } } },
-    { $group: { _id: '$_id.s', n: { $sum: 1 } } },
+    { $match: { 'items.seller': sellerMatch, status: { $nin: ['refunded', 'cancelled'] } } },
+    { $project: { status: 1, items: { seller: 1, itemStatus: 1 }, stores: { $setUnion: [{ $ifNull: ['$items.seller', []] }] } } },
+    { $unwind: '$stores' },
+    { $match: { stores: sellerMatch } },
+    // the store's FIRST item in the order decides, as on its dashboard
+    {
+      $project: {
+        s: '$stores',
+        st: {
+          $ifNull: [
+            { $let: { vars: { first: { $arrayElemAt: [{ $filter: { input: '$items', cond: { $eq: ['$$this.seller', '$stores'] } } }, 0] } }, in: '$$first.itemStatus' } },
+            '$status',
+          ],
+        },
+      },
+    },
+    { $match: { st: 'delivered' } },
+    { $group: { _id: '$s', n: { $sum: 1 } } },
   ]);
   return new Map(rows.map((r) => [String(r._id), r.n]));
 }
+
+/** A date as the stores read it (India time), e.g. "30 Nov 2026". */
+export const indiaDate = (d) => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
 
 // what a store's own screens never get: who created / changed it, internal notes on why it closed
 const PRIVATE = ['createdBy', 'changes', 'batchId', 'cancelReason', 'nudges', 'reminderSentAt', 'expiredNotifiedAt'];
@@ -123,7 +140,7 @@ export async function closeExpiredTarget(app, sellerId, target) {
     notify(app, {
       recipientType: 'seller',
       sellerId: String(sellerId),
-      type: 'system',
+      type: 'approval',
       title: `⌛ Target ended: ${target.title}`,
       body: p.sales
         ? `The time for this target is over. You delivered ${money(p.cur)} of ${money(p.goal)}. Keep delivering on time — new targets come to active stores.`
@@ -153,7 +170,7 @@ export async function nudgeProgress(app, sellerId, target) {
   notify(app, {
     recipientType: 'seller',
     sellerId: String(sellerId),
-    type: 'system',
+    type: 'approval',
     title: step === 80 ? `🔥 Almost there: ${leftText(target)} for ${money(target.bonusAmount)}` : `💪 Halfway to your ${money(target.bonusAmount)} bonus`,
     body: `"${target.title}": ${p.sales ? `${money(p.cur)} of ${money(p.goal)}` : `${p.cur} of ${p.goal}`} delivered — ${leftText(target)} to get ${money(target.bonusAmount)} in your wallet.`,
     link: '/seller',
@@ -214,9 +231,9 @@ export async function targetSweep(app = APP) {
           notify(app, {
             recipientType: 'seller',
             sellerId: String(s._id),
-            type: 'system',
+            type: 'approval',
             title: `⏳ 1 day left: ${leftText(t)} for ${money(t.bonusAmount)}`,
-            body: `"${t.title}" ends ${end.toUTCString().slice(0, 22)} UTC. Confirm your orders on time to reach it.`,
+            body: `"${t.title}" ends on ${indiaDate(end)}. Confirm your orders on time to reach it.`,
             link: '/seller',
           });
         }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend, Cell } from 'recharts';
-import { api, money, fmtDate } from '../api.js';
+import { api, fmtDate } from '../api.js';
 import { ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
 import {
@@ -9,6 +9,10 @@ import {
 } from './insights.jsx';
 
 const DAY = 86400000;
+// Targets are in US dollars, so this page always shows $ (the site's currency switch is shared
+// with the seller panel and the storefront in the same browser: with INR picked there, the bonus
+// column showed ₹ while the goal and the form were in $)
+const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 // suggestions only — the admin can type any numbers
 const PRESETS = {
   orders: [
@@ -254,10 +258,26 @@ export default function Targets() {
     }
   };
 
-  const openEdit = (t) => {
+  // reopen = an expired target gets a new deadline (its progress is kept)
+  const openEdit = (t, reopen = false) => {
     setSideError('');
-    setEdit({ t, title: t.title, goal: isSales(t) ? t.targetAmount : t.targetOrders, bonus: t.bonusAmount, deadline: dateInput(t.expiresAt), note: t.adminNote || '' });
+    setEdit({ t, reopen, title: t.title, goal: isSales(t) ? t.targetAmount : t.targetOrders, bonus: t.bonusAmount, deadline: reopen ? '' : dateInput(t.expiresAt), note: t.adminNote || '' });
   };
+  // a new goal also changes the number in the title ("Deliver 25 orders" → "Deliver 30 orders"):
+  // the server refuses a title that names another number than the goal
+  const setEditGoal = (v) =>
+    setEdit((p) => {
+      if (!(Number(v) > 0)) return { ...p, goal: v };
+      let title = p.title;
+      if (isSales(p.t)) {
+        if (title.includes(usd(p.goal))) title = title.replace(usd(p.goal), usd(v));
+      } else {
+        // only the number written as "N orders" / "N delivered orders" ("Diwali 2025" stays)
+        const re = new RegExp(`\\b${Number(p.goal)}(\\s*(?:delivered\\s+)?orders?\\b)`, 'i');
+        title = title.replace(re, `${Number(v)}$1`);
+      }
+      return { ...p, goal: v, title };
+    });
   const saveEdit = async (e) => {
     e.preventDefault();
     const { t } = edit;
@@ -267,6 +287,7 @@ export default function Targets() {
     if (!(goal > p.cur)) return setSideError(`The store is already at ${isSales(t) ? usd(p.cur) : p.cur}. The goal must be more than that.`);
     if (!isSales(t) && !Number.isInteger(goal)) return setSideError('Target orders must be a whole number.');
     if (!(Number(edit.bonus) > 0)) return setSideError('Bonus must be more than $0.');
+    if (edit.reopen && !edit.deadline) return setSideError('Choose the new deadline to reopen this target.');
     if (Number(edit.bonus) < Number(t.bonusAmount) && !window.confirm(`Lower the bonus from ${usd(t.bonusAmount)} to ${usd(edit.bonus)}? The store is told about the change.`)) return;
     const body = {
       title: edit.title.trim(),
@@ -280,7 +301,7 @@ export default function Targets() {
     try {
       const r = await api(`/sellers/${t.sellerId}/targets/${t._id}`, { method: 'PATCH', body });
       setEdit(null);
-      flash(r.unchanged ? 'Nothing changed.' : `Target updated: ${r.changed.join('; ')}`);
+      flash(r.unchanged ? 'Nothing changed.' : `${edit.reopen ? 'Target reopened' : 'Target updated'}: ${r.changed.join('; ')}`);
       loadData();
     } catch (err) {
       setSideError(err.message);
@@ -462,9 +483,16 @@ export default function Targets() {
     }
     if (s === 'expired' || s === 'cancelled') {
       return (
-        <button type="button" className={`${cls} ins-btn-bad`} onClick={() => remove(t)} disabled={busy === t._id} title="Remove from the list">
-          {busy === t._id ? 'Removing…' : 'Remove'}
-        </button>
+        <>
+          {s === 'expired' && (
+            <button type="button" className={cls} onClick={() => openEdit(t, true)} disabled={busy === t._id} title="Give it a new deadline — the progress is kept">
+              Reopen
+            </button>
+          )}
+          <button type="button" className={`${cls} ins-btn-bad`} onClick={() => remove(t)} disabled={busy === t._id} title="Remove from the list">
+            {busy === t._id ? 'Removing…' : 'Remove'}
+          </button>
+        </>
       );
     }
     return null;
@@ -606,7 +634,7 @@ export default function Targets() {
           </Card>
 
           <Card title="Top bonus earners">
-            <RankList rows={stats.earners} color={STATUS.good} empty="No bonus paid yet" />
+            <RankList rows={stats.earners} color={STATUS.good} format={money} empty="No bonus paid yet" />
           </Card>
         </ChartGrid>
       )}
@@ -998,8 +1026,11 @@ export default function Targets() {
           <div className="admin-modal-box" onClick={(e) => e.stopPropagation()}>
             <div className="ins-modal-head">
               <div>
-                <h3>✏️ Edit target</h3>
-                <p>{edit.t.storeName} · now at {progressText(edit.t)}. The progress is kept.</p>
+                <h3>{edit.reopen ? '↺ Reopen target' : '✏️ Edit target'}</h3>
+                <p>
+                  {edit.t.storeName} · now at {progressText(edit.t)}. The progress is kept
+                  {edit.reopen ? '; orders delivered while it was closed do not count. Choose a new deadline.' : '.'}
+                </p>
               </div>
               <button type="button" className="ins-modal-close" onClick={() => setEdit(null)} aria-label="Close">✕</button>
             </div>
@@ -1011,7 +1042,7 @@ export default function Targets() {
               <div className="ins-form-grid">
                 <div className="ins-field">
                   <label>{isSales(edit.t) ? 'Delivered sales needed (USD) *' : isTotal(edit.t) ? 'Total delivered orders to reach *' : 'New orders needed *'}</label>
-                  <input className="ins-input" type="number" min="1" step={isSales(edit.t) ? '0.01' : '1'} value={edit.goal} onChange={(e) => setEdit((p) => ({ ...p, goal: e.target.value }))} required />
+                  <input className="ins-input" type="number" min="1" step={isSales(edit.t) ? '0.01' : '1'} value={edit.goal} onChange={(e) => setEditGoal(e.target.value)} required />
                 </div>
                 <div className="ins-field">
                   <label>Cash bonus (USD) *</label>
@@ -1021,12 +1052,12 @@ export default function Targets() {
               <div className="ins-field">
                 <label>Deadline</label>
                 <div className="tg-pick-tools">
-                  <input className="ins-input" type="date" min={dateInput(new Date())} value={edit.deadline} onChange={(e) => setEdit((p) => ({ ...p, deadline: e.target.value }))} />
-                  {edit.deadline && (
+                  <input className="ins-input" type="date" min={dateInput(new Date())} value={edit.deadline} onChange={(e) => setEdit((p) => ({ ...p, deadline: e.target.value }))} required={edit.reopen} />
+                  {edit.deadline && !edit.reopen && (
                     <button type="button" className="ins-btn ins-btn-sm" onClick={() => setEdit((p) => ({ ...p, deadline: '' }))}>No deadline</button>
                   )}
                 </div>
-                <small>{edit.deadline ? `Ends at the end of ${new Date(`${edit.deadline}T12:00:00`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}.` : 'No deadline.'}</small>
+                <small>{edit.deadline ? `Ends at the end of ${new Date(`${edit.deadline}T12:00:00`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}.` : edit.reopen ? 'Choose the day the reopened target ends.' : 'No deadline.'}</small>
               </div>
               <div className="ins-field">
                 <label>Message to the seller</label>
@@ -1051,7 +1082,7 @@ export default function Targets() {
               {sideError && <ErrorBox error={sideError} />}
               <div className="ins-modal-foot">
                 <button type="button" className="ins-btn" onClick={() => setEdit(null)} disabled={!!busy}>Close</button>
-                <button type="submit" className="ins-btn ins-btn-primary" disabled={!!busy}>{busy ? 'Saving…' : 'Save changes'}</button>
+                <button type="submit" className="ins-btn ins-btn-primary" disabled={!!busy}>{busy ? 'Saving…' : edit.reopen ? 'Reopen target' : 'Save changes'}</button>
               </div>
             </form>
           </div>

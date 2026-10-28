@@ -24,7 +24,7 @@ import { restartSellerDeadlines, releaseFrozenFund } from './orders.routes.js';
 import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
 import { setScoreAsAdjustment, bandOf, recomputeHealth, MONITOR_NAME } from '../../utils/healthEngine.js';
 import { emailSellerApproved, emailAccountStatus } from '../../utils/sellerEmails.js';
-import { pushTargets, progressOf, deliveredTotals } from '../../utils/sellerTargets.js';
+import { pushTargets, progressOf, deliveredTotals, indiaDate } from '../../utils/sellerTargets.js';
 import { deleteUnusedKeys, deleteAttachmentFiles, keysOfUrls, attachmentLocation } from '../../services/uploads.js';
 
 /** Setting a seller's password or login email: the same rank as viewing the saved password. */
@@ -2271,7 +2271,7 @@ async function assignTarget(req, seller, input, { batchId = '' } = {}) {
         ? `Delivered so far: ${target.baseOrders} orders — ${target.targetOrders - target.baseOrders} more to go\n`
         : '') +
       `Bonus Reward: $${target.bonusAmount.toLocaleString('en-US')} Cash Bonus\n` +
-      (exp ? `Valid Until: ${exp.toLocaleDateString('en-IN')}\n` : 'Duration: No Expiry\n') +
+      (exp ? `Valid Until: ${indiaDate(exp)}\n` : 'Duration: No Expiry\n') +
       (target.adminNote ? `Note: ${target.adminNote}\n` : '') +
       (target.metric === 'total'
         ? `Every order you deliver now adds to your total. Confirm your orders on time — the bonus is credited to your wallet automatically the moment you reach ${target.targetOrders}!\n`
@@ -2328,6 +2328,7 @@ router.post('/targets/bulk', authAdmin('sellers'), async (req, res) => {
     const batchId = `b${Date.now().toString(36)}${crypto.randomBytes(3).toString('hex')}`;
     const created = [];
     const skipped = [];
+    const toGive = [];
     for (const id of ids) {
       const s = sellers.find((x) => String(x._id) === id);
       if (!s) {
@@ -2347,8 +2348,20 @@ router.post('/targets/bulk', authAdmin('sellers'), async (req, res) => {
         }
         input = { ...value, baseOrders: done };
       }
-      await assignTarget(req, s, input, { batchId });
-      created.push({ sellerId: id, storeName: s.storeName });
+      toGive.push({ id, s, input });
+    }
+    // a few stores at a time (one by one, 300 stores took longer than the website waits)
+    for (let i = 0; i < toGive.length; i += 8) {
+      await Promise.all(
+        toGive.slice(i, i + 8).map(async ({ id, s, input }) => {
+          try {
+            await assignTarget(req, s, input, { batchId });
+            created.push({ sellerId: id, storeName: s.storeName });
+          } catch (e) {
+            skipped.push({ sellerId: id, storeName: s.storeName, reason: `failed: ${e.message}` });
+          }
+        })
+      );
     }
     if (created.length) {
       audit(req, 'create', 'seller_target', batchId, `Assigned target "${value.title}" (${targetSummary(value)}) to ${created.length} store(s): ${created.map((c) => c.storeName).join(', ').slice(0, 900)}`);
@@ -2380,6 +2393,7 @@ router.post('/:id/targets', authAdmin('sellers'), async (req, res) => {
     const twin = (seller.targets || []).find(
       (t) =>
         t.status === 'active' &&
+        (t.metric || 'orders') === value.metric &&
         t.title === value.title &&
         Number(t.bonusAmount) === value.bonusAmount &&
         Number(t.targetOrders || 0) === Number(value.targetOrders || 0) &&
@@ -2499,7 +2513,16 @@ router.patch('/:id/targets/:targetId', authAdmin('sellers'), async (req, res) =>
     const found = await findTarget(req, res);
     if (!found) return;
     const { seller, target } = found;
-    if (target.status !== 'active') return res.status(400).json({ message: `This target is ${target.status}; only a target in progress can be changed.` });
+    // an EXPIRED target can be reopened by giving it a new deadline (its progress is kept;
+    // deliveries while it was closed did not count). Completed / cancelled ones stay as they are.
+    const reopening = target.status === 'expired';
+    if (target.status !== 'active' && !reopening) return res.status(400).json({ message: `This target is ${target.status}; only a target in progress (or an expired one) can be changed.` });
+    if (reopening) {
+      const d = req.body?.expiresAt ? new Date(req.body.expiresAt) : null;
+      if (!d || Number.isNaN(d.getTime()) || d.getTime() <= Date.now()) {
+        return res.status(400).json({ message: 'To reopen an expired target, give it a new deadline in the future.' });
+      }
+    }
 
     const metric = target.metric === 'sales' ? 'sales' : target.metric === 'total' ? 'total' : 'orders';
     // the kind of goal stays (orders ↔ sales would mix up the progress)
@@ -2538,12 +2561,16 @@ router.patch('/:id/targets/:targetId', authAdmin('sellers'), async (req, res) =>
       else if (k === 'title') what.push(`title "${old}" → "${v}"`);
       else if (k === 'adminNote') what.push('message changed');
     }
+    if (reopening) {
+      what.unshift('reopened');
+      Object.assign($set, { 'targets.$.status': 'active', 'targets.$.expiredAt': null, 'targets.$.expiredNotifiedAt': null, 'targets.$.reminderSentAt': null });
+    }
     if (!what.length) return res.json({ message: 'Nothing changed', unchanged: true });
     // a new or longer deadline earns a new "1 day left" reminder
     if ($set['targets.$.expiresAt'] !== undefined) $set['targets.$.reminderSentAt'] = null;
 
     const r = await Seller.updateOne(
-      { _id: seller._id, targets: { $elemMatch: { _id: target._id, status: 'active' } } },
+      { _id: seller._id, targets: { $elemMatch: { _id: target._id, status: target.status } } },
       { $set, $push: { 'targets.$.changes': { $each: [{ at: new Date(), by: req.admin?.name || '', what: what.join('; ') }], $slice: -20 } } }
     );
     if (!r.modifiedCount) return res.status(409).json({ message: 'The target was completed or closed a moment ago. Refresh the page.' });
@@ -2557,9 +2584,9 @@ router.patch('/:id/targets/:targetId', authAdmin('sellers'), async (req, res) =>
       notify(req.app, {
         recipientType: 'seller',
         sellerId: seller._id,
-        type: 'system',
-        title: `🎯 Target updated: ${nt.title}`,
-        body: `${metric === 'sales' ? `Goal $${Number(nt.targetAmount).toLocaleString('en-US')} in delivered orders` : metric === 'total' ? `Goal ${nt.targetOrders} delivered orders in total` : `Goal ${nt.targetOrders} delivered orders`} · bonus $${nt.bonusAmount} · ${nt.expiresAt ? `ends ${new Date(nt.expiresAt).toLocaleDateString('en-IN')}` : 'no deadline'}. Your progress so far is kept.`,
+        type: 'approval',
+        title: reopening ? `🎯 Target reopened: ${nt.title}` : `🎯 Target updated: ${nt.title}`,
+        body: `${metric === 'sales' ? `Goal $${Number(nt.targetAmount).toLocaleString('en-US')} in delivered orders` : metric === 'total' ? `Goal ${nt.targetOrders} delivered orders in total` : `Goal ${nt.targetOrders} delivered orders`} · bonus $${nt.bonusAmount} · ${nt.expiresAt ? `ends ${indiaDate(nt.expiresAt)}` : 'no deadline'}. Your progress so far is kept.`,
         link: '/seller',
       });
     }
@@ -2593,7 +2620,7 @@ router.post('/:id/targets/:targetId/cancel', authAdmin('sellers'), async (req, r
       notify(req.app, {
         recipientType: 'seller',
         sellerId: seller._id,
-        type: 'system',
+        type: 'approval',
         title: `Target closed: ${target.title}`,
         body: 'This target is no longer running. Keep delivering on time — new targets come to active stores.',
         link: '/seller',

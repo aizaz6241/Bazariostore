@@ -537,6 +537,9 @@ export default function SellerDashboard() {
             <div>
               <h3 className="sd-card-title"><Ic name="gift" size={16} /> Targets &amp; bonuses</h3>
               <p className="sd-card-sub">Reach the goal with delivered orders — the cash bonus lands in your wallet automatically</p>
+              {(me?.status || seller.status) === 'frozen' && activeTargets.some((t) => tState(t) === 'active') && (
+                <p className="sd-card-sub t-amber">🔒 Your account is frozen: deliveries still count, but a bonus you reach is held until your account is active again.</p>
+              )}
             </div>
           </div>
           <div className="sd-targets">
