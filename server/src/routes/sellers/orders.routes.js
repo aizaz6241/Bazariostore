@@ -263,7 +263,12 @@ async function advanceSellerTargets(app, sellerId, amount = 0) {
     ).catch(() => {});
     if (paid.already) continue;
 
-    const goalLine = metricOf(target) === 'sales' ? `$${Number(target.targetAmount || 0).toLocaleString('en-US')} in delivered orders` : `${target.targetOrders} Delivered Orders`;
+    const goalLine =
+      metricOf(target) === 'sales'
+        ? `$${Number(target.targetAmount || 0).toLocaleString('en-US')} in delivered orders`
+        : metricOf(target) === 'total'
+          ? `${target.targetOrders} Delivered Orders in total`
+          : `${target.targetOrders} Delivered Orders`;
     await ledgerLine({
       type: 'adjustment',
       seller: seller._id,

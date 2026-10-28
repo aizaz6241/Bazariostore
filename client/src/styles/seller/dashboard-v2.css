@@ -513,3 +513,4 @@
   .sd-dia-btn { justify-content: center; }
   .sd-dia-stat b { font-size: 20px; }
 }
+.sd-target-kind { font-size: 11.5px; font-weight: 700; color: var(--sd-muted); letter-spacing: 0.01em; }

@@ -24,7 +24,7 @@ import { restartSellerDeadlines, releaseFrozenFund } from './orders.routes.js';
 import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
 import { setScoreAsAdjustment, bandOf, recomputeHealth, MONITOR_NAME } from '../../utils/healthEngine.js';
 import { emailSellerApproved, emailAccountStatus } from '../../utils/sellerEmails.js';
-import { pushTargets, progressOf } from '../../utils/sellerTargets.js';
+import { pushTargets, progressOf, deliveredTotals } from '../../utils/sellerTargets.js';
 import { deleteUnusedKeys, deleteAttachmentFiles, keysOfUrls, attachmentLocation } from '../../services/uploads.js';
 
 /** Setting a seller's password or login email: the same rank as viewing the saved password. */
@@ -2135,7 +2135,8 @@ router.patch('/:id/toggle-previous-store', authAdmin('sellers'), announceToAdmin
 });
 
 // ───────────────────────── Targets & Bonuses ─────────────────────────
-// A target: deliver N orders (metric 'orders') or $X of order value (metric 'sales'), optionally
+// A target: deliver N new orders (metric 'orders'), reach N delivered orders in the store's whole
+// life (metric 'total' — e.g. at 100 now, reach 200), or $X of order value (metric 'sales'), optionally
 // before a deadline, and the store gets a cash bonus in its wallet the moment it is reached
 // (counting / paying: advanceSellerTargets in orders.routes.js; deadline monitor:
 // utils/sellerTargets.js). Stores never see which admin gave or changed a target.
@@ -2148,7 +2149,7 @@ const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 function readTargetInput(body, { partial = false } = {}) {
   const b = body || {};
   const out = {};
-  const metric = b.metric === 'sales' ? 'sales' : 'orders';
+  const metric = b.metric === 'sales' ? 'sales' : b.metric === 'total' ? 'total' : 'orders';
   if (!partial || b.metric !== undefined) out.metric = metric;
 
   if (!partial || b.title !== undefined) {
@@ -2203,7 +2204,7 @@ function readTargetInput(body, { partial = false } = {}) {
 
   // the title must not promise another number of orders than the goal (a seller was sent
   // "Process 10 Orders Milestone" with the goal "Deliver 8 Orders")
-  if (out.title && (out.metric || metric) === 'orders' && out.targetOrders) {
+  if (out.title && (out.metric || metric) !== 'sales' && out.targetOrders) {
     const named = [...out.title.matchAll(/(\d+)\s*(?:delivered\s+)?orders?\b/gi)].map((m) => Number(m[1]));
     if (named.length && !named.includes(out.targetOrders)) {
       return { error: `The title mentions ${named.join(', ')} orders but the goal is ${out.targetOrders} delivered orders. Make them match.` };
@@ -2213,7 +2214,11 @@ function readTargetInput(body, { partial = false } = {}) {
 }
 
 const goalLine = (t) =>
-  t.metric === 'sales' ? `Deliver $${Number(t.targetAmount || 0).toLocaleString('en-US')} in orders` : `Process & Deliver ${t.targetOrders} Orders`;
+  t.metric === 'sales'
+    ? `Deliver $${Number(t.targetAmount || 0).toLocaleString('en-US')} in orders`
+    : t.metric === 'total'
+      ? `Reach ${t.targetOrders} Delivered Orders in total`
+      : `Process & Deliver ${t.targetOrders} New Orders`;
 
 /** Give one store a target: saved, chat message, notification. → the new target */
 async function assignTarget(req, seller, input, { batchId = '' } = {}) {
@@ -2222,6 +2227,7 @@ async function assignTarget(req, seller, input, { batchId = '' } = {}) {
     metric: input.metric,
     targetOrders: input.targetOrders || 0,
     currentOrders: 0,
+    baseOrders: input.metric === 'total' ? Number(input.baseOrders) || 0 : 0,
     targetAmount: input.targetAmount || 0,
     currentAmount: 0,
     bonusAmount: input.bonusAmount,
@@ -2261,10 +2267,15 @@ async function assignTarget(req, seller, input, { batchId = '' } = {}) {
       `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `Target: ${target.title}\n` +
       `Goal: ${goalLine(target)}\n` +
+      (target.metric === 'total'
+        ? `Delivered so far: ${target.baseOrders} orders — ${target.targetOrders - target.baseOrders} more to go\n`
+        : '') +
       `Bonus Reward: $${target.bonusAmount.toLocaleString('en-US')} Cash Bonus\n` +
       (exp ? `Valid Until: ${exp.toLocaleDateString('en-IN')}\n` : 'Duration: No Expiry\n') +
       (target.adminNote ? `Note: ${target.adminNote}\n` : '') +
-      `Only orders delivered from today count. Confirm your orders on time — the bonus is credited to your wallet automatically the moment the goal is reached!\n` +
+      (target.metric === 'total'
+        ? `Every order you deliver now adds to your total. Confirm your orders on time — the bonus is credited to your wallet automatically the moment you reach ${target.targetOrders}!\n`
+        : `Only orders delivered from today count. Confirm your orders on time — the bonus is credited to your wallet automatically the moment the goal is reached!\n`) +
       `━━━━━━━━━━━━━━━━━━━━━━━━━`;
     const msg = await Message.create({
       conversation: conv._id,
@@ -2273,7 +2284,7 @@ async function assignTarget(req, seller, input, { batchId = '' } = {}) {
       senderName: req.admin?.name || 'Platform Growth Desk',
       text: msgText,
     });
-    conv.lastMessage = `🎯 New Target: ${target.metric === 'sales' ? `$${target.targetAmount} in orders` : `Process ${target.targetOrders} Orders`} for $${target.bonusAmount} Bonus`;
+    conv.lastMessage = `🎯 New Target: ${target.metric === 'sales' ? `$${target.targetAmount} in orders` : target.metric === 'total' ? `Reach ${target.targetOrders} delivered orders` : `Process ${target.targetOrders} Orders`} for $${target.bonusAmount} Bonus`;
     conv.lastSender = 'admin';
     conv.lastAt = new Date();
     conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
@@ -2291,7 +2302,9 @@ async function assignTarget(req, seller, input, { batchId = '' } = {}) {
     body:
       target.metric === 'sales'
         ? `Deliver $${target.targetAmount.toLocaleString('en-US')} in orders to unlock $${target.bonusAmount} in bonus wallet credits.`
-        : `Deliver ${target.targetOrders} orders to unlock $${target.bonusAmount} in bonus wallet credits.`,
+        : target.metric === 'total'
+          ? `You have delivered ${target.baseOrders} orders. Reach ${target.targetOrders} in total to unlock $${target.bonusAmount} in bonus wallet credits.`
+          : `Deliver ${target.targetOrders} orders to unlock $${target.bonusAmount} in bonus wallet credits.`,
     link: '/seller',
   });
   await pushTargets(req.app, seller._id);
@@ -2299,7 +2312,7 @@ async function assignTarget(req, seller, input, { batchId = '' } = {}) {
 }
 
 const targetSummary = (t) =>
-  `${t.metric === 'sales' ? `$${t.targetAmount} sales` : `${t.targetOrders} orders`} -> $${t.bonusAmount} bonus${t.expiresAt ? `, ends ${new Date(t.expiresAt).toISOString().slice(0, 10)}` : ', no deadline'}`;
+  `${t.metric === 'sales' ? `$${t.targetAmount} sales` : t.metric === 'total' ? `${t.targetOrders} orders in total` : `${t.targetOrders} orders`} -> $${t.bonusAmount} bonus${t.expiresAt ? `, ends ${new Date(t.expiresAt).toISOString().slice(0, 10)}` : ', no deadline'}`;
 
 // POST /api/sellers/targets/bulk (Admin gives the same target to many stores at once)
 router.post('/targets/bulk', authAdmin('sellers'), async (req, res) => {
@@ -2311,6 +2324,7 @@ router.post('/targets/bulk', authAdmin('sellers'), async (req, res) => {
     if (error) return res.status(400).json({ message: error });
 
     const sellers = await Seller.find({ _id: { $in: ids } }).select('storeName ownerName email status').lean();
+    const totals = value.metric === 'total' ? await deliveredTotals(ids) : null;
     const batchId = `b${Date.now().toString(36)}${crypto.randomBytes(3).toString('hex')}`;
     const created = [];
     const skipped = [];
@@ -2324,7 +2338,16 @@ router.post('/targets/bulk', authAdmin('sellers'), async (req, res) => {
         skipped.push({ sellerId: id, storeName: s.storeName, reason: 'Not approved yet' });
         continue;
       }
-      await assignTarget(req, s, value, { batchId });
+      let input = value;
+      if (totals) {
+        const done = totals.get(id) || 0;
+        if (done >= value.targetOrders) {
+          skipped.push({ sellerId: id, storeName: s.storeName, reason: `already ${done} delivered` });
+          continue;
+        }
+        input = { ...value, baseOrders: done };
+      }
+      await assignTarget(req, s, input, { batchId });
       created.push({ sellerId: id, storeName: s.storeName });
     }
     if (created.length) {
@@ -2365,11 +2388,30 @@ router.post('/:id/targets', authAdmin('sellers'), async (req, res) => {
     );
     if (twin) return res.status(409).json({ message: 'This exact target was just given to this store. Refresh the page to see it.' });
 
-    await assignTarget(req, seller, value);
+    let input = value;
+    if (value.metric === 'total') {
+      const done = (await deliveredTotals([seller._id])).get(String(seller._id)) || 0;
+      if (done >= value.targetOrders) {
+        return res.status(400).json({ message: `${seller.storeName} has already delivered ${done} orders. The total goal must be more than ${done}.` });
+      }
+      input = { ...value, baseOrders: done };
+    }
+    await assignTarget(req, seller, input);
     audit(req, 'create', 'seller_target', seller._id, `Assigned target "${value.title}" (${targetSummary(value)}) for ${seller.storeName}`);
 
     const latest = await Seller.findById(seller._id).select('targets').lean();
     res.status(201).json({ message: `Target assigned to ${seller.storeName} successfully! 🎯`, targets: latest?.targets || [] });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/sellers/targets/delivered-totals (how many orders every store has delivered in total —
+// shown in the "New target" window, and the starting point of a "total delivered" target)
+router.get('/targets/delivered-totals', authAdmin('sellers'), async (req, res) => {
+  try {
+    const totals = await deliveredTotals(null);
+    res.json({ totals: Object.fromEntries(totals) });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -2399,7 +2441,8 @@ router.get('/targets/all', authAdmin('sellers'), async (req, res) => {
           sellerStatus: s.status,
           isTestAccount: Boolean(s.isTestAccount || s.accountType === 'test'),
           title: t.title,
-          metric: t.metric === 'sales' ? 'sales' : 'orders',
+          metric: t.metric === 'sales' ? 'sales' : t.metric === 'total' ? 'total' : 'orders',
+          baseOrders: t.baseOrders || 0,
           targetOrders: t.targetOrders || 0,
           currentOrders: t.currentOrders || 0,
           targetAmount: t.targetAmount || 0,
@@ -2458,12 +2501,12 @@ router.patch('/:id/targets/:targetId', authAdmin('sellers'), async (req, res) =>
     const { seller, target } = found;
     if (target.status !== 'active') return res.status(400).json({ message: `This target is ${target.status}; only a target in progress can be changed.` });
 
-    const metric = target.metric === 'sales' ? 'sales' : 'orders';
+    const metric = target.metric === 'sales' ? 'sales' : target.metric === 'total' ? 'total' : 'orders';
     // the kind of goal stays (orders ↔ sales would mix up the progress)
     const body = { ...(req.body || {}), metric };
     if (!body.title) body.title = target.title;
     // the goal not sent = the goal stays (also checked against the title)
-    if (metric === 'orders' && body.targetOrders === undefined && body.targetOrderCount === undefined) body.targetOrders = target.targetOrders;
+    if (metric !== 'sales' && body.targetOrders === undefined && body.targetOrderCount === undefined) body.targetOrders = target.targetOrders;
     if (metric === 'sales' && body.targetAmount === undefined) body.targetAmount = target.targetAmount;
     const { value, error } = readTargetInput(body, { partial: true });
     if (error) return res.status(400).json({ message: error });
@@ -2474,7 +2517,10 @@ router.patch('/:id/targets/:targetId', authAdmin('sellers'), async (req, res) =>
     if (metric === 'sales' && value.targetAmount !== undefined && value.targetAmount !== target.targetAmount && value.targetAmount <= (target.currentAmount || 0)) {
       return res.status(400).json({ message: `The store has already delivered $${round2(target.currentAmount)} for this target. The new goal must be more than that.` });
     }
-    if (metric === 'orders') delete value.targetAmount;
+    if (metric === 'total' && value.targetOrders !== undefined && value.targetOrders !== target.targetOrders && value.targetOrders <= (target.baseOrders || 0) + (target.currentOrders || 0)) {
+      return res.status(400).json({ message: `The store has already delivered ${(target.baseOrders || 0) + (target.currentOrders || 0)} orders in total. The new goal must be more than that.` });
+    }
+    if (metric !== 'sales') delete value.targetAmount;
     else delete value.targetOrders;
 
     const what = [];
@@ -2513,7 +2559,7 @@ router.patch('/:id/targets/:targetId', authAdmin('sellers'), async (req, res) =>
         sellerId: seller._id,
         type: 'system',
         title: `🎯 Target updated: ${nt.title}`,
-        body: `${metric === 'sales' ? `Goal $${Number(nt.targetAmount).toLocaleString('en-US')} in delivered orders` : `Goal ${nt.targetOrders} delivered orders`} · bonus $${nt.bonusAmount} · ${nt.expiresAt ? `ends ${new Date(nt.expiresAt).toLocaleDateString('en-IN')}` : 'no deadline'}. Your progress so far is kept.`,
+        body: `${metric === 'sales' ? `Goal $${Number(nt.targetAmount).toLocaleString('en-US')} in delivered orders` : metric === 'total' ? `Goal ${nt.targetOrders} delivered orders in total` : `Goal ${nt.targetOrders} delivered orders`} · bonus $${nt.bonusAmount} · ${nt.expiresAt ? `ends ${new Date(nt.expiresAt).toLocaleDateString('en-IN')}` : 'no deadline'}. Your progress so far is kept.`,
         link: '/seller',
       });
     }

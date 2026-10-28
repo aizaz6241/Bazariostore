@@ -219,11 +219,14 @@ const sellerSchema = new mongoose.Schema(
     targets: [
       {
         title: { type: String, required: true },
-        // what is counted: 'orders' = delivered orders, 'sales' = delivered order value in $
-        // (targets made before this field existed are 'orders')
-        metric: { type: String, enum: ['orders', 'sales'], default: 'orders' },
-        targetOrders: { type: Number, required: true }, // goal for 'orders' (0 for a sales goal)
-        currentOrders: { type: Number, default: 0 },
+        // what is counted (targets made before this field existed are 'orders'):
+        //  'orders' = new orders delivered from the day the target is given (goal: N more)
+        //  'total'  = the store's lifetime delivered orders (goal: reach N in total)
+        //  'sales'  = delivered order value in $ from the day the target is given
+        metric: { type: String, enum: ['orders', 'total', 'sales'], default: 'orders' },
+        targetOrders: { type: Number, required: true }, // goal for 'orders' / 'total' (0 for a sales goal)
+        currentOrders: { type: Number, default: 0 }, // orders delivered since the target was given
+        baseOrders: { type: Number, default: 0 }, // 'total': lifetime delivered orders when it was given
         targetAmount: { type: Number, default: 0 }, // goal for 'sales' ($)
         currentAmount: { type: Number, default: 0 }, // delivered order value counted (both kinds)
         bonusAmount: { type: Number, required: true },

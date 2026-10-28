@@ -207,9 +207,12 @@ export default function SellerDashboard() {
   };
   const tProgress = (t) => {
     const sales = t.metric === 'sales';
-    const cur = sales ? Number(t.currentAmount) || 0 : Number(t.currentOrders ?? t.currentOrderCount) || 0;
+    // 'total' = the store's whole-life delivered orders (what it had when the target came + new ones)
+    const total = t.metric === 'total';
+    const base = total ? Number(t.baseOrders) || 0 : 0;
+    const cur = sales ? Number(t.currentAmount) || 0 : base + (Number(t.currentOrders ?? t.currentOrderCount) || 0);
     const goal = sales ? Number(t.targetAmount) || 0 : Number(t.targetOrders || t.targetOrderCount) || 0;
-    return { sales, cur, goal, pct: goal > 0 ? Math.min(100, Math.floor((cur / goal) * 100)) : 0, left: Math.max(0, goal - cur) };
+    return { sales, total, base, cur, goal, pct: goal > 0 ? Math.min(100, Math.floor((cur / goal) * 100)) : 0, left: Math.max(0, goal - cur) };
   };
   const activeTargets = targets
     .filter((t) => {
@@ -543,17 +546,24 @@ export default function SellerDashboard() {
               const expired = st === 'expired';
               const p = tProgress(t);
               const leftDays = t.expiresAt ? Math.ceil((new Date(t.expiresAt).getTime() - nowMs) / 86400000) : null;
-              const leftLabel = p.sales ? `${formatMoney(p.left)} more in delivered orders` : `${p.left} more order${p.left === 1 ? '' : 's'} to deliver`;
+              const leftLabel = p.sales
+                ? `${formatMoney(p.left)} more in delivered orders`
+                : p.total
+                  ? `${p.left} more order${p.left === 1 ? '' : 's'} to reach ${p.goal} in total`
+                  : `${p.left} more order${p.left === 1 ? '' : 's'} to deliver`;
+              const since = t.createdAt ? new Date(t.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '';
+              const kindLabel = p.sales ? `Sales from ${since}` : p.total ? 'Total delivered orders' : `New orders from ${since}`;
               return (
                 <div key={t._id || t.title} className={`sd-target ${done ? 'done' : expired ? 'expired' : ''}`}>
                   <div className="sd-target-top">
                     <b>{t.title}</b>
                     <span className={`sd-tag tone-${done ? 'green' : expired ? 'slate' : 'amber'}`}>{done ? 'Completed' : expired ? 'Ended' : `${p.pct}%`}</span>
                   </div>
+                  <span className="sd-target-kind">{p.total ? '🏁' : p.sales ? '💵' : '📦'} {kindLabel}</span>
                   {(t.description || t.adminNote) && <p>{t.description || t.adminNote}</p>}
                   <div className="sd-progress"><span style={{ width: `${p.pct}%` }} /></div>
                   <div className="sd-target-foot">
-                    <span>{p.sales ? <><b>{formatMoney(p.cur)}</b> / {formatMoney(p.goal)}</> : <><b>{p.cur}</b> / {p.goal}</>} delivered</span>
+                    <span>{p.sales ? <><b>{formatMoney(p.cur)}</b> / {formatMoney(p.goal)}</> : <><b>{p.cur}</b> / {p.goal}</>} {p.total ? 'total delivered' : 'delivered'}</span>
                     <b className="t-green">+{formatMoney(t.bonusAmount || 0)}</b>
                   </div>
                   {!done && !expired && (

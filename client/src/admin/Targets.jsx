@@ -17,6 +17,13 @@ const PRESETS = {
     { goal: 50, bonus: 350, days: 60 },
     { goal: 100, bonus: 800, days: 90 },
   ],
+  // milestones of the store's whole-life delivered orders
+  total: [
+    { goal: 100, bonus: 50, days: 60 },
+    { goal: 200, bonus: 100, days: 60 },
+    { goal: 500, bonus: 250, days: 90 },
+    { goal: 1000, bonus: 500, days: 120 },
+  ],
   sales: [
     { goal: 1000, bonus: 30, days: 30 },
     { goal: 2500, bonus: 90, days: 30 },
@@ -33,9 +40,21 @@ const usd = (n) => {
   const v = Math.round((Number(n) || 0) * 100) / 100;
   return `$${v.toLocaleString('en-US', { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
 };
-const autoTitle = (f) => (f.metric === 'sales' ? `Deliver ${usd(f.targetAmount)} in orders` : `Deliver ${Number(f.targetOrderCount) || 0} orders`);
+const goalWords = (f) =>
+  f.metric === 'sales'
+    ? `Deliver ${usd(f.targetAmount)} in orders`
+    : f.metric === 'total'
+      ? `Reach ${Number(f.targetOrderCount) || 0} delivered orders`
+      : `Deliver ${Number(f.targetOrderCount) || 0} orders`;
+const autoTitle = (f) => goalWords(f);
 const autoDescription = (f) =>
-  `${f.metric === 'sales' ? `Deliver ${usd(f.targetAmount)} in orders` : `Deliver ${f.targetOrderCount || 0} orders`}${f.durationDays ? ` within ${f.durationDays} days` : ''} to receive a ${usd(f.bonusAmount)} cash bonus, credited straight to your wallet.`;
+  `${goalWords(f)}${f.metric === 'total' ? ' in total' : ''}${f.durationDays ? ` within ${f.durationDays} days` : ''} to receive a ${usd(f.bonusAmount)} cash bonus, credited straight to your wallet.`;
+// the three kinds of target, as the admin picks them
+const KINDS = [
+  { value: 'orders', icon: '📦', label: 'New orders', example: 'e.g. deliver 20 more orders from today' },
+  { value: 'total', icon: '🏁', label: 'Total delivered', example: 'e.g. at 100 now → reach 200 in total' },
+  { value: 'sales', icon: '💵', label: 'Sales amount', example: 'e.g. deliver $2,000 of orders' },
+];
 const blankForm = () => {
   const f = { sellerIds: [], metric: 'orders', targetOrderCount: 10, targetAmount: 1000, bonusAmount: 50, durationDays: 30, titleTouched: false, descTouched: false };
   f.title = autoTitle(f);
@@ -58,17 +77,20 @@ const STATE_META = {
   cancelled: { label: 'Cancelled', tone: 'neutral', icon: '✕' },
 };
 const isSales = (t) => t.metric === 'sales';
+const isTotal = (t) => t.metric === 'total';
 function progressOf(t) {
-  const cur = isSales(t) ? Number(t.currentAmount) || 0 : Number(t.currentOrders) || 0;
+  const cur = isSales(t) ? Number(t.currentAmount) || 0 : (isTotal(t) ? Number(t.baseOrders) || 0 : 0) + (Number(t.currentOrders) || 0);
   const goal = isSales(t) ? Number(t.targetAmount) || 0 : Number(t.targetOrders) || 0;
   const pct = goal > 0 ? Math.min(100, Math.floor((cur / goal) * 100)) : 0;
   return { cur, goal, pct, left: Math.max(0, goal - cur) };
 }
 const progressText = (t) => {
   const p = progressOf(t);
-  return isSales(t) ? `${usd(p.cur)} / ${usd(p.goal)} delivered` : `${p.cur} / ${p.goal} delivered`;
+  if (isSales(t)) return `${usd(p.cur)} / ${usd(p.goal)} delivered`;
+  if (isTotal(t)) return `${p.cur} / ${p.goal} total delivered`;
+  return `${p.cur} / ${p.goal} delivered`;
 };
-const goalShort = (t) => (isSales(t) ? `${usd(t.targetAmount)} in orders` : `${t.targetOrders} orders`);
+const goalShort = (t) => (isSales(t) ? `${usd(t.targetAmount)} in orders` : isTotal(t) ? `reach ${t.targetOrders} total (was ${t.baseOrders || 0})` : `${t.targetOrders} new orders`);
 
 function daysLeft(t) {
   if (!t.expiresAt) return null;
@@ -108,6 +130,7 @@ export default function Targets() {
   const [form, setForm] = useState(blankForm);
   const [sellerQ, setSellerQ] = useState('');
   const [pickTest, setPickTest] = useState(false);
+  const [totals, setTotals] = useState(null); // sellerId → orders delivered in its whole life
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
@@ -154,6 +177,9 @@ export default function Targets() {
     setPickTest(false);
     setFormError('');
     setModalOpen(true);
+    api('/sellers/targets/delivered-totals')
+      .then((r) => setTotals(r?.totals || {}))
+      .catch(() => setTotals({}));
   };
 
   const isTestStore = (s) => Boolean(s.isTestAccount || s.accountType === 'test');
@@ -185,6 +211,11 @@ export default function Targets() {
     }
     if (!(Number(form.bonusAmount) > 0)) return setFormError('Bonus must be more than $0.');
     const bonus = Number(form.bonusAmount);
+    if (form.metric === 'total' && totals) {
+      const past = ids.filter((id) => (totals[id] || 0) >= Number(form.targetOrderCount));
+      if (past.length === ids.length) return setFormError(`${ids.length === 1 ? 'This store has' : 'All chosen stores have'} already delivered ${Number(form.targetOrderCount)} or more orders. Choose a higher total.`);
+      if (past.length && !window.confirm(`${past.length} of the chosen stores already delivered ${Number(form.targetOrderCount)} or more orders. They will be skipped. Continue?`)) return;
+    }
     const most = bonus * ids.length;
     if ((bonus > BIG_BONUS || ids.length > 1) &&
       !window.confirm(
@@ -378,7 +409,20 @@ export default function Targets() {
   const chosenBusy = form.sellerIds.filter((id) => activeBySeller.get(id)).length;
   const hasWeeks = stats.weeks.some((w) => w.assigned || w.completed);
   const fSales = form.metric === 'sales';
+  const fTotal = form.metric === 'total';
   const goalNum = fSales ? Number(form.targetAmount) || 0 : Number(form.targetOrderCount) || 0;
+  const doneOf = (id) => (totals ? totals[id] || 0 : null);
+  const oneStore = form.sellerIds.length === 1 ? sellers.find((x) => x._id === form.sellerIds[0]) : null;
+  const oneDone = oneStore ? doneOf(oneStore._id) : null;
+  const chosenDone = totals ? form.sellerIds.map((id) => totals[id] || 0) : [];
+  const pastGoal = fTotal && totals ? form.sellerIds.filter((id) => (totals[id] || 0) >= goalNum).length : 0;
+  // "Total delivered" for one store: when the goal is not above what it already did, start at +50
+  // (only when the store or the type changes — never while the admin is typing)
+  const totalKey = `${form.metric}|${form.sellerIds.join(',')}|${totals ? 1 : 0}`;
+  useEffect(() => {
+    if (fTotal && oneDone !== null && goalNum <= oneDone) setF({ targetOrderCount: oneDone + 50 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totalKey]);
 
   const actionsFor = (t, small = true) => {
     const s = stateOf(t);
@@ -622,7 +666,7 @@ export default function Targets() {
                     <td>
                       <span className="ins-strong">{t.title}</span>
                       <span className="ins-sub">
-                        {isSales(t) ? '💵 Sales goal' : '📦 Orders goal'}: {goalShort(t)}
+                        {isSales(t) ? '💵 Sales' : isTotal(t) ? '🏁 Total delivered' : '📦 New orders'}: {goalShort(t)}
                         {t.createdBy ? ` · by ${t.createdBy}` : ''}
                       </span>
                       {t.description && <span className="ins-sub ins-clip" title={t.description}>{t.description}</span>}
@@ -732,8 +776,12 @@ export default function Targets() {
                         <input type="checkbox" checked={chosen.has(s._id)} onChange={() => toggleSeller(s._id)} />
                         <span className="tg-pick-name">
                           <b>{s.storeName}</b>
-                          <small>{s.ownerName}{isTestStore(s) ? ' · test' : ''}</small>
+                          <small>
+                            {s.ownerName}{isTestStore(s) ? ' · test' : ''}
+                            {totals && ` · ${doneOf(s._id)} delivered`}
+                          </small>
                         </span>
+                        {fTotal && totals && doneOf(s._id) >= goalNum && goalNum > 0 && <span className="tg-pick-busy" title="Already at or past the total goal — will be skipped">already {doneOf(s._id)}</span>}
                         {running > 0 && <span className="tg-pick-busy" title="Targets already running for this store">{running} running</span>}
                       </label>
                     );
@@ -747,24 +795,33 @@ export default function Targets() {
               </div>
 
               <div className="ins-field">
-                <span className="ins-label">What counts</span>
-                <Seg
-                  small
-                  label="Goal type"
-                  value={form.metric}
-                  onChange={(v) => {
-                    const p = PRESETS[v][0];
-                    setF(v === 'sales' ? { metric: v, targetAmount: p.goal, bonusAmount: p.bonus, durationDays: p.days } : { metric: v, targetOrderCount: p.goal, bonusAmount: p.bonus, durationDays: p.days });
-                  }}
-                  options={[
-                    { value: 'orders', label: '📦 Delivered orders', title: 'Number of delivered orders — every order counts as one' },
-                    { value: 'sales', label: '💵 Delivered sales ($)', title: 'Value of the delivered orders — small orders count little, big orders count a lot' },
-                  ]}
-                />
+                <span className="ins-label">Type of target</span>
+                <div className="tg-kinds" role="radiogroup" aria-label="Type of target">
+                  {KINDS.map((k) => (
+                    <button
+                      key={k.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={form.metric === k.value}
+                      className={`tg-kind${form.metric === k.value ? ' on' : ''}`}
+                      onClick={() => {
+                        if (form.metric === k.value) return;
+                        const p = PRESETS[k.value][0];
+                        setF(k.value === 'sales' ? { metric: k.value, targetAmount: p.goal, bonusAmount: p.bonus, durationDays: p.days } : { metric: k.value, targetOrderCount: p.goal, bonusAmount: p.bonus, durationDays: p.days });
+                      }}
+                    >
+                      <span className="tg-kind-icon" aria-hidden="true">{k.icon}</span>
+                      <b>{k.label}</b>
+                      <small>{k.example}</small>
+                    </button>
+                  ))}
+                </div>
                 <small>
                   {fSales
-                    ? 'Counts the value of every delivered order. Bigger orders bring the store closer faster — the bonus follows the real business.'
-                    : 'Counts every delivered order as one, whatever its value.'}
+                    ? 'Counts the value of every order delivered from today. Bigger orders bring the store closer faster.'
+                    : fTotal
+                      ? "Counts the store's whole history: the orders it has already delivered plus every new one. The bonus comes when the total is reached."
+                      : 'Counts only orders delivered from today — every order counts as one.'}
                 </small>
               </div>
 
@@ -778,7 +835,7 @@ export default function Targets() {
                     const p = PRESETS[form.metric].find((x) => `${x.goal}-${x.bonus}` === v);
                     if (p) setF(fSales ? { targetAmount: p.goal, bonusAmount: p.bonus, durationDays: p.days } : { targetOrderCount: p.goal, bonusAmount: p.bonus, durationDays: p.days });
                   }}
-                  options={PRESETS[form.metric].map((p) => ({ value: `${p.goal}-${p.bonus}`, label: fSales ? `${usd(p.goal)} → ${usd(p.bonus)}` : `${p.goal} orders → $${p.bonus}` }))}
+                  options={PRESETS[form.metric].map((p) => ({ value: `${p.goal}-${p.bonus}`, label: fSales ? `${usd(p.goal)} → ${usd(p.bonus)}` : fTotal ? `${p.goal} total → $${p.bonus}` : `${p.goal} orders → $${p.bonus}` }))}
                 />
               </div>
 
@@ -796,7 +853,7 @@ export default function Targets() {
                     </>
                   ) : (
                     <>
-                      <label>Delivered orders needed *</label>
+                      <label>{fTotal ? 'Total delivered orders to reach *' : 'New orders needed *'}</label>
                       <input className="ins-input" type="number" min="1" step="1" value={form.targetOrderCount} onChange={(e) => setF({ targetOrderCount: e.target.value })} required />
                     </>
                   )}
@@ -806,6 +863,42 @@ export default function Targets() {
                   <input className="ins-input" type="number" min="1" step="0.01" value={form.bonusAmount} onChange={(e) => setF({ bonusAmount: e.target.value })} required />
                 </div>
               </div>
+
+              {fTotal && form.sellerIds.length > 0 && (
+                <div className="tg-total">
+                  {!totals ? (
+                    <span>Counting delivered orders…</span>
+                  ) : oneStore ? (
+                    <>
+                      <div className="tg-total-line">
+                        <span><b>{oneStore.storeName}</b> has delivered</span>
+                        <b className="tg-total-num">{oneDone}</b>
+                        <span>orders</span>
+                        {goalNum > oneDone ? (
+                          <span className="tg-total-need">→ needs <b>{goalNum - oneDone}</b> more to reach {goalNum}</span>
+                        ) : (
+                          <span className="tg-total-bad">→ already past {goalNum}, choose a higher total</span>
+                        )}
+                      </div>
+                      <div className="tg-total-quick">
+                        <span>Set goal:</span>
+                        {[20, 50, 100].map((n) => (
+                          <button key={n} type="button" className={`ins-btn ins-btn-sm${goalNum === oneDone + n ? ' tg-on' : ''}`} onClick={() => setF({ targetOrderCount: oneDone + n })}>
+                            +{n} → {oneDone + n}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="tg-total-line">
+                      <span>
+                        The {form.sellerIds.length} stores have delivered <b>{Math.min(...chosenDone)}–{Math.max(...chosenDone)}</b> orders so far.
+                      </span>
+                      {pastGoal > 0 && <span className="tg-total-bad">{pastGoal} already at or past {goalNum} — they will be skipped.</span>}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="ins-field">
                 <label>Deadline (days)</label>
@@ -829,6 +922,16 @@ export default function Targets() {
                     <>
                       Cost: <b>{usd(form.bonusAmount)}</b> for <b>{usd(goalNum)}</b> of delivered orders — <b>{pctOf(Number(form.bonusAmount) || 0, Math.max(1, goalNum))}%</b> of the sales.
                     </>
+                  ) : fTotal ? (
+                    oneStore && oneDone !== null && goalNum > oneDone ? (
+                      <>
+                        Cost: <b>{usd(form.bonusAmount)}</b> for <b>{goalNum - oneDone}</b> new delivered orders — <b>{usd((Number(form.bonusAmount) || 0) / (goalNum - oneDone))}</b> per new order.
+                      </>
+                    ) : (
+                      <>
+                        Cost: <b>{usd(form.bonusAmount)}</b> per store that reaches <b>{goalNum}</b> delivered orders in total.
+                      </>
+                    )
                   ) : (
                     <>
                       Cost: <b>{usd(form.bonusAmount)}</b> for <b>{goalNum}</b> delivered orders — <b>{usd((Number(form.bonusAmount) || 0) / Math.max(1, goalNum))}</b> per order.
@@ -874,7 +977,7 @@ export default function Targets() {
               </div>
               <div className="ins-form-grid">
                 <div className="ins-field">
-                  <label>{isSales(edit.t) ? 'Delivered sales needed (USD) *' : 'Delivered orders needed *'}</label>
+                  <label>{isSales(edit.t) ? 'Delivered sales needed (USD) *' : isTotal(edit.t) ? 'Total delivered orders to reach *' : 'New orders needed *'}</label>
                   <input className="ins-input" type="number" min="1" step={isSales(edit.t) ? '0.01' : '1'} value={edit.goal} onChange={(e) => setEdit((p) => ({ ...p, goal: e.target.value }))} required />
                 </div>
                 <div className="ins-field">

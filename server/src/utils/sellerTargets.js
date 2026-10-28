@@ -10,40 +10,77 @@
  *  - the monitor: closes targets whose deadline passed (and tells the store), sends a
  *    "1 day left" reminder once, and the 50% / 80% "keep going" nudges.
  */
+import mongoose from 'mongoose';
 import Seller from '../models/Seller.js';
 import { notify } from './notify.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 const EPS = 0.005;
 
-export const metricOf = (t) => (t?.metric === 'sales' ? 'sales' : 'orders');
+export const metricOf = (t) => (t?.metric === 'sales' ? 'sales' : t?.metric === 'total' ? 'total' : 'orders');
 const money = (n) => {
   const v = Math.round((Number(n) || 0) * 100) / 100;
   return `$${v.toLocaleString('en-US', { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
 };
 
-/** Progress of a target: { cur, goal, pct, left, reached } (sales in $, orders as a count). */
+/**
+ * Progress of a target: { cur, goal, pct, left, reached, runPct }.
+ *  orders: cur = new orders delivered since it was given, goal = N
+ *  total:  cur = lifetime delivered (base + new), goal = the total to reach
+ *  sales:  cur = $ delivered since it was given, goal = $X
+ * runPct = how much of the distance from the start is done (for "halfway" nudges: a store at
+ * 100 of 200 total starts at 50% on the bar, but has done 0% of the way).
+ */
 export function progressOf(t) {
-  const sales = metricOf(t) === 'sales';
-  const cur = sales ? Number(t?.currentAmount) || 0 : Number(t?.currentOrders) || 0;
+  const m = metricOf(t);
+  const sales = m === 'sales';
+  const total = m === 'total';
+  const base = total ? Number(t?.baseOrders) || 0 : 0;
+  const cur = sales ? Number(t?.currentAmount) || 0 : base + (Number(t?.currentOrders) || 0);
   const goal = sales ? Number(t?.targetAmount) || 0 : Number(t?.targetOrders) || 0;
   const reached = goal > 0 && cur >= goal - (sales ? EPS : 0);
   const pct = goal > 0 ? Math.min(100, Math.floor((cur / goal) * 100)) : 0;
   const left = Math.max(0, Math.round((goal - cur) * 100) / 100);
-  return { cur, goal, pct, left, reached, sales };
+  const way = goal - base;
+  const runPct = way > 0 ? Math.min(100, Math.floor(((cur - base) / way) * 100)) : pct;
+  return { cur, goal, pct, left, reached, sales, total, base, runPct };
 }
 
-/** "3 more orders" / "$120 more in delivered sales" */
+/** "3 more orders" / "80 more orders to reach 200 delivered" / "$120 more in delivered orders" */
 export function leftText(t) {
   const p = progressOf(t);
   if (p.sales) return `${money(p.left)} more in delivered orders`;
+  if (p.total) return `${p.left} more order${p.left === 1 ? '' : 's'} to reach ${p.goal} delivered`;
   return `${p.left} more order${p.left === 1 ? '' : 's'}`;
 }
 
-/** "Deliver 10 orders" / "Deliver $2,000 in orders" */
+/** "Deliver 10 orders" / "Reach 200 delivered orders in total" / "Deliver $2,000 in orders" */
 export function goalText(t) {
-  if (metricOf(t) === 'sales') return `Deliver ${money(t.targetAmount)} in orders`;
+  const m = metricOf(t);
+  if (m === 'sales') return `Deliver ${money(t.targetAmount)} in orders`;
+  if (m === 'total') return `Reach ${Number(t.targetOrders) || 0} delivered orders in total`;
   return `Deliver ${Number(t.targetOrders) || 0} order${Number(t.targetOrders) === 1 ? '' : 's'}`;
+}
+
+/**
+ * How many orders each store has delivered in its whole life (an order counts once per store,
+ * a refunded order does not count). The same way a target counts a delivery.
+ * @param {string[]|null} sellerIds  null = every store
+ * @returns {Promise<Map<string, number>>}
+ */
+export async function deliveredTotals(sellerIds = null) {
+  const { default: Order } = await import('../models/Order.js');
+  const ids = Array.isArray(sellerIds) ? sellerIds.filter((id) => mongoose.Types.ObjectId.isValid(String(id))).map((id) => new mongoose.Types.ObjectId(String(id))) : null;
+  const itemMatch = { 'items.payoutSettled': true, 'items.seller': ids ? { $in: ids } : { $ne: null } };
+  const rows = await Order.aggregate([
+    { $match: { status: { $ne: 'refunded' }, ...itemMatch } },
+    { $project: { items: { seller: 1, payoutSettled: 1 } } },
+    { $unwind: '$items' },
+    { $match: itemMatch },
+    { $group: { _id: { o: '$_id', s: '$items.seller' } } },
+    { $group: { _id: '$_id.s', n: { $sum: 1 } } },
+  ]);
+  return new Map(rows.map((r) => [String(r._id), r.n]));
 }
 
 // what a store's own screens never get: who created / changed it, internal notes on why it closed
@@ -105,7 +142,7 @@ export async function nudgeProgress(app, sellerId, target) {
   const p = progressOf(target);
   if (p.reached) return;
   const sent = Array.isArray(target.nudges) ? target.nudges : [];
-  const step = p.pct >= 80 ? 80 : p.pct >= 50 ? 50 : 0;
+  const step = p.runPct >= 80 ? 80 : p.runPct >= 50 ? 50 : 0;
   if (!step || sent.includes(step)) return;
   const marks = step === 80 ? [50, 80] : [50];
   const r = await Seller.updateOne(
@@ -118,7 +155,7 @@ export async function nudgeProgress(app, sellerId, target) {
     sellerId: String(sellerId),
     type: 'system',
     title: step === 80 ? `🔥 Almost there: ${leftText(target)} for ${money(target.bonusAmount)}` : `💪 Halfway to your ${money(target.bonusAmount)} bonus`,
-    body: `"${target.title}": ${p.pct}% done — ${leftText(target)} to get ${money(target.bonusAmount)} in your wallet.`,
+    body: `"${target.title}": ${p.sales ? `${money(p.cur)} of ${money(p.goal)}` : `${p.cur} of ${p.goal}`} delivered — ${leftText(target)} to get ${money(target.bonusAmount)} in your wallet.`,
     link: '/seller',
     push: true,
   });
