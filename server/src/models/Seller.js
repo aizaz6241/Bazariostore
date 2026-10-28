@@ -219,14 +219,33 @@ const sellerSchema = new mongoose.Schema(
     targets: [
       {
         title: { type: String, required: true },
-        targetOrders: { type: Number, required: true },
+        // what is counted: 'orders' = delivered orders, 'sales' = delivered order value in $
+        // (targets made before this field existed are 'orders')
+        metric: { type: String, enum: ['orders', 'sales'], default: 'orders' },
+        targetOrders: { type: Number, required: true }, // goal for 'orders' (0 for a sales goal)
         currentOrders: { type: Number, default: 0 },
+        targetAmount: { type: Number, default: 0 }, // goal for 'sales' ($)
+        currentAmount: { type: Number, default: 0 }, // delivered order value counted (both kinds)
         bonusAmount: { type: Number, required: true },
-        status: { type: String, enum: ['active', 'completed', 'claimed', 'expired'], default: 'active' },
+        status: { type: String, enum: ['active', 'completed', 'claimed', 'expired', 'cancelled'], default: 'active' },
         createdAt: { type: Date, default: Date.now },
         completedAt: { type: Date, default: null },
         expiresAt: { type: Date, default: null },
+        expiredAt: { type: Date, default: null },
         adminNote: { type: String, default: '' },
+        // the bonus when the goal was reached: where it went (held while the store was frozen)
+        paidAmount: { type: Number, default: 0 },
+        paidAt: { type: Date, default: null },
+        paidTo: { type: String, default: '' }, // 'balance' | 'frozen'
+        cancelledAt: { type: Date, default: null },
+        cancelReason: { type: String, default: '' },
+        // admin side only (never sent to the store's screens)
+        createdBy: { type: String, default: '' },
+        batchId: { type: String, default: '' }, // same id for a target given to many stores at once
+        changes: [{ at: Date, by: String, what: String, _id: false }],
+        nudges: { type: [Number], default: [] }, // 50 / 80 % notifications already sent
+        reminderSentAt: { type: Date, default: null }, // "1 day left" sent
+        expiredNotifiedAt: { type: Date, default: null },
       },
     ],
     // Account Health & Compliance Rating (0 to 100)

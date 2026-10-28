@@ -24,6 +24,7 @@ import { restartSellerDeadlines, releaseFrozenFund } from './orders.routes.js';
 import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
 import { setScoreAsAdjustment, bandOf, recomputeHealth, MONITOR_NAME } from '../../utils/healthEngine.js';
 import { emailSellerApproved, emailAccountStatus } from '../../utils/sellerEmails.js';
+import { pushTargets, progressOf } from '../../utils/sellerTargets.js';
 import { deleteUnusedKeys, deleteAttachmentFiles, keysOfUrls, attachmentLocation } from '../../services/uploads.js';
 
 /** Setting a seller's password or login email: the same rank as viewing the saved password. */
@@ -2133,140 +2134,259 @@ router.patch('/:id/toggle-previous-store', authAdmin('sellers'), announceToAdmin
   }
 });
 
-// POST /api/sellers/:id/targets (Admin assigns a target & bonus to a seller)
-router.post('/:id/targets', authAdmin('sellers'), async (req, res) => {
+// ───────────────────────── Targets & Bonuses ─────────────────────────
+// A target: deliver N orders (metric 'orders') or $X of order value (metric 'sales'), optionally
+// before a deadline, and the store gets a cash bonus in its wallet the moment it is reached
+// (counting / paying: advanceSellerTargets in orders.routes.js; deadline monitor:
+// utils/sellerTargets.js). Stores never see which admin gave or changed a target.
+
+const TARGET_MAX_BONUS = 100000;
+const TARGET_BULK_MAX = 300;
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+/** Check the admin's form. → { value } or { error } */
+function readTargetInput(body, { partial = false } = {}) {
+  const b = body || {};
+  const out = {};
+  const metric = b.metric === 'sales' ? 'sales' : 'orders';
+  if (!partial || b.metric !== undefined) out.metric = metric;
+
+  if (!partial || b.title !== undefined) {
+    if (typeof b.title !== 'string' || !b.title.trim()) return { error: 'Target title is required' };
+    out.title = b.title.trim().slice(0, 120);
+  }
+
+  const goalRaw = metric === 'sales' ? b.targetAmount : b.targetOrders ?? b.targetOrderCount;
+  if (!partial || goalRaw !== undefined) {
+    if (metric === 'sales') {
+      const amt = round2(goalRaw);
+      if (!Number.isFinite(amt) || amt < 1) return { error: 'Sales goal must be at least $1' };
+      if (amt > 10000000) return { error: 'Sales goal is too large' };
+      out.targetAmount = amt;
+      out.targetOrders = 0;
+    } else {
+      const n = Number(goalRaw || 0);
+      // whole orders only (8.5 used to become 8 without a word)
+      if (!Number.isInteger(n)) return { error: 'Target orders must be a whole number (e.g. 8 or 10)' };
+      if (n < 1) return { error: 'Target orders must be a whole number of at least 1' };
+      if (n > 100000) return { error: 'Target orders is too large' };
+      out.targetOrders = n;
+      out.targetAmount = 0;
+    }
+  }
+
+  if (!partial || b.bonusAmount !== undefined) {
+    const bonus = round2(b.bonusAmount);
+    if (!Number.isFinite(bonus) || bonus <= 0) return { error: 'Bonus amount must be more than 0' };
+    if (bonus > TARGET_MAX_BONUS) return { error: `Bonus cannot be more than $${TARGET_MAX_BONUS.toLocaleString('en-US')}` };
+    out.bonusAmount = bonus;
+  }
+
+  // deadline: `expiresAt` (a date) wins over `durationDays` (days from now); empty = none
+  if (b.expiresAt !== undefined) {
+    if (b.expiresAt === null || b.expiresAt === '') out.expiresAt = null;
+    else {
+      const d = new Date(b.expiresAt);
+      if (Number.isNaN(d.getTime())) return { error: 'Deadline is not a valid date' };
+      if (d.getTime() <= Date.now()) return { error: 'Deadline must be in the future' };
+      out.expiresAt = d;
+    }
+  } else if (!partial || b.durationDays !== undefined) {
+    const raw = b.durationDays;
+    const days = raw === null || raw === undefined || raw === '' ? 0 : Number(raw);
+    if (!Number.isFinite(days) || days < 0 || days > 3650) return { error: 'Duration must be a positive number of days (or empty for no expiry)' };
+    out.expiresAt = days > 0 ? new Date(Date.now() + days * 24 * 60 * 60 * 1000) : null;
+  }
+
+  const note = b.description ?? b.adminNote;
+  if (!partial || note !== undefined) out.adminNote = String(note || '').trim().slice(0, 500);
+
+  // the title must not promise another number of orders than the goal (a seller was sent
+  // "Process 10 Orders Milestone" with the goal "Deliver 8 Orders")
+  if (out.title && (out.metric || metric) === 'orders' && out.targetOrders) {
+    const named = [...out.title.matchAll(/(\d+)\s*(?:delivered\s+)?orders?\b/gi)].map((m) => Number(m[1]));
+    if (named.length && !named.includes(out.targetOrders)) {
+      return { error: `The title mentions ${named.join(', ')} orders but the goal is ${out.targetOrders} delivered orders. Make them match.` };
+    }
+  }
+  return { value: out };
+}
+
+const goalLine = (t) =>
+  t.metric === 'sales' ? `Deliver $${Number(t.targetAmount || 0).toLocaleString('en-US')} in orders` : `Process & Deliver ${t.targetOrders} Orders`;
+
+/** Give one store a target: saved, chat message, notification. → the new target */
+async function assignTarget(req, seller, input, { batchId = '' } = {}) {
+  const target = {
+    title: input.title,
+    metric: input.metric,
+    targetOrders: input.targetOrders || 0,
+    currentOrders: 0,
+    targetAmount: input.targetAmount || 0,
+    currentAmount: 0,
+    bonusAmount: input.bonusAmount,
+    status: 'active',
+    createdAt: new Date(),
+    expiresAt: input.expiresAt || null,
+    adminNote: input.adminNote || '',
+    createdBy: req.admin?.name || '',
+    batchId,
+    changes: [{ at: new Date(), by: req.admin?.name || '', what: 'created' }],
+  };
+  const saved = await Seller.findOneAndUpdate(
+    { _id: seller._id },
+    { $push: { targets: { $each: [target], $position: 0 } } },
+    { new: true, projection: { targets: { $slice: 1 } } }
+  ).lean();
+  const created = saved?.targets?.[0] || target;
+
+  // Auto-send chat notice (the store sees it from "Bazario Support", never the admin's name)
   try {
-    const { title, targetOrders, targetOrderCount, bonusAmount, durationDays, adminNote, description } = req.body || {};
-    const rawOrders = Number(targetOrders || targetOrderCount || 0);
-    // whole orders only (8.5 used to become 8 without a word)
-    if (!Number.isInteger(rawOrders)) return res.status(400).json({ message: 'Target orders must be a whole number (e.g. 8 or 10)' });
-    const finalOrderCount = rawOrders;
-    const finalBonus = Math.round(Number(bonusAmount || 0) * 100) / 100;
-    const days = durationDays === null || durationDays === undefined || durationDays === '' ? 0 : Number(durationDays);
-
-    if (typeof title !== 'string' || !title.trim()) {
-      return res.status(400).json({ message: 'Target milestone title is required' });
-    }
-    if (!Number.isFinite(finalOrderCount) || finalOrderCount < 1) {
-      return res.status(400).json({ message: 'Target orders must be a whole number of at least 1' });
-    }
-    if (!Number.isFinite(finalBonus) || finalBonus <= 0) {
-      return res.status(400).json({ message: 'Bonus amount must be more than 0' });
-    }
-    // the title must not promise another number of orders than the goal (a seller was sent
-    // "Process 10 Orders Milestone" with the goal "Deliver 8 Orders")
-    const namedOrders = [...String(title || '').matchAll(/(\d+)\s*(?:delivered\s+)?orders?\b/gi)].map((m) => Number(m[1]));
-    if (namedOrders.length && !namedOrders.includes(finalOrderCount)) {
-      return res.status(400).json({ message: `The title mentions ${namedOrders.join(', ')} orders but the goal is ${finalOrderCount} delivered orders. Make them match.` });
-    }
-    if (!Number.isFinite(days) || days < 0) {
-      return res.status(400).json({ message: 'Duration must be a positive number of days (or empty for no expiry)' });
-    }
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Seller not found' });
-
-    const seller = await Seller.findById(req.params.id);
-    if (!seller) return res.status(404).json({ message: 'Seller not found' });
-    if (seller.status === 'pending_approval') {
-      return res.status(400).json({ message: 'This seller is not approved yet. Approve the application before assigning a target.' });
-    }
-
-    seller.targets = seller.targets || [];
-    const expiresAt = days > 0 ? new Date(Date.now() + days * 24 * 60 * 60 * 1000) : null;
-
-    const note = String(description || adminNote || '').trim().slice(0, 500);
-    const newTarget = {
-      title: title.trim().slice(0, 120),
-      targetOrders: finalOrderCount,
-      currentOrders: 0,
-      bonusAmount: finalBonus,
-      status: 'active',
-      createdAt: new Date(),
-      expiresAt,
-      adminNote: note,
-    };
-
-    seller.targets.unshift(newTarget);
-    seller.markModified('targets');
-    await seller.save();
-
-    // Auto-send chat notice
-    try {
-      let conv = await Conversation.findOne({ seller: seller._id });
-      if (!conv) {
-        conv = await Conversation.create({
-          seller: seller._id,
-          storeName: seller.storeName,
-          sellerName: seller.ownerName,
-          sellerEmail: seller.email,
-          subject: 'Store Milestone & Bonus Target',
-          status: 'open',
-          lastAt: new Date(),
-        });
-      }
-
-      const msgText =
-        `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `🎯 NEW PERFORMANCE TARGET & BONUS UNLOCKED!\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `Target: ${newTarget.title}\n` +
-        `Goal: Process & Deliver ${newTarget.targetOrders} Orders\n` +
-        `Bonus Reward: $${newTarget.bonusAmount.toLocaleString('en-US')} Cash Bonus\n` +
-        (expiresAt ? `Valid Until: ${expiresAt.toLocaleDateString('en-IN')}\n` : 'Duration: No Expiry\n') +
-        (newTarget.adminNote ? `Note: ${newTarget.adminNote}\n` : '') +
-        `Complete the target orders to receive an instant cash bonus credited directly to your wallet!\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━━━━`;
-
-      const msg = await Message.create({
-        conversation: conv._id,
+    let conv = await Conversation.findOne({ seller: seller._id });
+    if (!conv) {
+      conv = await Conversation.create({
         seller: seller._id,
-        sender: 'admin',
-        senderName: req.admin.name || 'Platform Growth Desk',
-        text: msgText,
+        storeName: seller.storeName,
+        sellerName: seller.ownerName,
+        sellerEmail: seller.email,
+        subject: 'Store Milestone & Bonus Target',
+        status: 'open',
+        lastAt: new Date(),
       });
-
-      conv.lastMessage = `🎯 New Target: Process ${newTarget.targetOrders} Orders for $${newTarget.bonusAmount} Bonus`;
-      conv.lastSender = 'admin';
-      conv.lastAt = new Date();
-      conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
-      await conv.save();
-
-      req.app.get('io')?.to(`seller:${seller._id}`).emit('message:new', sellerSafeMessage(msg));
-      req.app.get('io')?.to(`seller:${seller._id}`).emit('seller:targets_update', { targets: seller.targets });
-    } catch (chatErr) {
-      console.error('Target chat error:', chatErr.message);
     }
-
-    notify(req.app, {
-      recipientType: 'seller',
-      sellerId: seller._id,
-      type: 'approval',
-      title: `🎯 New Sales Target: Earn $${newTarget.bonusAmount} Bonus!`,
-      body: `Deliver ${newTarget.targetOrders} orders to unlock $${newTarget.bonusAmount} in bonus wallet credits.`,
-      link: '/seller',
+    const exp = target.expiresAt;
+    const msgText =
+      `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `🎯 NEW PERFORMANCE TARGET & BONUS UNLOCKED!\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `Target: ${target.title}\n` +
+      `Goal: ${goalLine(target)}\n` +
+      `Bonus Reward: $${target.bonusAmount.toLocaleString('en-US')} Cash Bonus\n` +
+      (exp ? `Valid Until: ${exp.toLocaleDateString('en-IN')}\n` : 'Duration: No Expiry\n') +
+      (target.adminNote ? `Note: ${target.adminNote}\n` : '') +
+      `Only orders delivered from today count. Confirm your orders on time — the bonus is credited to your wallet automatically the moment the goal is reached!\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    const msg = await Message.create({
+      conversation: conv._id,
+      seller: seller._id,
+      sender: 'admin',
+      senderName: req.admin?.name || 'Platform Growth Desk',
+      text: msgText,
     });
+    conv.lastMessage = `🎯 New Target: ${target.metric === 'sales' ? `$${target.targetAmount} in orders` : `Process ${target.targetOrders} Orders`} for $${target.bonusAmount} Bonus`;
+    conv.lastSender = 'admin';
+    conv.lastAt = new Date();
+    conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
+    await conv.save();
+    req.app.get('io')?.to(`seller:${seller._id}`).emit('message:new', sellerSafeMessage(msg));
+  } catch (chatErr) {
+    console.error('Target chat error:', chatErr.message);
+  }
 
-    audit(req, 'create', 'seller_target', seller._id, `Assigned target "${title}" (${finalOrderCount} orders -> $${finalBonus} bonus) for ${seller.storeName}`);
+  notify(req.app, {
+    recipientType: 'seller',
+    sellerId: seller._id,
+    type: 'approval',
+    title: `🎯 New Sales Target: Earn $${target.bonusAmount} Bonus!`,
+    body:
+      target.metric === 'sales'
+        ? `Deliver $${target.targetAmount.toLocaleString('en-US')} in orders to unlock $${target.bonusAmount} in bonus wallet credits.`
+        : `Deliver ${target.targetOrders} orders to unlock $${target.bonusAmount} in bonus wallet credits.`,
+    link: '/seller',
+  });
+  await pushTargets(req.app, seller._id);
+  return created;
+}
 
-    res.status(201).json({ message: `Target assigned to ${seller.storeName} successfully! 🎯`, targets: seller.targets });
+const targetSummary = (t) =>
+  `${t.metric === 'sales' ? `$${t.targetAmount} sales` : `${t.targetOrders} orders`} -> $${t.bonusAmount} bonus${t.expiresAt ? `, ends ${new Date(t.expiresAt).toISOString().slice(0, 10)}` : ', no deadline'}`;
+
+// POST /api/sellers/targets/bulk (Admin gives the same target to many stores at once)
+router.post('/targets/bulk', authAdmin('sellers'), async (req, res) => {
+  try {
+    const ids = [...new Set((Array.isArray(req.body?.sellerIds) ? req.body.sellerIds : []).map(String))].filter((id) => mongoose.Types.ObjectId.isValid(id));
+    if (!ids.length) return res.status(400).json({ message: 'Choose at least one store' });
+    if (ids.length > TARGET_BULK_MAX) return res.status(400).json({ message: `At most ${TARGET_BULK_MAX} stores at once` });
+    const { value, error } = readTargetInput(req.body);
+    if (error) return res.status(400).json({ message: error });
+
+    const sellers = await Seller.find({ _id: { $in: ids } }).select('storeName ownerName email status').lean();
+    const batchId = `b${Date.now().toString(36)}${crypto.randomBytes(3).toString('hex')}`;
+    const created = [];
+    const skipped = [];
+    for (const id of ids) {
+      const s = sellers.find((x) => String(x._id) === id);
+      if (!s) {
+        skipped.push({ sellerId: id, storeName: '', reason: 'Store not found' });
+        continue;
+      }
+      if (s.status === 'pending_approval') {
+        skipped.push({ sellerId: id, storeName: s.storeName, reason: 'Not approved yet' });
+        continue;
+      }
+      await assignTarget(req, s, value, { batchId });
+      created.push({ sellerId: id, storeName: s.storeName });
+    }
+    if (created.length) {
+      audit(req, 'create', 'seller_target', batchId, `Assigned target "${value.title}" (${targetSummary(value)}) to ${created.length} store(s): ${created.map((c) => c.storeName).join(', ').slice(0, 900)}`);
+    }
+    res.status(201).json({
+      message: `Target given to ${created.length} store${created.length === 1 ? '' : 's'}${skipped.length ? ` (${skipped.length} skipped)` : ''}. 🎯`,
+      created,
+      skipped,
+      batchId,
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// GET /api/sellers/targets/all (Admin lists all active targets across sellers)
+// POST /api/sellers/:id/targets (Admin assigns a target & bonus to a seller)
+router.post('/:id/targets', authAdmin('sellers'), async (req, res) => {
+  try {
+    const { value, error } = readTargetInput(req.body);
+    if (error) return res.status(400).json({ message: error });
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Seller not found' });
+
+    const seller = await Seller.findById(req.params.id).select('storeName ownerName email status targets');
+    if (!seller) return res.status(404).json({ message: 'Seller not found' });
+    if (seller.status === 'pending_approval') {
+      return res.status(400).json({ message: 'This seller is not approved yet. Approve the application before assigning a target.' });
+    }
+    // a double click / a second admin sending the very same target at the same moment
+    const twin = (seller.targets || []).find(
+      (t) =>
+        t.status === 'active' &&
+        t.title === value.title &&
+        Number(t.bonusAmount) === value.bonusAmount &&
+        Number(t.targetOrders || 0) === Number(value.targetOrders || 0) &&
+        Number(t.targetAmount || 0) === Number(value.targetAmount || 0) &&
+        Date.now() - new Date(t.createdAt).getTime() < 2 * 60 * 1000
+    );
+    if (twin) return res.status(409).json({ message: 'This exact target was just given to this store. Refresh the page to see it.' });
+
+    await assignTarget(req, seller, value);
+    audit(req, 'create', 'seller_target', seller._id, `Assigned target "${value.title}" (${targetSummary(value)}) for ${seller.storeName}`);
+
+    const latest = await Seller.findById(seller._id).select('targets').lean();
+    res.status(201).json({ message: `Target assigned to ${seller.storeName} successfully! 🎯`, targets: latest?.targets || [] });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// GET /api/sellers/targets/all (Admin lists all targets across sellers)
 router.get('/targets/all', authAdmin('sellers'), async (req, res) => {
   try {
     const sellers = await Seller.find({ 'targets.0': { $exists: true } })
-      .select('storeName ownerName email status isTestAccount targets')
+      .select('storeName ownerName email status isTestAccount accountType targets')
       .lean();
 
     const now = Date.now();
     const allTargets = [];
     sellers.forEach((s) => {
       (s.targets || []).forEach((t) => {
-        const target = t.targetOrders || 0;
-        const current = t.currentOrders || 0;
-        // an active target past its deadline is shown as expired (it is closed for good on the next delivery)
+        // an active target past its deadline is shown as expired (the monitor closes it within 15 minutes)
         let status = t.status || 'active';
         if (status === 'active' && t.expiresAt && new Date(t.expiresAt).getTime() < now) status = 'expired';
         allTargets.push({
@@ -2277,15 +2397,26 @@ router.get('/targets/all', authAdmin('sellers'), async (req, res) => {
           ownerName: s.ownerName,
           email: s.email,
           sellerStatus: s.status,
-          isTestAccount: Boolean(s.isTestAccount),
+          isTestAccount: Boolean(s.isTestAccount || s.accountType === 'test'),
           title: t.title,
-          targetOrders: target,
-          currentOrders: current,
+          metric: t.metric === 'sales' ? 'sales' : 'orders',
+          targetOrders: t.targetOrders || 0,
+          currentOrders: t.currentOrders || 0,
+          targetAmount: t.targetAmount || 0,
+          currentAmount: t.currentAmount || 0,
           bonusAmount: t.bonusAmount || 0,
           status,
           createdAt: t.createdAt,
           expiresAt: t.expiresAt,
           completedAt: t.completedAt,
+          cancelledAt: t.cancelledAt || null,
+          cancelReason: t.cancelReason || '',
+          paidAmount: t.paidAmount || 0,
+          paidTo: t.paidTo || '',
+          paidAt: t.paidAt || null,
+          createdBy: t.createdBy || '',
+          batchId: t.batchId || '',
+          changes: t.changes || [],
           adminNote: t.adminNote || '',
           description: t.adminNote || '',
         });
@@ -2299,22 +2430,154 @@ router.get('/targets/all', authAdmin('sellers'), async (req, res) => {
   }
 });
 
-// DELETE /api/sellers/:id/targets/:targetId (Admin removes a target)
+/** The target as it is in the database: { seller, target } or an error response sent. */
+async function findTarget(req, res) {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    res.status(404).json({ message: 'Seller not found' });
+    return null;
+  }
+  const seller = await Seller.findById(req.params.id).select('storeName targets').lean();
+  if (!seller) {
+    res.status(404).json({ message: 'Seller not found' });
+    return null;
+  }
+  const target = (seller.targets || []).find((t) => String(t._id) === String(req.params.targetId));
+  if (!target) {
+    res.status(404).json({ message: 'Target not found (it may already be removed)' });
+    return null;
+  }
+  return { seller, target };
+}
+
+// PATCH /api/sellers/:id/targets/:targetId (Admin changes a running target: title, goal, bonus,
+// deadline, note). The progress so far is kept. Only targets still in progress can be changed.
+router.patch('/:id/targets/:targetId', authAdmin('sellers'), async (req, res) => {
+  try {
+    const found = await findTarget(req, res);
+    if (!found) return;
+    const { seller, target } = found;
+    if (target.status !== 'active') return res.status(400).json({ message: `This target is ${target.status}; only a target in progress can be changed.` });
+
+    const metric = target.metric === 'sales' ? 'sales' : 'orders';
+    // the kind of goal stays (orders ↔ sales would mix up the progress)
+    const body = { ...(req.body || {}), metric };
+    if (!body.title) body.title = target.title;
+    // the goal not sent = the goal stays (also checked against the title)
+    if (metric === 'orders' && body.targetOrders === undefined && body.targetOrderCount === undefined) body.targetOrders = target.targetOrders;
+    if (metric === 'sales' && body.targetAmount === undefined) body.targetAmount = target.targetAmount;
+    const { value, error } = readTargetInput(body, { partial: true });
+    if (error) return res.status(400).json({ message: error });
+    delete value.metric;
+    if (metric === 'orders' && value.targetOrders !== undefined && value.targetOrders !== target.targetOrders && value.targetOrders <= (target.currentOrders || 0)) {
+      return res.status(400).json({ message: `The store has already delivered ${target.currentOrders} orders for this target. The new goal must be more than that.` });
+    }
+    if (metric === 'sales' && value.targetAmount !== undefined && value.targetAmount !== target.targetAmount && value.targetAmount <= (target.currentAmount || 0)) {
+      return res.status(400).json({ message: `The store has already delivered $${round2(target.currentAmount)} for this target. The new goal must be more than that.` });
+    }
+    if (metric === 'orders') delete value.targetAmount;
+    else delete value.targetOrders;
+
+    const what = [];
+    const $set = {};
+    const fmtD = (d) => (d ? new Date(d).toISOString().slice(0, 10) : 'no deadline');
+    for (const [k, v] of Object.entries(value)) {
+      const old = target[k];
+      const same = k === 'expiresAt' ? (old ? new Date(old).getTime() : null) === (v ? v.getTime() : null) : String(old ?? '') === String(v ?? '');
+      if (same) continue;
+      $set[`targets.$.${k}`] = v;
+      if (k === 'expiresAt') what.push(`deadline ${fmtD(old)} → ${fmtD(v)}`);
+      else if (k === 'bonusAmount') what.push(`bonus $${old} → $${v}`);
+      else if (k === 'targetOrders') what.push(`goal ${old} → ${v} orders`);
+      else if (k === 'targetAmount') what.push(`goal $${old} → $${v}`);
+      else if (k === 'title') what.push(`title "${old}" → "${v}"`);
+      else if (k === 'adminNote') what.push('message changed');
+    }
+    if (!what.length) return res.json({ message: 'Nothing changed', unchanged: true });
+    // a new or longer deadline earns a new "1 day left" reminder
+    if ($set['targets.$.expiresAt'] !== undefined) $set['targets.$.reminderSentAt'] = null;
+
+    const r = await Seller.updateOne(
+      { _id: seller._id, targets: { $elemMatch: { _id: target._id, status: 'active' } } },
+      { $set, $push: { 'targets.$.changes': { $each: [{ at: new Date(), by: req.admin?.name || '', what: what.join('; ') }], $slice: -20 } } }
+    );
+    if (!r.modifiedCount) return res.status(409).json({ message: 'The target was completed or closed a moment ago. Refresh the page.' });
+
+    audit(req, 'update', 'seller_target', seller._id, `Changed target "${target.title}" of ${seller.storeName}: ${what.join('; ')}`);
+
+    // the store is told what matters to it (not a pure note / title tweak)
+    const told = what.filter((w) => !w.startsWith('message') && !w.startsWith('title'));
+    if (told.length) {
+      const nt = { ...target, ...value };
+      notify(req.app, {
+        recipientType: 'seller',
+        sellerId: seller._id,
+        type: 'system',
+        title: `🎯 Target updated: ${nt.title}`,
+        body: `${metric === 'sales' ? `Goal $${Number(nt.targetAmount).toLocaleString('en-US')} in delivered orders` : `Goal ${nt.targetOrders} delivered orders`} · bonus $${nt.bonusAmount} · ${nt.expiresAt ? `ends ${new Date(nt.expiresAt).toLocaleDateString('en-IN')}` : 'no deadline'}. Your progress so far is kept.`,
+        link: '/seller',
+      });
+    }
+    await pushTargets(req.app, seller._id);
+    res.json({ message: 'Target updated', changed: what });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/sellers/:id/targets/:targetId/cancel (Admin stops a running target; the record stays)
+router.post('/:id/targets/:targetId/cancel', authAdmin('sellers'), async (req, res) => {
+  try {
+    const found = await findTarget(req, res);
+    if (!found) return;
+    const { seller, target } = found;
+    if (target.status !== 'active') return res.status(400).json({ message: `This target is already ${target.status}.` });
+    const reason = String(req.body?.reason || '').trim().slice(0, 300);
+    const tell = req.body?.notifySeller !== false;
+    const r = await Seller.updateOne(
+      { _id: seller._id, targets: { $elemMatch: { _id: target._id, status: 'active' } } },
+      {
+        $set: { 'targets.$.status': 'cancelled', 'targets.$.cancelledAt': new Date(), 'targets.$.cancelReason': reason },
+        $push: { 'targets.$.changes': { $each: [{ at: new Date(), by: req.admin?.name || '', what: `cancelled${reason ? `: ${reason}` : ''}` }], $slice: -20 } },
+      }
+    );
+    if (!r.modifiedCount) return res.status(409).json({ message: 'The target was completed or closed a moment ago. Refresh the page.' });
+    const p = progressOf(target);
+    audit(req, 'update', 'seller_target', seller._id, `Cancelled target "${target.title}" of ${seller.storeName} at ${p.sales ? `$${p.cur}/$${p.goal}` : `${p.cur}/${p.goal}`}${reason ? ` — ${reason}` : ''}`);
+    if (tell) {
+      notify(req.app, {
+        recipientType: 'seller',
+        sellerId: seller._id,
+        type: 'system',
+        title: `Target closed: ${target.title}`,
+        body: 'This target is no longer running. Keep delivering on time — new targets come to active stores.',
+        link: '/seller',
+      });
+    }
+    await pushTargets(req.app, seller._id);
+    res.json({ message: 'Target cancelled. Its record is kept.' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// DELETE /api/sellers/:id/targets/:targetId (Admin removes a finished target from the list).
+// A running target is cancelled first; a completed one (its bonus was paid) always stays on record.
 router.delete('/:id/targets/:targetId', authAdmin('sellers'), async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Seller not found' });
-    const seller = await Seller.findById(req.params.id);
-    if (!seller) return res.status(404).json({ message: 'Seller not found' });
-
-    const removed = (seller.targets || []).find((t) => t._id?.toString() === req.params.targetId);
-    if (!removed) return res.status(404).json({ message: 'Target not found (it may already be removed)' });
-    seller.targets = (seller.targets || []).filter((t) => t._id?.toString() !== req.params.targetId);
-    seller.markModified('targets');
-    await seller.save();
-    audit(req, 'delete', 'seller_target', seller._id, `Removed target "${removed.title}" (${removed.currentOrders || 0}/${removed.targetOrders} orders, status ${removed.status}) from ${seller.storeName}`);
-
-    req.app.get('io')?.to(`seller:${seller._id}`).emit('seller:targets_update', { targets: seller.targets });
-    res.json({ message: 'Target removed successfully', targets: seller.targets });
+    const found = await findTarget(req, res);
+    if (!found) return;
+    const { seller, target } = found;
+    const expiredNow = target.status === 'active' && target.expiresAt && new Date(target.expiresAt).getTime() < Date.now();
+    if (target.status === 'active' && !expiredNow) {
+      return res.status(400).json({ message: 'This target is still running. Cancel it first (the store is told), then it can be removed.' });
+    }
+    if (target.status === 'completed' || target.status === 'claimed') {
+      return res.status(400).json({ message: 'A completed target stays on record because its bonus was paid. It cannot be removed.' });
+    }
+    await Seller.updateOne({ _id: seller._id }, { $pull: { targets: { _id: target._id } } });
+    audit(req, 'delete', 'seller_target', seller._id, `Removed target "${target.title}" (${target.currentOrders || 0}/${target.targetOrders} orders, status ${target.status}) from ${seller.storeName}`);
+    await pushTargets(req.app, seller._id);
+    res.json({ message: 'Target removed' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

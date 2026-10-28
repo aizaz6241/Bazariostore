@@ -196,7 +196,33 @@ export default function SellerDashboard() {
   const score = Number.isFinite(health.score) ? health.score : 100;
   const h = healthOf(score);
   const targets = Array.isArray(seller.targets) ? seller.targets : [];
-  const activeTargets = targets;
+  // running targets first (closest to the goal on top), then the ones reached in the last 14 days
+  // and ended in the last 3 days; cancelled and old ones are not shown
+  const nowMs = Date.now();
+  const tState = (t) => {
+    if (t.status === 'completed' || t.status === 'claimed') return 'done';
+    if (t.status === 'cancelled') return 'cancelled';
+    if (t.status === 'expired' || (t.expiresAt && new Date(t.expiresAt).getTime() < nowMs)) return 'expired';
+    return 'active';
+  };
+  const tProgress = (t) => {
+    const sales = t.metric === 'sales';
+    const cur = sales ? Number(t.currentAmount) || 0 : Number(t.currentOrders ?? t.currentOrderCount) || 0;
+    const goal = sales ? Number(t.targetAmount) || 0 : Number(t.targetOrders || t.targetOrderCount) || 0;
+    return { sales, cur, goal, pct: goal > 0 ? Math.min(100, Math.floor((cur / goal) * 100)) : 0, left: Math.max(0, goal - cur) };
+  };
+  const activeTargets = targets
+    .filter((t) => {
+      const st = tState(t);
+      if (st === 'active') return true;
+      if (st === 'done') return nowMs - new Date(t.completedAt || t.createdAt).getTime() < 14 * 86400000;
+      if (st === 'expired') return nowMs - new Date(t.expiresAt || t.createdAt).getTime() < 3 * 86400000;
+      return false;
+    })
+    .sort((a, b) => {
+      const order = { active: 0, done: 1, expired: 2 };
+      return order[tState(a)] - order[tState(b)] || tProgress(b).pct - tProgress(a).pct;
+    });
   const awaiting = stats.awaitingConfirmation || 0;
   const tierStatus = me?.tierRequest?.status;
   const diamondPending = ['pending', 'awaiting_approval'].includes(tierStatus);
@@ -507,30 +533,37 @@ export default function SellerDashboard() {
           <div className="sd-card-head">
             <div>
               <h3 className="sd-card-title"><Ic name="gift" size={16} /> Targets &amp; bonuses</h3>
-              <p className="sd-card-sub">Deliver the order count to get the cash bonus in your wallet</p>
+              <p className="sd-card-sub">Reach the goal with delivered orders — the cash bonus lands in your wallet automatically</p>
             </div>
           </div>
           <div className="sd-targets">
             {activeTargets.map((t) => {
-              const cur = t.currentOrders ?? t.currentOrderCount ?? 0;
-              const goal = t.targetOrders || t.targetOrderCount || 1;
-              const pct = Math.min(100, Math.round((cur / goal) * 100));
-              const done = t.status === 'completed' || t.status === 'claimed' || cur >= goal;
-              const expired = !done && (t.status === 'expired' || (t.expiresAt && new Date(t.expiresAt) < new Date()));
+              const st = tState(t);
+              const done = st === 'done';
+              const expired = st === 'expired';
+              const p = tProgress(t);
+              const leftDays = t.expiresAt ? Math.ceil((new Date(t.expiresAt).getTime() - nowMs) / 86400000) : null;
+              const leftLabel = p.sales ? `${formatMoney(p.left)} more in delivered orders` : `${p.left} more order${p.left === 1 ? '' : 's'} to deliver`;
               return (
                 <div key={t._id || t.title} className={`sd-target ${done ? 'done' : expired ? 'expired' : ''}`}>
                   <div className="sd-target-top">
                     <b>{t.title}</b>
-                    <span className={`sd-tag tone-${done ? 'green' : expired ? 'slate' : 'amber'}`}>{done ? 'Completed' : expired ? 'Expired' : 'In progress'}</span>
+                    <span className={`sd-tag tone-${done ? 'green' : expired ? 'slate' : 'amber'}`}>{done ? 'Completed' : expired ? 'Ended' : `${p.pct}%`}</span>
                   </div>
                   {(t.description || t.adminNote) && <p>{t.description || t.adminNote}</p>}
-                  <div className="sd-progress"><span style={{ width: `${pct}%` }} /></div>
+                  <div className="sd-progress"><span style={{ width: `${p.pct}%` }} /></div>
                   <div className="sd-target-foot">
-                    <span><b>{cur}</b> / {goal} delivered</span>
+                    <span>{p.sales ? <><b>{formatMoney(p.cur)}</b> / {formatMoney(p.goal)}</> : <><b>{p.cur}</b> / {p.goal}</>} delivered</span>
                     <b className="t-green">+{formatMoney(t.bonusAmount || 0)}</b>
                   </div>
-                  {t.expiresAt && !done && <small className={expired ? 't-muted' : 't-amber'}>{expired ? 'Ended' : 'Ends'} {new Date(t.expiresAt).toLocaleDateString()}</small>}
-                  {t.status === 'completed' && <small className="t-green">Bonus credited to your wallet</small>}
+                  {!done && !expired && (
+                    <small className="t-amber">
+                      {leftLabel}
+                      {leftDays !== null ? ` · ${leftDays <= 1 ? 'last day' : `${leftDays} days left`}` : ''}
+                    </small>
+                  )}
+                  {expired && <small className="t-muted">Ended {new Date(t.expiresAt).toLocaleDateString()} — not reached this time</small>}
+                  {done && <small className="t-green">{t.paidTo === 'frozen' ? 'Bonus earned — held until your account is active again' : 'Bonus credited to your wallet'}</small>}
                 </div>
               );
             })}

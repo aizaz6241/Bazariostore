@@ -22,6 +22,7 @@ import { sellerSafeMessage } from '../../utils/sellerChatPrivacy.js';
 import { orderAction, pageAction, markShortcutDone } from '../../utils/chatShortcuts.js';
 import { recordDeadlineMiss, recordOverdue, recordConfirmation, addHealthEvent, depositWaitingCovers, MONITOR_NAME } from '../../utils/healthEngine.js';
 import { emailOrderWarning, emailStoreFrozen, healthBefore } from '../../utils/sellerEmails.js';
+import { progressOf, metricOf, closeExpiredTarget, nudgeProgress, pushTargets } from '../../utils/sellerTargets.js';
 
 const router = express.Router();
 
@@ -206,11 +207,16 @@ export async function lockSellerOrderFund(app, sellerId, order) {
   return { totalToLock, itemsLocked: mine.length };
 }
 
-/** Sales-target milestones: one more delivered order; pays the bonus once when a target is reached. */
-async function advanceSellerTargets(app, sellerId) {
+/**
+ * Sales targets: one more delivered order (worth `amount` $ of the store's items). Counts it for
+ * every running target of the store and pays the bonus once when a goal is reached — an orders
+ * goal (N delivered orders) or a sales goal ($X of delivered order value).
+ */
+async function advanceSellerTargets(app, sellerId, amount = 0) {
   const seller = await Seller.findById(sellerId).select('targets storeName');
   if (!seller || !Array.isArray(seller.targets) || seller.targets.length === 0) return;
 
+  const value = Math.max(0, Math.round((Number(amount) || 0) * 100) / 100);
   let touched = false;
   const nowTime = Date.now();
   // Every step finds the target by its id (positional "$"), never by its place in the list: an
@@ -220,19 +226,25 @@ async function advanceSellerTargets(app, sellerId) {
   for (const target of seller.targets) {
     if (target.status !== 'active') continue;
 
-    // past its deadline: the target closes as "expired" and this delivery no longer counts for it
+    // past its deadline: the target closes as "expired" (the store is told) and this delivery
+    // no longer counts for it
     if (target.expiresAt && new Date(target.expiresAt).getTime() < nowTime) {
-      const closed = await Seller.updateOne(thisTarget(target), { $set: { 'targets.$.status': 'expired' } });
-      if (closed.modifiedCount) touched = true;
+      if (await closeExpiredTarget(app, seller._id, target)) touched = true;
       continue;
     }
 
     // count this delivery (in the database, so two deliveries at once are both counted)
-    const after = await Seller.findOneAndUpdate(thisTarget(target), { $inc: { 'targets.$.currentOrders': 1 } }, { new: true, projection: { targets: 1 } }).lean();
+    const inc = { 'targets.$.currentOrders': 1 };
+    if (value > 0) inc['targets.$.currentAmount'] = value;
+    const after = await Seller.findOneAndUpdate(thisTarget(target), { $inc: inc }, { new: true, projection: { targets: 1 } }).lean();
     if (!after) continue;
     touched = true;
     const now = (after.targets || []).find((t) => String(t._id) === String(target._id));
-    if (!now || (now.currentOrders || 0) < (now.targetOrders || 0)) continue;
+    if (!now) continue;
+    if (!progressOf(now).reached) {
+      await nudgeProgress(app, seller._id, now).catch(() => {});
+      continue;
+    }
 
     // reached: only the request that flips it to "completed" pays the bonus
     const done = await Seller.updateOne(thisTarget(target), { $set: { 'targets.$.status': 'completed', 'targets.$.completedAt': new Date() } });
@@ -243,8 +255,15 @@ async function advanceSellerTargets(app, sellerId) {
     // a frozen / suspended store's bonus is held until the store is active again
     const held = await sellerIsRestricted(sellerId);
     const paid = await walletApply(sellerId, { [held ? 'frozenFund' : 'balance']: bonusAmt, totalProfitEarned: bonusAmt, totalEarned: bonusAmt }, { opId: `target:${target._id}` });
-    if (!paid || paid.already) continue;
+    if (!paid) continue;
+    // where the bonus went, on the target itself (the admin page shows "held" for a frozen store)
+    await Seller.updateOne(
+      { _id: seller._id, 'targets._id': target._id },
+      { $set: { 'targets.$.paidAmount': bonusAmt, 'targets.$.paidAt': new Date(), 'targets.$.paidTo': held ? 'frozen' : 'balance' } }
+    ).catch(() => {});
+    if (paid.already) continue;
 
+    const goalLine = metricOf(target) === 'sales' ? `$${Number(target.targetAmount || 0).toLocaleString('en-US')} in delivered orders` : `${target.targetOrders} Delivered Orders`;
     await ledgerLine({
       type: 'adjustment',
       seller: seller._id,
@@ -254,7 +273,10 @@ async function advanceSellerTargets(app, sellerId) {
       balanceAfter: paid.wallet.balance,
       isManualAdjustment: true,
       status: 'approved',
-      adminNote: `🎯 Target Completed Bonus: "${target.title}" (${target.targetOrders} orders delivered)`,
+      heldFrozen: held || undefined,
+      adminNote: held
+        ? `🎯 Target Completed Bonus: "${target.title}" (${goalLine}) — HELD in Frozen amount: released when the account is unfrozen`
+        : `🎯 Target Completed Bonus: "${target.title}" (${goalLine})`,
       processedAt: new Date(),
       processedBy: 'Platform Growth Rewards',
     });
@@ -268,10 +290,12 @@ async function advanceSellerTargets(app, sellerId) {
           `🏆 SALES TARGET COMPLETED & BONUS CREDITED!\n` +
           `━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
           `Target: ${target.title}\n` +
-          `Goal: ${target.targetOrders} Delivered Orders\n` +
-          `Bonus Credited: +$${bonusAmt.toLocaleString('en-US')} Cash\n` +
-          `New Wallet Balance: $${Number(paid.wallet.balance || 0).toLocaleString('en-US')}\n\n` +
-          `Great performance! Your reward has been credited directly to your balance.\n` +
+          `Goal: ${goalLine}\n` +
+          (held
+            ? `Bonus: +$${bonusAmt.toLocaleString('en-US')} — held in your Frozen amount while the account is restricted. It moves to your balance when the account is active again.\n\n`
+            : `Bonus Credited: +$${bonusAmt.toLocaleString('en-US')} Cash\n` +
+              `New Wallet Balance: $${Number(paid.wallet.balance || 0).toLocaleString('en-US')}\n\n` +
+              `Great performance! Your reward has been credited directly to your balance.\n`) +
           `━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
         const msg = await Message.create({
@@ -282,7 +306,7 @@ async function advanceSellerTargets(app, sellerId) {
           text: bonusMsg,
         });
 
-        conv.lastMessage = `🏆 Bonus Credited: +$${bonusAmt}`;
+        conv.lastMessage = `🏆 Bonus ${held ? 'earned' : 'Credited'}: +$${bonusAmt}`;
         conv.lastSender = 'admin';
         conv.lastAt = new Date();
         conv.unreadForSeller = (conv.unreadForSeller || 0) + 1;
@@ -300,46 +324,69 @@ async function advanceSellerTargets(app, sellerId) {
         sellerId: seller._id.toString(),
         type: 'approval',
         title: `🏆 Target Completed: +$${bonusAmt} Bonus!`,
-        body: `You completed "${target.title}"! $${bonusAmt} cash bonus has been credited to your wallet balance.`,
+        body: held
+          ? `You completed "${target.title}"! $${bonusAmt} is held in your Frozen amount until your account is active again.`
+          : `You completed "${target.title}"! $${bonusAmt} cash bonus has been credited to your wallet balance.`,
         link: '/seller/wallet',
+      });
+      // the admins see it too (they gave the target)
+      notify(app, {
+        recipientType: 'admin',
+        type: 'system',
+        title: `🎯 Target reached: ${seller.storeName}`,
+        body: `"${target.title}" — $${bonusAmt} bonus ${held ? 'held (store is frozen)' : 'paid to the wallet'}.`,
+        link: '/admin/targets',
+        push: false,
       });
     }
   }
 
-  if (touched) {
-    const latest = await Seller.findById(sellerId).select('targets').lean();
-    app?.get('io')?.to(`seller:${sellerId}`).emit('seller:targets_update', { targets: latest?.targets || [] });
-  }
+  if (touched) await pushTargets(app, sellerId);
 }
 
 /**
  * A delivered order was refunded: it no longer counts toward the seller's RUNNING targets (those
- * that were already open when it was delivered). A bonus already paid for a completed target
- * stays paid. Once per order (marked on the order), whatever path the refund takes.
+ * that were already open when it was delivered) — one order less, and its value less for sales
+ * goals. A bonus already paid for a completed target stays paid. Once per order (marked on the
+ * order), whatever path the refund takes.
  */
 export async function undoTargetProgressForOrder(app, order) {
   if (!order?._id) return;
   const claimed = await Order.updateOne({ _id: order._id, targetProgressUndone: { $ne: true } }, { $set: { targetProgressUndone: true } });
   if (!claimed.modifiedCount) return;
-  const fresh = await Order.findById(order._id).select('items.seller items.payoutSettled items.settledAt').lean();
-  const deliveredAt = new Map();
+  const fresh = await Order.findById(order._id).select('items.seller items.payoutSettled items.settledAt items.lockedAmount').lean();
+  const delivered = new Map(); // seller → { at, value }
   for (const it of fresh?.items || []) {
     if (!it.payoutSettled || !it.seller) continue;
     const sid = String(it.seller);
     const t = it.settledAt ? new Date(it.settledAt) : new Date();
-    if (!deliveredAt.has(sid) || t > deliveredAt.get(sid)) deliveredAt.set(sid, t);
+    const d = delivered.get(sid) || { at: t, value: 0 };
+    if (t > d.at) d.at = t;
+    d.value += Number(it.lockedAmount) || 0;
+    delivered.set(sid, d);
   }
-  for (const [sid, at] of deliveredAt) {
+  for (const [sid, { at, value }] of delivered) {
     try {
+      const amt = Math.round(value * 100) / 100;
       const r = await Seller.updateOne(
         { _id: sid },
         { $inc: { 'targets.$[t].currentOrders': -1 } },
         { arrayFilters: [{ 't.status': 'active', 't.createdAt': { $lte: at }, 't.currentOrders': { $gt: 0 } }] }
       );
-      if (r.modifiedCount) {
-        const latest = await Seller.findById(sid).select('targets').lean();
-        app?.get('io')?.to(`seller:${sid}`).emit('seller:targets_update', { targets: latest?.targets || [] });
+      let changed = r.modifiedCount > 0;
+      if (amt > 0) {
+        const a = await Seller.updateOne(
+          { _id: sid },
+          { $inc: { 'targets.$[t].currentAmount': -amt } },
+          { arrayFilters: [{ 't.status': 'active', 't.createdAt': { $lte: at }, 't.currentAmount': { $gt: 0 } }] }
+        );
+        if (a.modifiedCount) {
+          changed = true;
+          // never below 0 (a target that started after part of the value was counted elsewhere)
+          await Seller.updateOne({ _id: sid }, { $set: { 'targets.$[t].currentAmount': 0 } }, { arrayFilters: [{ 't.currentAmount': { $lt: 0 } }] });
+        }
       }
+      if (changed) await pushTargets(app, sid);
     } catch (e) {
       console.error('[targets] could not take back the progress of a refunded order:', e.message);
     }
@@ -426,7 +473,7 @@ export async function releaseSellerOrderDelivered(app, sellerId, order) {
 
     // Check & Advance Performance Target Milestones
     try {
-      await advanceSellerTargets(app, sellerId);
+      await advanceSellerTargets(app, sellerId, totalPrincipal);
     } catch (targetErr) {
       console.error('Seller target update error:', targetErr.message);
     }

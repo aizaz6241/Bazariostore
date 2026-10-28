@@ -8,6 +8,7 @@ import { authSeller } from '../../middleware/auth.js';
 import { profitRateFor } from '../../utils/sellerTier.js';
 import { maskName } from '../../utils/orderPrivacy.js';
 import { refundFilterFor } from './refunds.routes.js';
+import { sellerSafeTargets } from '../../utils/sellerTargets.js';
 
 const router = express.Router();
 
@@ -162,7 +163,7 @@ router.get('/dashboard', authSeller, async (req, res) => {
         },
         accountHealth: seller.accountHealth || { score: 100, status: 'healthy', history: [] },
         // the targets card on the dashboard reads these (they were never sent before)
-        targets: seller.targets || [],
+        targets: sellerSafeTargets(seller.targets),
       },
       stats: {
         grossRevenue,

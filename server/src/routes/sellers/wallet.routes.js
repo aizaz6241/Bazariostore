@@ -19,6 +19,7 @@ import { pageAction, markShortcutDone } from '../../utils/chatShortcuts.js';
 import { addHealthEvent, LIMIT_MIN_SCORE } from '../../utils/healthEngine.js';
 import { buildReceiptPdf, receiptNumber, hasReceipt } from '../../services/receipt.js';
 import { emailWalletReceipt } from '../../utils/sellerEmails.js';
+import { sellerSafeTargets } from '../../utils/sellerTargets.js';
 
 const router = express.Router();
 
@@ -250,7 +251,7 @@ router.get('/wallet', authSellerOrAdmin, async (req, res) => {
       requests: sanitizedRequests,
       hasMoreLines: requests.length >= 100,
       insights,
-      targets: seller.targets || [],
+      targets: sellerSafeTargets(seller.targets),
       seller: {
         storeName: seller.storeName,
         commissionRate: seller.commissionRate,

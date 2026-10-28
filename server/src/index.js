@@ -32,6 +32,7 @@ import { attachPortalRealtime } from './realtime/portalRealtime.js';
 import { startPortalTicker } from './utils/portalTick.js';
 import { startHealthMonitor } from './utils/healthEngine.js';
 import { startClosureMonitor } from './utils/storeClosure.js';
+import { startTargetMonitor } from './utils/sellerTargets.js';
 import { startDiamondEmailWatch } from './utils/sellerEmails.js';
 import { startOfferSweep } from './utils/diamondOffers.js';
 import { attachAdminTyping, registerAdminTyping, forgetSocketTyping } from './realtime/adminTyping.js';
@@ -191,6 +192,8 @@ if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
   // Account monitoring: entries that ended, clean-week rewards, first move of old scores
   startHealthMonitor(app);
   startClosureMonitor(app);
+  // Targets & bonuses: deadlines that passed are closed (store told), "1 day left" reminders
+  startTargetMonitor(app);
 
   // "Welcome to Diamond" email for stores upgraded in the team portal (checked every 2 minutes)
   startDiamondEmailWatch();

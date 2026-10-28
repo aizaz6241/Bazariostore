@@ -9,24 +9,44 @@ import {
 } from './insights.jsx';
 
 const DAY = 86400000;
-const PRESETS = [
-  { orders: 10, bonus: 50, days: 30 },
-  { orders: 25, bonus: 150, days: 45 },
-  { orders: 50, bonus: 350, days: 60 },
-  { orders: 100, bonus: 800, days: 90 },
-];
+// suggestions only — the admin can type any numbers
+const PRESETS = {
+  orders: [
+    { goal: 10, bonus: 50, days: 30 },
+    { goal: 25, bonus: 150, days: 45 },
+    { goal: 50, bonus: 350, days: 60 },
+    { goal: 100, bonus: 800, days: 90 },
+  ],
+  sales: [
+    { goal: 1000, bonus: 30, days: 30 },
+    { goal: 2500, bonus: 90, days: 30 },
+    { goal: 5000, bonus: 200, days: 45 },
+    { goal: 10000, bonus: 450, days: 60 },
+  ],
+};
 // one hue, lighter → darker as a target gets closer to done
 const PROGRESS_STEPS = ['#9ec5f4', '#6da7ec', '#3987e5', '#1c5cab'];
-
-const blankForm = () => ({ sellerId: '', title: 'Deliver 10 orders', targetOrderCount: 10, bonusAmount: 50, durationDays: 30, description: '', descTouched: false, titleTouched: false });
 // above this a bonus is asked once more before it is saved (it is paid automatically)
 const BIG_BONUS = 500;
+
+const usd = (n) => {
+  const v = Math.round((Number(n) || 0) * 100) / 100;
+  return `$${v.toLocaleString('en-US', { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2 })}`;
+};
+const autoTitle = (f) => (f.metric === 'sales' ? `Deliver ${usd(f.targetAmount)} in orders` : `Deliver ${Number(f.targetOrderCount) || 0} orders`);
 const autoDescription = (f) =>
-  `Deliver ${f.targetOrderCount || 0} orders${f.durationDays ? ` within ${f.durationDays} days` : ''} to receive a ${money(Number(f.bonusAmount) || 0)} cash bonus, credited straight to your wallet.`;
+  `${f.metric === 'sales' ? `Deliver ${usd(f.targetAmount)} in orders` : `Deliver ${f.targetOrderCount || 0} orders`}${f.durationDays ? ` within ${f.durationDays} days` : ''} to receive a ${usd(f.bonusAmount)} cash bonus, credited straight to your wallet.`;
+const blankForm = () => {
+  const f = { sellerIds: [], metric: 'orders', targetOrderCount: 10, targetAmount: 1000, bonusAmount: 50, durationDays: 30, titleTouched: false, descTouched: false };
+  f.title = autoTitle(f);
+  f.description = autoDescription(f);
+  return f;
+};
 
 // one state for a target, used everywhere on the page
 function stateOf(t) {
   if (t.status === 'completed' || t.status === 'claimed') return 'completed';
+  if (t.status === 'cancelled') return 'cancelled';
   if (t.status === 'expired') return 'expired';
   if (t.expiresAt && new Date(t.expiresAt).getTime() < Date.now()) return 'expired';
   return 'active';
@@ -35,12 +55,31 @@ const STATE_META = {
   active: { label: 'In progress', tone: 'info', icon: '⚡' },
   completed: { label: 'Completed', tone: 'good', icon: '🏆' },
   expired: { label: 'Expired', tone: 'neutral', icon: '⌛' },
+  cancelled: { label: 'Cancelled', tone: 'neutral', icon: '✕' },
 };
+const isSales = (t) => t.metric === 'sales';
+function progressOf(t) {
+  const cur = isSales(t) ? Number(t.currentAmount) || 0 : Number(t.currentOrders) || 0;
+  const goal = isSales(t) ? Number(t.targetAmount) || 0 : Number(t.targetOrders) || 0;
+  const pct = goal > 0 ? Math.min(100, Math.floor((cur / goal) * 100)) : 0;
+  return { cur, goal, pct, left: Math.max(0, goal - cur) };
+}
+const progressText = (t) => {
+  const p = progressOf(t);
+  return isSales(t) ? `${usd(p.cur)} / ${usd(p.goal)} delivered` : `${p.cur} / ${p.goal} delivered`;
+};
+const goalShort = (t) => (isSales(t) ? `${usd(t.targetAmount)} in orders` : `${t.targetOrders} orders`);
 
 function daysLeft(t) {
   if (!t.expiresAt) return null;
   return Math.ceil((new Date(t.expiresAt).getTime() - Date.now()) / DAY);
 }
+const dateInput = (d) => {
+  if (!d) return '';
+  const x = new Date(d);
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+};
+const endOfDay = (v) => (v ? new Date(`${v}T23:59:59`).toISOString() : null);
 
 // Monday-start week buckets, oldest → newest
 function weekBuckets(n) {
@@ -60,14 +99,21 @@ export default function Targets() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [scope, setScope] = useState('client'); // 'client' = test stores left out of everything
   const [q, setQ] = useState('');
-  const [deleting, setDeleting] = useState('');
+  const [busy, setBusy] = useState('');
+  const [notice, setNotice] = useState('');
 
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(blankForm);
   const [sellerQ, setSellerQ] = useState('');
+  const [pickTest, setPickTest] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+
+  const [edit, setEdit] = useState(null); // { t, title, goal, bonus, deadline, note }
+  const [cancel, setCancel] = useState(null); // { t, reason, tell }
+  const [sideError, setSideError] = useState('');
 
   const loadData = () => {
     setLoading(true);
@@ -87,53 +133,81 @@ export default function Targets() {
     loadData();
   }, []);
 
+  const flash = (m) => {
+    setNotice(m);
+    setTimeout(() => setNotice(''), 6000);
+  };
+
   const setF = (patch) =>
     setForm((prev) => {
       const next = { ...prev, ...patch };
-      // the title follows the number of orders until the admin writes their own title (it used to
-      // stay "Deliver 10 orders" when the goal was changed to 8, and the seller saw both numbers)
-      if (!next.titleTouched && patch.title === undefined && Number(next.targetOrderCount) >= 1) {
-        next.title = `Deliver ${Number(next.targetOrderCount)} orders`;
-      }
+      // the title follows the goal until the admin writes their own title (it used to stay
+      // "Deliver 10 orders" when the goal was changed to 8, and the seller saw both numbers)
+      if (!next.titleTouched && patch.title === undefined) next.title = autoTitle(next);
       if (!next.descTouched) next.description = autoDescription(next);
       return next;
     });
 
-  const openModal = (sellerId = '') => {
-    const f = { ...blankForm(), sellerId };
-    f.description = autoDescription(f);
-    setForm(f);
+  const openModal = (sellerIds = []) => {
+    setForm({ ...blankForm(), sellerIds });
     setSellerQ('');
+    setPickTest(false);
     setFormError('');
     setModalOpen(true);
   };
 
+  const isTestStore = (s) => Boolean(s.isTestAccount || s.accountType === 'test');
+  const activeBySeller = useMemo(() => {
+    const m = new Map();
+    allTargets.forEach((t) => {
+      if (stateOf(t) === 'active') m.set(String(t.sellerId), (m.get(String(t.sellerId)) || 0) + 1);
+    });
+    return m;
+  }, [allTargets]);
+
   const submit = async (e) => {
     e.preventDefault();
     setFormError('');
-    if (!form.sellerId) return setFormError('Please choose a store.');
-    if (!(Number(form.targetOrderCount) >= 1)) return setFormError('Target orders must be at least 1.');
-    if (!Number.isInteger(Number(form.targetOrderCount))) return setFormError('Target orders must be a whole number.');
-    if (!(Number(form.bonusAmount) > 0)) return setFormError('Bonus must be more than $0.');
-    // the title must not name another number of orders than the goal
-    // (only a number written as "N orders" counts: "Diwali 2026 sprint" is fine)
-    const named = [...form.title.matchAll(/(\d+)\s*(?:delivered\s+)?orders?\b/gi)].map((m) => Number(m[1]));
-    if (named.length && !named.includes(Number(form.targetOrderCount))) {
-      return setFormError(`The title mentions ${named.join(', ')} but the goal is ${Number(form.targetOrderCount)} delivered orders. Make them match.`);
+    const ids = form.sellerIds;
+    if (!ids.length) return setFormError('Choose at least one store.');
+    const sales = form.metric === 'sales';
+    if (sales) {
+      if (!(Number(form.targetAmount) >= 1)) return setFormError('Sales goal must be at least $1.');
+    } else {
+      if (!(Number(form.targetOrderCount) >= 1)) return setFormError('Target orders must be at least 1.');
+      if (!Number.isInteger(Number(form.targetOrderCount))) return setFormError('Target orders must be a whole number.');
+      // the title must not name another number of orders than the goal
+      // (only a number written as "N orders" counts: "Diwali 2026 sprint" is fine)
+      const named = [...form.title.matchAll(/(\d+)\s*(?:delivered\s+)?orders?\b/gi)].map((m) => Number(m[1]));
+      if (named.length && !named.includes(Number(form.targetOrderCount))) {
+        return setFormError(`The title mentions ${named.join(', ')} but the goal is ${Number(form.targetOrderCount)} delivered orders. Make them match.`);
+      }
     }
-    if (Number(form.bonusAmount) > BIG_BONUS && !window.confirm(`The bonus is $${Number(form.bonusAmount).toLocaleString('en-US')}.\n\nIt is paid into the seller's wallet automatically when the goal is reached. Is this amount correct?`)) return;
+    if (!(Number(form.bonusAmount) > 0)) return setFormError('Bonus must be more than $0.');
+    const bonus = Number(form.bonusAmount);
+    const most = bonus * ids.length;
+    if ((bonus > BIG_BONUS || ids.length > 1) &&
+      !window.confirm(
+        `${ids.length > 1 ? `${ids.length} stores × ${usd(bonus)} = up to ${usd(most)} in bonuses.\n\n` : `The bonus is ${usd(bonus)}.\n\n`}It is paid into the wallet automatically when a store reaches the goal. Give this target?`
+      )) return;
     setSaving(true);
+    const body = {
+      title: form.title.trim(),
+      metric: form.metric,
+      targetOrders: sales ? undefined : Number(form.targetOrderCount),
+      targetAmount: sales ? Number(form.targetAmount) : undefined,
+      bonusAmount: bonus,
+      durationDays: form.durationDays ? Number(form.durationDays) : null,
+      description: form.description.trim(),
+    };
     try {
-      await api(`/sellers/${form.sellerId}/targets`, {
-        method: 'POST',
-        body: {
-          title: form.title.trim(),
-          targetOrders: Number(form.targetOrderCount),
-          bonusAmount: Number(form.bonusAmount),
-          durationDays: form.durationDays ? Number(form.durationDays) : null,
-          description: form.description.trim(),
-        },
-      });
+      if (ids.length === 1) {
+        await api(`/sellers/${ids[0]}/targets`, { method: 'POST', body });
+        flash('🎯 Target given. The store got a chat message and a notification.');
+      } else {
+        const r = await api('/sellers/targets/bulk', { method: 'POST', body: { ...body, sellerIds: ids } });
+        flash(`${r.message}${r.skipped?.length ? ` Skipped: ${r.skipped.map((s) => `${s.storeName || 'store'} (${s.reason})`).join(', ')}` : ''}`);
+      }
       setModalOpen(false);
       loadData();
     } catch (err) {
@@ -143,27 +217,78 @@ export default function Targets() {
     }
   };
 
+  const openEdit = (t) => {
+    setSideError('');
+    setEdit({ t, title: t.title, goal: isSales(t) ? t.targetAmount : t.targetOrders, bonus: t.bonusAmount, deadline: dateInput(t.expiresAt), note: t.adminNote || '' });
+  };
+  const saveEdit = async (e) => {
+    e.preventDefault();
+    const { t } = edit;
+    setSideError('');
+    const p = progressOf(t);
+    const goal = Number(edit.goal);
+    if (!(goal > p.cur)) return setSideError(`The store is already at ${isSales(t) ? usd(p.cur) : p.cur}. The goal must be more than that.`);
+    if (!isSales(t) && !Number.isInteger(goal)) return setSideError('Target orders must be a whole number.');
+    if (!(Number(edit.bonus) > 0)) return setSideError('Bonus must be more than $0.');
+    if (Number(edit.bonus) < Number(t.bonusAmount) && !window.confirm(`Lower the bonus from ${usd(t.bonusAmount)} to ${usd(edit.bonus)}? The store is told about the change.`)) return;
+    const body = {
+      title: edit.title.trim(),
+      bonusAmount: Number(edit.bonus),
+      description: edit.note.trim(),
+      expiresAt: edit.deadline ? endOfDay(edit.deadline) : null,
+    };
+    if (isSales(t)) body.targetAmount = goal;
+    else body.targetOrders = goal;
+    setBusy(t._id);
+    try {
+      const r = await api(`/sellers/${t.sellerId}/targets/${t._id}`, { method: 'PATCH', body });
+      setEdit(null);
+      flash(r.unchanged ? 'Nothing changed.' : `Target updated: ${r.changed.join('; ')}`);
+      loadData();
+    } catch (err) {
+      setSideError(err.message);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const saveCancel = async (e) => {
+    e.preventDefault();
+    const { t } = cancel;
+    setBusy(t._id);
+    setSideError('');
+    try {
+      await api(`/sellers/${t.sellerId}/targets/${t._id}/cancel`, { method: 'POST', body: { reason: cancel.reason.trim(), notifySeller: cancel.tell } });
+      setCancel(null);
+      flash(`"${t.title}" cancelled for ${t.storeName}. Its record is kept.`);
+      loadData();
+    } catch (err) {
+      setSideError(err.message);
+    } finally {
+      setBusy('');
+    }
+  };
+
   const remove = async (t) => {
-    const s = stateOf(t);
-    const warn =
-      s === 'completed'
-        ? `Remove the completed target "${t.title}" from ${t.storeName}? The bonus that was already paid stays in the wallet.`
-        : `Remove "${t.title}" from ${t.storeName}? The seller loses the progress (${t.currentOrders}/${t.targetOrders}) and will not get the bonus.`;
-    if (!window.confirm(warn)) return;
-    setDeleting(t._id);
+    if (!window.confirm(`Remove the ${stateOf(t)} target "${t.title}" of ${t.storeName} from the list?`)) return;
+    setBusy(t._id);
     try {
       await api(`/sellers/${t.sellerId}/targets/${t._id}`, { method: 'DELETE' });
       setAllTargets((prev) => prev.filter((x) => x._id !== t._id));
     } catch (err) {
       alert('Could not remove the target: ' + err.message);
     } finally {
-      setDeleting('');
+      setBusy('');
     }
   };
 
+  // what the page counts: client stores only, unless "Include test" is on
+  const scoped = useMemo(() => (scope === 'client' ? allTargets.filter((t) => !t.isTestAccount) : allTargets), [allTargets, scope]);
+  const testCount = allTargets.length - allTargets.filter((t) => !t.isTestAccount).length;
+
   // ── Analytics
   const stats = useMemo(() => {
-    const out = { active: 0, completed: 0, expired: 0, bonusPaid: 0, bonusOpen: 0, progressSum: 0, expiringSoon: 0, merchants: new Set() };
+    const out = { active: 0, completed: 0, expired: 0, cancelled: 0, bonusPaid: 0, bonusHeld: 0, bonusOpen: 0, progressSum: 0, expiringSoon: 0, salesDone: 0, bonusOnSales: 0, merchants: new Set() };
     const progress = [
       { label: '0–24%', count: 0 },
       { label: '25–49%', count: 0 },
@@ -172,11 +297,11 @@ export default function Targets() {
     ];
     const weeks = weekBuckets(12);
     const earners = new Map();
-    allTargets.forEach((t) => {
+    scoped.forEach((t) => {
       const s = stateOf(t);
       out[s] += 1;
       out.merchants.add(String(t.sellerId));
-      const pct = Math.min(100, ((t.currentOrders || 0) / (t.targetOrders || 1)) * 100);
+      const { pct } = progressOf(t);
       if (s === 'active') {
         out.bonusOpen += t.bonusAmount || 0;
         out.progressSum += pct;
@@ -185,9 +310,16 @@ export default function Targets() {
         if (dl !== null && dl <= 7) out.expiringSoon += 1;
       }
       if (s === 'completed') {
-        out.bonusPaid += t.bonusAmount || 0;
+        const paid = t.paidAmount || t.bonusAmount || 0;
+        out.bonusPaid += paid;
+        if (t.paidTo === 'frozen') out.bonusHeld += paid;
+        // order value is counted for targets made since this update (older ones have none)
+        if (t.currentAmount > 0) {
+          out.salesDone += t.currentAmount;
+          out.bonusOnSales += paid;
+        }
         const e = earners.get(String(t.sellerId)) || { key: String(t.sellerId), label: t.storeName || 'Store', value: 0, n: 0 };
-        e.value += t.bonusAmount || 0;
+        e.value += paid;
         e.n += 1;
         earners.set(e.key, e);
       }
@@ -209,18 +341,19 @@ export default function Targets() {
       merchants: out.merchants.size,
       avgProgress: out.active ? Math.round(out.progressSum / out.active) : 0,
       successRate: closed ? pctOf(out.completed, closed) : null,
+      costPct: out.salesDone > 0 ? pctOf(out.bonusOnSales, out.salesDone) : null,
       progress,
       weeks,
       earners: [...earners.values()].sort((a, b) => b.value - a.value).slice(0, 6).map((e) => ({ ...e, sub: `${e.n} target${e.n === 1 ? '' : 's'} completed` })),
-      closest: allTargets
+      closest: scoped
         .filter((t) => stateOf(t) === 'active')
-        .map((t) => ({ t, pct: Math.min(100, Math.round(((t.currentOrders || 0) / (t.targetOrders || 1)) * 100)) }))
+        .map((t) => ({ t, pct: progressOf(t).pct }))
         .sort((a, b) => b.pct - a.pct)
         .slice(0, 5),
     };
-  }, [allTargets]);
+  }, [scoped]);
 
-  const filtered = allTargets.filter((t) => {
+  const filtered = scoped.filter((t) => {
     const s = stateOf(t);
     if (filterStatus !== 'all' && s !== filterStatus) return false;
     if (!q.trim()) return true;
@@ -228,14 +361,60 @@ export default function Targets() {
     return [t.storeName, t.ownerName, t.title, t.email].some((v) => String(v || '').toLowerCase().includes(needle));
   });
 
-  const sellerOptions = sellers.filter((s) => {
+  const pickable = sellers.filter((s) => pickTest || !isTestStore(s));
+  const sellerOptions = pickable.filter((s) => {
     if (!sellerQ.trim()) return true;
     const needle = sellerQ.trim().toLowerCase();
     return [s.storeName, s.ownerName, s.email].some((v) => String(v || '').toLowerCase().includes(needle));
   });
-  const chosenSeller = sellers.find((s) => s._id === form.sellerId);
-  const chosenActive = chosenSeller ? allTargets.filter((t) => String(t.sellerId) === chosenSeller._id && stateOf(t) === 'active').length : 0;
+  const chosen = new Set(form.sellerIds);
+  const toggleSeller = (id) => setForm((p) => ({ ...p, sellerIds: chosen.has(id) ? p.sellerIds.filter((x) => x !== id) : [...p.sellerIds, id] }));
+  const allShownChosen = sellerOptions.length > 0 && sellerOptions.every((s) => chosen.has(s._id));
+  const chooseShown = () =>
+    setForm((p) => ({
+      ...p,
+      sellerIds: allShownChosen ? p.sellerIds.filter((id) => !sellerOptions.some((s) => s._id === id)) : [...new Set([...p.sellerIds, ...sellerOptions.map((s) => s._id)])],
+    }));
+  const chosenBusy = form.sellerIds.filter((id) => activeBySeller.get(id)).length;
   const hasWeeks = stats.weeks.some((w) => w.assigned || w.completed);
+  const fSales = form.metric === 'sales';
+  const goalNum = fSales ? Number(form.targetAmount) || 0 : Number(form.targetOrderCount) || 0;
+
+  const actionsFor = (t, small = true) => {
+    const s = stateOf(t);
+    const cls = `ins-btn${small ? ' ins-btn-sm' : ''}`;
+    if (s === 'active') {
+      return (
+        <>
+          <button type="button" className={cls} onClick={() => openEdit(t)} disabled={busy === t._id} title="Change goal, bonus or deadline (progress is kept)">
+            Edit
+          </button>
+          <button type="button" className={`${cls} ins-btn-bad`} onClick={() => { setSideError(''); setCancel({ t, reason: '', tell: true }); }} disabled={busy === t._id} title="Stop this target (the record is kept)">
+            Cancel
+          </button>
+        </>
+      );
+    }
+    if (s === 'expired' || s === 'cancelled') {
+      return (
+        <button type="button" className={`${cls} ins-btn-bad`} onClick={() => remove(t)} disabled={busy === t._id} title="Remove from the list">
+          {busy === t._id ? 'Removing…' : 'Remove'}
+        </button>
+      );
+    }
+    return null;
+  };
+
+  const timelineOf = (t) => {
+    const s = stateOf(t);
+    const dl = daysLeft(t);
+    if (s === 'completed' && t.completedAt) return `Reached ${fmtDate(t.completedAt)}`;
+    if (s === 'cancelled') return `Cancelled ${t.cancelledAt ? fmtDate(t.cancelledAt) : ''}`;
+    if (!t.expiresAt) return 'No deadline';
+    if (s === 'expired') return `Ended ${fmtDate(t.expiresAt)}`;
+    if (dl <= 0) return 'Ends today';
+    return <span style={{ color: dl <= 7 ? '#a5461f' : undefined, fontWeight: dl <= 7 ? 700 : 400 }}>{dl} day{dl === 1 ? '' : 's'} left</span>;
+  };
 
   return (
     <div className="ins-page">
@@ -243,7 +422,7 @@ export default function Targets() {
         icon="sparkle"
         tone="amber"
         title="Targets & Bonuses"
-        subtitle="Give stores a delivery goal and a cash reward. Progress counts delivered orders only, and the bonus is paid into the seller's wallet automatically the moment the goal is reached."
+        subtitle="Give stores a goal — a number of delivered orders or an amount of delivered sales — and a cash reward. Only deliveries after the target is given count, and the bonus is paid into the wallet automatically the moment the goal is reached."
         actions={
           <>
             <button type="button" className="ins-btn" onClick={loadData} disabled={loading}>
@@ -255,22 +434,48 @@ export default function Targets() {
           </>
         }
       >
-        <MetaChip>{allTargets.length} targets</MetaChip>
+        <MetaChip>{scoped.length} targets</MetaChip>
         <MetaChip>{stats.merchants} stores enrolled</MetaChip>
         {stats.expiringSoon > 0 && <MetaChip>⌛ {stats.expiringSoon} ending within 7 days</MetaChip>}
+        {testCount > 0 && (
+          <Seg
+            small
+            label="Which stores"
+            value={scope}
+            onChange={setScope}
+            options={[
+              { value: 'client', label: 'Client stores' },
+              { value: 'all', label: `+ test (${testCount})` },
+            ]}
+          />
+        )}
       </Hero>
 
       <ErrorBox error={error} />
+      {notice && (
+        <div className="ins-callout ins-callout-good" role="status">
+          <span aria-hidden="true">✅</span>
+          <span>{notice}</span>
+        </div>
+      )}
 
       <KpiGrid dim={loading && allTargets.length > 0}>
         <Kpi icon="refresh" tone="blue" label="In progress" value={stats.active} sub={`Average progress ${stats.avgProgress}%`} onClick={() => setFilterStatus('active')} active={filterStatus === 'active'} />
-        <Kpi icon="checkCircle" tone="green" label="Completed" value={stats.completed} sub={stats.successRate === null ? 'None closed yet' : `${stats.successRate}% of closed targets were reached`} onClick={() => setFilterStatus('completed')} active={filterStatus === 'completed'} />
-        <Kpi icon="banknote" tone="aqua" label="Bonus paid out" value={money(stats.bonusPaid)} sub="Credited to seller wallets" />
+        <Kpi icon="checkCircle" tone="green" label="Completed" value={stats.completed} sub={stats.successRate === null ? 'None closed yet' : `${stats.successRate}% of finished targets were reached`} onClick={() => setFilterStatus('completed')} active={filterStatus === 'completed'} />
+        <Kpi icon="banknote" tone="aqua" label="Bonus paid out" value={money(stats.bonusPaid)} sub={stats.bonusHeld > 0 ? `${money(stats.bonusHeld)} of it held (store frozen)` : 'Credited to seller wallets'} />
         <Kpi icon="wallet" tone="orange" label="Bonus still on offer" value={money(stats.bonusOpen)} sub="Due if every open target is reached" />
+        <Kpi
+          icon="trend"
+          tone="slate"
+          label="Bonus cost vs sales"
+          value={stats.costPct === null ? '—' : `${stats.costPct}%`}
+          sub={stats.costPct === null ? 'Shown once new targets are reached' : `${money(stats.bonusOnSales)} bonus on ${money(stats.salesDone)} delivered`}
+          title="Bonus paid ÷ order value delivered for those completed targets (targets given before this update have no order value)"
+        />
         <Kpi icon="clock" tone="slate" label="Expired" value={stats.expired} sub="Deadline passed before the goal" onClick={() => setFilterStatus('expired')} active={filterStatus === 'expired'} />
       </KpiGrid>
 
-      {allTargets.length > 0 && (
+      {scoped.length > 0 && (
         <ChartGrid dim={loading}>
           <Card title="Targets over the last 12 weeks" hint="Assigned vs completed, per week" wide empty={!hasWeeks && 'No targets assigned or completed in the last 12 weeks'}>
             <ResponsiveContainer width="100%" height={240}>
@@ -286,13 +491,14 @@ export default function Targets() {
             </ResponsiveContainer>
           </Card>
 
-          <Card title="Where targets stand" hint={`${allTargets.length} targets in total`}>
+          <Card title="Where targets stand" hint={`${scoped.length} targets in total`}>
             <SplitBar
               height={14}
               parts={[
                 { label: '⚡ In progress', value: stats.active, color: SERIES[0] },
                 { label: '🏆 Completed', value: stats.completed, color: STATUS.good },
                 { label: '⌛ Expired', value: stats.expired, color: STATUS.neutral },
+                { label: '✕ Cancelled', value: stats.cancelled, color: '#cbd5e1' },
               ]}
             />
           </Card>
@@ -323,7 +529,7 @@ export default function Targets() {
                     <span style={{ minWidth: 0, flex: 1 }}>
                       <span className="ins-strong ins-clip" style={{ display: 'block' }}>{t.storeName}</span>
                       <span className="ins-sub">
-                        {t.currentOrders}/{t.targetOrders} · {money(t.bonusAmount)}
+                        {progressText(t)} · {money(t.bonusAmount)}
                       </span>
                       <Meter value={pct} color={PROGRESS_STEPS[Math.min(3, Math.floor(pct / 25))]} height={5} label={`${pct}% done`} />
                     </span>
@@ -352,10 +558,11 @@ export default function Targets() {
               value={filterStatus}
               onChange={setFilterStatus}
               options={[
-                { value: 'all', label: 'All', count: allTargets.length },
+                { value: 'all', label: 'All', count: scoped.length },
                 { value: 'active', label: 'In progress', count: stats.active },
                 { value: 'completed', label: 'Completed', count: stats.completed },
                 { value: 'expired', label: 'Expired', count: stats.expired },
+                ...(stats.cancelled ? [{ value: 'cancelled', label: 'Cancelled', count: stats.cancelled }] : []),
               ]}
             />
             <SearchBox value={q} onChange={setQ} placeholder="Search store, owner or title…" />
@@ -387,8 +594,8 @@ export default function Targets() {
               {!loading && filtered.length === 0 && (
                 <tr>
                   <td colSpan={7}>
-                    <Empty icon="🎯" text={allTargets.length ? 'No target matches this filter.' : 'No targets yet. Create the first one to motivate your stores.'}>
-                      {!allTargets.length && (
+                    <Empty icon="🎯" text={scoped.length ? 'No target matches this filter.' : 'No targets yet. Create the first one to motivate your stores.'}>
+                      {!scoped.length && (
                         <button type="button" className="ins-btn ins-btn-primary ins-btn-sm" onClick={() => openModal()}>
                           <Ic name="plus" size={13} /> New target
                         </button>
@@ -400,10 +607,9 @@ export default function Targets() {
               {filtered.map((t) => {
                 const s = stateOf(t);
                 const meta = STATE_META[s];
-                const pct = Math.min(100, Math.round(((t.currentOrders || 0) / (t.targetOrders || 1)) * 100));
-                const dl = daysLeft(t);
+                const { pct } = progressOf(t);
                 return (
-                  <tr key={t._id}>
+                  <tr key={t._id} className={s === 'cancelled' ? 'tg-row-off' : ''}>
                     <td>
                       <div className="ins-cell-who">
                         <Avatar name={t.storeName} />
@@ -415,43 +621,37 @@ export default function Targets() {
                     </td>
                     <td>
                       <span className="ins-strong">{t.title}</span>
+                      <span className="ins-sub">
+                        {isSales(t) ? '💵 Sales goal' : '📦 Orders goal'}: {goalShort(t)}
+                        {t.createdBy ? ` · by ${t.createdBy}` : ''}
+                      </span>
                       {t.description && <span className="ins-sub ins-clip" title={t.description}>{t.description}</span>}
                     </td>
                     <td>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
-                        <span>
-                          <b>{t.currentOrders || 0}</b> / {t.targetOrders} delivered
-                        </span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5, gap: 8 }}>
+                        <span>{progressText(t)}</span>
                         <b>{pct}%</b>
                       </div>
-                      <Meter value={pct} color={s === 'completed' ? STATUS.good : s === 'expired' ? STATUS.neutral : SERIES[0]} label={`${pct}% done`} />
+                      <Meter value={pct} color={s === 'completed' ? STATUS.good : s === 'active' ? SERIES[0] : STATUS.neutral} label={`${pct}% done`} />
                     </td>
                     <td className="num">
                       <b style={{ color: s === 'completed' ? '#006300' : '#0f172a' }}>{money(t.bonusAmount || 0)}</b>
+                      {s === 'completed' && (
+                        <span className="ins-sub" style={{ color: t.paidTo === 'frozen' ? '#a5461f' : undefined }}>
+                          {t.paidTo === 'frozen' ? '🔒 Held (store frozen)' : 'Paid to wallet'}
+                        </span>
+                      )}
                     </td>
                     <td>
                       <Badge tone={meta.tone} icon={meta.icon}>{meta.label}</Badge>
+                      {s === 'cancelled' && t.cancelReason && <span className="ins-sub ins-clip" title={t.cancelReason}>{t.cancelReason}</span>}
                     </td>
                     <td>
                       <span className="ins-sub">Set {fmtDate(t.createdAt)}</span>
-                      <span className="ins-sub">
-                        {s === 'completed' && t.completedAt
-                          ? `Reached ${fmtDate(t.completedAt)}`
-                          : !t.expiresAt
-                          ? 'No deadline'
-                          : s === 'expired'
-                          ? `Ended ${fmtDate(t.expiresAt)}`
-                          : dl <= 0
-                          ? 'Ends today'
-                          : <span style={{ color: dl <= 7 ? '#a5461f' : undefined, fontWeight: dl <= 7 ? 700 : 400 }}>{dl} day{dl === 1 ? '' : 's'} left</span>}
-                      </span>
+                      <span className="ins-sub">{timelineOf(t)}</span>
                     </td>
                     <td>
-                      <div className="ins-actions">
-                        <button type="button" className="ins-btn ins-btn-sm ins-btn-bad" onClick={() => remove(t)} disabled={deleting === t._id} title="Remove this target">
-                          {deleting === t._id ? 'Removing…' : 'Remove'}
-                        </button>
-                      </div>
+                      <div className="ins-actions">{actionsFor(t)}</div>
                     </td>
                   </tr>
                 );
@@ -464,30 +664,32 @@ export default function Targets() {
           {filtered.map((t) => {
             const s = stateOf(t);
             const meta = STATE_META[s];
-            const pct = Math.min(100, Math.round(((t.currentOrders || 0) / (t.targetOrders || 1)) * 100));
+            const { pct } = progressOf(t);
+            const acts = actionsFor(t);
             return (
-              <div className="ins-mcard" key={t._id}>
+              <div className={`ins-mcard${s === 'cancelled' ? ' tg-row-off' : ''}`} key={t._id}>
                 <div className="ins-cell-who">
                   <Avatar name={t.storeName} size={30} />
-                  <div style={{ flex: 1 }}>
-                    <b>{t.storeName}</b>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <b>{t.storeName}{t.isTestAccount ? ' · test' : ''}</b>
                     <span className="ins-sub">{t.title}</span>
                   </div>
                   <Badge tone={meta.tone} icon={meta.icon}>{meta.label}</Badge>
                 </div>
                 <div>
                   <div className="ins-mcard-row" style={{ marginBottom: 5 }}>
-                    <span>{t.currentOrders || 0} / {t.targetOrders} delivered</span>
+                    <span>{progressText(t)}</span>
                     <b>{pct}%</b>
                   </div>
-                  <Meter value={pct} color={s === 'completed' ? STATUS.good : s === 'expired' ? STATUS.neutral : SERIES[0]} />
+                  <Meter value={pct} color={s === 'completed' ? STATUS.good : s === 'active' ? SERIES[0] : STATUS.neutral} />
                 </div>
                 <div className="ins-mcard-row">
-                  <span>Bonus {money(t.bonusAmount || 0)} · {t.expiresAt ? `ends ${fmtDate(t.expiresAt)}` : 'no deadline'}</span>
-                  <button type="button" className="ins-btn ins-btn-sm ins-btn-bad" onClick={() => remove(t)} disabled={deleting === t._id}>
-                    Remove
-                  </button>
+                  <span>
+                    Bonus {money(t.bonusAmount || 0)}
+                    {s === 'completed' ? (t.paidTo === 'frozen' ? ' · held' : ' · paid') : ''} · {timelineOf(t)}
+                  </span>
                 </div>
+                {acts && <div className="ins-actions">{acts}</div>}
               </div>
             );
           })}
@@ -495,36 +697,75 @@ export default function Targets() {
         </div>
       </div>
 
+      {/* ── New target (one store or many) ── */}
       {modalOpen && (
         <div className="admin-modal-overlay" onClick={() => !saving && setModalOpen(false)}>
-          <div className="admin-modal-box" onClick={(e) => e.stopPropagation()}>
+          <div className="admin-modal-box tg-modal" onClick={(e) => e.stopPropagation()}>
             <div className="ins-modal-head">
               <div>
                 <h3>🎯 New target &amp; bonus</h3>
-                <p>The seller gets a chat message and a notification right away.</p>
+                <p>Every chosen store gets a chat message and a notification right away.</p>
               </div>
               <button type="button" className="ins-modal-close" onClick={() => setModalOpen(false)} aria-label="Close">✕</button>
             </div>
 
             <form className="ins-form" onSubmit={submit}>
               <div className="ins-field">
-                <label>Store *</label>
-                {sellers.length > 8 && (
+                <div className="tg-pick-head">
+                  <label>Stores * <span className="tg-count">{form.sellerIds.length} chosen</span></label>
+                  <label className="tg-inline">
+                    <input type="checkbox" checked={pickTest} onChange={(e) => setPickTest(e.target.checked)} /> show test stores
+                  </label>
+                </div>
+                <div className="tg-pick-tools">
                   <input className="ins-input" type="search" value={sellerQ} onChange={(e) => setSellerQ(e.target.value)} placeholder="Type to filter stores…" />
-                )}
-                <select className="ins-input" value={form.sellerId} onChange={(e) => setF({ sellerId: e.target.value })} required>
-                  <option value="">— Choose an active store ({sellerOptions.length}) —</option>
-                  {sellerOptions.map((s) => (
-                    <option key={s._id} value={s._id}>
-                      {s.storeName} · {s.ownerName}{s.isTestAccount ? ' (test)' : ''}
-                    </option>
-                  ))}
-                </select>
-                {chosenSeller && chosenActive > 0 && (
+                  <button type="button" className="ins-btn ins-btn-sm" onClick={chooseShown} disabled={!sellerOptions.length}>
+                    {allShownChosen ? 'Unselect shown' : `Select all shown (${sellerOptions.length})`}
+                  </button>
+                </div>
+                <div className="tg-pick-list" role="listbox" aria-multiselectable="true">
+                  {sellerOptions.length === 0 && <div className="tg-pick-empty">No active store matches.</div>}
+                  {sellerOptions.map((s) => {
+                    const running = activeBySeller.get(s._id) || 0;
+                    return (
+                      <label key={s._id} className={`tg-pick-item${chosen.has(s._id) ? ' on' : ''}`}>
+                        <input type="checkbox" checked={chosen.has(s._id)} onChange={() => toggleSeller(s._id)} />
+                        <span className="tg-pick-name">
+                          <b>{s.storeName}</b>
+                          <small>{s.ownerName}{isTestStore(s) ? ' · test' : ''}</small>
+                        </span>
+                        {running > 0 && <span className="tg-pick-busy" title="Targets already running for this store">{running} running</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+                {chosenBusy > 0 && (
                   <small style={{ color: '#b45309', fontWeight: 700 }}>
-                    ⚠️ This store already has {chosenActive} target{chosenActive === 1 ? '' : 's'} in progress. Every delivery counts towards ALL of them, so the bonuses add up.
+                    ⚠️ {chosenBusy === 1 && form.sellerIds.length === 1 ? 'This store already has' : `${chosenBusy} of the chosen stores already have`} a target in progress. Every delivery counts towards ALL of them, so the bonuses add up.
                   </small>
                 )}
+              </div>
+
+              <div className="ins-field">
+                <span className="ins-label">What counts</span>
+                <Seg
+                  small
+                  label="Goal type"
+                  value={form.metric}
+                  onChange={(v) => {
+                    const p = PRESETS[v][0];
+                    setF(v === 'sales' ? { metric: v, targetAmount: p.goal, bonusAmount: p.bonus, durationDays: p.days } : { metric: v, targetOrderCount: p.goal, bonusAmount: p.bonus, durationDays: p.days });
+                  }}
+                  options={[
+                    { value: 'orders', label: '📦 Delivered orders', title: 'Number of delivered orders — every order counts as one' },
+                    { value: 'sales', label: '💵 Delivered sales ($)', title: 'Value of the delivered orders — small orders count little, big orders count a lot' },
+                  ]}
+                />
+                <small>
+                  {fSales
+                    ? 'Counts the value of every delivered order. Bigger orders bring the store closer faster — the bonus follows the real business.'
+                    : 'Counts every delivered order as one, whatever its value.'}
+                </small>
               </div>
 
               <div className="ins-field">
@@ -532,12 +773,12 @@ export default function Targets() {
                 <Seg
                   small
                   label="Target presets"
-                  value={`${form.targetOrderCount}-${form.bonusAmount}`}
+                  value={`${goalNum}-${form.bonusAmount}`}
                   onChange={(v) => {
-                    const p = PRESETS.find((x) => `${x.orders}-${x.bonus}` === v);
-                    if (p) setF({ targetOrderCount: p.orders, bonusAmount: p.bonus, durationDays: p.days, title: `Deliver ${p.orders} orders` });
+                    const p = PRESETS[form.metric].find((x) => `${x.goal}-${x.bonus}` === v);
+                    if (p) setF(fSales ? { targetAmount: p.goal, bonusAmount: p.bonus, durationDays: p.days } : { targetOrderCount: p.goal, bonusAmount: p.bonus, durationDays: p.days });
                   }}
-                  options={PRESETS.map((p) => ({ value: `${p.orders}-${p.bonus}`, label: `${p.orders} orders → $${p.bonus}` }))}
+                  options={PRESETS[form.metric].map((p) => ({ value: `${p.goal}-${p.bonus}`, label: fSales ? `${usd(p.goal)} → ${usd(p.bonus)}` : `${p.goal} orders → $${p.bonus}` }))}
                 />
               </div>
 
@@ -548,8 +789,17 @@ export default function Targets() {
 
               <div className="ins-form-grid">
                 <div className="ins-field">
-                  <label>Delivered orders needed *</label>
-                  <input className="ins-input" type="number" min="1" step="1" value={form.targetOrderCount} onChange={(e) => setF({ targetOrderCount: e.target.value })} required />
+                  {fSales ? (
+                    <>
+                      <label>Delivered sales needed (USD) *</label>
+                      <input className="ins-input" type="number" min="1" step="0.01" value={form.targetAmount} onChange={(e) => setF({ targetAmount: e.target.value })} required />
+                    </>
+                  ) : (
+                    <>
+                      <label>Delivered orders needed *</label>
+                      <input className="ins-input" type="number" min="1" step="1" value={form.targetOrderCount} onChange={(e) => setF({ targetOrderCount: e.target.value })} required />
+                    </>
+                  )}
                 </div>
                 <div className="ins-field">
                   <label>Cash bonus (USD) *</label>
@@ -562,8 +812,8 @@ export default function Targets() {
                 <input className="ins-input" type="number" min="1" step="1" value={form.durationDays} onChange={(e) => setF({ durationDays: e.target.value })} placeholder="Leave empty for no deadline" />
                 <small>
                   {form.durationDays
-                    ? `Ends on ${new Date(Date.now() + Number(form.durationDays) * DAY).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}. Deliveries after that no longer count.`
-                    : 'No deadline: the target stays open until it is reached or removed.'}
+                    ? `Ends on ${new Date(Date.now() + Number(form.durationDays) * DAY).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}. The store gets a "1 day left" reminder; deliveries after the end no longer count.`
+                    : 'No deadline: the target stays open until it is reached or cancelled.'}
                 </small>
               </div>
 
@@ -575,9 +825,21 @@ export default function Targets() {
               <div className="ins-callout ins-callout-info">
                 <span aria-hidden="true">💡</span>
                 <span>
-                  Cost: <b>{money(Number(form.bonusAmount) || 0)}</b> for <b>{form.targetOrderCount || 0}</b> delivered orders —
-                  {' '}
-                  <b>{money((Number(form.bonusAmount) || 0) / Math.max(1, Number(form.targetOrderCount) || 1))}</b> per order.
+                  {fSales ? (
+                    <>
+                      Cost: <b>{usd(form.bonusAmount)}</b> for <b>{usd(goalNum)}</b> of delivered orders — <b>{pctOf(Number(form.bonusAmount) || 0, Math.max(1, goalNum))}%</b> of the sales.
+                    </>
+                  ) : (
+                    <>
+                      Cost: <b>{usd(form.bonusAmount)}</b> for <b>{goalNum}</b> delivered orders — <b>{usd((Number(form.bonusAmount) || 0) / Math.max(1, goalNum))}</b> per order.
+                    </>
+                  )}
+                  {form.sellerIds.length > 1 && (
+                    <>
+                      {' '}
+                      For {form.sellerIds.length} stores: up to <b>{usd((Number(form.bonusAmount) || 0) * form.sellerIds.length)}</b> if every store reaches it.
+                    </>
+                  )}
                 </span>
               </div>
 
@@ -585,9 +847,106 @@ export default function Targets() {
 
               <div className="ins-modal-foot">
                 <button type="button" className="ins-btn" onClick={() => setModalOpen(false)} disabled={saving}>Cancel</button>
-                <button type="submit" className="ins-btn ins-btn-primary" disabled={saving}>
-                  {saving ? 'Saving…' : 'Assign target'}
+                <button type="submit" className="ins-btn ins-btn-primary" disabled={saving || !form.sellerIds.length}>
+                  {saving ? 'Saving…' : form.sellerIds.length > 1 ? `Give to ${form.sellerIds.length} stores` : 'Assign target'}
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit a running target ── */}
+      {edit && (
+        <div className="admin-modal-overlay" onClick={() => !busy && setEdit(null)}>
+          <div className="admin-modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="ins-modal-head">
+              <div>
+                <h3>✏️ Edit target</h3>
+                <p>{edit.t.storeName} · now at {progressText(edit.t)}. The progress is kept.</p>
+              </div>
+              <button type="button" className="ins-modal-close" onClick={() => setEdit(null)} aria-label="Close">✕</button>
+            </div>
+            <form className="ins-form" onSubmit={saveEdit}>
+              <div className="ins-field">
+                <label>Title *</label>
+                <input className="ins-input" value={edit.title} onChange={(e) => setEdit((p) => ({ ...p, title: e.target.value }))} maxLength={120} required />
+              </div>
+              <div className="ins-form-grid">
+                <div className="ins-field">
+                  <label>{isSales(edit.t) ? 'Delivered sales needed (USD) *' : 'Delivered orders needed *'}</label>
+                  <input className="ins-input" type="number" min="1" step={isSales(edit.t) ? '0.01' : '1'} value={edit.goal} onChange={(e) => setEdit((p) => ({ ...p, goal: e.target.value }))} required />
+                </div>
+                <div className="ins-field">
+                  <label>Cash bonus (USD) *</label>
+                  <input className="ins-input" type="number" min="1" step="0.01" value={edit.bonus} onChange={(e) => setEdit((p) => ({ ...p, bonus: e.target.value }))} required />
+                </div>
+              </div>
+              <div className="ins-field">
+                <label>Deadline</label>
+                <div className="tg-pick-tools">
+                  <input className="ins-input" type="date" min={dateInput(new Date())} value={edit.deadline} onChange={(e) => setEdit((p) => ({ ...p, deadline: e.target.value }))} />
+                  {edit.deadline && (
+                    <button type="button" className="ins-btn ins-btn-sm" onClick={() => setEdit((p) => ({ ...p, deadline: '' }))}>No deadline</button>
+                  )}
+                </div>
+                <small>{edit.deadline ? `Ends at the end of ${new Date(`${edit.deadline}T12:00:00`).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}.` : 'No deadline.'}</small>
+              </div>
+              <div className="ins-field">
+                <label>Message to the seller</label>
+                <textarea className="ins-input" rows={2} maxLength={500} value={edit.note} onChange={(e) => setEdit((p) => ({ ...p, note: e.target.value }))} />
+              </div>
+              {edit.t.changes?.length > 0 && (
+                <details className="tg-history">
+                  <summary>History ({edit.t.changes.length})</summary>
+                  <ul>
+                    {[...edit.t.changes].reverse().map((c, i) => (
+                      <li key={i}>
+                        <b>{c.at ? fmtDate(c.at) : ''}</b> {c.by ? `· ${c.by}` : ''} — {c.what}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+              <div className="ins-callout ins-callout-info">
+                <span aria-hidden="true">ℹ️</span>
+                <span>A change of goal, bonus or deadline is shown to the store as a notification.</span>
+              </div>
+              {sideError && <ErrorBox error={sideError} />}
+              <div className="ins-modal-foot">
+                <button type="button" className="ins-btn" onClick={() => setEdit(null)} disabled={!!busy}>Close</button>
+                <button type="submit" className="ins-btn ins-btn-primary" disabled={!!busy}>{busy ? 'Saving…' : 'Save changes'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Cancel a running target ── */}
+      {cancel && (
+        <div className="admin-modal-overlay" onClick={() => !busy && setCancel(null)}>
+          <div className="admin-modal-box" onClick={(e) => e.stopPropagation()}>
+            <div className="ins-modal-head">
+              <div>
+                <h3>Cancel target</h3>
+                <p>
+                  “{cancel.t.title}” for {cancel.t.storeName} — at {progressText(cancel.t)}. No bonus will be paid for it. The record stays in the list.
+                </p>
+              </div>
+              <button type="button" className="ins-modal-close" onClick={() => setCancel(null)} aria-label="Close">✕</button>
+            </div>
+            <form className="ins-form" onSubmit={saveCancel}>
+              <div className="ins-field">
+                <label>Reason (only admins see it)</label>
+                <input className="ins-input" value={cancel.reason} maxLength={300} onChange={(e) => setCancel((p) => ({ ...p, reason: e.target.value }))} placeholder="e.g. given to the wrong store" />
+              </div>
+              <label className="tg-inline">
+                <input type="checkbox" checked={cancel.tell} onChange={(e) => setCancel((p) => ({ ...p, tell: e.target.checked }))} /> Tell the store the target is closed
+              </label>
+              {sideError && <ErrorBox error={sideError} />}
+              <div className="ins-modal-foot">
+                <button type="button" className="ins-btn" onClick={() => setCancel(null)} disabled={!!busy}>Keep it</button>
+                <button type="submit" className="ins-btn ins-btn-bad" disabled={!!busy}>{busy ? 'Cancelling…' : 'Cancel target'}</button>
               </div>
             </form>
           </div>

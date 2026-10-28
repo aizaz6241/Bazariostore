@@ -18,6 +18,7 @@ import { asText } from '../../middleware/sanitize.js';
 import { forgetAuthCache } from '../../middleware/auth.js';
 import { adminRoom } from '../../utils/permissions.js';
 import { resolveAffiliateCode } from '../../utils/affiliateCodes.js';
+import { sellerSafeTargets } from '../../utils/sellerTargets.js';
 
 // Wrong passwords: 8 tries per account from one address in 15 minutes, then a 15 minute wait
 const loginGuard = failureLimiter({ name: 'seller-login', max: 8, windowMs: 15 * 60 * 1000 });
@@ -448,7 +449,10 @@ router.get('/me', authSeller, async (req, res) => {
       seller.verified = true;
       await seller.save();
     }
-    res.json(seller);
+    // targets as the store may see them (who gave / changed a target stays on the admin side)
+    const out = seller.toObject();
+    out.targets = sellerSafeTargets(out.targets);
+    res.json(out);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
