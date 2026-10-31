@@ -30,7 +30,6 @@ export const TOURS = [
       { path: '/seller/treasury', target: '.tr-card .tr-btn-primary', title: 'Add to your store', body: 'One tap puts the product in your store. Bazario keeps the stock and ships the orders for you.' },
       { path: '/seller/products', target: '.pp-stats', title: 'Your store products', body: 'See what is live, what needs stock and how much you earn on each sale — 20% of the order (35% on Diamond).' },
       { path: '/seller/products', target: '.pp-head-actions', title: 'Your own products', body: 'You can also list a product of your own with photos and a price.' },
-      { path: '/seller/products', target: '.pp-table, .pp-cards, .pp-card', title: 'Show or hide', body: 'Use the Visible switch to hide a product from customers without removing it.' },
     ],
   },
   {

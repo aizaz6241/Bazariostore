@@ -33,6 +33,7 @@ import { startPortalTicker } from './utils/portalTick.js';
 import { startHealthMonitor } from './utils/healthEngine.js';
 import { startClosureMonitor } from './utils/storeClosure.js';
 import { startTargetMonitor } from './utils/sellerTargets.js';
+import { unhideSellerProductsOnce } from './utils/unhideSellerProducts.js';
 import { startDiamondEmailWatch } from './utils/sellerEmails.js';
 import { startOfferSweep } from './utils/diamondOffers.js';
 import { attachAdminTyping, registerAdminTyping, forgetSocketTyping } from './realtime/adminTyping.js';
@@ -209,7 +210,12 @@ if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
 // the server.
 let dbConnectedOnce = false;
 mongoose.connection.on('connected', () => {
-  if (!dbConnectedOnce) markOldRejectedRegistrations();
+  if (!dbConnectedOnce) {
+    markOldRejectedRegistrations();
+    // one-time (31 Oct 2026): products hidden by stores become visible — the switch was removed.
+    // Marked done in settings, so it never runs again; nothing is deleted (utils/unhideSellerProducts.js)
+    setTimeout(() => unhideSellerProductsOnce(), 20000).unref?.();
+  }
   dbConnectedOnce = true;
 });
 

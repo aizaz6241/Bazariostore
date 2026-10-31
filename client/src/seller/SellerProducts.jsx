@@ -8,8 +8,6 @@ import useLiveReload from '../useLiveReload.js';
 
 const STATUS_FILTERS = [
   { id: 'all', label: 'All' },
-  { id: 'active', label: 'Active' },
-  { id: 'hidden', label: 'Hidden' },
   { id: 'low', label: 'Low stock' },
   { id: 'out', label: 'Out of stock' },
 ];
@@ -26,7 +24,7 @@ const SORTS = [
   { id: 'price-low', label: 'Price: low to high' },
   { id: 'name', label: 'Name A–Z' },
 ];
-const EMPTY_FORM = { name: '', brand: '', category: '', price: '', oldPrice: '', costPrice: '', stock: 20, lowStockThreshold: 5, sku: '', active: true, shortDescription: '', description: '', images: [] };
+const EMPTY_FORM = { name: '', brand: '', category: '', price: '', oldPrice: '', costPrice: '', stock: 20, lowStockThreshold: 5, sku: '', shortDescription: '', description: '', images: [] };
 const usd = (n) => `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const stockState = (p) => {
   const s = Number(p.stock) || 0;
@@ -84,9 +82,12 @@ export default function SellerProducts() {
   }, [toast]);
 
   const stats = useMemo(() => {
-    let active = 0, low = 0, out = 0, sold = 0, units = 0, value = 0, treasury = 0;
+    // every product is live in the store (stores no longer hide products); only a Treasury
+    // product paused by the platform is off sale
+    let active = 0, paused = 0, low = 0, out = 0, sold = 0, units = 0, value = 0, treasury = 0;
     for (const p of products) {
       if (p.active !== false) active++;
+      else if (p.pausedByTreasury) paused++;
       const st = stockState(p);
       if (st === 'low') low++;
       if (st === 'out') out++;
@@ -94,17 +95,15 @@ export default function SellerProducts() {
       if (!p.treasuryProduct) { units += Number(p.stock) || 0; value += (Number(p.stock) || 0) * (Number(p.price) || 0); }
       if (p.treasuryProduct) treasury++;
     }
-    return { total: products.length, active, hidden: products.length - active, low, out, sold, units, value, treasury };
+    return { total: products.length, active, paused, low, out, sold, units, value, treasury };
   }, [products]);
 
-  const counts = useMemo(() => ({ all: stats.total, active: stats.active, hidden: stats.hidden, low: stats.low, out: stats.out }), [stats]);
+  const counts = useMemo(() => ({ all: stats.total, low: stats.low, out: stats.out }), [stats]);
 
   const list = useMemo(() => {
     let l = products.filter((p) => {
       if (source === 'treasury' && !p.treasuryProduct) return false;
       if (source === 'custom' && p.treasuryProduct) return false;
-      if (status === 'active' && p.active === false) return false;
-      if (status === 'hidden' && p.active !== false) return false;
       if (status === 'low' && stockState(p) !== 'low') return false;
       if (status === 'out' && stockState(p) !== 'out') return false;
       if (!q) return true;
@@ -127,26 +126,6 @@ export default function SellerProducts() {
     else n.delete(id);
     return n;
   });
-
-  const toggleActive = async (p) => {
-    if (busy.has(p._id)) return;
-    const next = p.active === false;
-    if (next && p.pausedByTreasury) {
-      setToast({ ok: false, text: 'This Treasury product is paused by the platform and cannot be switched on right now.' });
-      return;
-    }
-    setBusyFor(p._id, true);
-    setProducts((prev) => prev.map((x) => (x._id === p._id ? { ...x, active: next } : x)));
-    try {
-      await sapi(`/sellers/products/${p._id}`, { method: 'PUT', body: { active: next } });
-      setToast({ ok: true, text: next ? `“${p.name}” is visible in your store again.` : `“${p.name}” is hidden from customers.` });
-    } catch (err) {
-      setProducts((prev) => prev.map((x) => (x._id === p._id ? { ...x, active: !next } : x)));
-      setToast({ ok: false, text: err.message });
-    } finally {
-      setBusyFor(p._id, false);
-    }
-  };
 
   const confirmRemove = async () => {
     const p = removing;
@@ -210,7 +189,7 @@ export default function SellerProducts() {
 
       <div className="pp-stats">
         <div className="pp-stat"><span>Products</span><b>{stats.total}</b><small>{stats.treasury} from Treasury · {stats.total - stats.treasury} own</small></div>
-        <div className="pp-stat"><span>Live in store</span><b className="t-green">{stats.active}</b><small>{stats.hidden ? `${stats.hidden} hidden` : 'All visible'}</small></div>
+        <div className="pp-stat"><span>Live in store</span><b className="t-green">{stats.active}</b><small>{stats.paused ? `${stats.paused} paused by platform` : 'All live'}</small></div>
         <button type="button" className={`pp-stat ${stats.low + stats.out ? 'attn' : ''}`} onClick={() => setStatus(stats.out ? 'out' : 'low')}>
           <span>Need stock</span><b className={stats.low + stats.out ? 't-amber' : ''}>{stats.low + stats.out}</b><small>{stats.low} low · {stats.out} out of stock</small>
         </button>
@@ -261,7 +240,7 @@ export default function SellerProducts() {
           <>
             <table className="pp-table">
               <thead>
-                <tr><th>Product</th><th className="r">Price</th><th className="r">You earn</th><th>Stock</th><th className="r">Sold</th><th>Visible</th><th className="r" aria-label="Actions" /></tr>
+                <tr><th>Product</th><th className="r">Price</th><th className="r">You earn</th><th>Stock</th><th className="r">Sold</th><th className="r" aria-label="Actions" /></tr>
               </thead>
               <tbody>
                 {list.map((p) => (
@@ -271,7 +250,6 @@ export default function SellerProducts() {
                     <td className="r"><span className="pp-earn">+{formatMoney(((Number(p.price) || 0) * rate) / 100)}</span></td>
                     <td><StockBadge p={p} /></td>
                     <td className="r tabular">{(p.sold || 0).toLocaleString()}</td>
-                    <td><Toggle on={p.active !== false} disabled={busy.has(p._id) || isFrozen} onChange={() => toggleActive(p)} label={p.active !== false ? 'Visible' : 'Hidden'} /></td>
                     <td className="r">
                       <div className="pp-actions">
                         <button type="button" className="pp-btn pp-btn-ghost sm" onClick={() => setEditor({ product: p })} disabled={isFrozen}><Ic name="edit" size={14} /> Edit</button>
@@ -298,7 +276,6 @@ export default function SellerProducts() {
                   </div>
                   <div className="pp-c-foot">
                     <StockBadge p={p} />
-                    <Toggle on={p.active !== false} disabled={busy.has(p._id) || isFrozen} onChange={() => toggleActive(p)} label={p.active !== false ? 'Visible' : 'Hidden'} />
                   </div>
                   <div className="pp-c-actions">
                     <button type="button" className="pp-btn pp-btn-ghost sm" onClick={() => setEditor({ product: p })} disabled={isFrozen}><Ic name="edit" size={14} /> Edit</button>
@@ -380,15 +357,6 @@ function StockBadge({ p }) {
   );
 }
 
-function Toggle({ on, disabled, onChange, label }) {
-  return (
-    <button type="button" role="switch" aria-checked={on} className={`pp-toggle ${on ? 'on' : ''}`} onClick={onChange} disabled={disabled}>
-      <span className="pp-toggle-track"><i /></span>
-      <span className="pp-toggle-lbl">{label}</span>
-    </button>
-  );
-}
-
 function Dialog({ onClose, children, wide }) {
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
@@ -410,7 +378,7 @@ function ProductEditor({ product, categories, rate, formatMoney, onClose, onSave
   const [form, setForm] = useState(() => (product
     ? {
         name: product.name || '', brand: product.brand || '', category: product.category?._id || product.category || '', price: product.price ?? '', oldPrice: product.oldPrice || '',
-        costPrice: product.costs?.purchase || '', stock: product.stock ?? 0, lowStockThreshold: product.lowStockThreshold || 5, sku: product.sku || '', active: product.active !== false,
+        costPrice: product.costs?.purchase || '', stock: product.stock ?? 0, lowStockThreshold: product.lowStockThreshold || 5, sku: product.sku || '',
         shortDescription: product.shortDescription || '', description: product.description || '', images: product.images?.length ? product.images : product.image ? [{ url: product.image }] : [],
       }
     : { ...EMPTY_FORM, category: categories[0]?._id || '', sku: `SKU-${Date.now().toString(36).toUpperCase()}` }));
@@ -475,7 +443,7 @@ function ProductEditor({ product, categories, rate, formatMoney, onClose, onSave
     setErr('');
     try {
       const payload = {
-        name: form.name.trim(), brand: form.brand.trim(), category: form.category, sku: form.sku.trim(), active: form.active,
+        name: form.name.trim(), brand: form.brand.trim(), category: form.category, sku: form.sku.trim(),
         shortDescription: form.shortDescription, description: form.description,
         price, oldPrice: old > price ? old : '', costPrice: Number(form.costPrice) || 0,
         lowStockThreshold: Number(form.lowStockThreshold) || 5,
@@ -564,9 +532,6 @@ function ProductEditor({ product, categories, rate, formatMoney, onClose, onSave
             </div>
             <div className="pp-row">
               <label className="pp-field"><span>SKU</span><input className="pp-input mono" value={form.sku} onChange={set('sku')} placeholder="Your product code" /></label>
-              <label className="pp-field pp-visible"><span>Visible in store</span>
-                <span className="pp-switch-row"><input type="checkbox" checked={form.active} onChange={set('active')} disabled={product?.pausedByTreasury} /> {form.active ? 'Customers can see and buy it' : 'Hidden from customers'}</span>
-              </label>
             </div>
           </section>
         </div>

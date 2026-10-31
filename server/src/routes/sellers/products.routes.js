@@ -78,7 +78,10 @@ router.post('/products', authSeller, blockWhenFrozen('adding products'), async (
       seller: seller._id,
       sellerName: seller.storeName,
       sellerSlug: seller.storeSlug || slugify(seller.storeName),
-      active: data.active !== false,
+      // stores do not hide products any more: a new product is always live (only an admin acting
+      // for the store may still add one switched off)
+      active: req.admin ? data.active !== false : true,
+      pausedByTreasury: false,
       // stock is set by the platform (admin Inventory), never by the store: a new own product
       // starts with the usual opening stock, whatever number was sent
       stock: req.admin && data.stock !== undefined ? Math.max(0, Math.floor(Number(data.stock) || 0)) : 20,
@@ -135,13 +138,9 @@ router.put('/products/:id', authSeller, blockWhenFrozen('editing products'), asy
     if (data.barcode !== undefined) product.barcode = String(data.barcode).trim();
     if (data.brand !== undefined) product.brand = String(data.brand).trim();
     if (data.category !== undefined) product.category = data.category;
-    if (data.active !== undefined) {
-      // switched off with its Treasury master product: only the platform switches it on again
-      if (data.active && product.pausedByTreasury) {
-        return res.status(400).json({ message: 'This Treasury product is paused by the platform and cannot be switched on right now.' });
-      }
-      product.active = Boolean(data.active);
-    }
+    // `active` (visible / hidden) is no longer something a store changes: the switch was removed
+    // from Seller Central and the field is ignored here (an old open page sending it does nothing).
+    // Only the platform takes a product off sale (Treasury pause, admin Products page).
     if (Array.isArray(data.tags)) product.tags = data.tags;
     if (Array.isArray(data.labels)) product.labels = data.labels;
     if (Array.isArray(data.variants)) product.variants = data.variants;
