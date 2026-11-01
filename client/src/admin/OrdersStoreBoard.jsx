@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Seg, Avatar, Empty } from './insights.jsx';
 
 /**
@@ -6,6 +6,7 @@ import { Seg, Avatar, Empty } from './insights.jsx';
  * the order pipeline (pending → confirmed → warehouse → out for delivery), delivery problems,
  * delivered (placed in the chosen period), late (not delivered 7 days after the order) and
  * stopped (the automatic step is overdue or could not run). Every number filters the order list.
+ * Compact: a one-line summary is always shown; the store list opens and closes (remembered).
  * Data: GET /orders/analytics/stores (test, previous-store and Inactive stores are left out here).
  */
 
@@ -25,6 +26,15 @@ const SORTS = [
   { value: 'open', label: 'Most open' },
   { value: 'name', label: 'A–Z' },
 ];
+
+const OPEN_KEY = 'admin.orders.storeBoard.open';
+const readOpen = () => {
+  try {
+    return localStorage.getItem(OPEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
 
 const fmt = (n) => Number(n || 0).toLocaleString('en-US');
 const ageDays = (d) => (d ? Math.floor((Date.now() - new Date(d).getTime()) / 86400000) : null);
@@ -52,6 +62,14 @@ export default function OrdersStoreBoard({ data, loading, days, onDays, onPick, 
   const [q, setQ] = useState('');
   const [sort, setSort] = useState('attention');
   const [showAll, setShowAll] = useState(false);
+  const [open, setOpen] = useState(readOpen);
+  useEffect(() => {
+    try {
+      localStorage.setItem(OPEN_KEY, open ? '1' : '0');
+    } catch {
+      /* storage blocked: not remembered */
+    }
+  }, [open]);
 
   const rows = useMemo(() => {
     const t = q.trim().toLowerCase();
@@ -65,20 +83,34 @@ export default function OrdersStoreBoard({ data, loading, days, onDays, onPick, 
     return [...list].sort(by);
   }, [data, q, sort]);
 
-  const LIMIT = 10;
+  const storeTotal = useMemo(() => (data?.stores || []).filter((s) => !s.isTest && !s.isInactive).length, [data]);
+  const LIMIT = 8;
   const shown = showAll || q ? rows : rows.slice(0, LIMIT);
   const t = data?.totals;
   const hidden = data?.hiddenInactive;
   const isActive = (sid, f) => (activeSeller || '') === (sid || '') && activeFilter && Object.entries(f).every(([k, v]) => activeFilter[k] === v);
   const pipeTotal = t ? PIPE.reduce((a, c) => a + (t[c.key] || 0), 0) : 0;
+  const attnTotal = (t?.late || 0) + (t?.stuck || 0) + (t?.problem || 0);
 
-  // one number in the summary
-  const stat = ({ k, label, f, tone = '', sub }) => {
+  // one number in the summary strip
+  const chip = ({ k, label, f, tone = '', dot, sub }) => {
     const n = t?.[k] || 0;
+    const on = isActive('', f);
     return (
-      <button type="button" className={`osb-stat ${tone} ${isActive('', f) ? 'on' : ''}`} onClick={() => onPick('', f)} disabled={!n} aria-pressed={isActive('', f)}>
-        <span className="osb-stat-label">{label}</span>
-        <b>{fmt(n)}</b>
+      <button
+        type="button"
+        key={k}
+        className={`osb2-chip ${tone} ${on ? 'on' : ''} ${n ? '' : 'is-zero'}`}
+        onClick={() => onPick('', f)}
+        disabled={!n}
+        aria-pressed={on}
+        title={n ? `Show ${fmt(n)} ${label.toLowerCase()} orders` : `No ${label.toLowerCase()} orders`}
+      >
+        <span className="osb2-chip-lbl">
+          {dot && <i style={{ background: dot }} aria-hidden="true" />}
+          {label}
+        </span>
+        <b>{t ? fmt(n) : '–'}</b>
         {sub && <small>{sub}</small>}
       </button>
     );
@@ -99,193 +131,182 @@ export default function OrdersStoreBoard({ data, loading, days, onDays, onPick, 
     s.storeStatus && s.storeStatus !== 'active' ? <span className={`osb-tag ${s.storeStatus}`}>{s.storeStatus === 'frozen' ? 'Frozen' : s.storeStatus === 'suspended' ? 'Suspended' : s.storeStatus}</span> : null;
 
   return (
-    <section className="ins-card osb">
-      <header className="osb-head">
-        <div>
-          <h3>Orders by store</h3>
-          <p>
-            <span className="osb-live" aria-hidden="true" /> Live · active real client stores · tap any number to open those orders
-          </p>
-        </div>
-        <div className="osb-head-tools">
+    <section className={`ins-card osb osb2 ${open ? 'is-open' : 'is-closed'}`} aria-labelledby="osb2-title">
+      <header className="osb2-head">
+        <button type="button" className="osb2-toggle" onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-controls="osb2-body">
+          <span className="osb2-chev" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path d="M8.6 5.6 15 12l-6.4 6.4-1.4-1.4 5-5-5-5 1.4-1.4Z" fill="currentColor" /></svg>
+          </span>
+          <span className="osb2-title">
+            <b id="osb2-title">Orders by store</b>
+            <small>
+              <span className="osb-live" aria-hidden="true" />
+              {fmt(storeTotal)} active client {storeTotal === 1 ? 'store' : 'stores'} · {fmt(pipeTotal)} open
+              {attnTotal > 0 && <span className="osb2-attn-pill">{fmt(attnTotal)} need attention</span>}
+            </small>
+          </span>
+          <span className="osb2-toggle-txt">{open ? 'Hide stores' : 'Show stores'}</span>
+        </button>
+        <div className="osb2-days">
           <span className="osb-head-lbl">Delivered in</span>
           <Seg small label="Delivered period" value={days} onChange={onDays} options={[{ value: 7, label: '7d' }, { value: 30, label: '30d' }, { value: 90, label: '90d' }]} />
         </div>
       </header>
 
-      {/* ── summary: the pipeline + what needs attention ── */}
-      <div className={`osb-summary ${loading ? 'is-dim' : ''}`}>
-        <div className="osb-group osb-pipe">
-          <span className="osb-group-title">Open pipeline · {fmt(pipeTotal)}</span>
-          <div className="osb-stats">
-            {PIPE.map((c, i) => (
-              <div key={c.key} className="osb-step">
-                {stat({ k: c.key, label: c.label, f: c.filter, tone: c.key === 'pending' ? 'amber' : '' })}
-                {i < PIPE.length - 1 && <span className="osb-arrow" aria-hidden="true">›</span>}
-              </div>
-            ))}
-          </div>
+      {/* ── summary strip: always visible, every number filters the list below ── */}
+      <div className={`osb2-strip ${loading ? 'is-dim' : ''}`} role="group" aria-label="Order totals of active client stores">
+        <div className="osb2-group">
+          {PIPE.map((c) => chip({ k: c.key, label: c.short === 'Out for del.' ? 'Out for delivery' : c.short, f: c.filter, tone: c.key === 'pending' ? 'amber' : '', dot: c.color }))}
         </div>
-        <div className="osb-group osb-done">
-          <span className="osb-group-title">Done</span>
-          <div className="osb-stats">
-            {stat({ k: "delivered", label: `Delivered · ${days}d`, f: { status: 'delivered' }, tone: "green" })}
-          </div>
+        <div className="osb2-group">
+          {chip({ k: 'delivered', label: `Delivered ${days}d`, f: { status: 'delivered' }, tone: 'green', dot: '#16a34a' })}
         </div>
-        <div className="osb-group osb-attn">
-          <span className="osb-group-title">Needs attention</span>
-          <div className="osb-stats">
-            {stat({ k: "problem", label: "Delivery problem", f: PROBLEM.filter, tone: "orange" })}
-            {stat({ k: "late", label: "Late 7d+", f: { late: true }, tone: "red", sub: t?.lateStores ? `${t.lateStores} ${t.lateStores === 1 ? 'store' : 'stores'}` : '' })}
-            {stat({ k: "stuck", label: "Stopped moving", f: { stuck: true }, tone: "red" })}
-          </div>
+        <div className="osb2-group osb2-group-attn">
+          {chip({ k: 'problem', label: 'Problem', f: PROBLEM.filter, tone: 'orange', dot: PROBLEM.color })}
+          {chip({ k: 'late', label: 'Late 7d+', f: { late: true }, tone: 'red', sub: t?.lateStores ? `${t.lateStores} ${t.lateStores === 1 ? 'store' : 'stores'}` : '' })}
+          {chip({ k: 'stuck', label: 'Stopped', f: { stuck: true }, tone: 'red' })}
         </div>
       </div>
 
-      {t && t.late > 0 && (
-        <div className="osb-alert" role="status">
-          <span className="osb-alert-dot" aria-hidden="true" />
-          <p>
-            <b>{fmt(t.late)} {t.late === 1 ? 'order is' : 'orders are'} not delivered after {data.lateDays} days</b> at {t.lateStores} {t.lateStores === 1 ? 'store' : 'stores'}
-            {t.stuck > 0 && <> · {fmt(t.stuck)} stopped moving by themselves</>}
-          </p>
-          <button type="button" onClick={() => onPick('', { late: true })}>Review late orders →</button>
-        </div>
-      )}
+      {open && (
+        <div id="osb2-body" className="osb2-body">
+          {t && t.late > 0 && (
+            <div className="osb-alert" role="status">
+              <span className="osb-alert-dot" aria-hidden="true" />
+              <p>
+                <b>{fmt(t.late)} {t.late === 1 ? 'order is' : 'orders are'} not delivered after {data.lateDays} days</b> at {t.lateStores} {t.lateStores === 1 ? 'store' : 'stores'}
+                {t.stuck > 0 && <> · {fmt(t.stuck)} stopped moving by themselves</>}
+              </p>
+              <button type="button" onClick={() => onPick('', { late: true })}>Review late orders →</button>
+            </div>
+          )}
 
-      {/* ── stores ── */}
-      <div className="osb-tools">
-        <label className="osb-search">
-          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M11 4a7 7 0 1 0 4.2 12.6l3.6 3.6 1.4-1.4-3.6-3.6A7 7 0 0 0 11 4Zm0 2a5 5 0 1 1 0 10 5 5 0 0 1 0-10Z" fill="currentColor" /></svg>
-          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a store or owner" aria-label="Find a store" />
-        </label>
-        <div className="osb-tools-right">
-          <span className="osb-count">{fmt(rows.length)} {rows.length === 1 ? 'store' : 'stores'}</span>
-          <Seg small label="Sort stores" value={sort} onChange={setSort} options={SORTS} />
-        </div>
-      </div>
+          <div className="osb-tools">
+            <label className="osb-search">
+              <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path d="M11 4a7 7 0 1 0 4.2 12.6l3.6 3.6 1.4-1.4-3.6-3.6A7 7 0 0 0 11 4Zm0 2a5 5 0 1 1 0 10 5 5 0 0 1 0-10Z" fill="currentColor" /></svg>
+              <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a store or owner" aria-label="Find a store" />
+            </label>
+            <div className="osb-tools-right">
+              <span className="osb-count">{fmt(rows.length)} {rows.length === 1 ? 'store' : 'stores'}</span>
+              <Seg small label="Sort stores" value={sort} onChange={setSort} options={SORTS} />
+            </div>
+          </div>
 
-      <div className="osb-legend" aria-hidden="true">
-        {BOARD_COLUMNS.map((c) => (
-          <span key={c.key}><i style={{ background: c.color }} />{c.short}</span>
-        ))}
-      </div>
-
-      {!data && loading ? (
-        <div className="osb-skel">{Array.from({ length: 4 }).map((_, i) => <span key={i} />)}</div>
-      ) : rows.length === 0 ? (
-        <Empty icon="📦" text={q ? 'No store matches.' : 'No open or recently delivered orders.'} />
-      ) : (
-        <>
-          {/* desktop / tablet: table */}
-          <div className={`osb-table-wrap ${loading ? 'is-dim' : ''}`}>
-            <table className="osb-table">
-              <thead>
-                <tr className="osb-th-group">
-                  <th rowSpan={2} className="osb-th-store">Store</th>
-                  <th colSpan={4} className="osb-g">Open pipeline</th>
-                  <th rowSpan={2} className="num">Problem</th>
-                  <th rowSpan={2} className="num">Delivered<small>{days}d</small></th>
-                  <th colSpan={3} className="osb-g osb-g-attn">Attention</th>
-                </tr>
-                <tr className="osb-th-cols">
-                  {PIPE.map((c) => (
-                    <th key={c.key} className="num" title={c.hint || c.label}>{c.short}</th>
-                  ))}
-                  <th className="num" title="Not delivered 7 days after the order was placed">Late</th>
-                  <th className="num" title="The next automatic step is overdue, or could not run (e.g. wallet too low)">Stopped</th>
-                  <th className="num" title="Age of the oldest order that is not delivered yet">Oldest</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shown.map((s) => (
-                  <tr key={s._id} className={`${s.late ? 'is-late' : ''} ${(activeSeller || '') === s._id ? 'is-picked' : ''}`}>
-                    <td className="osb-store">
-                      <button type="button" className="osb-store-btn" onClick={() => onPick(s._id, {})} title={`Show all orders of ${s.storeName}`}>
-                        <Avatar name={s.storeName} size={32} />
-                        <span className="osb-store-txt">
-                          <b>
-                            <span className="osb-name">{s.storeName}</span>
-                            {s.tier === 'diamond' && <span className="osb-dia" title="Diamond store">💎</span>}
-                            {statusChip(s)}
-                          </b>
-                          <small>{s.ownerName || '—'} · {fmt(openOf(s))} open</small>
-                          <PipeBar s={s} />
-                        </span>
-                      </button>
-                    </td>
-                    {PIPE.map((c) => (
-                      <td key={c.key} className="num">{num({ s: s, k: c.key, f: c.filter, tone: c.key === 'pending' ? 'amber' : '', label: c.label.toLowerCase() })}</td>
+          {!data && loading ? (
+            <div className="osb-skel">{Array.from({ length: 3 }).map((_, i) => <span key={i} />)}</div>
+          ) : rows.length === 0 ? (
+            <Empty icon="📦" text={q ? 'No store matches.' : 'No open or recently delivered orders.'} />
+          ) : (
+            <>
+              {/* desktop / tablet: table */}
+              <div className={`osb-table-wrap ${loading ? 'is-dim' : ''}`}>
+                <table className="osb-table osb2-table">
+                  <thead>
+                    <tr>
+                      <th className="osb-th-store">Store</th>
+                      {PIPE.map((c) => (
+                        <th key={c.key} className="num" title={c.hint || c.label}>
+                          <span className="osb2-th"><i style={{ background: c.color }} aria-hidden="true" />{c.short}</span>
+                        </th>
+                      ))}
+                      <th className="num" title={PROBLEM.hint}><span className="osb2-th"><i style={{ background: PROBLEM.color }} aria-hidden="true" />Problem</span></th>
+                      <th className="num">Delivered {days}d</th>
+                      <th className="num osb2-th-attn" title="Not delivered 7 days after the order was placed">Late</th>
+                      <th className="num osb2-th-attn" title="The next automatic step is overdue, or could not run (e.g. wallet too low)">Stopped</th>
+                      <th className="num" title="Age of the oldest order that is not delivered yet">Oldest</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shown.map((s) => (
+                      <tr key={s._id} className={`${s.late ? 'is-late' : ''} ${(activeSeller || '') === s._id ? 'is-picked' : ''}`}>
+                        <td className="osb-store">
+                          <button type="button" className="osb-store-btn" onClick={() => onPick(s._id, {})} title={`Show all orders of ${s.storeName}`}>
+                            <Avatar name={s.storeName} size={28} />
+                            <span className="osb-store-txt">
+                              <b>
+                                <span className="osb-name">{s.storeName}</span>
+                                {s.tier === 'diamond' && <span className="osb-dia" title="Diamond store">💎</span>}
+                                {statusChip(s)}
+                              </b>
+                              <small>{s.ownerName || '—'} · {fmt(openOf(s))} open</small>
+                              <PipeBar s={s} />
+                            </span>
+                          </button>
+                        </td>
+                        {PIPE.map((c) => (
+                          <td key={c.key} className="num">{num({ s, k: c.key, f: c.filter, tone: c.key === 'pending' ? 'amber' : '', label: c.label.toLowerCase() })}</td>
+                        ))}
+                        <td className="num">{num({ s, k: 'problem', f: PROBLEM.filter, tone: 'orange', label: 'delivery problems' })}</td>
+                        <td className="num">{num({ s, k: 'delivered', f: { status: 'delivered' }, tone: 'green', label: 'delivered' })}</td>
+                        <td className="num">{num({ s, k: 'late', f: { late: true }, tone: 'red', label: 'late orders' })}</td>
+                        <td className="num">{num({ s, k: 'stuck', f: { stuck: true }, tone: 'red', label: 'stopped orders' })}</td>
+                        <td className="num"><span className={`osb-age ${s.late ? 'bad' : ageDays(s.oldestOpenAt) >= 3 ? 'warn' : ''}`}>{ageText(s.oldestOpenAt)}</span></td>
+                      </tr>
                     ))}
-                    <td className="num">{num({ s: s, k: "problem", f: PROBLEM.filter, tone: "orange", label: "delivery problems" })}</td>
-                    <td className="num">{num({ s: s, k: "delivered", f: { status: 'delivered' }, tone: "green", label: "delivered" })}</td>
-                    <td className="num osb-attn-col">{num({ s: s, k: "late", f: { late: true }, tone: "red", label: "late orders" })}</td>
-                    <td className="num osb-attn-col">{num({ s: s, k: "stuck", f: { stuck: true }, tone: "red", label: "stopped orders" })}</td>
-                    <td className="num osb-attn-col"><span className={`osb-age ${s.late ? 'bad' : ageDays(s.oldestOpenAt) >= 3 ? 'warn' : ''}`}>{ageText(s.oldestOpenAt)}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                  </tbody>
+                </table>
+              </div>
 
-          {/* phone: one card per store */}
-          <ul className={`osb-cards ${loading ? 'is-dim' : ''}`}>
-            {shown.map((s) => (
-              <li key={s._id} className={`osb-card ${s.late ? 'is-late' : ''}`}>
-                <button type="button" className="osb-store-btn" onClick={() => onPick(s._id, {})}>
-                  <Avatar name={s.storeName} size={34} />
-                  <span className="osb-store-txt">
-                    <b>
-                      <span className="osb-name">{s.storeName}</span>
-                      {s.tier === 'diamond' && <span className="osb-dia">💎</span>}
-                      {statusChip(s)}
-                    </b>
-                    <small>{s.ownerName || '—'} · oldest open {ageText(s.oldestOpenAt)}</small>
-                  </span>
-                  <span className="osb-card-open"><b>{fmt(openOf(s))}</b><small>open</small></span>
-                </button>
-                <PipeBar s={s} />
-                <div className="osb-card-grid">
-                  {BOARD_COLUMNS.map((c) => (
-                    <div key={c.key}>
-                      <small><i style={{ background: c.color }} />{c.short}</small>
-                      {num({ s: s, k: c.key, f: c.filter, tone: c.key === 'pending' ? 'amber' : c.key === 'problem' ? 'orange' : '', label: c.label.toLowerCase() })}
+              {/* phone: one compact card per store */}
+              <ul className={`osb-cards osb2-cards ${loading ? 'is-dim' : ''}`}>
+                {shown.map((s) => (
+                  <li key={s._id} className={`osb-card ${s.late ? 'is-late' : ''}`}>
+                    <button type="button" className="osb-store-btn" onClick={() => onPick(s._id, {})}>
+                      <Avatar name={s.storeName} size={30} />
+                      <span className="osb-store-txt">
+                        <b>
+                          <span className="osb-name">{s.storeName}</span>
+                          {s.tier === 'diamond' && <span className="osb-dia">💎</span>}
+                          {statusChip(s)}
+                        </b>
+                        <small>{s.ownerName || '—'} · oldest {ageText(s.oldestOpenAt)}</small>
+                      </span>
+                      <span className="osb-card-open"><b>{fmt(openOf(s))}</b><small>open</small></span>
+                    </button>
+                    <PipeBar s={s} />
+                    <div className="osb2-card-nums">
+                      {BOARD_COLUMNS.map((c) => (
+                        <div key={c.key}>
+                          <small><i style={{ background: c.color }} />{c.key === 'ofd' ? 'Out' : c.short}</small>
+                          {num({ s, k: c.key, f: c.filter, tone: c.key === 'pending' ? 'amber' : c.key === 'problem' ? 'orange' : '', label: c.label.toLowerCase() })}
+                        </div>
+                      ))}
+                      <div>
+                        <small><i style={{ background: '#16a34a' }} />Done</small>
+                        {num({ s, k: 'delivered', f: { status: 'delivered' }, tone: 'green', label: 'delivered' })}
+                      </div>
                     </div>
-                  ))}
-                  <div>
-                    <small>Delivered {days}d</small>
-                    {num({ s: s, k: "delivered", f: { status: 'delivered' }, tone: "green", label: "delivered" })}
-                  </div>
-                </div>
-                {(s.late > 0 || s.stuck > 0) && (
-                  <div className="osb-card-attn">
-                    {s.late > 0 && <button type="button" onClick={() => onPick(s._id, { late: true })}>{fmt(s.late)} late 7d+</button>}
-                    {s.stuck > 0 && <button type="button" onClick={() => onPick(s._id, { stuck: true })}>{fmt(s.stuck)} stopped</button>}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+                    {(s.late > 0 || s.stuck > 0) && (
+                      <div className="osb-card-attn">
+                        {s.late > 0 && <button type="button" onClick={() => onPick(s._id, { late: true })}>{fmt(s.late)} late 7d+</button>}
+                        {s.stuck > 0 && <button type="button" onClick={() => onPick(s._id, { stuck: true })}>{fmt(s.stuck)} stopped</button>}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
 
-      <footer className="osb-foot">
-        {hidden?.stores > 0 ? (
-          <p className={`osb-hidden ${hidden.late ? 'has-late' : ''}`}>
-            {hidden.stores} inactive {hidden.stores === 1 ? 'store is' : 'stores are'} hidden
-            {hidden.open > 0 && <> · {fmt(hidden.open)} open {hidden.open === 1 ? 'order' : 'orders'}</>}
-            {hidden.late > 0 && <> · <b>{fmt(hidden.late)} late</b></>}
-            <span> — pick it in the store filter, or make it Active on the Sellers page.</span>
-          </p>
-        ) : (
-          <span />
-        )}
-        {!q && rows.length > LIMIT && (
-          <button type="button" className="osb-more" onClick={() => setShowAll((v) => !v)}>
-            {showAll ? 'Show fewer' : `Show all ${fmt(rows.length)} stores`}
-          </button>
-        )}
-      </footer>
+          <footer className="osb-foot">
+            {hidden?.stores > 0 ? (
+              <p className={`osb-hidden ${hidden.late ? 'has-late' : ''}`}>
+                {hidden.stores} inactive {hidden.stores === 1 ? 'store is' : 'stores are'} hidden
+                {hidden.open > 0 && <> · {fmt(hidden.open)} open {hidden.open === 1 ? 'order' : 'orders'}</>}
+                {hidden.late > 0 && <> · <b>{fmt(hidden.late)} late</b></>}
+                <span> — pick it in the store filter, or make it Active on the Sellers page.</span>
+              </p>
+            ) : (
+              <span />
+            )}
+            {!q && rows.length > LIMIT && (
+              <button type="button" className="osb-more" onClick={() => setShowAll((v) => !v)}>
+                {showAll ? 'Show fewer' : `Show all ${fmt(rows.length)} stores`}
+              </button>
+            )}
+          </footer>
+        </div>
+      )}
     </section>
   );
 }

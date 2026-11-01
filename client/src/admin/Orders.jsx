@@ -9,11 +9,10 @@ import { getSocket } from '../socket.js';
 import { MOCK_CUSTOMERS, getRandomCustomer } from './mockCustomers.js';
 import AddFundsModal from './AddFundsModal.jsx';
 import SellerSelectDropdown from './SellerSelectDropdown.jsx';
-import OrdersAnalytics from './OrdersAnalytics.jsx';
 import OrdersStoreBoard from './OrdersStoreBoard.jsx';
 import OrdersStorePicker from './OrdersStorePicker.jsx';
 import { StatusMenu, ConfirmBox, BulkBar, changeText, needsConfirm, runStatusChanges, choicesFor } from './OrdersStatusTools.jsx';
-import { Hero, MetaChip, Seg, Badge, Avatar, Empty } from './insights.jsx';
+import { Hero, MetaChip, Badge, Avatar, Empty } from './insights.jsx';
 
 // status → badge tone (state colours, always shown with the status name)
 const STATUS_TONE = {
@@ -179,9 +178,9 @@ function Pager({ page, info, count, loading, onPage }) {
  * accounts (incl. the automatic daily test orders); a chosen store is always shown.
  */
 const ACCOUNT_TABS = [
-  { value: 'real', label: 'Real clients', icon: 'users', hint: 'Orders of real client stores' },
-  { value: 'test', label: 'Test accounts', icon: 'flask', hint: 'Test & previous-store accounts, incl. automatic daily test orders' },
-  { value: 'all', label: 'All', icon: 'layers', hint: 'Every store' },
+  { value: 'real', label: 'Real clients', short: 'Real', icon: 'users', hint: 'Orders of real client stores' },
+  { value: 'test', label: 'Test accounts', short: 'Test', icon: 'flask', hint: 'Test & previous-store accounts, incl. automatic daily test orders' },
+  { value: 'all', label: 'All', short: 'All', icon: 'layers', hint: 'Every store' },
 ];
 const TAB_ICON = { users: '👥', flask: '🧪', layers: '▦' };
 function AccountsSwitch({ value, totals, onChange, storeName, onClearStore }) {
@@ -199,7 +198,7 @@ function AccountsSwitch({ value, totals, onChange, storeName, onClearStore }) {
             title={t.hint}
           >
             <span className="oacc-ic" aria-hidden="true">{TAB_ICON[t.icon]}</span>
-            <span className="oacc-lbl">{t.label}</span>
+            <span className="oacc-lbl"><span className="oacc-long">{t.label}</span><span className="oacc-short">{t.short}</span></span>
             <span className="oacc-num">{totals ? fmtNum(totals[t.value]) : '–'}</span>
           </button>
         ))}
@@ -212,6 +211,43 @@ function AccountsSwitch({ value, totals, onChange, storeName, onClearStore }) {
       ) : value === 'test' ? (
         <p className="oacc-note oacc-note-test">🧪 Test accounts only — includes the automatic daily test orders. These are not real customers.</p>
       ) : null}
+    </div>
+  );
+}
+
+/** colour dot per badge tone (always shown next to the status name) */
+const TONE_DOT = { warning: '#f59e0b', info: '#3b82f6', violet: '#8b5cf6', good: '#16a34a', critical: '#dc2626', neutral: '#94a3b8' };
+/** the main statuses always offered, even with 0 orders */
+const CORE_STATUSES = ['pending', 'confirmed', 'out_for_delivery', 'delivered'];
+/**
+ * Status filter: one chip per status with its number of orders. Statuses that have no orders
+ * right now are folded under "More" so the row stays short (the chosen one always shows).
+ */
+function StatusChips({ value, counts, loaded, allCount, onChange }) {
+  const [more, setMore] = useState(false);
+  const has = (st) => (counts?.[st] || 0) > 0;
+  const main = ALL_STATUSES.filter((st) => !loaded || has(st) || CORE_STATUSES.includes(st) || st === value);
+  const rest = ALL_STATUSES.filter((st) => !main.includes(st));
+  const list = more ? ALL_STATUSES : main;
+  const chipBtn = (st, label, n, dot) => {
+    const on = value === st;
+    return (
+      <button key={st || 'all'} type="button" className={`oco-chip${on ? ' on' : ''}${n ? '' : ' is-zero'}`} aria-pressed={on} onClick={() => onChange(st)}>
+        {dot && <i style={{ background: dot }} aria-hidden="true" />}
+        <span>{label}</span>
+        <span className="oco-chip-n">{fmtNum(n)}</span>
+      </button>
+    );
+  };
+  return (
+    <div className="oco-status" role="group" aria-label="Filter by status">
+      {chipBtn('', 'All', allCount)}
+      {list.map((st) => chipBtn(st, STATUS_LABELS[st] || st, counts?.[st] || 0, TONE_DOT[STATUS_TONE[st]] || TONE_DOT.neutral))}
+      {rest.length > 0 && (
+        <button type="button" className="oco-chip oco-chip-more" aria-expanded={more} onClick={() => setMore((v) => !v)}>
+          {more ? 'Less' : `+${rest.length} more`}
+        </button>
+      )}
     </div>
   );
 }
@@ -776,10 +812,6 @@ export default function Orders() {
   };
 
   const scrollToList = () => setTimeout(() => document.querySelector('.ins-orders-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
-  const pickSeller = (id) => {
-    setSellerFilter(id);
-    scrollToList();
-  };
   // a number in "Orders by store": that store (or all) + that group, late or stopped orders
   const pickFromBoard = (sid, f) => {
     // the totals count real client stores only: the list then leaves test stores out as well
@@ -802,6 +834,8 @@ export default function Orders() {
 
   const customerOf = (o) => o.shippingAddress?.fullName || o.contact?.fullName || 'Guest customer';
   const phoneOf = (o) => o.contact?.phone || o.shippingAddress?.phone || '';
+
+  const payText = (o) => `${o.paymentMethod === 'cod' || !o.paymentMethod ? 'COD' : PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod} · ${o.paymentStatus === 'paid' ? 'Paid' : 'Unpaid'}`;
 
   const orderBadge = (o) => (
     <Badge tone={STATUS_TONE[o.status] || 'neutral'}>{STATUS_LABELS[o.status] || o.status}</Badge>
@@ -840,28 +874,34 @@ export default function Orders() {
         activeFilter={{ status: status || undefined, late: late || undefined, stuck: stuck || undefined }}
       />
 
-      <OrdersAnalytics sellerId={sellerFilter} refreshKey={analyticsKey} onPickSeller={pickSeller} />
-
       <ErrorBox error={error} />
 
-      <div className="ins-table-card ins-orders-list">
-        <div className="ins-table-head" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <div>
-              <h3>📋 Customer orders</h3>
-              <span className="ins-card-hint">
-                {loading ? 'Loading…' : rangeLabel(page, pageInfo, orders.length)}
-                {chosenSeller ? ` · ${chosenSeller.storeName}` : ''}
-              </span>
-            </div>
-            <div className="ins-toolbar-group">
-              <Seg small label="Layout" value={viewMode === 'cards' ? 'cards' : 'table'} onChange={setViewMode} options={[{ value: 'table', label: '▤ Table' }, { value: 'cards', label: '☷ Cards' }]} />
-              <button type="button" className="ins-btn ins-btn-sm" onClick={handleManualRefresh} disabled={refreshing}>
-                <Ic name="refresh" size={13} /> {refreshing ? 'Refreshing…' : 'Refresh'}
+      <div className="ins-table-card ins-orders-list oco">
+        <header className="oco-head">
+          <div className="oco-title">
+            <h3 id="oco-title">Customer orders</h3>
+            <p aria-live="polite">
+              {loading ? 'Loading orders…' : rangeLabel(page, pageInfo, orders.length)}
+              {chosenSeller ? ` · ${chosenSeller.storeName}` : ''}
+            </p>
+          </div>
+          <div className="oco-head-tools">
+            <div className="oco-layout" role="group" aria-label="Layout">
+              <button type="button" className={viewMode !== 'cards' ? 'on' : ''} aria-pressed={viewMode !== 'cards'} onClick={() => setViewMode('auto')} title="Table (cards on phones)">
+                <Ic name="list" size={15} /> <span>Table</span>
+              </button>
+              <button type="button" className={viewMode === 'cards' ? 'on' : ''} aria-pressed={viewMode === 'cards'} onClick={() => setViewMode('cards')} title="Cards">
+                <Ic name="grid" size={15} /> <span>Cards</span>
               </button>
             </div>
+            <button type="button" className="oco-btn oco-btn-icon" onClick={handleManualRefresh} disabled={refreshing} aria-label="Refresh orders" title="Refresh">
+              <Ic name="refresh" size={15} className={refreshing ? 'oco-spin' : ''} />
+              <span>{refreshing ? 'Refreshing…' : 'Refresh'}</span>
+            </button>
           </div>
+        </header>
 
+        <div className="oco-filters">
           <AccountsSwitch
             value={accounts}
             totals={counts?.totals}
@@ -871,21 +911,22 @@ export default function Orders() {
           />
 
           <form
-            className="ins-toolbar"
-            style={{ justifyContent: 'flex-start' }}
+            className="oco-search-row"
+            role="search"
             onSubmit={(e) => {
               e.preventDefault();
               setParam({ q: q.trim() });
               loadOrders();
             }}
           >
-            <div className="ins-search" style={{ maxWidth: 380 }}>
-              <Ic name="search" size={15} />
-              <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Order #, customer, phone, email, store…" />
+            <label className="oco-search">
+              <Ic name="search" size={16} />
+              <span className="oco-sr">Search orders</span>
+              <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Order #, customer, phone, store" title="Search by order number, customer name, phone, email or store" enterKeyHint="search" />
               {q && (
                 <button
                   type="button"
-                  className="ins-search-clear"
+                  className="oco-search-clear"
                   onClick={() => {
                     setQ('');
                     setParam({ q: '' });
@@ -897,30 +938,24 @@ export default function Orders() {
                   ✕
                 </button>
               )}
+            </label>
+            <div className="oco-store">
+              <OrdersStorePicker sellers={pickerSellers} counts={storeCounts} value={sellerFilter} onChange={setSellerFilter} />
             </div>
-            <OrdersStorePicker sellers={pickerSellers} counts={storeCounts} value={sellerFilter} onChange={setSellerFilter} />
-            <button type="submit" className="ins-btn ins-btn-primary">
-              <Ic name="search" size={14} /> Search
-            </button>
-            {hasActiveFilters && (
-              <button type="button" className="ins-btn ins-btn-ghost" onClick={handleClearAllFilters}>
-                ✕ Reset filters
+            <div className="oco-search-btns">
+              <button type="submit" className="oco-btn oco-btn-primary">
+                <Ic name="search" size={14} /> Search
               </button>
-            )}
+              {hasActiveFilters && (
+                <button type="button" className="oco-btn oco-btn-ghost" onClick={handleClearAllFilters}>
+                  ✕ Reset
+                </button>
+              )}
+            </div>
           </form>
 
-          <div style={{ overflowX: 'auto' }}>
-            <Seg
-              small
-              label="Status"
-              value={status}
-              onChange={setStatus}
-              options={[
-                { value: '', label: 'All', count: allCount },
-                ...ALL_STATUSES.map((st) => ({ value: st, label: STATUS_LABELS[st], count: statusCounts[st] || 0 })),
-              ]}
-            />
-          </div>
+          <StatusChips value={status} counts={statusCounts} loaded={Boolean(counts)} allCount={allCount} onChange={setStatus} />
+
           {viewLabel && (
             <div className="ost-view">
               <span>Showing: <b>{viewLabel}</b>{chosenSeller ? ` · ${chosenSeller.storeName}` : clientsOnly ? ' · active client stores' : ` · ${scopeText}`}{late || stuck ? ' · oldest first' : ''}</span>
@@ -950,28 +985,28 @@ export default function Orders() {
         </div>
 
         {showTable && (
-          <div className={`ins-table-scroll${viewMode === 'auto' ? ' ins-hide-mobile' : ''}`}>
-            <table className="ins-table">
+          <div className={`oco-table-wrap${viewMode === 'auto' ? ' is-auto' : ''}`}>
+            <table className="oco-table" aria-labelledby="oco-title">
               <thead>
                 <tr>
-                  <th className="ost-pick">
+                  <th scope="col" className="oco-c-pick">
                     <input type="checkbox" checked={allPicked} onChange={pickAll} aria-label="Tick all orders shown" disabled={!orders.length} />
                   </th>
-                  <th>Order</th>
-                  <th>Store</th>
-                  <th>Customer</th>
-                  <th className="ost-col-items">Items</th>
-                  <th className="num">Total</th>
-                  <th>Status</th>
-                  <th />
+                  <th scope="col">Order</th>
+                  <th scope="col">Store</th>
+                  <th scope="col">Customer</th>
+                  <th scope="col" className="ost-col-items">Items</th>
+                  <th scope="col" className="num">Total</th>
+                  <th scope="col">Status</th>
+                  <th scope="col" className="oco-c-act"><span className="oco-sr">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
                 {loading &&
                   Array.from({ length: 6 }).map((_, i) => (
-                    <tr key={`sk-${i}`}>
+                    <tr key={`sk-${i}`} className="oco-skel-row">
                       {Array.from({ length: 8 }).map((__, j) => (
-                        <td key={j}><span className="ins-skel" style={{ width: `${45 + ((i + j) % 4) * 13}%` }} /></td>
+                        <td key={j} className={j === 4 ? 'ost-col-items' : ''}><span className="ins-skel" style={{ width: `${45 + ((i + j) % 4) * 13}%` }} /></td>
                       ))}
                     </tr>
                   ))}
@@ -992,32 +1027,33 @@ export default function Orders() {
                     const itemsCount = o.items?.reduce((sum, it) => sum + (it.qty || 1), 0) || 0;
                     const storeCount = new Set((o.items || []).map((it) => String(it.seller?._id || it.seller || ''))).size;
                     return (
-                      <tr key={o._id} className={`${picked.has(o._id) ? 'ost-row-on' : ''} ${lastOpened === o._id ? 'ost-row-last' : ''}`}>
-                        <td className="ost-pick">
+                      <tr key={o._id} data-tone={STATUS_TONE[o.status] || 'neutral'} className={`${picked.has(o._id) ? 'ost-row-on' : ''} ${lastOpened === o._id ? 'ost-row-last' : ''}`}>
+                        <td className="oco-c-pick">
                           <input type="checkbox" checked={picked.has(o._id)} onChange={() => togglePick(o._id)} aria-label={`Tick order ${o.orderNumber}`} />
                         </td>
-                        <td>
-                          <button type="button" className="ins-badge ins-badge-neutral" style={{ cursor: 'pointer', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }} onClick={(e) => handleCopyOrder(e, o.orderNumber)} title="Copy order number">
+                        <td className="oco-c-order">
+                          <button type="button" className="oco-num" onClick={(e) => handleCopyOrder(e, o.orderNumber)} title="Copy order number" aria-label={`Copy order number ${o.orderNumber}`}>
                             {copiedId === o.orderNumber ? '✓ Copied' : `#${o.orderNumber}`}
+                            {copiedId !== o.orderNumber && <Ic name="copy" size={12} />}
                           </button>
-                          <span className="ins-sub" style={{ marginTop: 4 }} title={fmtDate(o.createdAt)}>
+                          <span className="oco-meta" title={fmtDate(o.createdAt)}>
                             {fmtDate(o.createdAt)} · {ageLabel(o.createdAt)}
                           </span>
-                          {o.placedBy && o.placedBy !== 'customer' && <span className="ins-sub">Placed by admin</span>}
+                          {o.placedBy && o.placedBy !== 'customer' && <span className="oco-tag">Placed by admin</span>}
                           {/* shown instead of the Items column on narrower screens */}
-                          <span className="ins-sub ost-items-inline" title={o.items?.[0]?.name}>
+                          <span className="oco-meta ost-items-inline" title={o.items?.[0]?.name}>
                             {o.items?.[0]?.name || 'Item'} · {itemsCount} item{itemsCount === 1 ? '' : 's'}
                           </span>
                         </td>
                         <td>
                           {seller ? (
-                            <div className="ins-cell-who">
+                            <div className="oco-who">
                               <Avatar name={seller.storeName} size={30} />
                               <div>
-                                <b className="ins-clip" style={{ maxWidth: 140 }} title={seller.storeName}>
+                                <b className="oco-clip" title={seller.storeName}>
                                   <StoreLink id={seller._id} name={seller.storeName} />
                                 </b>
-                                <span className="ins-sub">{storeCount > 1 ? `+${storeCount - 1} more store${storeCount > 2 ? 's' : ''}` : seller.ownerName || ''}</span>
+                                <span className="oco-meta">{storeCount > 1 ? `+${storeCount - 1} more store${storeCount > 2 ? 's' : ''}` : seller.ownerName || ''}</span>
                               </div>
                             </div>
                           ) : (
@@ -1025,50 +1061,50 @@ export default function Orders() {
                           )}
                         </td>
                         <td>
-                          <span className="ins-strong ins-clip" style={{ display: 'block', maxWidth: 170 }}>{customerOf(o)}</span>
+                          <b className="oco-clip oco-strong">{customerOf(o)}</b>
                           {phoneOf(o) && (
-                            <a href={`tel:${phoneOf(o)}`} className="ins-sub" style={{ color: '#2a78d6', textDecoration: 'none' }}>
+                            <a href={`tel:${phoneOf(o)}`} className="oco-meta oco-link">
                               {phoneOf(o)}
                             </a>
                           )}
-                          {o.shippingAddress?.city && <span className="ins-sub">{o.shippingAddress.city}{o.shippingAddress.state ? `, ${o.shippingAddress.state}` : ''}</span>}
+                          {o.shippingAddress?.city && <span className="oco-meta">{o.shippingAddress.city}{o.shippingAddress.state ? `, ${o.shippingAddress.state}` : ''}</span>}
                         </td>
                         <td className="ost-col-items">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                            <span style={{ width: 38, height: 38, borderRadius: 9, background: '#f1f5f9', overflow: 'hidden', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
+                          <div className="oco-item">
+                            <span className="oco-thumb">
                               {o.items?.[0]?.image ? (
-                                <img src={o.items[0].image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                                <img src={o.items[0].image} alt="" loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                               ) : (
                                 <Ic name="box" size={16} />
                               )}
                             </span>
                             <span style={{ minWidth: 0 }}>
-                              <span className="ins-clip" style={{ display: 'block', maxWidth: 170, fontWeight: 600, color: '#0f172a' }} title={o.items?.[0]?.name}>{o.items?.[0]?.name || 'Item'}</span>
-                              <span className="ins-sub">{itemsCount} item{itemsCount === 1 ? '' : 's'}{o.items?.length > 1 ? ` · ${o.items.length} products` : ''}</span>
+                              <b className="oco-clip oco-strong" title={o.items?.[0]?.name}>{o.items?.[0]?.name || 'Item'}</b>
+                              <span className="oco-meta">{itemsCount} item{itemsCount === 1 ? '' : 's'}{o.items?.length > 1 ? ` · ${o.items.length} products` : ''}</span>
                             </span>
                           </div>
                         </td>
                         <td className="num">
-                          <b style={{ fontSize: 14, color: '#0f172a' }}>{money(o.total)}</b>
-                          <span className="ins-sub">{o.shipping?.cost > 0 ? `incl. ${money(o.shipping.cost)} delivery` : 'Free delivery'}</span>
+                          <b className="oco-total">{money(o.total)}</b>
+                          <span className="oco-meta">{o.shipping?.cost > 0 ? `incl. ${money(o.shipping.cost)} delivery` : 'Free delivery'}</span>
                           <span className={`ost-pay ${o.paymentStatus === 'paid' ? 'paid' : ''}`} title={PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod || 'Cash on Delivery'}>
-                            {o.paymentMethod === 'cod' || !o.paymentMethod ? 'COD' : PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod} · {o.paymentStatus === 'paid' ? 'Paid' : 'Unpaid'}
+                            {payText(o)}
                           </span>
                         </td>
-                        <td>
-                          <button type="button" className="ost-badge-btn" onClick={(e) => setMenu({ order: o, anchor: e.currentTarget })} aria-haspopup="menu" aria-expanded={menu?.order?._id === o._id} disabled={Boolean(busy)} title="Click to change the status">
+                        <td className="oco-c-status">
+                          <button type="button" className="ost-badge-btn" onClick={(e) => setMenu({ order: o, anchor: e.currentTarget })} aria-haspopup="menu" aria-expanded={menu?.order?._id === o._id} disabled={Boolean(busy)} title="Change the status" aria-label={`Status: ${STATUS_LABELS[o.status] || o.status}. Change status of order ${o.orderNumber}`}>
                             {orderBadge(o)}
                             <span className="ost-caret" aria-hidden="true">▾</span>
                           </button>
                           {orderNote(o)}
                         </td>
-                        <td>
-                          <div className="ins-actions" style={{ flexWrap: 'nowrap' }}>
-                            <button type="button" className="ins-btn ins-btn-sm ost-icon-btn" onClick={() => setInspectOrder(o)} title="Quick view" aria-label={`Quick view of order ${o.orderNumber}`}>
-                              <Ic name="eye" size={14} />
+                        <td className="oco-c-act">
+                          <div className="oco-actions">
+                            <button type="button" className="oco-btn oco-btn-sm oco-btn-square" onClick={() => setInspectOrder(o)} title="Quick view" aria-label={`Quick view of order ${o.orderNumber}`}>
+                              <Ic name="eye" size={15} />
                             </button>
-                            <Link to={`/admin/orders/${o._id}`} className="ins-btn ins-btn-sm" title="Open the full order page" onClick={() => rememberSpot(o._id)}>
-                              Manage ↗
+                            <Link to={`/admin/orders/${o._id}`} className="oco-btn oco-btn-sm" title="Open the full order page" onClick={() => rememberSpot(o._id)}>
+                              Manage <span aria-hidden="true">↗</span>
                             </Link>
                           </div>
                         </td>
@@ -1081,52 +1117,71 @@ export default function Orders() {
         )}
 
         {showCards && (
-          <div className="ins-cards" style={viewMode === 'cards' ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' } : undefined}>
-            {loading && <Empty icon="⏳" text="Loading orders…" />}
-            {!loading && orders.length === 0 && <Empty icon="📦" text={hasActiveFilters ? 'No order matches these filters.' : 'No orders yet.'} />}
+          <div className={`oco-cards${viewMode === 'cards' ? ' is-on' : ''}`}>
+            {loading && Array.from({ length: 3 }).map((_, i) => <div key={`skc-${i}`} className="oco-card oco-card-skel" aria-hidden="true"><span className="ins-skel" /><span className="ins-skel" /><span className="ins-skel" /></div>)}
+            {!loading && orders.length === 0 && (
+              <Empty icon="📦" text={hasActiveFilters ? 'No order matches these filters.' : 'No orders yet.'}>
+                {hasActiveFilters && (
+                  <button type="button" className="ins-btn ins-btn-sm" onClick={handleClearAllFilters}>Clear filters</button>
+                )}
+              </Empty>
+            )}
             {!loading &&
               orders.map((o) => {
                 const seller = getOrderSeller(o);
                 const itemsCount = o.items?.reduce((sum, it) => sum + (it.qty || 1), 0) || 0;
                 return (
-                  <div key={o._id} className={`ins-mcard ${picked.has(o._id) ? 'ost-row-on' : ''} ${lastOpened === o._id ? 'ost-row-last' : ''}`}>
-                    <div className="ins-mcard-row">
-                      <label className="ost-card-pick">
-                        <input type="checkbox" checked={picked.has(o._id)} onChange={() => togglePick(o._id)} aria-label={`Tick order ${o.orderNumber}`} />
-                        <button type="button" className="ins-badge ins-badge-neutral" style={{ cursor: 'pointer' }} onClick={(e) => handleCopyOrder(e, o.orderNumber)}>
+                  <article key={o._id} data-tone={STATUS_TONE[o.status] || 'neutral'} className={`oco-card ${picked.has(o._id) ? 'ost-row-on' : ''} ${lastOpened === o._id ? 'ost-row-last' : ''}`} aria-label={`Order ${o.orderNumber}`}>
+                    <header className="oco-card-top">
+                      <input type="checkbox" checked={picked.has(o._id)} onChange={() => togglePick(o._id)} aria-label={`Tick order ${o.orderNumber}`} />
+                      <span className="oco-card-id">
+                        <button type="button" className="oco-num" onClick={(e) => handleCopyOrder(e, o.orderNumber)} aria-label={`Copy order number ${o.orderNumber}`}>
                           {copiedId === o.orderNumber ? '✓ Copied' : `#${o.orderNumber}`}
                         </button>
-                      </label>
-                      {orderBadge(o)}
-                    </div>
-                    {orderNote(o)}
-                    <div className="ins-mcard-row">
-                      <span>Store</span>
-                      <b className="ins-clip" style={{ maxWidth: 180 }}>{seller ? <StoreLink id={seller._id} name={seller.storeName} /> : 'Bazario Direct'}</b>
-                    </div>
-                    <div className="ins-mcard-row">
-                      <span>Customer</span>
-                      <span style={{ textAlign: 'right' }}>
-                        <b>{customerOf(o)}</b>
-                        {phoneOf(o) && <a href={`tel:${phoneOf(o)}`} className="ins-sub" style={{ color: '#2a78d6' }}>{phoneOf(o)}</a>}
+                        <span className="oco-meta" title={fmtDate(o.createdAt)}>{ageLabel(o.createdAt)}{o.placedBy && o.placedBy !== 'customer' ? ' · by admin' : ''}</span>
                       </span>
-                    </div>
-                    <div className="ins-mcard-row">
-                      <span>{itemsCount} item{itemsCount === 1 ? '' : 's'} · {ageLabel(o.createdAt)}</span>
-                      <b style={{ fontSize: 15 }}>{money(o.total)}</b>
-                    </div>
-                    <div className="ins-actions" style={{ justifyContent: 'stretch' }}>
-                      <button type="button" className="ins-btn ins-btn-sm ost-status-btn" style={{ flex: 1 }} onClick={(e) => setMenu({ order: o, anchor: e.currentTarget })} disabled={Boolean(busy)}>
-                        Status ▾
+                      <button type="button" className="ost-badge-btn oco-card-status" onClick={(e) => setMenu({ order: o, anchor: e.currentTarget })} aria-haspopup="menu" aria-expanded={menu?.order?._id === o._id} disabled={Boolean(busy)} aria-label={`Status: ${STATUS_LABELS[o.status] || o.status}. Change status`}>
+                        {orderBadge(o)}
+                        <span className="ost-caret" aria-hidden="true">▾</span>
                       </button>
-                      <button type="button" className="ins-btn ins-btn-sm" style={{ flex: 1 }} onClick={() => setInspectOrder(o)}>
-                        <Ic name="eye" size={13} /> View
+                    </header>
+                    {orderNote(o)}
+                    <dl className="oco-card-grid">
+                      <div>
+                        <dt>Store</dt>
+                        <dd className="oco-clip">{seller ? <StoreLink id={seller._id} name={seller.storeName} /> : 'Bazario Direct'}</dd>
+                      </div>
+                      <div className="oco-card-right">
+                        <dt>Total</dt>
+                        <dd>
+                          <b className="oco-total">{money(o.total)}</b>
+                          <span className={`ost-pay ${o.paymentStatus === 'paid' ? 'paid' : ''}`}>{payText(o)}</span>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Customer</dt>
+                        <dd>
+                          <b className="oco-clip oco-strong">{customerOf(o)}</b>
+                          {phoneOf(o) && <a href={`tel:${phoneOf(o)}`} className="oco-meta oco-link">{phoneOf(o)}</a>}
+                        </dd>
+                      </div>
+                      <div className="oco-card-right">
+                        <dt>Items</dt>
+                        <dd>
+                          <span className="oco-clip" title={o.items?.[0]?.name}>{o.items?.[0]?.name || 'Item'}</span>
+                          <span className="oco-meta">{itemsCount} item{itemsCount === 1 ? '' : 's'}</span>
+                        </dd>
+                      </div>
+                    </dl>
+                    <footer className="oco-card-actions">
+                      <button type="button" className="oco-btn oco-btn-sm" onClick={() => setInspectOrder(o)}>
+                        <Ic name="eye" size={14} /> Quick view
                       </button>
-                      <Link to={`/admin/orders/${o._id}`} className="ins-btn ins-btn-sm" style={{ flex: 1 }} onClick={() => rememberSpot(o._id)}>
-                        Manage ↗
+                      <Link to={`/admin/orders/${o._id}`} className="oco-btn oco-btn-sm oco-btn-dark" onClick={() => rememberSpot(o._id)}>
+                        Manage <span aria-hidden="true">↗</span>
                       </Link>
-                    </div>
-                  </div>
+                    </footer>
+                  </article>
                 );
               })}
           </div>
