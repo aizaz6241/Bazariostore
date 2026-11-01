@@ -188,7 +188,7 @@ export default function Dashboard() {
       sub: 'Not delivered or cancelled yet',
       count: d.staleOpenOrders || 0,
     },
-    show.sellers && { to: '/admin/complaints', icon: '🛡️', color: '#d03b3b', title: 'Stores at risk', sub: 'Health 30 or below', count: sellers.atRisk || 0 },
+    show.sellers && { to: '/admin/sellers', icon: '🛡️', color: '#d03b3b', title: 'Stores at risk', sub: 'Health 30 or below', count: sellers.atRisk || 0 },
     show.stock && {
       to: '/admin/inventory',
       icon: '📦',

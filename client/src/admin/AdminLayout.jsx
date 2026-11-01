@@ -26,7 +26,6 @@ const NAV_GROUPS = [
     items: [
       { to: '/admin/orders', icon: 'box', label: 'Orders', perm: 'orders', badge: 'orders' },
       { to: '/admin/treasury', icon: 'package', label: 'Product Treasury', perm: 'products' },
-      { to: '/admin/complaints', icon: 'alert', label: 'Complaints', perm: 'sellers' },
     ],
   },
   {

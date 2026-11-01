@@ -1684,7 +1684,7 @@ router.post('/:id/approve', authAdmin('sellers'), oneDecisionAtATime, announceTo
     // Saving this form makes the store "active": a store frozen or suspended for compliance is
     // managed on the Complaints page, never switched on from here (the button was only hidden).
     if (seller.status === 'frozen' || (seller.status === 'suspended' && !seller.registrationRejectedAt)) {
-      return res.status(400).json({ message: `This store is ${seller.status}. Lift that on the Complaints page; it is not changed from New Applications.` });
+      return res.status(400).json({ message: `This store is ${seller.status}. Lift that in the seller's profile (Sellers page); it is not changed from New Applications.` });
     }
 
     // Was this seller already approved before? Then this is an edit, not a first approval: its
@@ -1990,7 +1990,7 @@ router.post('/:id/reject', authAdmin('sellers'), oneDecisionAtATime, announceToA
     // restricted on the Complaints page; rejecting it used to lock it out and hide it from there.
     const wasApproved = await isApprovedSeller(seller);
     if (wasApproved) {
-      return res.status(400).json({ message: 'This store is already approved (or has wallet history). Use the Complaints page to freeze or suspend it.' });
+      return res.status(400).json({ message: 'This store is already approved (or has wallet history). Use the seller's profile (Sellers page) to freeze or suspend it.' });
     }
 
     seller.status = 'suspended';

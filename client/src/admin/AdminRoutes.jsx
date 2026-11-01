@@ -6,7 +6,6 @@ import Dashboard from './Dashboard.jsx';
 import AdminTreasury from './AdminTreasury.jsx';
 import AdminTreasuryEdit from './AdminTreasuryEdit.jsx';
 import Sellers from './Sellers.jsx';
-import Complaints from './Complaints.jsx';
 import Applications from './Applications.jsx';
 import Targets from './Targets.jsx';
 import DiamondOffers from './DiamondOffers.jsx';
@@ -60,7 +59,8 @@ export default function AdminRoutes() {
         <Route path="treasury/new" element={guard('products', <AdminTreasuryEdit />)} />
         <Route path="treasury/:id" element={guard('products', <AdminTreasuryEdit />)} />
         <Route path="sellers" element={guard('sellers', <Sellers />)} />
-        <Route path="complaints" element={guard('sellers', <Complaints />)} />
+        {/* the Complaints page was removed (its tools live in the seller profile); old links go to Sellers */}
+        <Route path="complaints" element={<Navigate to="/admin/sellers" replace />} />
         <Route path="orders" element={guard('orders', <Orders />)} />
         <Route path="orders/:id" element={guard('orders', <OrderDetail />)} />
         <Route path="applications" element={guard('sellers', <Applications />)} />
