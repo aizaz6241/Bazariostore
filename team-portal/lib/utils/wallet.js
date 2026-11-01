@@ -112,112 +112,124 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
 
   // ─── Shares of real seller deposits and seller withdrawals ───
   for (const e of ledger.entries) {
-    const share = e.shares.find((s) => String(s.userId) === uid);
-    if (!share) continue;
+    // EVERY line of this person in the entry, not only the first one: a partner who gets a
+    // milestone reward (or device gift) himself is in it twice — "+ the reward" and "− his 50% of
+    // its cost". Only the first line used to be counted, so his wallet showed half the reward too
+    // much (and a payout could take it). Same counting as the Finance screen (lib/utils/finance.js).
+    const mine = e.shares.filter((s) => String(s.userId) === uid);
+    let clientCounted = false; // the client totals count one entry once
+    for (let n = 0; n < mine.length; n++) {
+      const share = mine[n];
+      const idTail = mine.length > 1 ? `_${n}` : '';
 
-    if (e.kind === 'bonus') {
-      const isMine = share.role === 'member';
-      if (isMine) {
-        bonusUSDT += share.amountUSDT;
-        totalEarnedPKR += e.amountPKR;
-      } else {
-        bonusCostUSDT += share.amountUSDT;
+      if (e.kind === 'bonus') {
+        const isMine = share.role === 'member';
+        if (isMine) {
+          bonusUSDT += share.amountUSDT;
+          totalEarnedPKR += e.amountPKR;
+        } else {
+          bonusCostUSDT += share.amountUSDT;
+        }
+        rawTransactions.push({
+          id: `bonus_${e.id}_${uid}${idTail}`,
+          type: isMine ? 'credit' : 'debit',
+          category: isMine ? 'bonus_reward' : 'bonus_cost',
+          amount: share.amountUSDT,
+          currency: 'USDT',
+          amountUSDT: share.amountUSDT,
+          sellerId: null,
+          storeName: 'Platform Milestone',
+          sourceRef: e.ref || e.id,
+          description: isMine
+            ? `🎁 Milestone Bonus: ${e.storeName}`
+            : `Bonus cost 50%: ${e.storeName} (${e.owner ? e.owner.name : 'member'})`,
+          details: `Rs ${e.amountPKR.toLocaleString('en-US')} PKR @ ${e.pkrRate} = ₮${e.usdt.toFixed(2)} USDT${isMine ? '' : ' • paid 50 / 50 by the partners'}`,
+          date: new Date(e.date),
+        });
+        continue;
       }
+
+      const isDeposit = e.kind === 'deposit';
+      const pctText = `${Number(share.pct.toFixed(2))}%`;
+      const myCover = (e.reserveCovers || []).find((c) => String(c.userId) === uid);
+
+      // A referral share: commission from (or part of the withdrawal of) a member this person brought.
+      // Not his own client, so the client totals are left alone.
+      const isReferral = !!share.referralOf;
+      if (isDeposit) {
+        earnedUSDT += share.amountUSDT;
+        if (!isReferral && !clientCounted) {
+          totalClientDepositsINR += e.inr;
+          totalClientDepositsUSDT += e.usdt;
+          clientCounted = true;
+        }
+      } else {
+        sellerWithdrawUSDT += share.amountUSDT;
+        if (!isReferral && !clientCounted) {
+          totalClientWithdrawalsUSDT += e.usdt;
+          clientCounted = true;
+        }
+      }
+
+      const sellerMoney = `₮${e.usdt.toFixed(2)} USDT${e.inr > 0 ? ` (₹${e.inr.toLocaleString('en-US')} INR @ ${e.rate})` : ''}`;
+      const coverText = myCover ? ` • ₮${myCover.amountUSDT.toFixed(2)} of your share was paid by the reserve because your wallet did not have enough` : '';
+
+      let description;
+      let details;
+      let referralPct = 0;
+      let referralName = '';
+      if (isReferral) {
+        // ── Referrer's view: everything in full ──
+        referralName = e.owner ? e.owner.name : 'your member';
+        const fromLabel = String(share.label || '').match(/Referral ([\d.]+)%/);
+        referralPct = num(e.owner && e.owner.referral ? e.owner.referral.pct : fromLabel ? fromLabel[1] : 0);
+        const memberShare = (e.shares || []).find((x) => String(x.userId) === String(share.referralOf) && !x.referralOf);
+        // the member's part before the commission came out of it
+        const memberPart = r2((memberShare ? memberShare.amountUSDT : 0) + share.amountUSDT);
+        const pctTxt = referralPct > 0 ? `${referralPct}% ` : '';
+        referralFrom.add(String(share.referralOf));
+        if (isDeposit) {
+          referralEarnedUSDT += share.amountUSDT;
+          referralDeposits += 1;
+          description = `Referral commission ${pctTxt}from ${referralName} — deposit (${e.storeName})`;
+          details = `${pctTxt}of ${referralName}'s share ₮${memberPart.toFixed(2)} • seller deposited ${sellerMoney} on Binance`;
+        } else {
+          referralDeductedUSDT += share.amountUSDT;
+          referralWithdrawals += 1;
+          description = `Referral commission ${pctTxt}deducted — ${referralName}'s seller withdrawal (${e.storeName})`;
+          details = `${pctTxt}of ${referralName}'s part ₮${memberPart.toFixed(2)} • seller took ${sellerMoney} from Binance${coverText}`;
+        }
+      } else {
+        // ── Own share. A member who was brought by someone never sees the referral (no %, no name):
+        // his line reads like any other 1:1 line. Partners still see the full label. ──
+        const referredOwner = !viewerIsAdmin && e.owner && e.owner.referral && String(e.owner.id) === uid;
+        const label = referredOwner ? '1:1 PKR share' : share.label;
+        description = isDeposit ? `Deposit share ${pctText} from ${e.storeName}` : `Seller withdrawal share ${pctText}: ${e.storeName}`;
+        details = isDeposit
+          ? `${label} of ${sellerMoney.replace(' USDT', ' USDT received on Binance')}`
+          : `${label} of ${sellerMoney.replace(' USDT', ' USDT paid to the seller from Binance')}${coverText}`;
+      }
+
       rawTransactions.push({
-        id: `bonus_${e.id}_${uid}`,
-        type: isMine ? 'credit' : 'debit',
-        category: isMine ? 'bonus_reward' : 'bonus_cost',
+        id: `${isDeposit ? 'dep' : 'wth'}_${e.id}_${uid}${idTail}`,
+        type: isDeposit ? 'credit' : 'debit',
+        category: isDeposit ? 'deposit_share' : 'seller_withdrawal_share',
         amount: share.amountUSDT,
         currency: 'USDT',
         amountUSDT: share.amountUSDT,
-        sellerId: null,
-        storeName: 'Platform Milestone',
+        sellerId: e.sellerId,
+        storeName: e.storeName,
         sourceRef: e.ref || e.id,
-        description: isMine
-          ? `🎁 Milestone Bonus: ${e.storeName}`
-          : `Bonus cost 50%: ${e.storeName} (${e.owner ? e.owner.name : 'member'})`,
-        details: `Rs ${e.amountPKR.toLocaleString('en-US')} PKR @ ${e.pkrRate} = ₮${e.usdt.toFixed(2)} USDT${isMine ? '' : ' • paid 50 / 50 by the partners'}`,
+        description,
+        referral: isReferral,
+        ...(isReferral ? { referralPct, referralFrom: referralName } : {}),
+        details,
+        // what the seller really paid / was paid: shown next to the USDT so nobody has to convert
+        sellerINR: e.inr || 0,
+        sellerUSDT: e.usdt || 0,
         date: new Date(e.date),
       });
-      continue;
     }
-
-    const isDeposit = e.kind === 'deposit';
-    const pctText = `${Number(share.pct.toFixed(2))}%`;
-    const myCover = (e.reserveCovers || []).find((c) => String(c.userId) === uid);
-
-    // A referral share: commission from (or part of the withdrawal of) a member this person brought.
-    // Not his own client, so the client totals are left alone.
-    const isReferral = !!share.referralOf;
-    if (isDeposit) {
-      earnedUSDT += share.amountUSDT;
-      if (!isReferral) {
-        totalClientDepositsINR += e.inr;
-        totalClientDepositsUSDT += e.usdt;
-      }
-    } else {
-      sellerWithdrawUSDT += share.amountUSDT;
-      if (!isReferral) totalClientWithdrawalsUSDT += e.usdt;
-    }
-
-    const sellerMoney = `₮${e.usdt.toFixed(2)} USDT${e.inr > 0 ? ` (₹${e.inr.toLocaleString('en-US')} INR @ ${e.rate})` : ''}`;
-    const coverText = myCover ? ` • ₮${myCover.amountUSDT.toFixed(2)} of your share was paid by the reserve because your wallet did not have enough` : '';
-
-    let description;
-    let details;
-    let referralPct = 0;
-    let referralName = '';
-    if (isReferral) {
-      // ── Referrer's view: everything in full ──
-      referralName = e.owner ? e.owner.name : 'your member';
-      const fromLabel = String(share.label || '').match(/Referral ([\d.]+)%/);
-      referralPct = num(e.owner && e.owner.referral ? e.owner.referral.pct : fromLabel ? fromLabel[1] : 0);
-      const memberShare = (e.shares || []).find((x) => String(x.userId) === String(share.referralOf) && !x.referralOf);
-      // the member's part before the commission came out of it
-      const memberPart = r2((memberShare ? memberShare.amountUSDT : 0) + share.amountUSDT);
-      const pctTxt = referralPct > 0 ? `${referralPct}% ` : '';
-      referralFrom.add(String(share.referralOf));
-      if (isDeposit) {
-        referralEarnedUSDT += share.amountUSDT;
-        referralDeposits += 1;
-        description = `Referral commission ${pctTxt}from ${referralName} — deposit (${e.storeName})`;
-        details = `${pctTxt}of ${referralName}'s share ₮${memberPart.toFixed(2)} • seller deposited ${sellerMoney} on Binance`;
-      } else {
-        referralDeductedUSDT += share.amountUSDT;
-        referralWithdrawals += 1;
-        description = `Referral commission ${pctTxt}deducted — ${referralName}'s seller withdrawal (${e.storeName})`;
-        details = `${pctTxt}of ${referralName}'s part ₮${memberPart.toFixed(2)} • seller took ${sellerMoney} from Binance${coverText}`;
-      }
-    } else {
-      // ── Own share. A member who was brought by someone never sees the referral (no %, no name):
-      // his line reads like any other 1:1 line. Partners still see the full label. ──
-      const referredOwner = !viewerIsAdmin && e.owner && e.owner.referral && String(e.owner.id) === uid;
-      const label = referredOwner ? '1:1 PKR share' : share.label;
-      description = isDeposit ? `Deposit share ${pctText} from ${e.storeName}` : `Seller withdrawal share ${pctText}: ${e.storeName}`;
-      details = isDeposit
-        ? `${label} of ${sellerMoney.replace(' USDT', ' USDT received on Binance')}`
-        : `${label} of ${sellerMoney.replace(' USDT', ' USDT paid to the seller from Binance')}${coverText}`;
-    }
-
-    rawTransactions.push({
-      id: `${isDeposit ? 'dep' : 'wth'}_${e.id}_${uid}`,
-      type: isDeposit ? 'credit' : 'debit',
-      category: isDeposit ? 'deposit_share' : 'seller_withdrawal_share',
-      amount: share.amountUSDT,
-      currency: 'USDT',
-      amountUSDT: share.amountUSDT,
-      sellerId: e.sellerId,
-      storeName: e.storeName,
-      sourceRef: e.ref || e.id,
-      description,
-      referral: isReferral,
-      ...(isReferral ? { referralPct, referralFrom: referralName } : {}),
-      details,
-      // what the seller really paid / was paid: shown next to the USDT so nobody has to convert
-      sellerINR: e.inr || 0,
-      sellerUSDT: e.usdt || 0,
-      date: new Date(e.date),
-    });
   }
 
   // ─── Reserve pool lines (partners): money moved into / out of the reserve, and reserve money
@@ -297,12 +309,19 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
   const totalBonusUSDT = r2(bonusUSDT);
   const totalBonusCostUSDT = r2(bonusCostUSDT);
   const totalWithdrawnUSDT = r2(sellerWithdrawUSDT + bonusCostUSDT + payoutUSDT);
-  const balanceUSDT = r2(earnedUSDT + bonusUSDT - bonusCostUSDT - sellerWithdrawUSDT - payoutUSDT + reserveNetUSDT); // can be negative
+  let balanceUSDT = r2(earnedUSDT + bonusUSDT - bonusCostUSDT - sellerWithdrawUSDT - payoutUSDT + reserveNetUSDT); // can be negative
   // A partner carries an equal share of what members in minus owe: that part of the wallet is in
   // the books but not in Binance yet, so it cannot be paid out today (see lib/utils/finance.js).
   const ledgerWallet = ledger.wallets.find((w) => String(w.userId) === uid);
   const heldForMembersUSDT = r2(ledgerWallet?.heldForMembersUSDT || 0);
-  const availableUSDT = r2(balanceUSDT - heldForMembersUSDT);
+  let availableUSDT = r2(balanceUSDT - heldForMembersUSDT);
+  // Safety net: the Finance screen's wallet is the one true number. If this statement ever comes
+  // to a different balance, the Finance number is used (also for the payout limit) and it is logged.
+  if (ledgerWallet && Number.isFinite(Number(ledgerWallet.balanceUSDT)) && Math.abs(Number(ledgerWallet.balanceUSDT) - balanceUSDT) > 0.01) {
+    console.error(`[wallet] statement ${balanceUSDT} differs from the Finance ledger ${ledgerWallet.balanceUSDT} for ${uid}; using the ledger`);
+    balanceUSDT = r2(ledgerWallet.balanceUSDT);
+    availableUSDT = r2(Number.isFinite(Number(ledgerWallet.availableUSDT)) ? ledgerWallet.availableUSDT : balanceUSDT - heldForMembersUSDT);
+  }
   const totalWithdrawnPKR = 0;
   const balancePKR = 0; // bonuses are paid in USDT now; PKR is shown for reference only
 
