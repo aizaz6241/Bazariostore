@@ -3,10 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import { api, money, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
-import SellersAnalytics from './SellersAnalytics.jsx';
 import useLiveReload from '../useLiveReload.js';
 import DiamondUpgradeModal from './DiamondUpgradeModal.jsx';
 import HealthPanel from './health/HealthPanel.jsx';
+
+// seller cards shown at a time ("Show more" adds the next batch)
+const PAGE_STEP = 30;
 
 export default function Sellers() {
   const [params, setParams] = useSearchParams();
@@ -16,7 +18,11 @@ export default function Sellers() {
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'active' | 'frozen' | 'suspended' | 'warned' | 'at_risk'
   const [viewMode, setViewMode] = useState('cards'); // 'cards' | 'table'
   const [sortBy, setSortBy] = useState('newest');
-  const [analyticsKey, setAnalyticsKey] = useState(0); // bump to reload the analytics panel
+  // deposits summary: real client stores (default) or every store
+  const [depScope, setDepScope] = useState('client');
+  // seller cards: which ones are opened, and how many are shown (more on "Show more")
+  const [openCards, setOpenCards] = useState(() => new Set());
+  const [shown, setShown] = useState(PAGE_STEP);
 
   // Create Seller Modal
   const [createOpen, setCreateOpen] = useState(false);
@@ -823,17 +829,23 @@ export default function Sellers() {
 
   const FILTERS = [
     { key: 'all', label: 'All', count: activeSellers.length },
-    { key: 'active', label: '🟢 Active', count: activeCount },
-    { key: 'client', label: '👤 Client', count: clientCount },
-    { key: 'test', label: '🧪 Test', count: testCount },
-    { key: 'previous', label: '🏛️ Previous', count: previousCount },
-    { key: 'inactive', label: '💤 Inactive', count: inactiveCount },
+    { key: 'client', label: 'Clients', count: clientCount },
+    { key: 'test', label: 'Test', count: testCount },
+    { key: 'previous', label: 'Previous store', count: previousCount },
+    { key: 'inactive', label: 'Inactive', count: inactiveCount, dot: '#94a3b8' },
+    { key: 'active', label: 'Active', count: activeCount, dot: '#16a34a' },
+    { key: 'frozen', label: 'Frozen', count: frozenOnlyCount, dot: '#2563eb' },
+    { key: 'suspended', label: 'Suspended', count: suspendedCount, dot: '#dc2626' },
+    { key: 'warned', label: 'Warned', count: warnedCount, dot: '#f59e0b' },
+    { key: 'at_risk', label: 'At risk', count: atRiskCount, dot: '#ea580c' },
     { key: 'diamond', label: '💎 Diamond', count: diamondCount },
-    { key: 'diamond_req', label: '⏳ Diamond requests', count: diamondRequestCount },
-    { key: 'warned', label: '⚠️ Warned', count: warnedCount },
-    { key: 'at_risk', label: '🔴 At risk', count: atRiskCount },
-    { key: 'frozen', label: '❄️ Frozen', count: frozenOnlyCount },
-    { key: 'suspended', label: '⛔ Suspended', count: suspendedCount },
+    { key: 'diamond_req', label: 'Diamond requests', count: diamondRequestCount, dot: '#0891b2' },
+  ];
+  // the same filters, grouped so they read as three short rows
+  const FILTER_GROUPS = [
+    { label: 'Accounts', keys: ['all', 'client', 'test', 'previous', 'inactive'] },
+    { label: 'Status', keys: ['active', 'frozen', 'suspended', 'warned', 'at_risk'] },
+    { label: 'Plan', keys: ['diamond', 'diamond_req'] },
   ];
 
   const SORTS = {
@@ -872,11 +884,18 @@ export default function Sellers() {
     })
     .sort((SORTS[sortBy] || SORTS.newest).fn);
 
-  // A store picked from one of the analytics "top" lists
-  const openSellerById = (id) => {
-    const s = sellers.find((x) => String(x._id) === String(id));
-    if (s) handleOpenProfile(s, 'dashboard');
-  };
+  // seller cards: open / close one; a new search or filter starts again with the first batch
+  const toggleCard = (id) =>
+    setOpenCards((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const allOpen = filtered.length > 0 && filtered.slice(0, shown).every((s) => openCards.has(s._id));
+  useEffect(() => {
+    setShown(PAGE_STEP);
+  }, [q, statusFilter, sortBy]);
 
   return (
     <div className="admin-sellers-page">
@@ -889,7 +908,7 @@ export default function Sellers() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <button type="button" onClick={() => { loadSellers(); setAnalyticsKey((k) => k + 1); }} className="btn-ghost-refresh" title="Reload sellers and analytics">
+          <button type="button" onClick={() => loadSellers()} className="btn-ghost-refresh" title="Reload sellers">
             <Ic name="refresh" size={15} /> Refresh
           </button>
           <button onClick={() => setCreateOpen(true)} className="btn-primary">
@@ -898,218 +917,264 @@ export default function Sellers() {
         </div>
       </div>
 
-      {/* Analytics: wallet, pending orders, money movement */}
-      <SellersAnalytics onOpenSeller={openSellerById} refreshKey={analyticsKey} />
+      {/* Deposits: real money vs helping amount (the only summary kept on this page) */}
+      {(() => {
+        const inScope = activeSellers.filter((s) => (depScope === 'all' ? true : !s.isTestAccount && !s.isPreviousStoreSeller));
+        const gross = inScope.reduce((a, s) => a + (s.wallet?.totalDeposited || 0), 0);
+        const helping = inScope.reduce((a, s) => a + (s.wallet?.totalHelpingAmount || 0), 0);
+        const real = Math.max(0, gross - helping);
+        const realPct = gross > 0 ? Math.round((real / gross) * 100) : 0;
+        const helped = inScope.filter((s) => (s.wallet?.totalHelpingAmount || 0) > 0).length;
+        return (
+          <section className="sl2-dep" aria-labelledby="sl2-dep-title">
+            <div className="sl2-dep-head">
+              <div>
+                <h3 id="sl2-dep-title">Seller deposits</h3>
+                <p>Store wallet amounts (USD) · {inScope.length} {inScope.length === 1 ? 'store' : 'stores'}</p>
+              </div>
+              <div className="sl2-seg" role="group" aria-label="Which stores to count">
+                <button type="button" className={depScope === 'client' ? 'on' : ''} aria-pressed={depScope === 'client'} onClick={() => setDepScope('client')} title="Real client stores only (no test or previous-store accounts)">
+                  Real clients
+                </button>
+                <button type="button" className={depScope === 'all' ? 'on' : ''} aria-pressed={depScope === 'all'} onClick={() => setDepScope('all')} title="Every approved store, test accounts included">
+                  All stores
+                </button>
+              </div>
+            </div>
+            <div className="sl2-dep-tiles">
+              <div className="sl2-dep-tile is-real">
+                <span><i aria-hidden="true" />Real deposit</span>
+                <b>{money(real)}</b>
+                <small>{realPct}% of all deposits</small>
+              </div>
+              <div className="sl2-dep-tile is-help">
+                <span><i aria-hidden="true" />Helping amount</span>
+                <b>{money(helping)}</b>
+                <small>{helped} {helped === 1 ? 'store' : 'stores'} helped</small>
+              </div>
+              <div className="sl2-dep-tile">
+                <span>Total deposited</span>
+                <b>{money(gross)}</b>
+                <small>Real + helping</small>
+              </div>
+            </div>
+            <div className="sl2-dep-bar" role="img" aria-label={`${realPct}% real deposit, ${100 - realPct}% helping amount`}>
+              <span className="is-real" style={{ width: `${gross > 0 ? realPct : 0}%` }} />
+              <span className="is-help" style={{ width: `${gross > 0 ? 100 - realPct : 0}%` }} />
+            </div>
+          </section>
+        );
+      })()}
 
-      {/* Filter Tabs & Search Toolbar */}
-      <div className="admin-sellers-toolbar sellers-toolbar-v2">
-        <div className="sellers-toolbar-row">
-          <div className="search-field" style={{ flex: 1, minWidth: 220, maxWidth: 420 }}>
+      {/* Search, sort, layout and filters */}
+      <section className="sl2-tools" aria-label="Find sellers">
+        <div className="sl2-tools-row">
+          <label className="sl2-search">
             <Ic name="search" size={16} />
-            <input
-              type="text"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search by store name, owner, email, phone..."
-            />
-          </div>
-
-          <select className="sellers-sort" value={sortBy} onChange={(e) => setSortBy(e.target.value)} aria-label="Sort sellers">
-            {Object.entries(SORTS).map(([key, s]) => (
-              <option key={key} value={key}>
-                Sort: {s.label}
-              </option>
-            ))}
-          </select>
-
-          {/* View Mode Switcher: Cards View vs Table View */}
-          <div className="admin-view-toggle">
-            <button
-              type="button"
-              className={`admin-view-toggle-btn ${viewMode === 'cards' ? 'active' : ''}`}
-              onClick={() => setViewMode('cards')}
-              title="Display sellers as Cards"
-            >
-              🎴 Cards
+            <span className="sl2-sr">Search sellers</span>
+            <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Store, owner, email or phone" enterKeyHint="search" />
+            {q && (
+              <button type="button" className="sl2-search-clear" onClick={() => setQ('')} aria-label="Clear search">✕</button>
+            )}
+          </label>
+          <label className="sl2-sort">
+            <span className="sl2-sr">Sort sellers</span>
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+              {Object.entries(SORTS).map(([key, s]) => (
+                <option key={key} value={key}>{s.label}</option>
+              ))}
+            </select>
+          </label>
+          <div className="sl2-seg" role="group" aria-label="Layout">
+            <button type="button" className={viewMode === 'cards' ? 'on' : ''} aria-pressed={viewMode === 'cards'} onClick={() => setViewMode('cards')}>
+              <Ic name="grid" size={14} /> <span>Cards</span>
             </button>
-            <button
-              type="button"
-              className={`admin-view-toggle-btn ${viewMode === 'table' ? 'active' : ''}`}
-              onClick={() => setViewMode('table')}
-              title="Display sellers as Table"
-            >
-              📄 Table
+            <button type="button" className={viewMode === 'table' ? 'on' : ''} aria-pressed={viewMode === 'table'} onClick={() => setViewMode('table')}>
+              <Ic name="list" size={14} /> <span>Table</span>
             </button>
           </div>
         </div>
 
-        {/* Quick Filter Pills */}
-        <div className="sellers-filter-pills">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              className={`sellers-pill${statusFilter === f.key ? ' on' : ''}`}
-              onClick={() => setStatusFilter(f.key)}
-            >
-              {f.label}
-              <span className="sellers-pill-count">{f.count}</span>
-            </button>
+        <div className="sl2-filters">
+          {FILTER_GROUPS.map((g) => (
+            <div key={g.label} className="sl2-fgroup" role="group" aria-label={g.label}>
+              <span className="sl2-flabel">{g.label}</span>
+              <div className="sl2-chips">
+                {g.keys.map((k) => {
+                  const f = FILTERS.find((x) => x.key === k);
+                  if (!f) return null;
+                  const on = statusFilter === k;
+                  return (
+                    <button key={k} type="button" className={`sl2-chip${on ? ' on' : ''}${f.count ? '' : ' is-zero'}${f.tone ? ` t-${f.tone}` : ''}`} aria-pressed={on} onClick={() => setStatusFilter(k)}>
+                      {f.dot && <i aria-hidden="true" style={{ background: f.dot }} />}
+                      {f.label}
+                      <span className="sl2-chip-n">{f.count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           ))}
-          <span className="sellers-result-count">
-            Showing {filtered.length} of {activeSellers.length}
-          </span>
         </div>
-      </div>
+
+        <div className="sl2-result">
+          <span aria-live="polite">
+            Showing <b>{Math.min(filtered.length, viewMode === 'cards' ? shown : filtered.length)}</b> of {filtered.length}
+            {filtered.length !== activeSellers.length ? ` (${activeSellers.length} in total)` : ''}
+          </span>
+          {(statusFilter !== 'all' || q) && (
+            <button type="button" className="sl2-link" onClick={() => { setStatusFilter('all'); setQ(''); }}>Clear filters</button>
+          )}
+          {viewMode === 'cards' && filtered.length > 0 && (
+            <button type="button" className="sl2-link" onClick={() => setOpenCards(allOpen ? new Set() : new Set(filtered.slice(0, shown).map((s) => s._id)))}>
+              {allOpen ? 'Collapse all' : 'Expand all'}
+            </button>
+          )}
+        </div>
+      </section>
 
       {/* Loading state */}
       {loading && (
-        <div className="admin-card" style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>
-          Loading merchants directory...
+        <div className="sl2-list" aria-busy="true">
+          {Array.from({ length: 4 }).map((_, i) => <div key={i} className="sl2-card sl2-card-skel" />)}
         </div>
       )}
 
       {/* Empty state */}
       {!loading && filtered.length === 0 && (
-        <div className="admin-card" style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>
-          No merchants found matching your search or active filter.
+        <div className="sl2-empty">
+          <b>No seller found</b>
+          <span>Nothing matches this search or filter.</span>
+          {(statusFilter !== 'all' || q) && (
+            <button type="button" className="sl2-btn" onClick={() => { setStatusFilter('all'); setQ(''); }}>Clear filters</button>
+          )}
         </div>
       )}
 
       {/* ═════════════════════════════════════════════════════════════ */}
-      {/* ─── PRIMARY VIEW: SELLERS CARDS GRID ─── */}
+      {/* ─── PRIMARY VIEW: COMPACT SELLER CARDS (tap to expand) ─── */}
       {/* ═════════════════════════════════════════════════════════════ */}
-      {!loading && viewMode === 'cards' && (
-        <div className="admin-sellers-cards-grid scards-grid">
-          {filtered.map((s) => {
-            const score = s.accountHealth?.score !== undefined ? s.accountHealth.score : 100;
-            const tier = score >= 75 ? 'good' : score >= 60 ? 'watch' : score >= 40 ? 'risk' : 'critical';
-            const statusKey = s.status === 'active' ? 'active' : s.status === 'frozen' ? 'frozen' : 'suspended';
-            const pending = s.pendingOrders || 0;
-            const locked = s.wallet?.processingFund || 0;
-
-            return (
-              <article key={s._id} className={`scard scard-${statusKey}${s.isInactive && !s.isTestAccount ? ' scard-inactive' : ''}`}>
-                {/* Identity */}
-                <header className="scard-head">
-                  <div className="scard-avatar" aria-hidden="true">
-                    {s.storeName?.[0]?.toUpperCase() || 'S'}
+      {!loading && viewMode === 'cards' && filtered.length > 0 && (
+        <>
+          <div className="sl2-list">
+            {filtered.slice(0, shown).map((s) => {
+              const score = s.accountHealth?.score !== undefined ? s.accountHealth.score : 100;
+              const tier = score >= 75 ? 'good' : score >= 60 ? 'watch' : score >= 40 ? 'risk' : 'critical';
+              const statusKey = s.status === 'active' ? 'active' : s.status === 'frozen' ? 'frozen' : 'suspended';
+              const pending = s.pendingOrders || 0;
+              const locked = s.wallet?.processingFund || 0;
+              const dep = s.wallet?.totalDeposited || 0;
+              const help = s.wallet?.totalHelpingAmount || 0;
+              const open = openCards.has(s._id);
+              const bodyId = `sl2-body-${s._id}`;
+              return (
+                <article key={s._id} className={`sl2-card st-${statusKey}${open ? ' is-open' : ''}${s.isInactive && !s.isTestAccount ? ' is-inactive' : ''}`}>
+                  <div className="sl2-card-main">
+                    <button type="button" className="sl2-card-toggle" onClick={() => toggleCard(s._id)} aria-expanded={open} aria-controls={bodyId} title={open ? 'Show less' : 'Show more details'}>
+                      <span className="sl2-avatar" aria-hidden="true">{s.storeName?.[0]?.toUpperCase() || 'S'}</span>
+                      <span className="sl2-who">
+                        <span className="sl2-name">
+                          <b title={s.storeName}>{s.storeName}</b>
+                          {(s.verified || s.status === 'active') && <VerifiedStoreBadge variant="icon" size={14} title="Verified Merchant Store" />}
+                          {s.tier === 'diamond' && <span className="sl2-tag t-dia" title="Diamond store">💎 Diamond</span>}
+                          {s.tier !== 'diamond' && s.tierRequest?.status === 'pending' && <span className="sl2-tag t-req">Diamond requested</span>}
+                        </span>
+                        <span className="sl2-sub">
+                          {s.ownerName || 'Owner not set'}
+                          {s.isTestAccount && <span className="sl2-tag t-test">Test</span>}
+                          {s.isPreviousStoreSeller && <span className="sl2-tag t-prev">Previous store</span>}
+                          {s.isInactive && !s.isTestAccount && <span className="sl2-tag t-off">Inactive</span>}
+                          {s.warning?.active && <span className="sl2-tag t-warn">⚠ Warned</span>}
+                        </span>
+                      </span>
+                      <span className={`sl2-status st-${statusKey}`}>{statusKey === 'active' ? 'Active' : statusKey === 'frozen' ? 'Frozen' : 'Suspended'}</span>
+                      <span className="sl2-chev" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" width="16" height="16"><path d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6 1.4-1.4Z" fill="currentColor" /></svg>
+                      </span>
+                    </button>
+                    <dl className="sl2-stats">
+                      <div>
+                        <dt>Wallet</dt>
+                        <dd className="is-green">{money(s.wallet?.balance || 0)}</dd>
+                      </div>
+                      <div>
+                        <dt>Pending</dt>
+                        <dd className={pending > 0 ? 'is-orange' : ''}>{pending} {pending === 1 ? 'order' : 'orders'}</dd>
+                      </div>
+                      <div>
+                        <dt>Health</dt>
+                        <dd><span className={`sl2-health tier-${tier}`}>{score}</span></dd>
+                      </div>
+                      <div className="sl2-stat-open">
+                        <button type="button" className="sl2-btn sl2-btn-primary" onClick={() => handleOpenProfile(s, 'account')}>Open</button>
+                      </div>
+                    </dl>
                   </div>
-                  <div className="scard-id">
-                    <div className="scard-name" title={s.storeName}>
-                      <span>{s.storeName}</span>
-                      {(s.verified || s.status === 'active') && (
-                        <VerifiedStoreBadge variant="icon" size={15} title="Verified Merchant Store" />
-                      )}
+
+                  {open && (
+                    <div id={bodyId} className="sl2-card-body">
+                      <dl className="sl2-grid">
+                        <div><dt>Lifetime sales</dt><dd>{money(s.lifetimeSales || 0)}</dd></div>
+                        <div><dt>Products · Fee</dt><dd>{s.productCount || 0} · {s.commissionRate || 10}%</dd></div>
+                        <div><dt>Real deposit</dt><dd className="is-green">{money(Math.max(0, dep - help))}</dd></div>
+                        <div><dt>Helping</dt><dd className={help > 0 ? 'is-amber' : ''}>{money(help)}</dd></div>
+                        {locked > 0 && <div><dt>Locked for orders</dt><dd className="is-violet">{money(locked)}</dd></div>}
+                        {s.wallet?.frozenFund > 0 && <div><dt>Held (frozen)</dt><dd className="is-blue">{money(s.wallet.frozenFund)}</dd></div>}
+                      </dl>
+
+                      <div className="sl2-healthbar">
+                        <span>Account health <b className={`tier-${tier}`}>{score}/100</b></span>
+                        <i className="sl2-track"><i className={`tier-${tier}`} style={{ width: `${Math.max(4, score)}%` }} /></i>
+                      </div>
+
+                      <div className="sl2-contact">
+                        <a href={`mailto:${s.email}`} title={s.email}><Ic name="mail" size={13} /> {s.email}</a>
+                        {s.phone ? <a href={`tel:${s.phone}`}><Ic name="phone" size={13} /> {s.phone}</a> : <span><Ic name="phone" size={13} /> No phone</span>}
+                      </div>
+
+                      <div className="sl2-switches" aria-label="Account type (tap to change)">
+                        <button type="button" onClick={() => handleToggleTest(s._id)} title="Switch between Test account and Client account" className={`scard-chip ${s.isTestAccount ? 'chip-test' : 'chip-client'}`}>
+                          {s.isTestAccount ? '🧪 Test' : '👤 Client'} <span className="scard-chip-swap">⇄</span>
+                        </button>
+                        <button type="button" onClick={() => handleTogglePreviousStore(s._id)} title="Switch Previous Store Seller (excluded from the admin USDT wallet)" className={`scard-chip ${s.isPreviousStoreSeller ? 'chip-prev' : 'chip-current'}`}>
+                          {s.isPreviousStoreSeller ? '🏛️ Prev Store' : '✨ Current'} <span className="scard-chip-swap">⇄</span>
+                        </button>
+                        {activeChip(s, 'card')}
+                        {tierChip(s, 'card')}
+                      </div>
+
+                      <div className="sl2-actions">
+                        <button type="button" className="sl2-btn sl2-btn-primary sl2-only-mobile" onClick={() => handleOpenProfile(s, 'account')}>
+                          Open profile
+                        </button>
+                        <button type="button" className="sl2-btn" onClick={() => handleOpenProfile(s, 'dashboard')}>
+                          <Ic name="chart" size={14} /> Dashboard
+                        </button>
+                        <button type="button" className="sl2-btn" onClick={() => handleOpenProfile(s, 'upgrades')}>
+                          <Ic name="shield" size={14} /> Compliance
+                        </button>
+                        <button type="button" className="sl2-btn" onClick={() => handleOpenResetPassword(s)}>
+                          <Ic name="lock" size={14} /> Password
+                        </button>
+                        <button type="button" className="sl2-btn sl2-btn-danger" onClick={() => setDeleteModalSeller(s)}>
+                          <Ic name="trash" size={14} /> Delete
+                        </button>
+                      </div>
                     </div>
-                    <div className="scard-owner" title={s.ownerName}>{s.ownerName || 'Owner not set'}</div>
-                  </div>
-                  <span className={`scard-status scard-status-${statusKey}`}>
-                    {statusKey === 'active' ? '● Active' : statusKey === 'frozen' ? '❄️ Frozen' : '⛔ Suspended'}
-                  </span>
-                </header>
-
-                {/* Classification chips (click to switch) */}
-                <div className="scard-chips">
-                  <button
-                    type="button"
-                    onClick={() => handleToggleTest(s._id)}
-                    title="Click to toggle Test Account / Client Account"
-                    className={`scard-chip ${s.isTestAccount ? 'chip-test' : 'chip-client'}`}
-                  >
-                    {s.isTestAccount ? '🧪 Test' : '👤 Client'} <span className="scard-chip-swap">⇄</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleTogglePreviousStore(s._id)}
-                    title="Click to toggle Previous Store Seller (Excluded from Admin USDT Wallet)"
-                    className={`scard-chip ${s.isPreviousStoreSeller ? 'chip-prev' : 'chip-current'}`}
-                  >
-                    {s.isPreviousStoreSeller ? '🏛️ Prev Store' : '✨ Current'} <span className="scard-chip-swap">⇄</span>
-                  </button>
-                  {activeChip(s, 'card')}
-                  {tierChip(s, 'card')}
-                  {s.warning?.active && <span className="scard-chip chip-warn">⚠️ Warned</span>}
-                </div>
-
-                {/* Money & activity */}
-                <div className="scard-metrics">
-                  <div className="scard-metric">
-                    <span className="lbl">Wallet</span>
-                    <b className="val val-green">{money(s.wallet?.balance || 0)}</b>
-                    {s.wallet?.frozenFund > 0 && <small style={{ display: 'block', fontSize: 10, color: '#1d4ed8', fontWeight: 700 }}>🔒 {money(s.wallet.frozenFund)} held</small>}
-                  </div>
-                  <div className="scard-metric">
-                    <span className="lbl">
-                      <span className="lbl-long">Lifetime sales</span>
-                      <span className="lbl-short">Sales</span>
-                    </span>
-                    <b className="val">{money(s.lifetimeSales || 0)}</b>
-                  </div>
-                  <div className="scard-metric">
-                    <span className="lbl">
-                      <span className="lbl-long">Pending orders</span>
-                      <span className="lbl-short">Pending</span>
-                    </span>
-                    <b className={`val ${pending > 0 ? 'val-orange' : ''}`}>{pending}</b>
-                  </div>
-                  <div className="scard-metric">
-                    <span className="lbl">
-                      <span className="lbl-long">Products · Fee</span>
-                      <span className="lbl-short">Items · Fee</span>
-                    </span>
-                    <b className="val">
-                      {s.productCount || 0} · <span className="val-blue">{s.commissionRate || 10}%</span>
-                    </b>
-                  </div>
-                </div>
-
-                {locked > 0 && (
-                  <div className="scard-locked">
-                    <span>🔒 <span className="lbl-long">Locked for orders</span><span className="lbl-short">Locked</span></span>
-                    <b>{money(locked)}</b>
-                  </div>
-                )}
-
-                {/* Health */}
-                <div className="scard-health">
-                  <div className="scard-health-row">
-                    <span className="lbl">Account health</span>
-                    <span className={`scard-health-val tier-${tier}`}>{score}/100</span>
-                  </div>
-                  <div className="scard-health-track">
-                    <span className={`tier-${tier}`} style={{ width: `${Math.max(4, score)}%` }} />
-                  </div>
-                </div>
-
-                {/* Contact */}
-                <div className="scard-contact">
-                  <span title={s.email}>✉️ {s.email}</span>
-                  <span>📞 {s.phone || 'No phone'}</span>
-                </div>
-
-                {/* Actions */}
-                <footer className="scard-actions">
-                  <button type="button" onClick={() => handleOpenProfile(s, 'account')} className="scard-btn-primary" title="Open Complete Seller Profile">
-                    Open profile
-                  </button>
-                  <button type="button" onClick={() => handleOpenProfile(s, 'dashboard')} className="scard-btn-icon" title="Seller dashboard: products, orders, wallet">
-                    📊
-                  </button>
-                  <button type="button" onClick={() => handleOpenProfile(s, 'upgrades')} className="scard-btn-icon" title="Compliance, warning, health and limits">
-                    ⚡
-                  </button>
-                  <button type="button" onClick={() => handleOpenResetPassword(s)} className="scard-btn-icon" title="Reset Seller Password">
-                    <Ic name="lock" size={14} />
-                  </button>
-                  <button type="button" onClick={() => setDeleteModalSeller(s)} className="scard-btn-icon danger" title="Delete Seller Account">
-                    <Ic name="x" size={14} />
-                  </button>
-                </footer>
-              </article>
-            );
-          })}
-        </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+          {filtered.length > shown && (
+            <div className="sl2-more">
+              <button type="button" className="sl2-btn" onClick={() => setShown((n) => n + PAGE_STEP)}>
+                Show {Math.min(PAGE_STEP, filtered.length - shown)} more
+              </button>
+              <span>{filtered.length - shown} more {filtered.length - shown === 1 ? 'store' : 'stores'}</span>
+            </div>
+          )}
+        </>
       )}
 
       {/* ═════════════════════════════════════════════════════════════ */}

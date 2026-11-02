@@ -1,12 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend, Cell } from 'recharts';
 import { api, fmtDate } from '../api.js';
 import { ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
-import {
-  Hero, MetaChip, Kpi, KpiGrid, Card, ChartGrid, Seg, Meter, Badge, Avatar, RankList, SplitBar, ChartTip,
-  Toolbar, SearchBox, Empty, SERIES, STATUS, GRID, AXIS, legendText, pctOf,
-} from './insights.jsx';
+import { Hero, MetaChip, Kpi, KpiGrid, Seg, Avatar, Empty, pctOf } from './insights.jsx';
 
 const DAY = 86400000;
 // Targets are in US dollars, so this page always shows $ (the site's currency switch is shared
@@ -35,8 +31,6 @@ const PRESETS = {
     { goal: 10000, bonus: 450, days: 60 },
   ],
 };
-// one hue, lighter → darker as a target gets closer to done
-const PROGRESS_STEPS = ['#9ec5f4', '#6da7ec', '#3987e5', '#1c5cab'];
 // above this a bonus is asked once more before it is saved (it is paid automatically)
 const BIG_BONUS = 500;
 
@@ -453,7 +447,6 @@ export default function Targets() {
     }));
   const chosenBusy = form.sellerIds.filter((id) => activeBySeller.get(id)).length;
   const chosenFrozen = form.sellerIds.filter((id) => sellers.find((x) => x._id === id)?.status === 'frozen').length;
-  const hasWeeks = stats.weeks.some((w) => w.assigned || w.completed);
   const fSales = form.metric === 'sales';
   const fTotal = form.metric === 'total';
   const goalNum = fSales ? Number(form.targetAmount) || 0 : Number(form.targetOrderCount) || 0;
@@ -576,7 +569,7 @@ export default function Targets() {
         icon="sparkle"
         tone="amber"
         title="Targets & Bonuses"
-        subtitle="Give stores a goal — a number of delivered orders or an amount of delivered sales — and a cash reward. Only deliveries after the target is given count, and the bonus is paid into the wallet automatically the moment the goal is reached."
+        subtitle="Give stores a goal (delivered orders or delivered sales) and a cash reward. Only deliveries after the target is given count; the bonus is paid into the wallet automatically when the goal is reached."
         actions={
           <>
             <button type="button" className="ins-btn" onClick={loadData} disabled={loading}>
@@ -630,226 +623,152 @@ export default function Targets() {
       </KpiGrid>
 
       {scoped.length > 0 && (
-        <ChartGrid dim={loading}>
-          <Card title="Targets over the last 12 weeks" hint="Assigned vs completed, per week" wide empty={!hasWeeks && 'No targets assigned or completed in the last 12 weeks'}>
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={stats.weeks} margin={{ top: 6, right: 8, left: -18, bottom: 0 }} barGap={2}>
-                <CartesianGrid stroke={GRID} vertical={false} />
-                <XAxis dataKey="label" {...AXIS} minTickGap={12} />
-                <YAxis {...AXIS} allowDecimals={false} />
-                <Tooltip cursor={{ fill: '#f1f5f9' }} content={<ChartTip labelFmt={(l) => `Week of ${l}`} />} />
-                <Legend iconType="square" formatter={legendText} wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="assigned" name="Assigned" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={16} />
-                <Bar dataKey="completed" name="Completed" fill={SERIES[2]} radius={[4, 4, 0, 0]} maxBarSize={16} />
-              </BarChart>
-            </ResponsiveContainer>
-          </Card>
-
-          <Card title="Where targets stand" hint={`${scoped.length} targets in total`}>
-            <SplitBar
-              height={14}
-              parts={[
-                { label: '⚡ In progress', value: stats.active, color: SERIES[0] },
-                { label: '🏆 Completed', value: stats.completed, color: STATUS.good },
-                { label: '⌛ Expired', value: stats.expired, color: STATUS.neutral },
-                { label: '✕ Cancelled', value: stats.cancelled, color: '#cbd5e1' },
-              ]}
-            />
-          </Card>
-
-          <Card title="How far open targets are" hint="Progress of every target still running" empty={!stats.active && 'No target in progress'}>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={stats.progress} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
-                <CartesianGrid stroke={GRID} vertical={false} />
-                <XAxis dataKey="label" {...AXIS} />
-                <YAxis {...AXIS} allowDecimals={false} />
-                <Tooltip cursor={{ fill: '#f1f5f9' }} content={<ChartTip />} />
-                <Bar dataKey="count" name="Targets" radius={[4, 4, 0, 0]} maxBarSize={38}>
-                  {stats.progress.map((p, i) => (
-                    <Cell key={p.label} fill={PROGRESS_STEPS[i]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </Card>
-
-          <Card title="Closest to the finish line" hint="Worth a nudge in the seller chat">
+        <div className={`tg2-pair${loading ? ' is-dim' : ''}`}>
+          <section className="tg2-box" aria-labelledby="tg2-closest">
+            <header>
+              <h3 id="tg2-closest">Closest to the finish line</h3>
+              <p>Running targets that are almost reached — worth a nudge in the seller chat</p>
+            </header>
             {stats.closest.length === 0 ? (
               <Empty text="No target in progress" />
             ) : (
-              <ul className="ins-stats">
+              <ol className="tg2-rows">
                 {stats.closest.map(({ t, pct }) => (
                   <li key={t._id}>
-                    <span style={{ minWidth: 0, flex: 1 }}>
-                      <span className="ins-strong ins-clip" style={{ display: 'block' }}>{t.storeName}</span>
-                      <span className="ins-sub">
-                        {progressText(t)} · {money(t.bonusAmount)}
+                    <Avatar name={t.storeName} size={32} />
+                    <div className="tg2-row-main">
+                      <div className="tg2-row-top">
+                        <b title={t.storeName}>{t.storeName}</b>
+                        <span className="tg2-pct">{pct}%</span>
+                      </div>
+                      <span className="tg2-bar" role="meter" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`${pct}% done`}>
+                        <i style={{ width: `${Math.max(3, pct)}%` }} />
                       </span>
-                      <Meter value={pct} color={PROGRESS_STEPS[Math.min(3, Math.floor(pct / 25))]} height={5} label={`${pct}% done`} />
-                    </span>
-                    <b>{pct}%</b>
+                      <small>{progressText(t)} · bonus {money(t.bonusAmount)}</small>
+                    </div>
                   </li>
                 ))}
-              </ul>
+              </ol>
             )}
-          </Card>
+          </section>
 
-          <Card title="Top bonus earners">
-            <RankList rows={stats.earners} color={STATUS.good} format={money} empty="No bonus paid yet" />
-          </Card>
-        </ChartGrid>
+          <section className="tg2-box" aria-labelledby="tg2-earners">
+            <header>
+              <h3 id="tg2-earners">Top bonus earners</h3>
+              <p>Stores that earned the most from completed targets</p>
+            </header>
+            {stats.earners.length === 0 ? (
+              <Empty text="No bonus paid yet" />
+            ) : (
+              <ol className="tg2-rows">
+                {stats.earners.map((e, i) => (
+                  <li key={e.key}>
+                    <span className={`tg2-rank r${i + 1}`} aria-label={`Rank ${i + 1}`}>{i + 1}</span>
+                    <div className="tg2-row-main">
+                      <div className="tg2-row-top">
+                        <b title={e.label}>{e.label}</b>
+                        <span className="tg2-money">{money(e.value)}</span>
+                      </div>
+                      <span className="tg2-bar is-green" aria-hidden="true">
+                        <i style={{ width: `${Math.max(3, (e.value / Math.max(1, stats.earners[0].value)) * 100)}%` }} />
+                      </span>
+                      <small>{e.sub}</small>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+        </div>
       )}
 
-      <div className="ins-table-card">
-        <div className="ins-table-head">
+      <section className="tg2-card" aria-labelledby="tg2-all">
+        <header className="tg2-head">
           <div>
-            <h3>🎯 All targets</h3>
-            <span className="ins-card-hint">{filtered.length} shown · newest first</span>
+            <h3 id="tg2-all">All targets</h3>
+            <p aria-live="polite">{filtered.length} shown · newest first</p>
           </div>
-          <Toolbar>
-            <Seg
-              label="Filter by status"
-              value={filterStatus}
-              onChange={setFilterStatus}
-              options={[
-                { value: 'all', label: 'All', count: scoped.length },
-                { value: 'active', label: 'In progress', count: stats.active },
-                { value: 'completed', label: 'Completed', count: stats.completed },
-                { value: 'expired', label: 'Expired', count: stats.expired },
-                ...(stats.cancelled ? [{ value: 'cancelled', label: 'Cancelled', count: stats.cancelled }] : []),
-              ]}
-            />
-            <SearchBox value={q} onChange={setQ} placeholder="Search store, owner or title…" />
-          </Toolbar>
+          <label className="tg2-search">
+            <Ic name="search" size={16} />
+            <span className="tg2-sr">Search targets</span>
+            <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Store, owner or title" enterKeyHint="search" />
+            {q && <button type="button" className="tg2-search-clear" onClick={() => setQ('')} aria-label="Clear search">✕</button>}
+          </label>
+        </header>
+        <div className="tg2-chips" role="group" aria-label="Filter by status">
+          {[
+            { value: 'all', label: 'All', count: scoped.length },
+            { value: 'active', label: 'In progress', count: stats.active, dot: '#2563eb' },
+            { value: 'completed', label: 'Completed', count: stats.completed, dot: '#16a34a' },
+            { value: 'expired', label: 'Expired', count: stats.expired, dot: '#94a3b8' },
+            ...(stats.cancelled ? [{ value: 'cancelled', label: 'Cancelled', count: stats.cancelled, dot: '#cbd5e1' }] : []),
+          ].map((f) => (
+            <button key={f.value} type="button" className={`tg2-chip${filterStatus === f.value ? ' on' : ''}${f.count ? '' : ' is-zero'}`} aria-pressed={filterStatus === f.value} onClick={() => setFilterStatus(f.value)}>
+              {f.dot && <i aria-hidden="true" style={{ background: f.dot }} />}
+              {f.label}
+              <span className="tg2-chip-n">{f.count}</span>
+            </button>
+          ))}
         </div>
 
-        <div className="ins-table-scroll ins-hide-mobile">
-          <table className="ins-table">
-            <thead>
-              <tr>
-                <th>Store</th>
-                <th>Target</th>
-                <th style={{ minWidth: 180 }}>Progress</th>
-                <th className="num">Bonus</th>
-                <th>Status</th>
-                <th>Timeline</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {loading && allTargets.length === 0 &&
-                Array.from({ length: 4 }).map((_, i) => (
-                  <tr key={i}>
-                    {Array.from({ length: 7 }).map((__, j) => (
-                      <td key={j}><span className="ins-skel" style={{ width: `${50 + ((i + j) % 4) * 12}%` }} /></td>
-                    ))}
-                  </tr>
-                ))}
-              {!loading && filtered.length === 0 && (
-                <tr>
-                  <td colSpan={7}>
-                    <Empty icon="🎯" text={scoped.length ? 'No target matches this filter.' : 'No targets yet. Create the first one to motivate your stores.'}>
-                      {!scoped.length && (
-                        <button type="button" className="ins-btn ins-btn-primary ins-btn-sm" onClick={() => openModal()}>
-                          <Ic name="plus" size={13} /> New target
-                        </button>
-                      )}
-                    </Empty>
-                  </td>
-                </tr>
-              )}
-              {filtered.map((t) => {
-                const s = stateOf(t);
-                const meta = STATE_META[s];
-                const { pct } = progressOf(t);
-                return (
-                  <tr key={t._id} className={s === 'cancelled' ? 'tg-row-off' : ''}>
-                    <td>
-                      <div className="ins-cell-who">
-                        <Avatar name={t.storeName} />
-                        <div>
-                          <b className="ins-clip">{t.storeName || 'Store'}</b>
-                          <span className="ins-sub">{t.ownerName || '—'}{t.isTestAccount ? ' · test' : ''}</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <span className="ins-strong">{t.title}</span>
-                      <span className="ins-sub">
-                        {isSales(t) ? '💵 Sales' : isTotal(t) ? '🏁 Total delivered' : '📦 New orders'}: {goalShort(t)}
-                        {t.createdBy ? ` · by ${t.createdBy}` : ''}
-                      </span>
-                      {t.description && <span className="ins-sub ins-clip" title={t.description}>{t.description}</span>}
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5, gap: 8 }}>
-                        <span>{progressText(t)}</span>
-                        <b>{pct}%</b>
-                      </div>
-                      <Meter value={pct} color={s === 'completed' ? STATUS.good : s === 'active' ? SERIES[0] : STATUS.neutral} label={`${pct}% done`} />
-                    </td>
-                    <td className="num">
-                      <b style={{ color: s === 'completed' ? '#006300' : '#0f172a' }}>{money(t.bonusAmount || 0)}</b>
-                      {s === 'completed' && (
-                        <span className="ins-sub" style={{ color: t.paidTo === 'frozen' ? '#a5461f' : undefined }}>
-                          {t.paidTo === 'frozen' ? '🔒 Held (store frozen)' : 'Paid to wallet'}
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      <Badge tone={meta.tone} icon={meta.icon}>{meta.label}</Badge>
-                      {s === 'cancelled' && t.cancelReason && <span className="ins-sub ins-clip" title={t.cancelReason}>{t.cancelReason}</span>}
-                    </td>
-                    <td>
-                      <span className="ins-sub">Set {fmtDate(t.createdAt)}</span>
-                      <span className="ins-sub">{timelineOf(t)}</span>
-                    </td>
-                    <td>
-                      <div className="ins-actions">{actionsFor(t)}</div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        {loading && allTargets.length === 0 && (
+          <div className="tg2-skel" aria-busy="true">{Array.from({ length: 3 }).map((_, i) => <span key={i} />)}</div>
+        )}
+        {!loading && filtered.length === 0 && (
+          <Empty icon="🎯" text={scoped.length ? 'No target matches this filter.' : 'No targets yet. Create the first one to motivate your stores.'}>
+            {!scoped.length && (
+              <button type="button" className="ins-btn ins-btn-primary ins-btn-sm" onClick={() => openModal()}>
+                <Ic name="plus" size={13} /> New target
+              </button>
+            )}
+          </Empty>
+        )}
 
-        <div className="ins-cards">
+        <ul className="tg2-list">
           {filtered.map((t) => {
             const s = stateOf(t);
             const meta = STATE_META[s];
             const { pct } = progressOf(t);
             const acts = actionsFor(t);
             return (
-              <div className={`ins-mcard${s === 'cancelled' ? ' tg-row-off' : ''}`} key={t._id}>
-                <div className="ins-cell-who">
-                  <Avatar name={t.storeName} size={30} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <b>{t.storeName}{t.isTestAccount ? ' · test' : ''}</b>
-                    <span className="ins-sub">{t.title}</span>
+              <li key={t._id} className={`tg2-item s-${s}`}>
+                <div className="tg2-who">
+                  <Avatar name={t.storeName} size={36} />
+                  <div>
+                    <b title={t.storeName}>{t.storeName || 'Store'}</b>
+                    <small>{t.ownerName || '—'}{t.isTestAccount ? ' · test' : ''}</small>
                   </div>
-                  <Badge tone={meta.tone} icon={meta.icon}>{meta.label}</Badge>
                 </div>
-                <div>
-                  <div className="ins-mcard-row" style={{ marginBottom: 5 }}>
+                <div className="tg2-goal">
+                  <span className="tg2-kind">{isSales(t) ? '💵 Sales' : isTotal(t) ? '🏁 Total delivered' : '📦 New orders'}</span>
+                  <b title={t.title}>{t.title}</b>
+                  <small>Goal {goalShort(t)}{t.createdBy ? ` · by ${t.createdBy}` : ''}</small>
+                  {t.description && <small className="tg2-desc" title={t.description}>{t.description}</small>}
+                </div>
+                <div className="tg2-progress">
+                  <div className="tg2-row-top">
                     <span>{progressText(t)}</span>
                     <b>{pct}%</b>
                   </div>
-                  <Meter value={pct} color={s === 'completed' ? STATUS.good : s === 'active' ? SERIES[0] : STATUS.neutral} />
-                </div>
-                <div className="ins-mcard-row">
-                  <span>
-                    Bonus {money(t.bonusAmount || 0)}
-                    {s === 'completed' ? (t.paidTo === 'frozen' ? ' · held' : ' · paid') : ''} · {timelineOf(t)}
+                  <span className={`tg2-bar s-${s}`} role="meter" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`${pct}% done`}>
+                    <i style={{ width: `${Math.max(2, pct)}%` }} />
                   </span>
+                  <small>Set {fmtDate(t.createdAt)} · {timelineOf(t)}</small>
                 </div>
-                {acts && <div className="ins-actions">{acts}</div>}
-              </div>
+                <div className="tg2-bonus">
+                  <span className={`tg2-state s-${s}`}><span aria-hidden="true">{meta.icon}</span> {meta.label}</span>
+                  <b>{money(t.bonusAmount || 0)}</b>
+                  <small>
+                    {s === 'completed' ? (t.paidTo === 'frozen' ? '🔒 Held (store frozen)' : 'Paid to wallet') : s === 'active' ? 'Bonus on offer' : 'Bonus'}
+                  </small>
+                  {s === 'cancelled' && t.cancelReason && <small className="tg2-desc" title={t.cancelReason}>{t.cancelReason}</small>}
+                </div>
+                <div className="tg2-actions">{acts}</div>
+              </li>
             );
           })}
-          {!loading && filtered.length === 0 && <Empty icon="🎯" text="No target matches this filter." />}
-        </div>
-      </div>
+        </ul>
+      </section>
 
       {/* ── New target (one store or many) ── */}
       {modalOpen && (

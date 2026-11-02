@@ -1,20 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend, Cell } from 'recharts';
 import { api, fmtDate } from '../api.js';
 import { ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
 import useLiveReload from '../useLiveReload.js';
 import StoreClosures from './StoreClosures.jsx';
-import {
-  Hero, MetaChip, Kpi, KpiGrid, Card, ChartGrid, Seg, Badge, Avatar, RankList, SplitBar, ChartTip,
-  Toolbar, SearchBox, Empty, Meter, SERIES, STATUS, GRID, AXIS, legendText, pctOf, delta,
-} from './insights.jsx';
+import { Hero, MetaChip, Badge, Avatar, Empty, pctOf } from './insights.jsx';
 
 const DAY = 86400000;
-// one hue, lighter → darker as an application waits longer
-const WAIT_STEPS = ['#f7c9b5', '#ec835a', '#d95926', '#9a3412'];
 
 const DOC_TITLES = {
   aadhaarFront: '🪪 Aadhaar Card (Front)',
@@ -113,7 +107,7 @@ function NewApplications() {
   const [error, setError] = useState('');
   const [tab, setTab] = useState('pending');
   const [q, setQ] = useState('');
-  const [range, setRange] = useState(30);
+  const range = 30; // days counted for "new this week" style numbers
 
   const [approveModal, setApproveModal] = useState(null);
   const [rejectModal, setRejectModal] = useState(null);
@@ -407,23 +401,6 @@ function NewApplications() {
     ].filter((d) => d.show);
   };
 
-  const renderDocs = (s) => {
-    const list = docButtons(s);
-    if (!list.length) return <span className="ins-sub">No documents</span>;
-    return (
-      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', maxWidth: 230 }}>
-        {list.map((d) => {
-          const busy = kycLoading === `${s._id}:${d.key}`;
-          return (
-            <button key={d.key} type="button" className="ins-btn ins-btn-sm" style={{ padding: '3px 8px', fontSize: 11 }} onClick={() => openKycDoc(s, d.key)} disabled={busy} title={`View ${getDocTitle(d.key)}`}>
-              {busy ? '⏳' : <Ic name="eye" size={11} />} {d.label}
-            </button>
-          );
-        })}
-      </div>
-    );
-  };
-
   const renderActions = (s) => {
     const o = outcomeOf(s);
     if (o === 'pending') {
@@ -446,11 +423,11 @@ function NewApplications() {
       );
     }
     // Saving the approval form sets the store to "active": a frozen or suspended store is
-    // managed on the Complaints page instead, so it is not unfrozen from here by accident.
+    // managed in the seller's profile instead, so it is not unfrozen from here by accident.
     if (s.status !== 'active') {
       return (
-        <Link to="/admin/complaints" className="ins-btn ins-btn-sm">
-          Manage in Complaints
+        <Link to={`/admin/sellers?open=${s._id}&tab=upgrades`} className="ins-btn ins-btn-sm">
+          Manage in seller profile
         </Link>
       );
     }
@@ -470,7 +447,6 @@ function NewApplications() {
     return <Badge tone={m.tone} icon={m.icon}>{m.label}</Badge>;
   };
 
-  const weekChange = delta(a.week, a.prevWeek);
   const am = approveModal;
 
   return (
@@ -479,7 +455,7 @@ function NewApplications() {
         icon="badgeCheck"
         tone="violet"
         title="New Applications"
-        subtitle="Review new store registrations: check the KYC documents, set the security deposit and owner, then approve or reject. Oldest applications are shown first so nobody waits too long."
+        subtitle="Check the KYC documents, choose the owner and security deposit, then approve or reject."
         actions={
           <button type="button" className="ins-btn" onClick={loadSellers} disabled={loading}>
             <Ic name="refresh" size={14} /> {loading ? 'Loading…' : 'Refresh'}
@@ -488,220 +464,120 @@ function NewApplications() {
       >
         <MetaChip>{sellers.length} registrations</MetaChip>
         {a.counts.pending > 0 && <MetaChip>⏳ Oldest waiting {a.oldest} day{a.oldest === 1 ? '' : 's'}</MetaChip>}
+        {a.approvalRate !== null && <MetaChip>{a.approvalRate}% approved</MetaChip>}
         <MetaChip>{a.test} test accounts</MetaChip>
       </Hero>
 
       <ErrorBox error={error} />
 
-      <KpiGrid dim={loading && sellers.length > 0}>
-        <Kpi icon="clock" tone="orange" label="Waiting for review" value={a.counts.pending} sub={a.counts.pending ? `${a.pendingComplete} with all 5 KYC documents` : 'All caught up 🎉'} onClick={() => setTab('pending')} active={tab === 'pending'} />
-        <Kpi icon="checkCircle" tone="green" label="Approved" value={a.counts.approved} sub="Stores live on the platform" onClick={() => setTab('approved')} active={tab === 'approved'} />
-        <Kpi icon="x" tone="red" label="Rejected" value={a.counts.rejected} sub="Registrations turned down" onClick={() => setTab('rejected')} active={tab === 'rejected'} />
-        <Kpi icon="badgeCheck" tone="violet" label="Approval rate" value={a.approvalRate === null ? '—' : `${a.approvalRate}%`} sub="Of all decided applications" />
-        <Kpi icon="sparkle" tone="blue" label="New this week" value={a.week} change={weekChange} sub={`${a.prevWeek} the week before`} />
-      </KpiGrid>
-
-      {sellers.length > 0 && (
-        <ChartGrid dim={loading}>
-          <Card
-            title="Registrations per day"
-            hint={`${a.inRange} in the last ${range} days, coloured by where they stand now`}
-            wide
-            actions={<Seg small label="Time range" value={range} onChange={setRange} options={[{ value: 14, label: '14d' }, { value: 30, label: '30d' }, { value: 90, label: '90d' }]} />}
-          >
-            {a.inRange === 0 ? (
-              <Empty text={`No registrations in the last ${range} days`} />
-            ) : (
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={a.days} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
-                  <CartesianGrid stroke={GRID} vertical={false} />
-                  <XAxis dataKey="label" {...AXIS} minTickGap={16} />
-                  <YAxis {...AXIS} allowDecimals={false} />
-                  <Tooltip cursor={{ fill: '#f1f5f9' }} content={<ChartTip />} />
-                  <Legend iconType="square" formatter={legendText} wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="approved" name="Approved" stackId="a" fill={STATUS.good} maxBarSize={18} stroke="#fff" strokeWidth={1} />
-                  <Bar dataKey="pending" name="Waiting" stackId="a" fill={STATUS.warning} maxBarSize={18} stroke="#fff" strokeWidth={1} />
-                  <Bar dataKey="rejected" name="Rejected" stackId="a" fill={STATUS.critical} radius={[4, 4, 0, 0]} maxBarSize={18} stroke="#fff" strokeWidth={1} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </Card>
-
-          <Card title="Outcome of all applications" hint={`${sellers.length} registrations`}>
-            <SplitBar
-              height={14}
-              parts={[
-                { label: '✓ Approved', value: a.counts.approved, color: STATUS.good },
-                { label: '⏳ Waiting', value: a.counts.pending, color: STATUS.warning },
-                { label: '✕ Rejected', value: a.counts.rejected, color: STATUS.critical },
-              ]}
-            />
-          </Card>
-
-          <Card title="How long applications are waiting" hint={`${a.counts.pending} waiting now`} empty={!a.counts.pending && 'Nothing waiting — all caught up'}>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={a.waits} margin={{ top: 6, right: 8, left: -18, bottom: 0 }}>
-                <CartesianGrid stroke={GRID} vertical={false} />
-                <XAxis dataKey="label" {...AXIS} />
-                <YAxis {...AXIS} allowDecimals={false} />
-                <Tooltip cursor={{ fill: '#f1f5f9' }} content={<ChartTip />} />
-                <Bar dataKey="count" name="Applications" radius={[4, 4, 0, 0]} maxBarSize={38}>
-                  {a.waits.map((w, i) => (
-                    <Cell key={w.label} fill={WAIT_STEPS[i]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </Card>
-
-          <Card title="KYC documents of waiting applicants" hint="Share of waiting applicants who uploaded each one" empty={!a.counts.pending && 'Nothing waiting'}>
-            <ul className="ins-stats">
-              {a.docRows.map((d) => (
-                <li key={d.key}>
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span>{d.label}</span>
-                      <span className="ins-sub">{d.n}/{a.counts.pending}</span>
-                    </span>
-                    <Meter value={d.pct} color={SERIES[0]} height={6} label={`${d.pct}% uploaded`} />
-                  </span>
-                  <b style={{ width: 48, textAlign: 'right' }}>{d.pct}%</b>
-                </li>
-              ))}
-            </ul>
-          </Card>
-
-          <Card title="Top security codes" hint="Registrations per code">
-            <RankList rows={a.codes} color={SERIES[6]} format={(v) => `${v}`} empty="No security codes used yet" />
-          </Card>
-        </ChartGrid>
-      )}
-
-      <div className="ins-table-card">
-        <div className="ins-table-head">
-          <div>
-            <h3>📋 Applications</h3>
-            <span className="ins-card-hint">{displayed.length} shown{tab === 'pending' ? ' · oldest first' : ' · newest first'}</span>
-          </div>
-          <Toolbar>
-            <Seg
-              label="Filter by outcome"
-              value={tab}
-              onChange={setTab}
-              options={[
-                { value: 'pending', label: 'Waiting', count: a.counts.pending },
-                { value: 'approved', label: 'Approved', count: a.counts.approved },
-                { value: 'rejected', label: 'Rejected', count: a.counts.rejected },
-                { value: 'all', label: 'All', count: sellers.length },
-              ]}
-            />
-            <SearchBox value={q} onChange={setQ} placeholder="Search store, owner, email, phone, code…" />
-          </Toolbar>
-        </div>
-
-        <div className="ins-table-scroll ins-hide-mobile">
-          <table className="ins-table">
-            <thead>
-              <tr>
-                <th>Applicant</th>
-                <th>Contact</th>
-                <th>KYC documents</th>
-                <th>Security code</th>
-                <th>Applied</th>
-                <th>Status</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {loading && sellers.length === 0 &&
-                Array.from({ length: 4 }).map((_, i) => (
-                  <tr key={i}>
-                    {Array.from({ length: 7 }).map((__, j) => (
-                      <td key={j}><span className="ins-skel" style={{ width: `${45 + ((i + j) % 4) * 13}%` }} /></td>
-                    ))}
-                  </tr>
-                ))}
-              {!loading && displayed.length === 0 && (
-                <tr>
-                  <td colSpan={7}>
-                    <Empty icon={tab === 'pending' ? '🎉' : '🔍'} text={tab === 'pending' && !q ? 'No application is waiting for review.' : 'No application matches this filter.'} />
-                  </td>
-                </tr>
-              )}
-              {displayed.map((s) => {
-                const o = outcomeOf(s);
-                const wd = waitingDays(s);
-                return (
-                  <tr key={s._id}>
-                    <td>
-                      <div className="ins-cell-who">
-                        <Avatar name={s.storeName} />
-                        <div>
-                          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <b className="ins-clip">{s.storeName || 'Store'}</b>
-                            {o === 'approved' && s.status === 'active' && <VerifiedStoreBadge variant="icon" size={13} title="Verified store" />}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleTest(s._id)}
-                            title="Switch between test account and client account"
-                            className={`ins-badge ins-badge-${s.isTestAccount ? 'violet' : 'neutral'}`}
-                            style={{ cursor: 'pointer', marginTop: 3, width: 'fit-content' }}
-                          >
-                            {s.isTestAccount ? '🧪 Test' : '👤 Client'} ⇄
-                          </button>
-                        </div>
-                      </div>
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      <span className="ins-strong">{s.ownerName || '—'}</span>
-                      <span className="ins-sub ins-clip">{s.email}</span>
-                      <span className="ins-sub">{s.phone || 'No phone'}</span>
-                    </td>
-                    <td>{renderDocs(s)}</td>
-                    <td>{affiliateOf(s) ? <Badge tone="info">🔑 {affiliateOf(s)}</Badge> : <span className="ins-sub">Direct</span>}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      <span>{fmtDate(s.createdAt)}</span>
-                      {o === 'pending' && (
-                        <span className="ins-sub" style={{ color: wd >= 3 ? '#a5461f' : undefined, fontWeight: wd >= 3 ? 700 : 400 }}>
-                          {wd === 0 ? 'Today' : `Waiting ${wd} day${wd === 1 ? '' : 's'}`}
-                        </span>
-                      )}
-                      {o === 'rejected' && s.freezeReason && <span className="ins-sub ins-clip" title={s.freezeReason}>{s.freezeReason}</span>}
-                    </td>
-                    <td>{statusBadge(s)}</td>
-                    <td>
-                      <div className="ins-actions">{renderActions(s)}</div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="ins-cards">
-          {displayed.map((s) => (
-            <div className="ins-mcard" key={s._id}>
-              <div className="ins-cell-who">
-                <Avatar name={s.storeName} size={30} />
-                <div style={{ flex: 1 }}>
-                  <b>{s.storeName}</b>
-                  <span className="ins-sub">{s.ownerName} · {fmtDate(s.createdAt)}</span>
-                </div>
-                {statusBadge(s)}
-              </div>
-              <div className="ins-mcard-row">
-                <span>Contact</span>
-                <span className="ins-clip" style={{ maxWidth: 200 }}>{s.email}</span>
-              </div>
-              <div>{renderDocs(s)}</div>
-              <div className="ins-actions" style={{ justifyContent: 'flex-start' }}>{renderActions(s)}</div>
-            </div>
-          ))}
-          {!loading && displayed.length === 0 && <Empty text="No application matches this filter." />}
-        </div>
+      {/* status tabs with their numbers (they also filter the list below) */}
+      <div className="apl-status" role="tablist" aria-label="Filter applications">
+        {[
+          { v: 'pending', label: 'Waiting for review', n: a.counts.pending, sub: a.counts.pending ? `${a.pendingComplete} with all 5 documents` : 'All caught up', tone: 'amber' },
+          { v: 'approved', label: 'Approved', n: a.counts.approved, sub: 'Stores live on Bazario', tone: 'green' },
+          { v: 'rejected', label: 'Rejected', n: a.counts.rejected, sub: 'Turned down', tone: 'red' },
+          { v: 'all', label: 'All', n: sellers.length, sub: `${a.week} new this week`, tone: 'slate' },
+        ].map((t) => (
+          <button key={t.v} type="button" role="tab" aria-selected={tab === t.v} className={`apl-stat t-${t.tone}${tab === t.v ? ' on' : ''}`} onClick={() => setTab(t.v)}>
+            <span className="apl-stat-lbl">{t.label}</span>
+            <b>{loading && !sellers.length ? '–' : t.n}</b>
+            <small>{t.sub}</small>
+          </button>
+        ))}
       </div>
+
+      <section className="apl-card" aria-labelledby="apl-title">
+        <header className="apl-head">
+          <div>
+            <h3 id="apl-title">{{ pending: 'Waiting for review', approved: 'Approved stores', rejected: 'Rejected applications', all: 'All applications' }[tab]}</h3>
+            <p aria-live="polite">{displayed.length} shown{tab === 'pending' ? ' · oldest first, so nobody waits too long' : ' · newest first'}</p>
+          </div>
+          <label className="apl-search">
+            <Ic name="search" size={16} />
+            <span className="apl-sr">Search applications</span>
+            <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Store, owner, email, phone or code" enterKeyHint="search" />
+            {q && <button type="button" className="apl-search-clear" onClick={() => setQ('')} aria-label="Clear search">✕</button>}
+          </label>
+        </header>
+
+        {loading && sellers.length === 0 && (
+          <div className="apl-skel" aria-busy="true">{Array.from({ length: 3 }).map((_, i) => <span key={i} />)}</div>
+        )}
+        {!loading && displayed.length === 0 && (
+          <Empty icon={tab === 'pending' && !q ? '🎉' : '🔍'} text={tab === 'pending' && !q ? 'No application is waiting for review.' : 'No application matches this filter.'} />
+        )}
+
+        <ul className="apl-list">
+          {displayed.map((s) => {
+            const o = outcomeOf(s);
+            const wd = waitingDays(s);
+            const docs = docButtons(s);
+            const have = CORE_DOCS.filter((d) => hasKyc(s, d.key)).length;
+            return (
+              <li key={s._id} className={`apl-item o-${o}`}>
+                <div className="apl-who">
+                  <Avatar name={s.storeName} size={38} />
+                  <div className="apl-who-txt">
+                    <div className="apl-name">
+                      <b title={s.storeName}>{s.storeName || 'Store'}</b>
+                      {o === 'approved' && s.status === 'active' && <VerifiedStoreBadge variant="icon" size={13} title="Verified store" />}
+                      {statusBadge(s)}
+                    </div>
+                    <div className="apl-sub">
+                      <span>{s.ownerName || '—'}</span>
+                      {s.email && <a href={`mailto:${s.email}`} title={s.email}>{s.email}</a>}
+                      {s.phone ? <a href={`tel:${s.phone}`}>{s.phone}</a> : <span>No phone</span>}
+                    </div>
+                  </div>
+                </div>
+
+                <dl className="apl-meta">
+                  <div>
+                    <dt>Applied</dt>
+                    <dd>{fmtDate(s.createdAt)}</dd>
+                    {o === 'pending' && <dd className={`apl-wait${wd >= 3 ? ' is-late' : ''}`}>{wd === 0 ? 'Today' : `Waiting ${wd} day${wd === 1 ? '' : 's'}`}</dd>}
+                    {o === 'rejected' && s.freezeReason && <dd className="apl-reason" title={s.freezeReason}>{s.freezeReason}</dd>}
+                  </div>
+                  <div>
+                    <dt>Security code</dt>
+                    <dd>{affiliateOf(s) ? <span className="apl-code">🔑 {affiliateOf(s)}</span> : 'Direct'}</dd>
+                  </div>
+                  <div>
+                    <dt>Account</dt>
+                    <dd>
+                      <button type="button" onClick={() => handleToggleTest(s._id)} title="Switch between test account and client account" className={`apl-type${s.isTestAccount ? ' is-test' : ''}`}>
+                        {s.isTestAccount ? '🧪 Test' : '👤 Client'} <span aria-hidden="true">⇄</span>
+                      </button>
+                    </dd>
+                  </div>
+                </dl>
+
+                <div className="apl-docs">
+                  <span className="apl-docs-lbl">
+                    KYC documents <b className={have === CORE_DOCS.length ? 'ok' : 'miss'}>{have}/{CORE_DOCS.length}</b>
+                  </span>
+                  <div className="apl-doc-list">
+                    {docs.length ? (
+                      docs.map((d) => {
+                        const busy = kycLoading === `${s._id}:${d.key}`;
+                        return (
+                          <button key={d.key} type="button" className="apl-doc" onClick={() => openKycDoc(s, d.key)} disabled={busy} title={`View ${getDocTitle(d.key)}`}>
+                            {busy ? '⏳' : <Ic name="eye" size={12} />} {d.label}
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <span className="apl-nodocs">No documents uploaded</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="apl-actions">{renderActions(s)}</div>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
 
       {/* ─── Approve / edit ─── */}
       {am && (
