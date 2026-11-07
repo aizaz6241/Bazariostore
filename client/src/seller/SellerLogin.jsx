@@ -529,8 +529,8 @@ export default function SellerLogin() {
   };
 
   const DOCS = [
-    { field: 'aadhaarFront', label: 'Aadhaar card', side: 'Front' },
-    { field: 'aadhaarBack', label: 'Aadhaar card', side: 'Back' },
+    { field: 'aadhaarFront', label: 'ID card', side: 'Front' },
+    { field: 'aadhaarBack', label: 'ID card', side: 'Back' },
     { field: 'panFront', label: 'PAN card', side: 'Front' },
     { field: 'panBack', label: 'PAN card', side: 'Back' },
   ];
@@ -737,14 +737,14 @@ export default function SellerLogin() {
                 </label>
                 <label className="sl-field sx-field">
                   <span>Your full name</span>
-                  <input type="text" value={regForm.ownerName} onChange={(e) => { setRegForm({ ...regForm, ownerName: e.target.value }); setStepErr(''); }} placeholder="Same as on your Aadhaar card" autoComplete="name" />
+                  <input type="text" value={regForm.ownerName} onChange={(e) => { setRegForm({ ...regForm, ownerName: e.target.value }); setStepErr(''); }} placeholder="Same as on your ID card" autoComplete="name" />
                 </label>
                 <div className="sx-need">
                   <b>Keep these ready:</b>
                   <ul>
                     <li><Ic name="mail" size={15} /> Your email</li>
                     <li><Ic name="phone" size={15} /> Phone / WhatsApp number</li>
-                    <li><Ic name="image" size={15} /> Aadhaar card photo (front + back)</li>
+                    <li><Ic name="image" size={15} /> ID card photo (front + back)</li>
                     <li><Ic name="image" size={15} /> PAN card photo (front + back)</li>
                   </ul>
                 </div>

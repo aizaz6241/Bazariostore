@@ -6,12 +6,13 @@ import { adminRoom } from '../utils/permissions.js';
 import { sellerOrderPing } from '../utils/orderPrivacy.js';
 
 /**
- * Automatic order lifecycle, on India time (IST), about 5–7 days from the seller's confirmation:
+ * Automatic order lifecycle, on India time (IST), about 8–10 days from the seller's confirmation
+ * (the shipment partner's real delivery time, Nov 2026; it was 5–7 days before):
  *
  *   Confirmed → Processing           1–2 h later                  (warehouse hours 08:00–21:00)
  *   Processing → Packed              3–6 h later                  (warehouse hours)
  *   Packed → Out from warehouse      4–10 h later                 (warehouse hours)
- *   Out from warehouse → Delivery hub   the transit, ~3.7–4.3 days (any time: trucks run at night)
+ *   Out from warehouse → Delivery hub   the transit, ~6.8–7.3 days (any time: trucks run at night)
  *   Delivery hub → Out for delivery  the next delivery morning, 09:00–11:00, never on a Sunday
  *   Out for delivery → Delivered     the SAME day, before 18:00
  *
@@ -83,7 +84,7 @@ export const PROGRESSION_STEPS = {
   confirmed: { next: 'processing', label: 'Processing & Packaging', note: 'Order moved to warehouse processing and inventory allocation.', at: (b) => intoWindow(new Date(b.getTime() + rand(1, 2) * H), WAREHOUSE) },
   processing: { next: 'packed', label: 'Quality Checked & Packed', note: 'Items verified, securely packed, and barcoded for dispatch.', at: (b) => intoWindow(new Date(b.getTime() + rand(3, 6) * H), WAREHOUSE) },
   packed: { next: 'out_from_warehouse', label: 'Dispatched from Warehouse', note: 'Package handed over to regional logistics and departed central warehouse.', at: (b) => intoWindow(new Date(b.getTime() + rand(4, 10) * H), WAREHOUSE) },
-  out_from_warehouse: { next: 'delivery_warehouse', label: 'Arrived at Delivery Hub', note: 'Package completed inter-city transit and checked into destination delivery station.', at: (b) => new Date(b.getTime() + rand(88, 104) * H) },
+  out_from_warehouse: { next: 'delivery_warehouse', label: 'Arrived at Delivery Hub', note: 'Package completed inter-city transit and checked into destination delivery station.', at: (b) => new Date(b.getTime() + rand(164, 174) * H) }, // ~95% delivered 8–10 days after confirmation
   // older orders that still have the status 'shipped'
   shipped: { next: 'delivery_warehouse', label: 'Arrived at Delivery Hub', note: 'In-transit shipment reached destination delivery warehouse.', at: (b) => new Date(b.getTime() + rand(24, 36) * H) },
   delivery_warehouse: { next: 'out_for_delivery', label: 'Out for Delivery', note: 'Dispatched with local delivery courier for doorstep delivery.', at: (b) => nextDeliveryMorning(b) },

@@ -364,7 +364,9 @@ const STATUS_GROUPS = {
   problem: ['delivery_failed', 'returned_to_warehouse'],
 };
 const CLOSED_STATUSES = ['delivered', 'cancelled', 'refunded'];
-const LATE_AFTER_MS = 7 * 24 * 60 * 60 * 1000; // not delivered 7 days after the order was placed
+// not delivered 11 days after the order was placed (delivery takes 8–10 days from confirmation)
+const LATE_DAYS = 11;
+const LATE_AFTER_MS = LATE_DAYS * 24 * 60 * 60 * 1000;
 const STUCK_AFTER_MS = 60 * 60 * 1000; // the next automatic step is more than an hour overdue
 
 /**
@@ -571,7 +573,7 @@ router.get('/counts', authAdmin('orders'), async (req, res) => {
 
 // GET /api/orders/analytics/stores?days=30
 // Per store, right now: orders pending / confirmed / in the warehouse / out for delivery /
-// delivery problem, delivered (placed in the last `days` days), late (not delivered 7 days after
+// delivery problem, delivered (placed in the last `days` days), late (not delivered LATE_DAYS after
 // the order) and stuck (the automatic step is overdue or could not run). Multi-store orders
 // count for each store. Test / previous-store accounts are marked (left out of the totals).
 router.get('/analytics/stores', authAdmin('orders'), async (req, res) => {
@@ -663,7 +665,7 @@ router.get('/analytics/stores', authAdmin('orders'), async (req, res) => {
       hidden.open += r.open;
       hidden.late += r.late;
     }
-    res.json({ days, lateDays: 7, totals: { ...totals, lateStores: lateStoreIds.size }, hiddenInactive: hidden, stores: list });
+    res.json({ days, lateDays: LATE_DAYS, totals: { ...totals, lateStores: lateStoreIds.size }, hiddenInactive: hidden, stores: list });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

@@ -38,7 +38,9 @@ const STATUS_GROUPS = {
 const GROUP_LABELS = { warehouse: 'In warehouse', problem: 'Delivery problem' };
 const statusMatches = (f, st) => !f || (STATUS_GROUPS[f] ? STATUS_GROUPS[f].includes(st) : f === st);
 const CLOSED = ['delivered', 'cancelled', 'refunded'];
-const LATE_MS = 7 * 86400000;
+// late = not delivered 11 days after the order (delivery takes 8–10 days from confirmation)
+const LATE_DAYS = 11;
+const LATE_MS = LATE_DAYS * 86400000;
 const SCROLL_KEY = 'admin.orders.back';
 // the element the admin page scrolls in (the layout scrolls inside, not the window)
 const scroller = () => {
@@ -819,7 +821,7 @@ export default function Orders() {
     scrollToList();
   };
   const setStatus = (st) => setParam({ status: st, late: '', stuck: '', clients: '' });
-  const viewLabel = late ? 'Late — not delivered after 7 days' : stuck ? 'Stopped moving by themselves' : GROUP_LABELS[status] || (clientsOnly ? STATUS_LABELS[status] || 'All statuses' : '');
+  const viewLabel = late ? `Late — not delivered after ${LATE_DAYS} days` : stuck ? 'Stopped moving by themselves' : GROUP_LABELS[status] || (clientsOnly ? STATUS_LABELS[status] || 'All statuses' : '');
   const chosenSeller = sellers.find((s) => s._id === sellerFilter);
   // a chosen store is shown whatever the accounts switch says → its counts are "all"
   const countsSide = sellerFilter ? 'all' : accounts;

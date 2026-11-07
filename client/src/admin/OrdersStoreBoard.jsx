@@ -4,7 +4,7 @@ import { Seg, Avatar, Empty } from './insights.jsx';
 /**
  * Orders by store (admin Orders page): what each active real client store has right now —
  * the order pipeline (pending → confirmed → warehouse → out for delivery), delivery problems,
- * delivered (placed in the chosen period), late (not delivered 7 days after the order) and
+ * delivered (placed in the chosen period), late (not delivered 11 days after the order) and
  * stopped (the automatic step is overdue or could not run). Every number filters the order list.
  * Compact: a one-line summary is always shown; the store list opens and closes (remembered).
  * Data: GET /orders/analytics/stores (test, previous-store and Inactive stores are left out here).
@@ -163,7 +163,7 @@ export default function OrdersStoreBoard({ data, loading, days, onDays, onPick, 
         </div>
         <div className="osb2-group osb2-group-attn">
           {chip({ k: 'problem', label: 'Problem', f: PROBLEM.filter, tone: 'orange', dot: PROBLEM.color })}
-          {chip({ k: 'late', label: 'Late 7d+', f: { late: true }, tone: 'red', sub: t?.lateStores ? `${t.lateStores} ${t.lateStores === 1 ? 'store' : 'stores'}` : '' })}
+          {chip({ k: 'late', label: `Late ${data?.lateDays || 11}d+`, f: { late: true }, tone: 'red', sub: t?.lateStores ? `${t.lateStores} ${t.lateStores === 1 ? 'store' : 'stores'}` : '' })}
           {chip({ k: 'stuck', label: 'Stopped', f: { stuck: true }, tone: 'red' })}
         </div>
       </div>
@@ -211,7 +211,7 @@ export default function OrdersStoreBoard({ data, loading, days, onDays, onPick, 
                       ))}
                       <th className="num" title={PROBLEM.hint}><span className="osb2-th"><i style={{ background: PROBLEM.color }} aria-hidden="true" />Problem</span></th>
                       <th className="num">Delivered {days}d</th>
-                      <th className="num osb2-th-attn" title="Not delivered 7 days after the order was placed">Late</th>
+                      <th className="num osb2-th-attn" title={`Not delivered ${data?.lateDays || 11} days after the order was placed`}>Late</th>
                       <th className="num osb2-th-attn" title="The next automatic step is overdue, or could not run (e.g. wallet too low)">Stopped</th>
                       <th className="num" title="Age of the oldest order that is not delivered yet">Oldest</th>
                     </tr>
@@ -278,7 +278,7 @@ export default function OrdersStoreBoard({ data, loading, days, onDays, onPick, 
                     </div>
                     {(s.late > 0 || s.stuck > 0) && (
                       <div className="osb-card-attn">
-                        {s.late > 0 && <button type="button" onClick={() => onPick(s._id, { late: true })}>{fmt(s.late)} late 7d+</button>}
+                        {s.late > 0 && <button type="button" onClick={() => onPick(s._id, { late: true })}>{fmt(s.late)} late {data?.lateDays || 11}d+</button>}
                         {s.stuck > 0 && <button type="button" onClick={() => onPick(s._id, { stuck: true })}>{fmt(s.stuck)} stopped</button>}
                       </div>
                     )}

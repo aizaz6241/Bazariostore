@@ -137,7 +137,7 @@ if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
     if (mongoose.connection.readyState === 1) releaseLocksOfWaitingOrders(app);
   }, 20000);
 
-  // 5-7 Days Automated Order Lifecycle Progression Scheduler (runs every 5 minutes)
+  // 8-10 Days Automated Order Lifecycle Progression Scheduler (runs every 5 minutes)
   setInterval(() => {
     processAutoProgressOrders(app);
   }, 5 * 60 * 1000);

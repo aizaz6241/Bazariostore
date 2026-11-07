@@ -25,7 +25,7 @@ const router = Router();
 const H = 3600000;
 const IN_PROGRESS = ['confirmed', 'processing', 'packed', 'out_from_warehouse', 'delivery_warehouse', 'shipped', 'out_for_delivery'];
 const NEEDS_DECISION = ['delivery_failed', 'returned_to_warehouse'];
-const LATE_DELIVERY_DAYS = 7; // the automatic lifecycle takes about 5–7 days from confirmation
+const LATE_DELIVERY_DAYS = 11; // the automatic lifecycle takes about 8–10 days from confirmation
 const STUCK_AFTER_MS = 60 * 60 * 1000; // a next step overdue by more than an hour has not moved by itself
 const WAITING_CHAT = ['seller', 'guest', 'customer'];
 // previews written by the system when a chat is opened / emptied: nobody wrote anything, so these
