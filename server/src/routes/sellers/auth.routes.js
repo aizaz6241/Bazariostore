@@ -19,6 +19,7 @@ import { forgetAuthCache } from '../../middleware/auth.js';
 import { adminRoom } from '../../utils/permissions.js';
 import { resolveAffiliateCode } from '../../utils/affiliateCodes.js';
 import { sellerSafeTargets } from '../../utils/sellerTargets.js';
+import { emailQuery, DUMMY_HASH } from '../../utils/emailLookup.js';
 
 // Wrong passwords: 8 tries per account from one address in 15 minutes, then a 15 minute wait
 const loginGuard = failureLimiter({ name: 'seller-login', max: 8, windowMs: 15 * 60 * 1000 });
@@ -376,13 +377,11 @@ router.post('/login', async (req, res) => {
     const searchEmails = [email];
     if (email === 'kavya.patel@gmail.com') searchEmails.push('kavya.patel@bazario.com');
 
-    const seller = await Seller.findOne({
-      $or: searchEmails.flatMap((e) => [
-        { email: e },
-        { email: { $regex: new RegExp(`^${e.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } },
-      ]),
-    }); // (the KYC pictures are never read here: they stay out unless a query asks for them)
+    // exact match on the unique email index — fast with millions of stores (utils/emailLookup.js)
+    const seller = await Seller.findOne(emailQuery(Seller, searchEmails)); // (KYC pictures are never read here)
     if (!seller) {
+      // as slow as a wrong password, so the answer time does not tell which emails exist
+      await comparePassword(password, DUMMY_HASH);
       loginGuard.fail(req, email);
       return res.status(401).json({ message: 'Invalid email or password' });
     }

@@ -13,7 +13,7 @@ export default function QuickRoleSwitcher() {
       navigate('/admin');
       return;
     }
-    navigate('/admin/login');
+    navigate('/seller/login');
   };
 
   const loginAsSeller = async () => {

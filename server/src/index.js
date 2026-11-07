@@ -60,6 +60,7 @@ import settingsRoutes from './routes/settings.js';
 import uploadRoutes from './routes/uploads.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/user.js';
+import { makeAnyLogin } from './routes/anyLogin.js';
 import chatRoutes, { handleAutoReply } from './routes/chat.js';
 import sellerRoutes from './routes/sellers.js';
 import treasuryRoutes from './routes/treasury.js';
@@ -71,6 +72,8 @@ import { startMirror } from './services/mirror.js';
 
 import { Conversation, Message } from './models/Chat.js';
 import Seller from './models/Seller.js';
+import User from './models/User.js';
+import { loadLegacyEmails } from './utils/emailLookup.js';
 import { notify } from './utils/notify.js';
 import { processOrderPenalties, releaseLocksOfWaitingOrders } from './routes/sellers/orders.routes.js';
 import { processAutoProgressOrders } from './services/orderProgressionService.js';
@@ -215,6 +218,8 @@ mongoose.connection.on('connected', () => {
     // one-time (31 Oct 2026): products hidden by stores become visible — the switch was removed.
     // Marked done in settings, so it never runs again; nothing is deleted (utils/unhideSellerProducts.js)
     setTimeout(() => unhideSellerProductsOnce(), 20000).unref?.();
+    // logins use exact (indexed) email matches; old capital-letter emails are listed once here
+    setTimeout(() => loadLegacyEmails([Seller, User]).catch(() => {}), 5000).unref?.();
   }
   dbConnectedOnce = true;
 });
@@ -256,6 +261,8 @@ app.use(['/api/admins', '/admins'], adminRoutes);
 app.use(['/api/content', '/content'], contentRoutes);
 app.use(['/api/settings', '/settings'], settingsRoutes);
 app.use(['/api/uploads', '/uploads'], uploadRoutes);
+// one login box for team, sellers and customers (Seller Center login page) — see routes/anyLogin.js
+app.post(['/api/auth/any-login', '/auth/any-login'], makeAnyLogin({ adminRouter: authRoutes, sellerRouter: sellerRoutes, userRouter: userRoutes }));
 app.use(['/api/auth', '/auth'], authRoutes);
 app.use(['/api/user', '/user'], userRoutes);
 app.use(['/api/chat', '/chat'], chatRoutes);

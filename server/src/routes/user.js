@@ -13,6 +13,7 @@ import { limit, failureLimiter } from '../utils/rateLimit.js';
 import { asText } from '../middleware/sanitize.js';
 import { publicOrder } from '../utils/publicOrder.js';
 import { allowEmailSend, waitMessage } from '../utils/emailGuard.js';
+import { emailQuery, DUMMY_HASH } from '../utils/emailLookup.js';
 
 const loginGuard = failureLimiter({ name: 'user-login', max: 8, windowMs: 15 * 60 * 1000 });
 const MAX_OTP_TRIES = 5;
@@ -228,10 +229,10 @@ router.post('/login', async (req, res) => {
     const blocked = loginGuard.check(req, email);
     if (blocked.blocked) return res.status(429).json({ message: blocked.message });
 
-    const user = await User.findOne({
-      $or: [{ email }, { email: { $regex: new RegExp(`^${email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } }],
-    });
-    const ok = user && user.active !== false && (await comparePassword(password, user.passwordHash));
+    // exact match on the unique email index — fast with millions of customers (utils/emailLookup.js)
+    const user = await User.findOne(emailQuery(User, email));
+    // an unknown email takes as long as a wrong password (the answer time tells nothing)
+    const ok = (await comparePassword(password, user?.passwordHash || DUMMY_HASH)) && Boolean(user) && user.active !== false;
     if (!ok) {
       console.log(`[user-login-failed] email="${email}"`);
       loginGuard.fail(req, email);

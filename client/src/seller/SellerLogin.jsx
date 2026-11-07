@@ -7,7 +7,7 @@ import { TERMS_VERSION } from './sellerTerms.js';
 
 export default function SellerLogin() {
   const navigate = useNavigate();
-  const { loginSeller } = useAuth();
+  const { loginSeller, loginAdmin, login: loginCustomer } = useAuth();
   const [params, setParams] = useSearchParams();
   const urlResetToken = params.get('resetToken') || '';
   const urlEmail = params.get('email') || '';
@@ -103,12 +103,28 @@ export default function SellerLogin() {
     setSuccessMsg('');
     setLoading(true);
     try {
-      const data = await api('/sellers/login', {
-        method: 'POST',
-        body: { email: email.trim(), password },
-      });
-      loginSeller(data.token, data.seller);
-      navigate('/seller');
+      // ONE login box: the server finds out whether the email is a team admin, a store or a
+      // customer and answers like that account's own login ({ admin } / { seller } / { user }).
+      const body = { email: email.trim(), password };
+      let data;
+      try {
+        data = await api('/auth/any-login', { method: 'POST', body });
+      } catch (e1) {
+        // a server that does not have the one-login route yet: the store login as before
+        if (e1.status !== 404) throw e1;
+        data = await api('/sellers/login', { method: 'POST', body });
+      }
+      if (data.admin) {
+        loginAdmin(data.token, data.admin);
+        navigate('/admin');
+      } else if (data.user && !data.seller) {
+        loginCustomer(data.token, data.user);
+        const next = params.get('next');
+        navigate(next && next.startsWith('/') && !next.startsWith('//') ? next : '/account');
+      } else {
+        loginSeller(data.token, data.seller);
+        navigate('/seller');
+      }
     } catch (e) {
       // right password, application still in review: show its status page (not an error)
       if (e.code === 'application_pending' || e.data?.isPendingApproval) {
@@ -633,8 +649,8 @@ export default function SellerLogin() {
           /* ───────────── LOGIN ───────────── */
           <form onSubmit={submit} className="sl-form sx-form">
             <div className="sx-head">
-              <h1>Seller login</h1>
-              <p>Login to see your store, orders and money.</p>
+              <h1>Login</h1>
+              <p>Login to your store with your email and password.</p>
             </div>
             <label className="sl-field sx-field">
               <span><Ic name="mail" size={15} /> Email</span>
@@ -896,12 +912,10 @@ export default function SellerLogin() {
         )}
       </div>
 
-      {/* Not a seller? — small, below the card, so it never gets in a seller's way.
-          (Admins also use this link to switch to test stores.) */}
+      {/* Everybody logs in with the box above (stores, Bazario team, customers).
+          Only customers who want a shopping account need this small link. */}
       <p className="sx-other">
-        Not a seller? <Link to="/login">Customer login</Link>
-        <span aria-hidden="true">·</span>
-        <Link to="/admin/login"><Ic name="shield" size={12} /> Admin</Link>
+        Shopping customer? <Link to="/register">Create a customer account</Link>
       </p>
 
       {/* Password reset (opened from the reset email link) */}

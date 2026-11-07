@@ -193,7 +193,7 @@ export default function AdminLayout() {
 
   useEffect(() => {
     if (!token) {
-      navigate('/admin/login');
+      navigate('/seller/login');
       return;
     }
     loadNotif();
@@ -283,7 +283,7 @@ export default function AdminLayout() {
 
   const logout = () => {
     logoutAdmin();
-    navigate('/admin/login');
+    navigate('/seller/login');
   };
 
   const NOTIF_ICONS = { order: 'package', payment: 'banknote', refund: 'refresh', customer: 'user', stock: 'box', chat: 'chat', system: 'sparkle' };

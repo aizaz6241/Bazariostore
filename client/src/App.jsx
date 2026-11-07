@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import StoreLayout from './components/StoreLayout.jsx';
 import Home from './pages/Home.jsx';
 import Shop from './pages/Shop.jsx';
@@ -10,7 +10,7 @@ import OrderSuccess from './pages/OrderSuccess.jsx';
 import TrackOrder from './pages/TrackOrder.jsx';
 import PolicyPage from './pages/PolicyPage.jsx';
 import Account from './pages/Account.jsx';
-import { Login, Register, Forgot, Reset } from './pages/AuthPages.jsx';
+import { Register, Forgot, Reset } from './pages/AuthPages.jsx';
 import InfoPage from './pages/InfoPage.jsx';
 import RouteSeoDefaults from './seo/RouteSeoDefaults.jsx';
 
@@ -19,7 +19,6 @@ import SellerLogin from './seller/SellerLogin.jsx';
 import SellerTerms from './seller/SellerTerms.jsx';
 
 // ─── Super Admin ──────────────────────────────────────────────
-import AdminLogin from './admin/AdminLogin.jsx';
 // Legacy admin pages (accessible via URL, not shown in nav)
 import InstallAppBanner from './components/InstallAppBanner.jsx';
 
@@ -65,6 +64,13 @@ function PortalBoundary({ children }) {
   );
 }
 
+/** The old customer and admin login pages: everybody now logs in on one page (the address's
+ *  ?next=… is kept, so a customer who logged in from the checkout goes back there). */
+function ToOneLogin() {
+  const { search } = useLocation();
+  return <Navigate to={`/seller/login${search}`} replace />;
+}
+
 export default function App() {
   return (
     <>
@@ -85,7 +91,8 @@ export default function App() {
         <Route path="/dropshipping" element={<InfoPage key="dropshipping" pageKey="dropshipping" />} />
         <Route path="/sell-on-bazario" element={<InfoPage key="sell" pageKey="sell" />} />
         <Route path="/faq" element={<InfoPage key="faq" pageKey="faq" />} />
-        <Route path="/login" element={<Login />} />
+        {/* one login page for everybody (sellers, team, customers): /seller/login */}
+        <Route path="/login" element={<ToOneLogin />} />
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<Forgot />} />
         <Route path="/reset-password" element={<Reset />} />
@@ -95,7 +102,7 @@ export default function App() {
         <Route path="/seller/register" element={<Navigate to="/seller/login?mode=register" replace />} />
         <Route path="/sellers/register" element={<Navigate to="/seller/login?mode=register" replace />} />
         <Route path="/become-seller" element={<Navigate to="/seller/login?mode=register" replace />} />
-        <Route path="/admin/login" element={<AdminLogin />} />
+        <Route path="/admin/login" element={<ToOneLogin />} />
       </Route>
 
       {/* ─── Seller Central Portal ───────────────────────────── */}
