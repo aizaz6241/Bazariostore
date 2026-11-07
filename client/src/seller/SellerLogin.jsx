@@ -110,9 +110,20 @@ export default function SellerLogin() {
       try {
         data = await api('/auth/any-login', { method: 'POST', body });
       } catch (e1) {
-        // a server that does not have the one-login route yet: the store login as before
         if (e1.status !== 404) throw e1;
-        data = await api('/sellers/login', { method: 'POST', body });
+        // a server that does not have the one-login route yet: try the store login, then the
+        // team login, then the customer login (each with its own checks and limits)
+        try {
+          data = await api('/sellers/login', { method: 'POST', body });
+        } catch (e2) {
+          if (e2.status !== 401) throw e2;
+          try {
+            data = await api('/auth/login', { method: 'POST', body });
+          } catch (e3) {
+            if (e3.status !== 401) throw e3;
+            data = await api('/user/login', { method: 'POST', body });
+          }
+        }
       }
       if (data.admin) {
         loginAdmin(data.token, data.admin);
