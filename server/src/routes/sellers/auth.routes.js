@@ -1,4 +1,5 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
@@ -20,6 +21,7 @@ import { adminRoom } from '../../utils/permissions.js';
 import { resolveAffiliateCode } from '../../utils/affiliateCodes.js';
 import { sellerSafeTargets } from '../../utils/sellerTargets.js';
 import { emailQuery, dummyHash } from '../../utils/emailLookup.js';
+import { announceToAdmins } from '../../utils/realtime.js';
 
 // Wrong passwords: 8 tries per account from one address in 15 minutes, then a 15 minute wait
 const loginGuard = failureLimiter({ name: 'seller-login', max: 8, windowMs: 15 * 60 * 1000 });
@@ -261,13 +263,9 @@ router.post('/register', registerLimit, async (req, res) => {
       return res.status(409).json(existingAccountAnswer(existing));
     }
 
-    // The email must be verified with the 6-digit code first (only real, working addresses reach
-    // the team). When email sending is not set up on this server, registration works as before.
-    const verifiedEmail = provenEmail(emailToken);
-    if (emailEnabled && verifiedEmail !== cleanEmail) {
-      return res.status(400).json({ code: 'EMAIL_NOT_VERIFIED', field: 'email', message: 'Please verify your email with the 6-digit code we send you before submitting.' });
-    }
-    const isEmailVerified = verifiedEmail === cleanEmail;
+    // No email code is asked any more (Nov 2026: it stopped many sellers). An older form that
+    // still verified the email marks it as verified; otherwise it is simply not verified.
+    const isEmailVerified = provenEmail(emailToken) === cleanEmail;
 
     let baseSlug = slugify(storeName);
     let storeSlug = baseSlug;
@@ -452,6 +450,83 @@ router.get('/me', authSeller, async (req, res) => {
     const out = seller.toObject();
     out.targets = sellerSafeTargets(out.targets);
     res.json(out);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ─── ID card / PAN card photos uploaded AFTER registration ───
+// Many sellers do not have their cards at hand when they register: they may send the application
+// without them and upload them later from Seller Central. Only MISSING photos can be added here —
+// a photo that is already on file can not be replaced by the store (so an approved store can not
+// swap its documents); the team can still ask for new ones through support.
+const KYC_SLOTS = ['aadhaarFront', 'aadhaarBack', 'panFront', 'panBack'];
+const kycUploadLimit = limit({ name: 'seller-kyc-upload', max: 20, windowMs: 60 * 60 * 1000, message: 'Too many uploads. Please try again later.' });
+const strLen = (path) => ({ $strLenCP: { $ifNull: [path, ''] } });
+// which of the 4 photos are on file (the pictures themselves are never loaded for this)
+async function kycOnFile(sellerId) {
+  const [row] = await Seller.aggregate([
+    { $match: { _id: new mongoose.Types.ObjectId(String(sellerId)) } },
+    {
+      $project: {
+        // older registrations kept the front pictures in the legacy fields
+        aadhaarFront: { $or: [{ $gt: [strLen('$kycDocuments.aadhaarFront'), 0] }, { $gt: [strLen('$kycDocuments.idCard'), 0] }, { $gt: [strLen('$kycDocuments.idDocumentUrl'), 0] }] },
+        aadhaarBack: { $gt: [strLen('$kycDocuments.aadhaarBack'), 0] },
+        panFront: { $or: [{ $gt: [strLen('$kycDocuments.panFront'), 0] }, { $gt: [strLen('$kycDocuments.passport'), 0] }, { $gt: [strLen('$kycDocuments.passportDocumentUrl'), 0] }] },
+        panBack: { $gt: [strLen('$kycDocuments.panBack'), 0] },
+      },
+    },
+  ]);
+  if (!row) return null;
+  const docs = Object.fromEntries(KYC_SLOTS.map((k) => [k, Boolean(row[k])]));
+  return { docs, missing: KYC_SLOTS.filter((k) => !docs[k]), complete: KYC_SLOTS.every((k) => docs[k]) };
+}
+
+// GET /api/sellers/me/documents → { docs: { aadhaarFront: true, … }, missing: [...], complete }
+router.get('/me/documents', authSeller, async (req, res) => {
+  try {
+    const out = await kycOnFile(req.seller.id);
+    if (!out) return res.status(404).json({ message: 'Seller not found' });
+    res.json(out);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/sellers/me/documents { field: 'aadhaarFront' | 'aadhaarBack' | 'panFront' | 'panBack', file: data URL }
+router.post('/me/documents', authSeller, kycUploadLimit, announceToAdmins('sellers', 'sellers:changed', (req) => ({ sellerId: String(req.seller?.id || '') })), async (req, res) => {
+  try {
+    const field = asText(req.body?.field, 20);
+    const file = req.body?.file;
+    if (!KYC_SLOTS.includes(field)) return res.status(400).json({ message: 'Unknown document.' });
+    const ok = typeof file === 'string' && (file.startsWith('data:image/') || file.startsWith('data:application/pdf'));
+    if (!ok) return res.status(400).json({ message: 'Please choose a photo (JPG / PNG) or a PDF of the card.' });
+    if (file.length > 1.6 * 1024 * 1024) return res.status(413).json({ message: 'This file is too large. Please upload a smaller photo.' });
+
+    const before = await kycOnFile(req.seller.id);
+    if (!before) return res.status(404).json({ message: 'Seller not found' });
+    if (before.docs[field]) return res.status(409).json({ code: 'ALREADY_ON_FILE', message: 'This photo is already on file. To change it, please contact support.', ...before });
+
+    // only written while the slot is still empty (two uploads at the same moment can not both win)
+    const empty = { $in: ['', null] };
+    const r = await Seller.updateOne(
+      { _id: req.seller.id, [`kycDocuments.${field}`]: empty },
+      { $set: { [`kycDocuments.${field}`]: file, 'kycDocuments.uploadedAt': new Date() } }
+    );
+    if (!r.modifiedCount) return res.status(409).json({ code: 'ALREADY_ON_FILE', message: 'This photo is already on file. To change it, please contact support.', ...before });
+
+    const after = await kycOnFile(req.seller.id);
+    if (after?.complete) {
+      const s = await Seller.findById(req.seller.id).select('storeName ownerName').lean();
+      notify(req.app, {
+        recipientType: 'admin',
+        type: 'approval',
+        title: '🪪 Documents completed',
+        body: `${s?.storeName || 'A store'} (${s?.ownerName || ''}) uploaded the missing ID card / PAN card photos. Please check them in the seller profile → Documents.`,
+        link: '/admin/sellers',
+      });
+    }
+    res.json({ ok: true, message: 'Photo uploaded ✓', ...after });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

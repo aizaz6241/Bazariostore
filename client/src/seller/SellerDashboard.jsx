@@ -13,6 +13,7 @@ import SellerAppModal from '../components/SellerAppModal.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 import { getSocket } from '../socket.js';
 import GettingStarted from './onboarding/GettingStarted.jsx';
+import KycDocuments from './KycDocuments.jsx';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
 import { getLiveStoreVisitors } from '../utils/liveMetrics.js';
 import SellerCalendar from './dashboard/SellerCalendar.jsx';
@@ -272,6 +273,9 @@ export default function SellerDashboard() {
           <Link to="/seller/support" className="sd-btn sd-btn-ghost"><Ic name="headset" size={15} /> Support</Link>
         </div>
       </header>
+
+      {/* ── ID card / PAN card photos not sent at registration (hides itself when all are on file) ── */}
+      <KycDocuments />
 
       {/* ── What is at stake right now (waiting orders, deadlines, shortfall) ── */}
       <AtStake where="dashboard" />

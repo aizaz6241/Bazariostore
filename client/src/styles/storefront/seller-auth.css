@@ -262,3 +262,7 @@
   .sx-head h1 { font-size: 20px; }
 }
 .sx-step .sl-verify { margin-top: 0; }
+/* registration step 3: the ID card / PAN card photos may also be sent later (from Seller Central) */
+.sx-later { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: 12px; background: #eff6ff; border: 1px solid #bfdbfe; font-size: 13.5px; line-height: 1.45; color: #1e3a8a; }
+.sx-later svg { flex: none; margin-top: 2px; }
+.sx-need li em { font-style: normal; color: var(--sl-muted); font-size: 12.5px; }

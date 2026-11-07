@@ -271,68 +271,10 @@ export default function SellerLogin() {
     setErr('');
     setMode('submitted');
   };
-  // ─── Email verification: a 6-digit code is sent to the email; registration needs it ───
-  // status: idle | sending | sent | verifying | verified | notRequired
+  // ─── Email: no code is asked any more (Nov 2026). `ev` only resets an older verified state. ───
   const EV0 = { status: 'idle', email: '', code: '', token: '', msg: '', err: '', resendAt: 0 };
   const [ev, setEv] = useState(EV0);
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    if (!(ev.resendAt > Date.now())) return undefined;
-    const t = setInterval(() => setTick((n) => n + 1), 1000);
-    return () => clearInterval(t);
-  }, [ev.resendAt]);
-  const resendLeft = Math.max(0, Math.ceil((ev.resendAt - Date.now()) / 1000));
   const cleanRegEmail = String(regForm.email || '').trim().toLowerCase();
-  // the code belongs to one address: a changed email has to be verified again
-  const evForThis = ev.email === cleanRegEmail;
-  const emailVerified = evForThis && (ev.status === 'verified' || ev.status === 'notRequired');
-
-  const sendEmailCode = async () => {
-    if (!/^\S+@\S+\.\S+$/.test(cleanRegEmail)) {
-      setEv({ ...EV0, err: 'Please enter a valid email address first.' });
-      return;
-    }
-    setEv((v) => ({ ...v, status: 'sending', email: cleanRegEmail, err: '', msg: '' }));
-    try {
-      const res = await api('/sellers/register/send-code', { method: 'POST', body: { email: cleanRegEmail, name: regForm.ownerName }, timeout: 30000 });
-      if (res && res.required === false) {
-        setEv({ ...EV0, status: 'notRequired', email: cleanRegEmail });
-        return;
-      }
-      setEv({ ...EV0, status: 'sent', email: cleanRegEmail, msg: res?.message || 'We sent you a 6-digit code.', resendAt: Date.now() + (Number(res?.resendInSeconds) || 60) * 1000 });
-    } catch (e) {
-      if (e.status === 404) {
-        // a server without email verification: registration works as before
-        setEv({ ...EV0, status: 'notRequired', email: cleanRegEmail });
-        return;
-      }
-      if (e.code === 'APPLICATION_PENDING' || e.code === 'APPLICATION_REJECTED' || e.code === 'ALREADY_REGISTERED') {
-        setEv(EV0);
-        setEmailNotice({ code: e.code, message: e.message, application: e.data?.application });
-        return;
-      }
-      setEv((v) => ({
-        ...v,
-        status: v.msg ? 'sent' : 'idle',
-        err: e.message || 'Could not send the code. Please try again.',
-        resendAt: e.data?.waitSec ? Date.now() + e.data.waitSec * 1000 : v.resendAt,
-      }));
-    }
-  };
-  const verifyEmailCode = async () => {
-    const code = String(ev.code || '').replace(/\D/g, '');
-    if (code.length !== 6) {
-      setEv((v) => ({ ...v, err: 'Please enter the 6-digit code from the email.' }));
-      return;
-    }
-    setEv((v) => ({ ...v, status: 'verifying', err: '' }));
-    try {
-      const res = await api('/sellers/register/verify-code', { method: 'POST', body: { email: ev.email, code }, timeout: 30000 });
-      setEv((v) => ({ ...v, status: 'verified', token: res.emailToken || '', err: '', msg: '' }));
-    } catch (e) {
-      setEv((v) => ({ ...v, status: 'sent', err: e.message || 'Wrong code. Please try again.' }));
-    }
-  };
 
   const onRegEmailBlur = async () => {
     const answer = await checkEmail(regForm.email);
@@ -381,12 +323,6 @@ export default function SellerLogin() {
     }
     if (!acceptTerms) {
       setErr('Please read and accept the Seller Terms & Conditions to register.');
-      return;
-    }
-    if (!emailVerified) {
-      setErr('Please verify your email first: tap "Send code", then enter the 6-digit code from the email.');
-      setRegStep(2);
-      try { document.getElementById('sl-email-verify')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch {}
       return;
     }
     // everything together must stay under what the server accepts (5 MB)
@@ -548,7 +484,6 @@ export default function SellerLogin() {
     if (n === 2) {
       if (!/^\S+@\S+\.\S+$/.test(cleanRegEmail)) return 'Please write a correct email address.';
       if (emailNotice) return emailNotice.message || 'This email is already used.';
-      if (!emailVerified) return 'Please verify your email: tap "Send code", then type the 6-digit code from the email.';
       if (phoneDigits.length < 7) return 'Please write your phone / WhatsApp number.';
       if (String(regForm.password || '').length < 6) return 'Please make a password with at least 6 letters or numbers.';
       if (affCheck.state === 'invalid') return `${affCheck.message} (You can also leave the security code empty.)`;
@@ -744,8 +679,7 @@ export default function SellerLogin() {
                   <ul>
                     <li><Ic name="mail" size={15} /> Your email</li>
                     <li><Ic name="phone" size={15} /> Phone / WhatsApp number</li>
-                    <li><Ic name="image" size={15} /> ID card photo (front + back)</li>
-                    <li><Ic name="image" size={15} /> PAN card photo (front + back)</li>
+                    <li><Ic name="image" size={15} /> ID card &amp; PAN card photos <em>(you can also add them later)</em></li>
                   </ul>
                 </div>
               </section>
@@ -772,53 +706,6 @@ export default function SellerLogin() {
                     autoComplete="email"
                   />
                 </label>
-                {!emailNotice && (
-                  <div className={`sl-verify ${emailVerified ? 'ok' : ''}`} id="sl-email-verify">
-                    {emailVerified ? (
-                      <p className="sl-verify-ok"><Ic name="checkCircle" size={16} /> {ev.status === 'verified' ? 'Email verified' : 'Email saved'}</p>
-                    ) : (
-                      <>
-                        <div className="sl-verify-head">
-                          <span><Ic name="mail" size={15} /> Verify your email</span>
-                          <button
-                            type="button"
-                            className="sl-btn ghost sm"
-                            onClick={sendEmailCode}
-                            disabled={ev.status === 'sending' || (evForThis && resendLeft > 0)}
-                          >
-                            {ev.status === 'sending' ? 'Sending…' : evForThis && ev.status !== 'idle' ? (resendLeft > 0 ? `Send again in ${resendLeft}s` : 'Send code again') : 'Send code'}
-                          </button>
-                        </div>
-                        {evForThis && (ev.status === 'sent' || ev.status === 'verifying') && (
-                          <>
-                            <p className="sl-verify-msg">
-                              {ev.msg || 'We sent a 6-digit code to your email.'}
-                              {!/spam/i.test(ev.msg || '') && <b> Not in your inbox? Look in the Spam / Junk folder.</b>}
-                            </p>
-                            <div className="sl-verify-row">
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                autoComplete="one-time-code"
-                                maxLength={6}
-                                value={ev.code}
-                                onChange={(e) => setEv((v) => ({ ...v, code: e.target.value.replace(/\D/g, '').slice(0, 6), err: '' }))}
-                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); verifyEmailCode(); } }}
-                                placeholder="6-digit code"
-                                aria-label="6-digit code from the email"
-                              />
-                              <button type="button" className="sl-btn primary sm" onClick={verifyEmailCode} disabled={ev.status === 'verifying'}>
-                                {ev.status === 'verifying' ? 'Checking…' : 'Verify'}
-                              </button>
-                            </div>
-                          </>
-                        )}
-                        {!(evForThis && ev.status !== 'idle') && <p className="sl-verify-msg">Tap "Send code". We will email you a 6-digit code to check this email is yours.</p>}
-                        {ev.err && <p className="sl-verify-err">{ev.err}</p>}
-                      </>
-                    )}
-                  </div>
-                )}
                 {emailNotice && (
                   <div className={`sl-alert ${emailNotice.code === 'APPLICATION_REJECTED' ? 'err' : 'warn'} tight`}>
                     <Ic name="alert" size={16} />
@@ -867,15 +754,19 @@ export default function SellerLogin() {
 
             {regStep === 3 && (
               <section className="sx-step">
-                <h2><span>Step 3 of 3</span> ID card photos <em className="sl-count">{docsDone}/4</em></h2>
+                <h2><span>Step 3 of 3</span> ID card &amp; PAN card photos <em className="sl-count">{docsDone}/4</em></h2>
                 <p className="sl-fine">Take a clear photo of each side. Only our checking team sees them.</p>
+                <div className="sx-later" role="note">
+                  <Ic name="clock" size={16} />
+                  <span><b>Don't have them right now?</b> You can still submit. After your store is approved, upload them from your Seller Central dashboard.</span>
+                </div>
                 <div className="sl-docs sx-docs">
                   {DOCS.map((d) => {
                     const has = Boolean(regForm[d.field]);
                     const busy = preparing === d.field;
                     return (
                       <label key={d.field} className={`sl-doc ${has ? 'has' : ''} ${busy ? 'busy' : ''}`}>
-                        <input type="file" accept="image/*,.pdf" onChange={handleFileUpload(d.field)} required={!has} />
+                        <input type="file" accept="image/*,.pdf" onChange={handleFileUpload(d.field)} />
                         <span className="sl-doc-ico">{has ? <Ic name="check" size={18} /> : <Ic name="image" size={18} />}</span>
                         <span className="sl-doc-txt">
                           <b>{d.label} — {d.side}</b>
