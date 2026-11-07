@@ -4,7 +4,7 @@ import Member from '@/lib/models/Member';
 import SellerAssignment from '@/lib/models/SellerAssignment';
 import mongoose from 'mongoose';
 import { logFinance, flushFinanceAlertsSoon } from '@/lib/utils/financeLog';
-import FinanceSplit from '@/lib/models/FinanceSplit';
+import { removeMember } from '@/lib/utils/memberDelete';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +21,7 @@ export async function PATCH(req, { params }) {
     const { password, name, phone, active, commissionLabel } = body;
 
     const member = await Member.findById(id);
-    if (!member) {
+    if (!member || member.deletedAt) {
       return NextResponse.json({ message: 'Member not found' }, { status: 404 });
     }
 
@@ -129,7 +129,8 @@ export async function PATCH(req, { params }) {
   }
 }
 
-// DELETE /api/members/[id] — Admin deletes a team member
+// DELETE /api/members/[id] — Admin deletes a team member (same rules as the bulk delete:
+// see lib/utils/memberDelete.js — a member with money/referral history is closed, not erased)
 export async function DELETE(req, { params }) {
   try {
     const session = await getAuthSession(req);
@@ -137,70 +138,15 @@ export async function DELETE(req, { params }) {
       return NextResponse.json({ message: 'Forbidden. Admin access required.' }, { status: 403 });
     }
 
-    const { id } = params;
-
-    // Safeguard 1: Admin cannot delete their own account
-    if (session._id.toString() === id.toString()) {
-      return NextResponse.json({ message: 'You cannot delete your own account.' }, { status: 400 });
-    }
-
-    const member = await Member.findById(id);
-    if (!member) {
-      return NextResponse.json({ message: 'Member not found' }, { status: 404 });
-    }
-
-    // Safeguard 2: Prevent deletion of primary platform admins via members portal
-    if (member.role === 'admin' && member.ecommerceAdminId) {
-      return NextResponse.json({
-        message: 'Cannot delete primary platform administrator account from team management.',
-      }, { status: 400 });
-    }
-
-    // Safeguard 3: a member with money history or in a referral is never deleted (his wallet,
-    // finance shares and payouts point to him). Switch the account off instead.
-    const idStr = String(member._id);
-    const [hasShares, isReferrer, hasPayouts] = await Promise.all([
-      FinanceSplit.exists({ $or: [{ 'shares.userId': member._id }, { ownerId: member._id }] }),
-      Member.exists({ referredBy: member._id }),
-      mongoose.connection.db.collection('portalwallettransactions').findOne({ userId: { $in: [member._id, idStr] } }, { projection: { _id: 1 } }),
-    ]);
-    if (hasShares || isReferrer || member.referredBy || hasPayouts) {
-      return NextResponse.json(
-        { message: `“${member.name}” has money history or is part of a referral, so the account cannot be deleted (it would break the finance). Switch the account off instead.` },
-        { status: 400 }
-      );
-    }
-
-    const hadSellers = await SellerAssignment.countDocuments({ memberId: member._id, status: 'active' });
-
-    // Release any client store assignments so they can be reassigned
-    await SellerAssignment.deleteMany({ memberId: member._id });
-
-    // Delete the member record
-    await Member.findByIdAndDelete(member._id);
-    forgetSessions(member._id);
-
-    await logFinance({
-      session,
-      action: 'member.deleted',
-      summary: `Deleted ${member.role === 'admin' ? 'admin' : 'member'} “${member.name}” (${hadSellers} assigned ${hadSellers === 1 ? 'seller' : 'sellers'} became unassigned)`,
-      entity: 'member',
-      entityId: member._id,
-      before: {
-        name: member.name,
-        username: member.username,
-        role: member.role,
-        deal: member.commissionLabel || 'pkr_1to1',
-        walletUSDT: member.wallet?.balanceUSDT || 0,
-        activeSellers: hadSellers,
-      },
-    });
+    const result = await removeMember({ session, id: params.id });
     await flushFinanceAlertsSoon();
 
     return NextResponse.json({
-      message: `Member "${member.name}" deleted successfully. Any assigned stores have been unassigned.`,
+      message: `“${result.name}” deleted.${result.sellers ? ` ${result.sellers} ${result.sellers === 1 ? 'store is' : 'stores are'} now unassigned — assign them again on the Sellers page.` : ''}`,
+      result,
     });
   } catch (err) {
+    if (err.expected) return NextResponse.json({ message: err.message }, { status: 400 });
     console.error('Delete member error:', err);
     return NextResponse.json({ message: err.message || 'Internal server error' }, { status: 500 });
   }

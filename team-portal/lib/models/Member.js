@@ -78,6 +78,11 @@ const memberSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // ── Deleted from the Members page (kept, not erased, when he has money or referral history:
+    // his finance shares, payouts and referral commissions keep pointing to him) ──
+    deletedAt: { type: Date, default: null, index: true },
+    deletedBy: { type: mongoose.Schema.Types.ObjectId, default: null },
+    deletedByName: { type: String, default: '' },
   },
   { timestamps: true }
 );

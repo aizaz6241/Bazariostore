@@ -24,7 +24,7 @@ export async function GET(req) {
     // Keep all ecommerce admins synchronized
     await syncEcommerceAdmins();
 
-    const members = await Member.find().select('-passwordHash -plainPassword').sort({ role: 1, createdAt: -1 }).lean();
+    const members = await Member.find({ deletedAt: null }).select('-passwordHash -plainPassword').sort({ role: 1, createdAt: -1 }).lean();
 
     // One batch for the whole team (was several queries per member)
     const team = await loadTeamStats(members);

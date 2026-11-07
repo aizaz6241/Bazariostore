@@ -28,6 +28,8 @@ import {
   Search,
   MoreVertical,
   Link2,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import WalletModal from '@/components/WalletModal';
 
@@ -204,8 +206,12 @@ export default function MembersPage() {
   const [editPasswordMsg, setEditPasswordMsg] = useState({ text: '', type: '' });
 
   // Delete Member Confirmation Modal
-  const [deleteConfirmMember, setDeleteConfirmMember] = useState(null);
+  // One modal for deleting one member or many selected ones
+  const [deleteTargets, setDeleteTargets] = useState(null); // array of members, or null
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteResult, setDeleteResult] = useState(null); // { message, failed: [{ name, message }] }
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState([]);
 
   // List controls
   const [memberSearch, setMemberSearch] = useState('');
@@ -425,31 +431,39 @@ export default function MembersPage() {
     }
   };
 
-  // ─── ADMIN: Delete Member ───
-  const handleDeleteMember = async () => {
-    if (!deleteConfirmMember) return;
-
+  // ─── ADMIN: Delete Member(s) — one, or many selected at once ───
+  const handleDeleteMembers = async () => {
+    if (!deleteTargets || !deleteTargets.length) return;
     try {
       setDeleteLoading(true);
       const token = localStorage.getItem('portal_token');
-
-      const res = await fetch(`/api/members/${deleteConfirmMember._id}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+      const res = await fetch('/api/members/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ids: deleteTargets.map((m) => m._id) }),
       });
-
-      const data = await res.json();
-      if (res.ok) {
-        setDeleteConfirmMember(null);
-        fetchData();
-      } else {
-        alert(data.message || 'Failed to delete member');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDeleteResult({ message: data.message || 'Could not delete. Try again.', failed: [] });
+        return;
       }
+      const nameOf = new Map(deleteTargets.map((m) => [String(m._id), m.name]));
+      const failed = (data.failed || []).map((f) => ({ name: nameOf.get(String(f.id)) || 'Member', message: f.message }));
+      const gone = new Set((data.deleted || []).map((d) => String(d.id)));
+      setSelectedIds((ids) => ids.filter((x) => !gone.has(String(x))));
+      if (failed.length) {
+        setDeleteResult({ message: data.message, failed });
+      } else {
+        setDeleteTargets(null);
+        setDeleteResult(null);
+        setSelectMode(false);
+        if (data.message && /unassigned/.test(data.message)) alert(data.message);
+      }
+      fetchData(true);
+      loadReferrals();
     } catch (err) {
-      console.error('Delete member error:', err);
-      alert('Network error occurred while deleting member');
+      console.error('Delete members error:', err);
+      setDeleteResult({ message: 'Network error — nothing more was deleted. Try again.', failed: [] });
     } finally {
       setDeleteLoading(false);
     }
@@ -479,6 +493,16 @@ export default function MembersPage() {
       ? Number(m.wallet.balanceUSDT) || 0
       : (Number(m.wallet?.balancePKR || m.netBalancePKR || 0) / 280) + (Number(m.wallet?.balanceINR || 0) / 90);
   const usd = (n) => `₮${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  // who can be ticked for delete: never yourself, never a partner's main account
+  const canDelete = (m) => user?._id !== m._id && !(m.role === 'admin' && m.ecommerceAdminId);
+  const isSelected = (m) => selectedIds.includes(m._id);
+  const toggleSelected = (m) =>
+    setSelectedIds((ids) => (ids.includes(m._id) ? ids.filter((x) => x !== m._id) : [...ids, m._id]));
+  const openDelete = (list) => {
+    setDeleteResult(null);
+    setDeleteTargets(list);
+  };
 
   const q = memberSearch.trim().toLowerCase();
   const visibleMembers = members.filter((m) => {
@@ -555,10 +579,25 @@ export default function MembersPage() {
     const menuOpen = openMenuId === member._id;
 
     return (
-      <div className={`border-b border-slate-100 last:border-b-0 ${member.active === false ? 'opacity-60' : ''}`}>
+      <div className={`border-b border-slate-100 last:border-b-0 ${member.active === false ? 'opacity-60' : ''} ${selectMode && isSelected(member) ? 'bg-red-50/60' : ''}`}>
         <div className="px-3 sm:px-4 py-3 grid grid-cols-[1fr_auto] lg:grid-cols-[minmax(0,2.2fr)_repeat(4,minmax(0,1fr))_auto] items-center gap-x-3 gap-y-2">
           {/* who */}
           <div className="flex items-start gap-3 min-w-0">
+            {selectMode && (
+              canDelete(member) ? (
+                <button
+                  type="button"
+                  onClick={() => toggleSelected(member)}
+                  className={`mt-1.5 shrink-0 ${isSelected(member) ? 'text-red-600' : 'text-slate-300 hover:text-slate-500'}`}
+                  title={isSelected(member) ? 'Unselect' : 'Select'}
+                  aria-pressed={isSelected(member)}
+                >
+                  {isSelected(member) ? <CheckSquare className="w-5 h-5" /> : <Square className="w-5 h-5" />}
+                </button>
+              ) : (
+                <span className="w-5 shrink-0" />
+              )
+            )}
             <div
               className={`w-9 h-9 rounded-xl text-white font-bold flex items-center justify-center text-sm shrink-0 ${
                 member.role === 'admin' ? 'bg-gradient-to-tr from-purple-600 to-indigo-600' : 'bg-gradient-to-tr from-slate-700 to-slate-800'
@@ -681,7 +720,7 @@ export default function MembersPage() {
                       role="menuitem"
                       onClick={() => {
                         setOpenMenuId(null);
-                        setDeleteConfirmMember(member);
+                        openDelete([member]);
                       }}
                       className="w-full text-left px-3 py-2 hover:bg-red-50 flex items-center gap-2 text-red-600 border-t border-slate-100"
                     >
@@ -840,6 +879,18 @@ export default function MembersPage() {
                 className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectMode((v) => !v);
+                setSelectedIds([]);
+              }}
+              className={`px-3 py-2 rounded-xl text-xs font-semibold border flex items-center gap-1.5 self-start sm:self-auto ${
+                selectMode ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <CheckSquare className="w-4 h-4" /> {selectMode ? 'Cancel select' : 'Select'}
+            </button>
             <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0">
               {filterChips.map((c) => (
                 <button
@@ -873,6 +924,40 @@ export default function MembersPage() {
             <div className="space-y-4">
               {Section({ title: 'Partners', people: partnersShown, hint: 'Own sellers 75% · the other partner’s sellers 25%' })}
               {Section({ title: 'Members', people: membersShown, hint: 'Tap Wallet for the statement and payouts' })}
+            </div>
+          )}
+
+          {selectMode && (
+            <div className="sticky bottom-3 z-30">
+              <div className="bg-slate-900 text-white rounded-2xl shadow-2xl px-3 py-2.5 flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold px-1">{selectedIds.length} selected</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const shown = visibleMembers.filter(canDelete).map((m) => m._id);
+                    const allOn = shown.length > 0 && shown.every((x) => selectedIds.includes(x));
+                    setSelectedIds((ids) => (allOn ? ids.filter((x) => !shown.includes(x)) : [...new Set([...ids, ...shown])]));
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold"
+                >
+                  {visibleMembers.filter(canDelete).length > 0 && visibleMembers.filter(canDelete).every((m) => selectedIds.includes(m._id))
+                    ? 'Unselect shown'
+                    : 'Select all shown'}
+                </button>
+                {selectedIds.length > 0 && (
+                  <button type="button" onClick={() => setSelectedIds([])} className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold">
+                    Clear
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={!selectedIds.length}
+                  onClick={() => openDelete(members.filter((m) => selectedIds.includes(m._id)))}
+                  className="ml-auto px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 disabled:opacity-40 text-xs font-bold flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete {selectedIds.length || ''}
+                </button>
+              </div>
             </div>
           )}
         </>
@@ -1009,47 +1094,100 @@ export default function MembersPage() {
         </div>
       )}
 
-      {/* ─── MODAL: Admin Delete Member Confirmation ─── */}
-      {deleteConfirmMember && (
+      {/* ─── MODAL: Delete one or many members ─── */}
+      {deleteTargets && deleteTargets.length > 0 && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-slate-200 animate-scale-up">
-            <div className="flex items-center space-x-3 mb-4 text-red-600">
+          <div className="bg-white rounded-3xl p-5 sm:p-6 w-full max-w-lg shadow-2xl border border-slate-200 animate-scale-up max-h-[90vh] flex flex-col">
+            <div className="flex items-center gap-3 mb-3">
               <div className="w-10 h-10 rounded-2xl bg-red-50 flex items-center justify-center shrink-0">
                 <AlertTriangle className="w-5 h-5 text-red-600" />
               </div>
               <div>
-                <h3 className="font-bold text-slate-900 text-base">Delete Team Member</h3>
-                <p className="text-xs text-slate-400">This action cannot be undone.</p>
+                <h3 className="font-bold text-slate-900 text-base">
+                  Delete {deleteTargets.length === 1 ? deleteTargets[0].name : `${deleteTargets.length} members`}?
+                </h3>
+                <p className="text-xs text-slate-400">They can no longer log in. Check what happens below.</p>
               </div>
             </div>
 
-            <p className="text-xs sm:text-sm text-slate-600 mb-4 leading-relaxed">
-              Are you sure you want to permanently delete{' '}
-              <strong className="text-slate-900">{deleteConfirmMember.name}</strong> (@
-              {deleteConfirmMember.username})?
-              <br />
-              <br />
-              Any client stores assigned to this member will be safely unassigned so that another
-              agent can be assigned to them.
+            <div className="overflow-y-auto -mx-1 px-1 space-y-2 flex-1">
+              {deleteTargets.map((m) => {
+                const by = broughtBy(m);
+                const brought = broughtList(m);
+                const stores = Number(m.totalClients) || 0;
+                const wallet = walletOf(m);
+                const hasHistory = !!by || brought.length > 0 || !!m.referredBy || Math.abs(wallet) >= 0.01 || (Number(m.totalDepositsINR) || 0) > 0 || (Number(m.totalWithdrawalsINR) || 0) > 0;
+                const lines = [];
+                if (brought.length) lines.push(`Referrer: ${brought.map((x) => x.name).join(', ')} will get their full 100% from now on.`);
+                if (by) lines.push(`Brought by ${by.name}: ${by.name} stops earning from him from now on.`);
+                if (stores) lines.push(`${stores} ${stores === 1 ? 'store becomes' : 'stores become'} unassigned — assign again on the Sellers page.`);
+                if (Math.abs(wallet) >= 0.01) lines.push(`Wallet ${usd(wallet)} stays in the finance records${wallet > 0 ? ' — settle it with him (payout)' : ''}.`);
+                return (
+                  <div key={m._id} className="rounded-xl border border-slate-200 px-3 py-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-sm text-slate-900">{m.name}</span>
+                      <span className="text-[11px] text-slate-400">@{m.username}</span>
+                      {DealBadge({ m })}
+                      <span
+                        className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          hasHistory ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        {hasHistory ? 'Closed · history kept' : 'Erased fully'}
+                      </span>
+                    </div>
+                    {lines.length > 0 && (
+                      <ul className="mt-1 space-y-0.5">
+                        {lines.map((l) => (
+                          <li key={l} className="text-[11px] text-slate-600">• {l}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
+              Old deposits, shares, payouts and referral commissions are never erased, so the finance stays correct. Open leads go back to
+              unassigned and the person is removed from WhatsApp numbers.
             </p>
 
-            <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100">
+            {deleteResult && (
+              <div className="mt-3 rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+                <div className="font-semibold">{deleteResult.message}</div>
+                {deleteResult.failed.map((f, k) => (
+                  <div key={k} className="mt-0.5">
+                    • <b>{f.name}</b>: {f.message}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-3 mt-3 border-t border-slate-100">
               <button
                 type="button"
-                onClick={() => setDeleteConfirmMember(null)}
+                onClick={() => {
+                  setDeleteTargets(null);
+                  setDeleteResult(null);
+                }}
                 className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100"
               >
-                Cancel
+                {deleteResult ? 'Close' : 'Cancel'}
               </button>
-              <button
-                type="button"
-                onClick={handleDeleteMember}
-                disabled={deleteLoading}
-                className="px-4 py-2 rounded-xl text-xs font-semibold bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white shadow-sm flex items-center space-x-1"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>{deleteLoading ? 'Deleting...' : 'Confirm Delete'}</span>
-              </button>
+              {!(deleteResult && deleteResult.failed.length) && (
+                <button
+                  type="button"
+                  onClick={handleDeleteMembers}
+                  disabled={deleteLoading}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white shadow-sm flex items-center gap-1"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>
+                    {deleteLoading ? 'Deleting...' : deleteTargets.length === 1 ? 'Delete' : `Delete ${deleteTargets.length} members`}
+                  </span>
+                </button>
+              )}
             </div>
           </div>
         </div>
