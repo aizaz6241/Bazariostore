@@ -17,14 +17,17 @@ function AuthShell({ title, sub, children }) {
           <p className="seller-auth-sub">{sub || 'Manage your account, order tracking & fast checkout'}</p>
         </div>
 
-        {/* Role / Portal Switcher Tabs */}
-        <div className="login-portal-tabs">
-          <Link to="/login" className="portal-tab active">
-            <Ic name="user" size={15} /> Customer
-          </Link>
-          <Link to="/seller/login" className="portal-tab">
-            <Ic name="tag" size={15} /> Seller
-          </Link>
+        {/* This page is for shoppers. A seller who lands here is sent to Seller Center in one tap. */}
+        <div className="auth-seller-strip" role="note">
+          <span className="ass-ic" aria-hidden="true">🏪</span>
+          <div className="ass-txt">
+            <b>Are you a seller?</b>
+            <small>This page is for customers (shopping). Sellers login here:</small>
+          </div>
+          <div className="ass-btns">
+            <Link to="/seller/login" className="ass-btn">Seller login</Link>
+            <Link to="/seller/login?mode=register" className="ass-btn green">Register store</Link>
+          </div>
         </div>
 
         {children}
@@ -60,21 +63,6 @@ export function Login() {
 
   return (
     <AuthShell title="Sign In" sub="Sign in to your customer account">
-      {/* ─── PROMINENT BECOME SELLER / REGISTER AS SELLER CALLOUT ─── */}
-      <div className="login-seller-prompt-card">
-        <div className="lsp-text">
-          <div className="lsp-header">
-            <span className="lsp-tag">🏬 Sell on Bazario</span>
-            <span className="lsp-badge">Merchants &amp; Vendors</span>
-          </div>
-          <b className="lsp-title">Want to sell your products on Bazario?</b>
-          <p className="lsp-desc">Open your seller store, manage inventory, and start receiving orders today.</p>
-        </div>
-        <Link to="/seller/login?mode=register" className="lsp-btn">
-          <Ic name="tag" size={15} /> <b>Register as Seller →</b>
-        </Link>
-      </div>
-
       <form onSubmit={submit} className="auth-form-clean">
         {error && <div className="alert-error"><Ic name="x" size={14} /> {error}</div>}
         <div className="field">
@@ -111,7 +99,7 @@ export function Login() {
           </div>
         </div>
         <button className="btn-primary btn-block btn-auth-submit" disabled={busy}>
-          {busy ? 'Signing in…' : 'SIGN IN AS CUSTOMER →'}
+          {busy ? 'Signing in…' : 'Sign in as customer'}
         </button>
 
         {/* Customer Support Password Reset Notice */}
@@ -124,21 +112,6 @@ export function Login() {
         <span>New customer? <Link to="/register" style={{ fontWeight: 700, color: '#2563eb' }}>Create an account</Link></span>
       </div>
 
-      {/* Compact Quick Portal Links */}
-      <div className="auth-quick-portals">
-        <span className="aqp-label">Looking for other portals?</span>
-        <div className="aqp-links">
-          <Link to="/seller/login?mode=register" className="aqp-pill seller-pill" style={{ fontWeight: 700 }}>
-            <Ic name="tag" size={13} /> Become a Seller
-          </Link>
-          <Link to="/seller/login" className="aqp-pill seller-pill">
-            <Ic name="tag" size={13} /> Seller Hub
-          </Link>
-          <Link to="/admin/login" className="aqp-pill admin-pill">
-            <Ic name="shield" size={13} /> Admin
-          </Link>
-        </div>
-      </div>
     </AuthShell>
   );
 }

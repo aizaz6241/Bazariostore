@@ -36,6 +36,8 @@ export default function SellerLogin() {
 
   const switchMode = (m) => {
     setMode(m);
+    setRegStep(1);
+    setStepErr('');
     setErr('');
     setIsPendingApprovalErr(false);
     try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch {}
@@ -75,6 +77,9 @@ export default function SellerLogin() {
 
   // the Seller Terms & Conditions box on the registration form
   const [acceptTerms, setAcceptTerms] = useState(false);
+  // registration is done in 3 small steps; stepErr = what is missing on the current step
+  const [regStep, setRegStep] = useState(1);
+  const [stepErr, setStepErr] = useState('');
 
   // Register State
   const [regForm, setRegForm] = useState({
@@ -353,6 +358,7 @@ export default function SellerLogin() {
     }
     if (!emailVerified) {
       setErr('Please verify your email first: tap "Send code", then enter the 6-digit code from the email.');
+      setRegStep(2);
       try { document.getElementById('sl-email-verify')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch {}
       return;
     }
@@ -396,6 +402,7 @@ export default function SellerLogin() {
       });
       setEmail(regForm.email); // Pre-fill email in login tab
       setEv(EV0);
+      setRegStep(1);
       setMode('submitted');
       setRegForm({
         storeName: '',
@@ -424,6 +431,7 @@ export default function SellerLogin() {
         );
       } else if (e.code === 'EMAIL_NOT_VERIFIED') {
         setEv(EV0);
+        setRegStep(2);
         setErr(msg);
       } else if (e.code === 'INVALID_AFFILIATE_CODE') {
         setAffCheck({ state: 'invalid', message: msg });
@@ -502,32 +510,67 @@ export default function SellerLogin() {
   const docsDone = DOCS.filter((d) => regForm[d.field]).length;
   const isReg = mode === 'register';
 
+  // ─── Registration in 3 small steps (one screen at a time — easier on a phone) ───
+  const phoneDigits = String(regForm.phone || '').replace(/\D/g, '');
+  const stepProblem = (n) => {
+    if (n === 1) {
+      if (!regForm.storeName.trim()) return 'Please write your store name.';
+      if (!regForm.ownerName.trim()) return 'Please write your full name.';
+      return '';
+    }
+    if (n === 2) {
+      if (!/^\S+@\S+\.\S+$/.test(cleanRegEmail)) return 'Please write a correct email address.';
+      if (emailNotice) return emailNotice.message || 'This email is already used.';
+      if (!emailVerified) return 'Please verify your email: tap "Send code", then type the 6-digit code from the email.';
+      if (phoneDigits.length < 7) return 'Please write your phone / WhatsApp number.';
+      if (String(regForm.password || '').length < 6) return 'Please make a password with at least 6 letters or numbers.';
+      if (affCheck.state === 'invalid') return `${affCheck.message} (You can also leave the security code empty.)`;
+      return '';
+    }
+    return '';
+  };
+  const goStep = (n) => {
+    setStepErr('');
+    setErr('');
+    setRegStep(n);
+    try { document.querySelector('.sx-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch {}
+  };
+  const goNext = () => {
+    const p = stepProblem(regStep);
+    if (p) {
+      setStepErr(p);
+      return;
+    }
+    goStep(regStep + 1);
+  };
+  const STEPS = [
+    { n: 1, label: 'Store' },
+    { n: 2, label: 'Contact' },
+    { n: 3, label: 'Documents' },
+  ];
+
   return (
-    <div className="sl">
-      <div className={`sl-card ${isReg ? 'wide' : ''}`}>
-        {/* Brand */}
-        <div className="sl-brand">
-          <span className="sl-logo">B</span>
-          <span className="sl-brand-txt"><b>Bazario</b> <em>Seller Hub</em></span>
-        </div>
+    <div className="sl sx">
+      {/* Brand */}
+      <div className="sx-top">
+        <span className="sl-logo">B</span>
+        <span className="sl-brand-txt"><b>Bazario</b></span>
+        <span className="sx-tag">Seller Center</span>
+      </div>
 
-        {/* Who is signing in: customer or seller (admins use the link at the bottom) */}
-        <div className="sl-roles" role="tablist" aria-label="Account type">
-          <Link to="/login" role="tab" aria-selected="false"><Ic name="user" size={15} /> Customer</Link>
-          <span role="tab" aria-selected="true" className="on"><Ic name="tag" size={15} /> Seller</span>
-        </div>
-
+      <div className={`sl-card sx-card ${isReg ? 'wide' : ''}`}>
+        {/* Login or Register — two big, clear choices */}
         {mode !== 'submitted' && (
-          <>
-            <div className="sl-head">
-              <h2>{isReg ? 'Create your seller account' : 'Sign in to your store'}</h2>
-              <p>{isReg ? 'Open your store in a few minutes. Keep your Aadhaar and PAN card ready.' : 'Manage your products, orders and earnings.'}</p>
-            </div>
-            <div className="sl-seg" role="tablist">
-              <button type="button" role="tab" aria-selected={!isReg} className={!isReg ? 'on' : ''} onClick={() => switchMode('login')}>Sign in</button>
-              <button type="button" role="tab" aria-selected={isReg} className={isReg ? 'on' : ''} onClick={() => switchMode('register')}>Register as seller</button>
-            </div>
-          </>
+          <div className="sx-choose" role="tablist" aria-label="Login or register">
+            <button type="button" role="tab" aria-selected={!isReg} className={!isReg ? 'on' : ''} onClick={() => switchMode('login')}>
+              <span className="sx-choose-ic" aria-hidden="true"><Ic name="lock" size={20} /></span>
+              <span><b>Login</b><small>I already have a store</small></span>
+            </button>
+            <button type="button" role="tab" aria-selected={isReg} className={isReg ? 'on' : ''} onClick={() => switchMode('register')}>
+              <span className="sx-choose-ic" aria-hidden="true"><Ic name="plus" size={20} /></span>
+              <span><b>Register</b><small>Open a new store</small></span>
+            </button>
+          </div>
         )}
 
         {isPendingApprovalErr && (
@@ -535,7 +578,7 @@ export default function SellerLogin() {
             <Ic name="clock" size={18} />
             <div>
               <b>Your application is under review</b>
-              <p>Sign in opens as soon as our team approves your store. Use the same email and password then.</p>
+              <p>Login opens as soon as our team approves your store. Use the same email and password then.</p>
             </div>
           </div>
         )}
@@ -543,7 +586,7 @@ export default function SellerLogin() {
           <div className="sl-alert ok"><Ic name="checkCircle" size={18} /><div><p>{successMsg}</p></div></div>
         )}
         {err && !isPendingApprovalErr && (
-          <div className="sl-alert err"><Ic name="alert" size={18} /><div><p>{err}</p></div></div>
+          <div className="sl-alert err" role="alert"><Ic name="alert" size={18} /><div><p>{err}</p></div></div>
         )}
 
         {mode === 'submitted' && submittedInfo?.pending ? (
@@ -580,156 +623,209 @@ export default function SellerLogin() {
             <ol className="sl-next">
               <li className="done"><i><Ic name="check" size={12} /></i><span>Application sent</span></li>
               <li className="now"><i>2</i><span>Document check by our team</span></li>
-              <li><i>3</i><span>Store approved — sign in and start selling</span></li>
+              <li><i>3</i><span>Store approved — login and start selling</span></li>
             </ol>
-            <p className="sl-fine">You can sign in once the store is approved. Please do not register again with the same email.</p>
-            <button type="button" className="sl-btn primary" onClick={() => switchMode('login')}>Go to sign in</button>
+            <p className="sl-fine">You can login once the store is approved. Please do not register again with the same email.</p>
+            <button type="button" className="sl-btn primary" onClick={() => switchMode('login')}>Go to login</button>
             <button type="button" className="sl-btn ghost" onClick={() => switchMode('register')}>Register a different store</button>
           </div>
         ) : !isReg ? (
-          <form onSubmit={submit} className="sl-form">
-            <label className="sl-field">
-              <span>Email</span>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@yourstore.com" required autoFocus autoComplete="email" />
+          /* ───────────── LOGIN ───────────── */
+          <form onSubmit={submit} className="sl-form sx-form">
+            <div className="sx-head">
+              <h1>Seller login</h1>
+              <p>Login to see your store, orders and money.</p>
+            </div>
+            <label className="sl-field sx-field">
+              <span><Ic name="mail" size={15} /> Email</span>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Your email" required autoFocus autoComplete="email" inputMode="email" autoCapitalize="none" spellCheck={false} />
             </label>
-            <label className="sl-field">
-              <span>Password</span>
+            <label className="sl-field sx-field">
+              <span><Ic name="lock" size={15} /> Password</span>
               <div className="sl-pw">
                 <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Your password" required autoComplete="current-password" />
-                <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'} title={showPassword ? 'Hide password' : 'Show password'}><Ic name="eye" size={17} /></button>
+                <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? 'Hide password' : 'Show password'} title={showPassword ? 'Hide password' : 'Show password'}><Ic name="eye" size={18} /></button>
               </div>
             </label>
-            <button type="submit" className="sl-btn primary" disabled={loading}>{loading ? 'Signing in…' : 'Sign in'}</button>
-            <p className="sl-fine center">
-              Forgot your password?{' '}
-              <button type="button" className="sl-link inline" onClick={() => { setForgotEmail(email.trim()); setForgotStep('request'); setForgotErr(''); setForgotSuccess(''); setForgotModalOpen(true); }}>
-                Reset it by email
-              </button>
-            </p>
+            <button type="submit" className="sl-btn primary sx-big" disabled={loading}>
+              {loading ? 'Logging in…' : <>Login <Ic name="arrowRight" size={17} /></>}
+            </button>
+            <button
+              type="button"
+              className="sx-forgot"
+              onClick={() => { setForgotEmail(email.trim()); setForgotStep('request'); setForgotErr(''); setForgotSuccess(''); setForgotModalOpen(true); }}
+            >
+              Forgot password?
+            </button>
 
-            <div className="sl-become">
+            <div className="sx-new">
+              <span className="sx-new-ic" aria-hidden="true">🏪</span>
               <div>
-                <b>New to Bazario?</b>
-                <small>Open your own store — no stock to buy, we deliver every order.</small>
+                <b>New seller?</b>
+                <small>Open your own store. No stock to buy — we deliver every order.</small>
               </div>
-              <button type="button" onClick={() => switchMode('register')}>Register as seller <Ic name="arrowRight" size={14} /></button>
+              <button type="button" className="sl-btn sx-green" onClick={() => switchMode('register')}>
+                Register your store <Ic name="arrowRight" size={16} />
+              </button>
             </div>
           </form>
         ) : (
-          <form onSubmit={handleRegister} className="sl-form">
-            <section className="sl-sec">
-              <h3><i>1</i> Your store</h3>
-              <div className="sl-grid">
-                <label className="sl-field">
-                  <span>Store name</span>
-                  <input type="text" value={regForm.storeName} onChange={(e) => setRegForm({ ...regForm, storeName: e.target.value })} placeholder="e.g. Apex Electronics" required />
-                </label>
-                <label className="sl-field">
-                  <span>Owner full name</span>
-                  <input type="text" value={regForm.ownerName} onChange={(e) => setRegForm({ ...regForm, ownerName: e.target.value })} placeholder="As on your ID card" required />
-                </label>
-              </div>
-            </section>
+          /* ───────────── REGISTER (3 steps) ───────────── */
+          <form
+            onSubmit={(e) => {
+              if (regStep < 3) {
+                e.preventDefault();
+                goNext();
+                return;
+              }
+              handleRegister(e);
+            }}
+            className="sl-form sx-form"
+            noValidate={regStep < 3}
+          >
+            <div className="sx-head">
+              <h1>Register your store</h1>
+              <p>3 easy steps. It takes about 5 minutes.</p>
+            </div>
 
-            <section className="sl-sec">
-              <h3><i>2</i> Your account</h3>
-              <div className="sl-grid">
-                <label className="sl-field">
-                  <span>Email</span>
+            <ol className="sx-steps" aria-label="Steps">
+              {STEPS.map((s) => (
+                <li key={s.n} className={regStep === s.n ? 'now' : regStep > s.n ? 'done' : ''} aria-current={regStep === s.n ? 'step' : undefined}>
+                  <i>{regStep > s.n ? <Ic name="check" size={13} /> : s.n}</i>
+                  <span>{s.label}</span>
+                </li>
+              ))}
+            </ol>
+
+            {stepErr && (
+              <div className="sl-alert err tight" role="alert"><Ic name="alert" size={16} /><div><p>{stepErr}</p></div></div>
+            )}
+
+            {regStep === 1 && (
+              <section className="sx-step">
+                <h2><span>Step 1 of 3</span> About your store</h2>
+                <label className="sl-field sx-field">
+                  <span>Store name</span>
+                  <input type="text" value={regForm.storeName} onChange={(e) => { setRegForm({ ...regForm, storeName: e.target.value }); setStepErr(''); }} placeholder="e.g. Sharma Electronics" autoFocus />
+                </label>
+                <label className="sl-field sx-field">
+                  <span>Your full name</span>
+                  <input type="text" value={regForm.ownerName} onChange={(e) => { setRegForm({ ...regForm, ownerName: e.target.value }); setStepErr(''); }} placeholder="Same as on your Aadhaar card" autoComplete="name" />
+                </label>
+                <div className="sx-need">
+                  <b>Keep these ready:</b>
+                  <ul>
+                    <li><Ic name="mail" size={15} /> Your email</li>
+                    <li><Ic name="phone" size={15} /> Phone / WhatsApp number</li>
+                    <li><Ic name="image" size={15} /> Aadhaar card photo (front + back)</li>
+                    <li><Ic name="image" size={15} /> PAN card photo (front + back)</li>
+                  </ul>
+                </div>
+              </section>
+            )}
+
+            {regStep === 2 && (
+              <section className="sx-step">
+                <h2><span>Step 2 of 3</span> Contact &amp; password</h2>
+                <label className="sl-field sx-field">
+                  <span><Ic name="mail" size={15} /> Email</span>
                   <input
                     type="email"
                     value={regForm.email}
                     onChange={(e) => {
                       setRegForm({ ...regForm, email: e.target.value });
+                      setStepErr('');
                       if (emailNotice) setEmailNotice(null);
                     }}
                     onBlur={onRegEmailBlur}
-                    placeholder="you@email.com"
-                    required
+                    placeholder="Your email"
+                    inputMode="email"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    autoComplete="email"
                   />
                 </label>
-                <label className="sl-field">
-                  <span>Phone / WhatsApp</span>
-                  <input type="tel" value={regForm.phone} onChange={(e) => setRegForm({ ...regForm, phone: e.target.value })} placeholder="Phone number with country code" required />
-                </label>
-              </div>
-              {!emailNotice && (
-                <div className={`sl-verify ${emailVerified ? 'ok' : ''}`} id="sl-email-verify">
-                  {emailVerified ? (
-                    <p className="sl-verify-ok"><Ic name="checkCircle" size={16} /> {ev.status === 'verified' ? 'Email verified' : 'Email saved'}</p>
-                  ) : (
-                    <>
-                      <div className="sl-verify-head">
-                        <span><Ic name="mail" size={15} /> Verify your email</span>
-                        <button
-                          type="button"
-                          className="sl-btn ghost sm"
-                          onClick={sendEmailCode}
-                          disabled={ev.status === 'sending' || (evForThis && resendLeft > 0)}
-                        >
-                          {ev.status === 'sending' ? 'Sending…' : evForThis && ev.status !== 'idle' ? (resendLeft > 0 ? `Send again in ${resendLeft}s` : 'Send code again') : 'Send code'}
-                        </button>
-                      </div>
-                      {evForThis && (ev.status === 'sent' || ev.status === 'verifying') && (
-                        <>
-                          <p className="sl-verify-msg">
-                            {ev.msg || 'We sent a 6-digit code to your email.'}
-                            {!/spam/i.test(ev.msg || '') && <b> Not in your inbox? Look in the Spam / Junk folder.</b>}
-                          </p>
-                          <div className="sl-verify-row">
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              autoComplete="one-time-code"
-                              maxLength={6}
-                              value={ev.code}
-                              onChange={(e) => setEv((v) => ({ ...v, code: e.target.value.replace(/\D/g, '').slice(0, 6), err: '' }))}
-                              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); verifyEmailCode(); } }}
-                              placeholder="6-digit code"
-                              aria-label="6-digit code from the email"
-                            />
-                            <button type="button" className="sl-btn primary sm" onClick={verifyEmailCode} disabled={ev.status === 'verifying'}>
-                              {ev.status === 'verifying' ? 'Checking…' : 'Verify'}
-                            </button>
-                          </div>
-                        </>
+                {!emailNotice && (
+                  <div className={`sl-verify ${emailVerified ? 'ok' : ''}`} id="sl-email-verify">
+                    {emailVerified ? (
+                      <p className="sl-verify-ok"><Ic name="checkCircle" size={16} /> {ev.status === 'verified' ? 'Email verified' : 'Email saved'}</p>
+                    ) : (
+                      <>
+                        <div className="sl-verify-head">
+                          <span><Ic name="mail" size={15} /> Verify your email</span>
+                          <button
+                            type="button"
+                            className="sl-btn ghost sm"
+                            onClick={sendEmailCode}
+                            disabled={ev.status === 'sending' || (evForThis && resendLeft > 0)}
+                          >
+                            {ev.status === 'sending' ? 'Sending…' : evForThis && ev.status !== 'idle' ? (resendLeft > 0 ? `Send again in ${resendLeft}s` : 'Send code again') : 'Send code'}
+                          </button>
+                        </div>
+                        {evForThis && (ev.status === 'sent' || ev.status === 'verifying') && (
+                          <>
+                            <p className="sl-verify-msg">
+                              {ev.msg || 'We sent a 6-digit code to your email.'}
+                              {!/spam/i.test(ev.msg || '') && <b> Not in your inbox? Look in the Spam / Junk folder.</b>}
+                            </p>
+                            <div className="sl-verify-row">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                autoComplete="one-time-code"
+                                maxLength={6}
+                                value={ev.code}
+                                onChange={(e) => setEv((v) => ({ ...v, code: e.target.value.replace(/\D/g, '').slice(0, 6), err: '' }))}
+                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); verifyEmailCode(); } }}
+                                placeholder="6-digit code"
+                                aria-label="6-digit code from the email"
+                              />
+                              <button type="button" className="sl-btn primary sm" onClick={verifyEmailCode} disabled={ev.status === 'verifying'}>
+                                {ev.status === 'verifying' ? 'Checking…' : 'Verify'}
+                              </button>
+                            </div>
+                          </>
+                        )}
+                        {!(evForThis && ev.status !== 'idle') && <p className="sl-verify-msg">Tap "Send code". We will email you a 6-digit code to check this email is yours.</p>}
+                        {ev.err && <p className="sl-verify-err">{ev.err}</p>}
+                      </>
+                    )}
+                  </div>
+                )}
+                {emailNotice && (
+                  <div className={`sl-alert ${emailNotice.code === 'APPLICATION_REJECTED' ? 'err' : 'warn'} tight`}>
+                    <Ic name="alert" size={16} />
+                    <div>
+                      <p>{emailNotice.message}</p>
+                      {emailNotice.code === 'APPLICATION_PENDING' && (
+                        <button type="button" className="sl-link" onClick={() => showAlreadyApplied(emailNotice, regForm.email)}>See my application status</button>
                       )}
-                      {!(evForThis && ev.status !== 'idle') && <p className="sl-verify-msg">We will email you a 6-digit code to make sure this email is yours.</p>}
-                      {ev.err && <p className="sl-verify-err">{ev.err}</p>}
-                    </>
-                  )}
-                </div>
-              )}
-              {emailNotice && (
-                <div className={`sl-alert ${emailNotice.code === 'APPLICATION_REJECTED' ? 'err' : 'warn'} tight`}>
-                  <Ic name="alert" size={16} />
-                  <div>
-                    <p>{emailNotice.message}</p>
-                    {emailNotice.code === 'APPLICATION_PENDING' && (
-                      <button type="button" className="sl-link" onClick={() => showAlreadyApplied(emailNotice, regForm.email)}>See my application status</button>
-                    )}
-                    {emailNotice.code === 'ALREADY_REGISTERED' && (
-                      <button type="button" className="sl-link" onClick={() => { setEmail(regForm.email); setMode('login'); setEmailNotice(null); setErr(''); }}>Go to sign in</button>
-                    )}
+                      {emailNotice.code === 'ALREADY_REGISTERED' && (
+                        <button type="button" className="sl-link" onClick={() => { setEmail(regForm.email); setMode('login'); setEmailNotice(null); setErr(''); }}>Go to login</button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
-              <div className="sl-grid">
-                <label className="sl-field">
-                  <span>Create a password</span>
-                  <div className="sl-pw">
-                    <input type={showRegPassword ? 'text' : 'password'} value={regForm.password} onChange={(e) => setRegForm({ ...regForm, password: e.target.value })} placeholder="At least 6 characters" minLength={6} required autoComplete="new-password" />
-                    <button type="button" onClick={() => setShowRegPassword((v) => !v)} aria-label={showRegPassword ? 'Hide password' : 'Show password'} title={showRegPassword ? 'Hide password' : 'Show password'}><Ic name="eye" size={17} /></button>
-                  </div>
+                )}
+                <label className="sl-field sx-field">
+                  <span><Ic name="phone" size={15} /> Phone / WhatsApp</span>
+                  <input type="tel" value={regForm.phone} onChange={(e) => { setRegForm({ ...regForm, phone: e.target.value }); setStepErr(''); }} placeholder="e.g. +91 98765 43210" autoComplete="tel" inputMode="tel" />
                 </label>
-                <label className="sl-field">
-                  <span>Security code <em>(optional)</em></span>
+                <label className="sl-field sx-field">
+                  <span><Ic name="lock" size={15} /> Make a password</span>
+                  <div className="sl-pw">
+                    <input type={showRegPassword ? 'text' : 'password'} value={regForm.password} onChange={(e) => { setRegForm({ ...regForm, password: e.target.value }); setStepErr(''); }} placeholder="At least 6 letters or numbers" minLength={6} autoComplete="new-password" />
+                    <button type="button" onClick={() => setShowRegPassword((v) => !v)} aria-label={showRegPassword ? 'Hide password' : 'Show password'} title={showRegPassword ? 'Hide password' : 'Show password'}><Ic name="eye" size={18} /></button>
+                  </div>
+                  <small>Remember it — you will login with this email and password.</small>
+                </label>
+                <label className="sl-field sx-field">
+                  <span><Ic name="tag" size={15} /> Security code <em>(only if someone gave you one)</em></span>
                   <input
                     type="text"
                     className={affCheck.state === 'valid' ? 'is-ok' : affCheck.state === 'invalid' ? 'is-bad' : ''}
                     value={regForm.referralCode}
-                    onChange={(e) => setRegForm({ ...regForm, referralCode: e.target.value.replace(/\s+/g, '').toUpperCase() })}
-                    placeholder="If someone gave you a code"
+                    onChange={(e) => { setRegForm({ ...regForm, referralCode: e.target.value.replace(/\s+/g, '').toUpperCase() }); setStepErr(''); }}
+                    placeholder="Leave empty if you have none"
                     maxLength={32}
                     aria-invalid={affCheck.state === 'invalid'}
                   />
@@ -739,56 +835,74 @@ export default function SellerLogin() {
                     </small>
                   )}
                 </label>
-              </div>
-            </section>
+              </section>
+            )}
 
-            <section className="sl-sec">
-              <h3><i>3</i> Identity documents <span className="sl-count">{docsDone}/4</span></h3>
-              <p className="sl-fine">Clear photos of both sides of your Aadhaar and PAN card. Only our verification team sees them.</p>
-              <div className="sl-docs">
-                {DOCS.map((d) => {
-                  const has = Boolean(regForm[d.field]);
-                  const busy = preparing === d.field;
-                  return (
-                    <label key={d.field} className={`sl-doc ${has ? 'has' : ''} ${busy ? 'busy' : ''}`}>
-                      <input type="file" accept="image/*,.pdf" onChange={handleFileUpload(d.field)} required={!has} />
-                      <span className="sl-doc-ico">{has ? <Ic name="check" size={18} /> : <Ic name="image" size={18} />}</span>
-                      <span className="sl-doc-txt">
-                        <b>{d.label}</b>
-                        <small>{busy ? 'Preparing photo…' : has ? `${d.side} added · tap to change` : `${d.side} side · tap to upload`}</small>
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            </section>
+            {regStep === 3 && (
+              <section className="sx-step">
+                <h2><span>Step 3 of 3</span> ID card photos <em className="sl-count">{docsDone}/4</em></h2>
+                <p className="sl-fine">Take a clear photo of each side. Only our checking team sees them.</p>
+                <div className="sl-docs sx-docs">
+                  {DOCS.map((d) => {
+                    const has = Boolean(regForm[d.field]);
+                    const busy = preparing === d.field;
+                    return (
+                      <label key={d.field} className={`sl-doc ${has ? 'has' : ''} ${busy ? 'busy' : ''}`}>
+                        <input type="file" accept="image/*,.pdf" onChange={handleFileUpload(d.field)} required={!has} />
+                        <span className="sl-doc-ico">{has ? <Ic name="check" size={18} /> : <Ic name="image" size={18} />}</span>
+                        <span className="sl-doc-txt">
+                          <b>{d.label} — {d.side}</b>
+                          <small>{busy ? 'Preparing photo…' : has ? 'Added ✓ · tap to change' : 'Tap to add photo'}</small>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
 
-            {/* Seller Terms & Conditions */}
-            <label className={`sl-terms ${acceptTerms ? 'on' : ''}`}>
-              <input type="checkbox" checked={acceptTerms} onChange={(e) => { setAcceptTerms(e.target.checked); if (e.target.checked && /terms/i.test(err)) setErr(''); }} required />
-              <span>
-                I have read and accept the{' '}
-                <a href="/seller/terms" target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>Seller Terms &amp; Conditions</a>
-              </span>
-            </label>
+                {/* Seller Terms & Conditions */}
+                <label className={`sl-terms ${acceptTerms ? 'on' : ''}`}>
+                  <input type="checkbox" checked={acceptTerms} onChange={(e) => { setAcceptTerms(e.target.checked); if (e.target.checked && /terms/i.test(err)) setErr(''); }} required />
+                  <span>
+                    I have read and accept the{' '}
+                    <a href="/seller/terms" target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>Seller Terms &amp; Conditions</a>
+                  </span>
+                </label>
+              </section>
+            )}
 
-            <button type="submit" className="sl-btn primary" disabled={loading || !!preparing}>
-              {loading ? 'Sending… please keep this page open' : preparing ? 'Preparing photos…' : 'Submit application'}
-            </button>
-            <p className="sl-fine center">After you submit, our team checks your details. You can sign in once your store is approved.</p>
+            <div className="sx-nav">
+              {regStep > 1 && (
+                <button type="button" className="sl-btn ghost" onClick={() => goStep(regStep - 1)} disabled={loading}>
+                  <Ic name="arrowLeft" size={16} /> Back
+                </button>
+              )}
+              {regStep < 3 ? (
+                <button type="submit" className="sl-btn primary sx-big">
+                  Next <Ic name="arrowRight" size={17} />
+                </button>
+              ) : (
+                <button type="submit" className="sl-btn sx-green sx-big" disabled={loading || !!preparing}>
+                  {loading ? 'Sending… keep this page open' : preparing ? 'Preparing photos…' : <>Submit application <Ic name="check" size={17} /></>}
+                </button>
+              )}
+            </div>
+            {regStep === 3 && <p className="sl-fine center">Our team checks your details within 24 hours. Then you can login.</p>}
 
             <div className="sl-switch">
-              <span>Already have a seller account?</span>
-              <button type="button" onClick={() => switchMode('login')}>Sign in <Ic name="arrowRight" size={14} /></button>
+              <span>Already have a store?</span>
+              <button type="button" onClick={() => switchMode('login')}>Login <Ic name="arrowRight" size={14} /></button>
             </div>
           </form>
         )}
-
-        {/* Admin access: small, but always here (admins also use it to switch to test stores) */}
-        <div className="sl-foot">
-          <Link to="/admin/login"><Ic name="shield" size={14} /> Admin login</Link>
-        </div>
       </div>
+
+      {/* Not a seller? — small, below the card, so it never gets in a seller's way.
+          (Admins also use this link to switch to test stores.) */}
+      <p className="sx-other">
+        Not a seller? <Link to="/login">Customer login</Link>
+        <span aria-hidden="true">·</span>
+        <Link to="/admin/login"><Ic name="shield" size={12} /> Admin</Link>
+      </p>
 
       {/* Password reset (opened from the reset email link) */}
       {forgotModalOpen && (

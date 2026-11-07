@@ -113,16 +113,16 @@ export default function AdminLogin() {
           </span>
         </div>
 
-        {/* Compact Quick Portal Links */}
-        <div className="auth-quick-portals">
-          <span className="aqp-label">Looking for other portals?</span>
-          <div className="aqp-links">
-            <Link to="/login" className="aqp-pill customer-pill">
-              <Ic name="user" size={13} /> Customer Sign In
-            </Link>
-            <Link to="/seller/login" className="aqp-pill seller-pill">
-              <Ic name="tag" size={13} /> Seller Central
-            </Link>
+        {/* Staff only — a seller who lands here is sent to Seller Center */}
+        <div className="auth-seller-strip" role="note">
+          <span className="ass-ic" aria-hidden="true">🏪</span>
+          <div className="ass-txt">
+            <b>Are you a seller?</b>
+            <small>This page is only for Bazario staff. Sellers login here:</small>
+          </div>
+          <div className="ass-btns">
+            <Link to="/seller/login" className="ass-btn">Seller login</Link>
+            <Link to="/seller/login?mode=register" className="ass-btn green">Register store</Link>
           </div>
         </div>
       </div>
