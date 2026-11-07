@@ -14,8 +14,13 @@ import bcrypt from 'bcryptjs';
  * never grows. Until that one-time check has finished, the old regex is used as before.
  */
 /** A real bcrypt hash of a random throw-away value (cost 10, like the stored passwords): an
- *  unknown email is checked against it, so it takes as long as a wrong password. */
-export const DUMMY_HASH = bcrypt.hashSync(`no-account-${Math.random()}-${Date.now()}`, 10);
+ *  unknown email is checked against it, so it takes as long as a wrong password.
+ *  Made on first use (not at start-up), so starting the server does no extra work. */
+let dummy = '';
+export function dummyHash() {
+  if (!dummy) dummy = bcrypt.hashSync(`no-account-${Math.random()}-${Date.now()}`, 10);
+  return dummy;
+}
 
 const legacy = new Map(); // model name → Map(lowercase email → email as saved)
 const ready = new Set(); // model names whose check has finished

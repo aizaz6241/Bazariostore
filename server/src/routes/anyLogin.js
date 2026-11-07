@@ -4,7 +4,7 @@ import User from '../models/User.js';
 import { asText } from '../middleware/sanitize.js';
 import { cleanEmail, comparePassword } from '../utils/password.js';
 import { failureLimiter } from '../utils/rateLimit.js';
-import { emailQuery, DUMMY_HASH } from '../utils/emailLookup.js';
+import { emailQuery, dummyHash } from '../utils/emailLookup.js';
 
 /**
  * ONE login box for everybody (POST /api/auth/any-login) — the Seller Center login page.
@@ -52,7 +52,7 @@ export function makeAnyLogin({ adminRouter, sellerRouter, userRouter }) {
       if (user) return forward(userRouter, req, res, next);
 
       // nobody has this email: same work and same answer as a wrong password
-      await comparePassword(password, DUMMY_HASH);
+      await comparePassword(password, dummyHash());
       return res.status(401).json(INVALID);
     } catch (err) {
       console.error('[any-login-error]', err);
