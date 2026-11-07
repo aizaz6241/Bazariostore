@@ -9,6 +9,7 @@ import { getSocket } from '../socket.js';
 import { MOCK_CUSTOMERS, getRandomCustomer } from './mockCustomers.js';
 import AddFundsModal from './AddFundsModal.jsx';
 import SellerSelectDropdown from './SellerSelectDropdown.jsx';
+import PlaceOrderProductPicker from './PlaceOrderProductPicker.jsx';
 import OrdersStoreBoard from './OrdersStoreBoard.jsx';
 import OrdersStorePicker from './OrdersStorePicker.jsx';
 import { StatusMenu, ConfirmBox, BulkBar, changeText, needsConfirm, runStatusChanges, choicesFor } from './OrdersStatusTools.jsx';
@@ -1314,18 +1315,12 @@ export default function Orders() {
                     </div>
                   ) : (
                     <>
-                      <select
-                        className="pom-select"
+                      <PlaceOrderProductPicker
+                        products={sellerProds}
                         value={orderForm.productId}
-                        onChange={(e) => setOrderForm({ ...orderForm, productId: e.target.value })}
-                        required
-                      >
-                        {sellerProds.map((p) => (
-                          <option key={p._id} value={p._id}>
-                            {p.name} — {money(p.price)} (Stock: {p.stock || 0})
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(id) => setOrderForm((prev) => ({ ...prev, productId: id }))}
+                        money={money}
+                      />
 
                       {/* Selected Product Preview Card */}
                       {selProd && (
