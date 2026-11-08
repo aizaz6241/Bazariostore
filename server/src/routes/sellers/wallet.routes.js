@@ -1406,6 +1406,13 @@ router.post('/wallet/binance-pending/:wid', authAdmin('finance'), async (req, re
     if (real > 0 && usdt > real * 3 + 5) {
       return res.status(400).json({ message: `₮${usdt} USDT looks too high for a $${real.toFixed(2)} credit. Please check the number.` });
     }
+    // the real INR is needed too (records, and the 1:1 PKR member split works from it)
+    const inrForCheck = hasInr ? inr : Number(doc.inrAmount || 0);
+    if (!(inrForCheck > 0)) return res.status(400).json({ message: 'Enter the INR received as well.' });
+    const rateCheck = inrForCheck / usdt;
+    if (rateCheck < 40 || rateCheck > 200) {
+      return res.status(400).json({ message: `₹${inrForCheck} for ₮${usdt} is a rate of ₹${rateCheck.toFixed(2)} per USDT, which looks wrong. Please check both numbers.` });
+    }
 
     const by = req.admin?.name || 'Admin';
     const now = new Date();

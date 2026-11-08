@@ -21,13 +21,17 @@ function PendingRow({ item, onSaved }) {
 
   const save = async () => {
     setMsg(null);
+    if (!(i > 0)) return setMsg({ ok: false, text: 'Enter the INR received.' });
     if (!(u > 0)) return setMsg({ ok: false, text: 'Enter the USDT received on Binance.' });
-    if (!(i > 0) && !window.confirm('No INR amount entered. Save only the USDT?')) return;
+    const r = i / u;
+    if (r < 40 || r > 200) return setMsg({ ok: false, text: `That is ₹${r.toFixed(2)} per USDT — looks wrong. Please check both numbers.` });
+    if (real > 0 && Math.abs(u - real) / real > 0.25 &&
+      !window.confirm(`₮${u} USDT is quite different from the $${real.toFixed(2)} real money added to the wallet. Save anyway?`)) return;
     setBusy(true);
     try {
       const res = await api(`/sellers/wallet/binance-pending/${item._id}`, {
         method: 'POST',
-        body: { usdtAmount: u, ...(i > 0 ? { inrAmount: i } : {}) },
+        body: { usdtAmount: u, inrAmount: i },
       });
       setMsg({ ok: true, text: res.message || 'Saved ✓' });
       setTimeout(onSaved, 900);
