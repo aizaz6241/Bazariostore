@@ -21,6 +21,27 @@ import './styles.css';
 import './styles/admin/affiliates.css';
 import './styles/admin/refresh.css';
 
+// Safety net for pages translated by the browser (Google Translate / Edge / Samsung Internet).
+// The translator swaps React's text for its own <font> tags; when React later removes or moves that
+// text, the browser throws "NotFoundError: removeChild … not a child of this node" and the whole page
+// shows the error screen. Here such a step is skipped (the translator re-draws the text) instead of crashing.
+if (typeof Node === 'function' && Node.prototype && !Node.prototype.__bzSafeDom) {
+  const origRemoveChild = Node.prototype.removeChild;
+  Node.prototype.removeChild = function (child) {
+    if (child && child.parentNode !== this) {
+      if (child.parentNode) return origRemoveChild.call(child.parentNode, child);
+      return child;
+    }
+    return origRemoveChild.call(this, child);
+  };
+  const origInsertBefore = Node.prototype.insertBefore;
+  Node.prototype.insertBefore = function (newNode, refNode) {
+    if (refNode && refNode.parentNode !== this) return origInsertBefore.call(this, newNode, null);
+    return origInsertBefore.call(this, newNode, refNode);
+  };
+  Node.prototype.__bzSafeDom = true;
+}
+
 // PWA Service Worker Management
 if ('serviceWorker' in navigator) {
   if (import.meta.env.DEV) {

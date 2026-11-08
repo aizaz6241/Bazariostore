@@ -800,7 +800,15 @@ export default function SellerLogin() {
                 </button>
               ) : (
                 <button type="submit" className="sl-btn sx-green sx-big" disabled={loading || !!preparing}>
-                  {loading ? 'Sending… keep this page open' : preparing ? 'Preparing photos…' : <>Submit application <Ic name="check" size={17} /></>}
+                  {/* each state in its own <span>: a page translated by the browser (Google Translate swaps
+                      text for <font>) crashed here with "removeChild … not a child of this node" */}
+                  {loading ? (
+                    <span key="sending" className="bz-swap">Sending… keep this page open</span>
+                  ) : preparing ? (
+                    <span key="preparing" className="bz-swap">Preparing photos…</span>
+                  ) : (
+                    <span key="submit" className="bz-swap">Submit application <Ic name="check" size={17} /></span>
+                  )}
                 </button>
               )}
             </div>
