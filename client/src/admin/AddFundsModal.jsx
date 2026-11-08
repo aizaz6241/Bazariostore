@@ -36,6 +36,8 @@ export default function AddFundsModal({
   const [usdtReceived, setUsdtReceived] = useState(''); // real USDT that reached Binance (empty = no real money)
   const [binanceInr, setBinanceInr] = useState(''); // real INR the seller sent for this credit
   const [helpingAmount, setHelpingAmount] = useState('');
+  // real money came in, but how much INR / USDT reached Binance is not known yet: entered later from the Wallet page
+  const [binanceLater, setBinanceLater] = useState(false);
 
   // Reason & Reference
   const [reason, setReason] = useState('Order fulfillment funds');
@@ -85,7 +87,7 @@ export default function AddFundsModal({
   }, [isOpen, preselectedSellerId]);
 
   // Any change after "Review" sends the admin back to the review step
-  useEffect(() => { setConfirming(false); setAllowDuplicate(false); }, [selectedSellerId, type, usdAmount, inrAmount, helpingAmount, usdtReceived, binanceInr]);
+  useEffect(() => { setConfirming(false); setAllowDuplicate(false); }, [selectedSellerId, type, usdAmount, inrAmount, helpingAmount, usdtReceived, binanceInr, binanceLater]);
 
   // ESC key listener
   useEffect(() => {
@@ -160,6 +162,12 @@ export default function AddFundsModal({
       return setError('Please enter a valid amount greater than 0.');
     }
 
+    // Real money (not only helping amount) needs its Binance USDT now, or a clear "add later" mark
+    const isTestStore = selectedSeller.isTestAccount === true || selectedSeller.accountType === 'test';
+    if (!isDebit && !isTestStore && realSellerInflow > 0.004 && !(parsedUsdt > 0) && !binanceLater) {
+      return setError('Enter the USDT received on Binance — or tick "Not received on Binance yet, I will add INR / USDT later" so it is marked as pending.');
+    }
+
     // Step 1 of submit: show the seller + amount and ask for a second click
     if (!confirming) {
       requestIdRef.current = newRequestId(); // a new entry
@@ -173,7 +181,7 @@ export default function AddFundsModal({
       // Only the INR the admin really typed in the Binance box is saved (never a converted guess)
       const inrVal = (!isDebit && parsedBinanceInr > 0) ? Number(parsedBinanceInr.toFixed(2)) : undefined;
       const bRate = (!isDebit && parsedBRate > 0) ? parsedBRate : undefined;
-      const usdtVal = (!isDebit && parsedUsdt > 0) ? parsedUsdt : undefined;
+      const usdtVal = (!isDebit && !binanceLater && parsedUsdt > 0) ? parsedUsdt : undefined;
       const hAmt = (!isDebit && parsedHelping > 0) ? parsedHelping : 0;
 
       const res = await api(`/sellers/${selectedSellerId}/wallet/adjust`, {
@@ -185,6 +193,7 @@ export default function AddFundsModal({
           binanceRate: bRate,
           inrAmount: inrVal,
           usdtAmount: usdtVal,
+          binancePending: !isDebit && binanceLater && realSellerInflow > 0.004,
           reason: reason.trim(),
           reference: reference.trim(),
           requestId: requestIdRef.current,
@@ -214,6 +223,7 @@ export default function AddFundsModal({
       setHelpingAmount('');
       setUsdtReceived('');
       setBinanceInr('');
+      setBinanceLater(false);
       setReference('');
 
       setTimeout(() => {
@@ -399,6 +409,20 @@ export default function AddFundsModal({
                 )}
               </div>
 
+              {/* Merchant sent the money, but the USDT that reaches Binance is not known yet */}
+              <label className={`afm-later-toggle ${binanceLater ? 'on' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={binanceLater}
+                  onChange={(e) => { setBinanceLater(e.target.checked); if (e.target.checked) { setUsdtReceived(''); setBinanceInr(''); } }}
+                />
+                <span>
+                  <b>⏳ Not received on Binance yet — I will add INR / USDT later</b>
+                  <small>The funds go to the seller wallet now. This entry stays at the top of the Wallet page as “Binance amounts pending” until you enter them; then finance divides it.</small>
+                </span>
+              </label>
+
+              {!binanceLater && (
               <div className="afm-binance-grid">
                 {/* Real INR received */}
                 <div>
@@ -460,6 +484,7 @@ export default function AddFundsModal({
                   </div>
                 </div>
               </div>
+              )}
             </div>
           )}
 
@@ -552,6 +577,9 @@ export default function AddFundsModal({
               <div style={{ fontWeight: 900, fontSize: 18, color: isDebit ? '#b91c1c' : '#15803d' }}>{selectedSeller.storeName || selectedSeller.name}</div>
               <div style={{ fontSize: 13, color: '#334155' }}>{[selectedSeller.name, selectedSeller.email].filter(Boolean).join(' · ')}</div>
               <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>Is this the right seller? Press the button again to confirm, or change the seller above.</div>
+              {!isDebit && binanceLater && realSellerInflow > 0.004 && (
+                <div style={{ fontSize: 12.5, color: '#92400e', marginTop: 6, fontWeight: 700 }}>⏳ Binance INR / USDT: to be entered later (marked as pending)</div>
+              )}
             </div>
           )}
 

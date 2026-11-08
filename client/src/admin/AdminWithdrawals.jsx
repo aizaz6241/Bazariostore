@@ -5,6 +5,7 @@ import CurrencyConverterWidget from '../components/CurrencyConverterWidget.jsx';
 import { getSocket } from '../socket.js';
 import SplitDepositModal from './SplitDepositModal.jsx';
 import AddFundsModal from './AddFundsModal.jsx';
+import BinancePendingPanel from './BinancePendingPanel.jsx';
 import PayoutsAnalytics from './PayoutsAnalytics.jsx';
 import StoreLink from './hub/StoreLink.jsx';
 
@@ -111,6 +112,7 @@ export default function AdminWithdrawals() {
 
   // Direct Manual Adjustment Modal
   const [showAdjustModal, setShowAdjustModal] = useState(false);
+  const [binancePendingKey, setBinancePendingKey] = useState(0);
   const [sellersList, setSellersList] = useState([]);
   const [adjustForm, setAdjustForm] = useState({
     sellerId: '',
@@ -604,6 +606,9 @@ export default function AdminWithdrawals() {
           </button>
         </div>
       </section>
+
+      {/* ─── Direct "Add funds" whose Binance INR / USDT is still to be entered ─── */}
+      <BinancePendingPanel refreshKey={binancePendingKey} />
 
       {/* ─── KPI CARDS ─── */}
       <div className="pd-kpis">
@@ -1568,6 +1573,7 @@ export default function AdminWithdrawals() {
         onSuccess={() => {
           load();
           loadDepositsLedger();
+          setBinancePendingKey((k) => k + 1);
         }}
       />
 

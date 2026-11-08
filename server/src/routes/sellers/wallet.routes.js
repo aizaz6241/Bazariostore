@@ -1360,10 +1360,104 @@ const handleSplitHelping = async (req, res) => {
 router.patch('/withdrawals/:id/split-helping', authAdmin('finance'), handleSplitHelping);
 router.put('/withdrawals/:id/split-helping', authAdmin('finance'), handleSplitHelping);
 
+// ─── Direct "Add funds" whose Binance INR / USDT is still to be entered ───
+// A line stays here while: it was marked "add later", no real USDT is on it yet and it was not
+// marked "no real money" in the team portal. Entering the USDT here is the same first entry the
+// portal Finance screen makes (finConfirmed), so the ledger then divides it as usual. Changing an
+// amount that is already entered stays in the portal (with the other partner's approval).
+const binancePendingQuery = () => ({
+  type: 'deposit',
+  binancePending: true,
+  status: { $in: ['approved', 'completed'] },
+  usdtAmount: { $not: { $gt: 0 } },
+  finSkip: { $ne: true },
+});
+
+// GET /api/sellers/wallet/binance-pending
+router.get('/wallet/binance-pending', authAdmin('finance'), async (req, res) => {
+  try {
+    const rows = await Withdrawal.find(binancePendingQuery())
+      .select('seller storeName amount helpingAmount inrAmount adminNote transactionRef processedBy processedAt createdAt')
+      .sort({ createdAt: 1 })
+      .limit(200)
+      .lean();
+    res.json({ items: rows });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// POST /api/sellers/wallet/binance-pending/:wid  { inrAmount, usdtAmount }
+router.post('/wallet/binance-pending/:wid', authAdmin('finance'), async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(String(req.params.wid))) return res.status(404).json({ message: 'Transaction not found' });
+    const usdt = Number(req.body?.usdtAmount);
+    if (!Number.isFinite(usdt) || usdt <= 0) return res.status(400).json({ message: 'Enter the USDT received on Binance (more than 0).' });
+    const hasInr = req.body?.inrAmount !== undefined && req.body?.inrAmount !== null && req.body?.inrAmount !== '';
+    const inr = hasInr ? Number(req.body.inrAmount) : 0;
+    if (hasInr && (!Number.isFinite(inr) || inr < 0)) return res.status(400).json({ message: 'INR amount is not valid.' });
+
+    const doc = await Withdrawal.findOne({ _id: req.params.wid, ...binancePendingQuery() }).lean();
+    if (!doc) {
+      return res.status(409).json({ message: 'This line is not waiting any more (the USDT was already entered, or it was marked "no real money" in the team portal). Refresh the page.' });
+    }
+    const real = Math.max(0, Number(doc.amount || 0) - Number(doc.helpingAmount || 0));
+    // a typo guard: USDT is close to the dollars that went into the wallet, never many times more
+    if (real > 0 && usdt > real * 3 + 5) {
+      return res.status(400).json({ message: `₮${usdt} USDT looks too high for a $${real.toFixed(2)} credit. Please check the number.` });
+    }
+
+    const by = req.admin?.name || 'Admin';
+    const now = new Date();
+    const usdtVal = Math.round(usdt * 1e6) / 1e6;
+    const set = {
+      usdtAmount: usdtVal,
+      finConfirmed: true,
+      finSkip: false,
+      finEditedBy: by,
+      finEditedAt: now,
+      binancePending: false,
+      binanceFilledAt: now,
+      binanceFilledBy: by,
+    };
+    const inrVal = hasInr ? inr : Number(doc.inrAmount || 0);
+    if (hasInr) set.inrAmount = inr;
+    if (inrVal > 0) set.binanceRate = Math.round((inrVal / usdtVal) * 100) / 100;
+
+    // only while it is still waiting: two admins saving at the same moment cannot both write
+    const done = await Withdrawal.updateOne({ _id: doc._id, ...binancePendingQuery() }, { $set: set });
+    if (!done.modifiedCount) {
+      return res.status(409).json({ message: 'Someone entered this one a moment ago. Refresh the page.' });
+    }
+
+    res.json({ ok: true, message: `Saved: ₮${usdtVal} USDT${inrVal > 0 ? ` • ₹${inrVal.toLocaleString('en-IN')}` : ''} for ${doc.storeName}. The team portal finance now divides it.` });
+
+    try {
+      const io = req.app.get('io');
+      if (io) io.to(adminRoom('finance')).emit('withdrawal:update', { _id: doc._id, binanceFilled: true });
+      audit(req, 'update', 'wallet_adjustment', doc._id, `Binance amounts entered later for ${doc.storeName}: ₮${usdtVal}${inrVal > 0 ? `, ₹${inrVal}` : ''}`);
+      await finLog(req, {
+        action: 'wallet.binance_entered_later',
+        summary: `Binance amounts entered later for the direct add funds of $${doc.amount} to ${doc.storeName}: real USDT ₮${usdtVal}${inrVal > 0 ? `, INR ₹${inrVal}` : ''}`,
+        entity: 'wallet_request',
+        entityId: doc._id,
+        sellerId: doc.seller,
+        storeName: doc.storeName,
+        before: { usdt: 0, inr: Number(doc.inrAmount || 0) },
+        after: { usdt: usdtVal, inr: inrVal, rate: set.binanceRate || 0 },
+      });
+    } catch (e) {
+      console.error('Binance later follow-up error:', e.message);
+    }
+  } catch (err) {
+    if (!res.headersSent) res.status(500).json({ message: err.message });
+  }
+});
+
 // POST /api/sellers/:id/wallet/adjust — Super Admin directly adds or deducts funds from seller wallet anytime
 router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
   try {
-    const { type, amount, reason, reference, helpingAmount, binanceRate, inrAmount, usdtAmount } = req.body; // type: 'credit' | 'debit'
+    const { type, amount, reason, reference, helpingAmount, binanceRate, inrAmount, usdtAmount, binancePending } = req.body; // type: 'credit' | 'debit'
     const amt = Number(amount);
 
     if (!amt || amt <= 0) {
@@ -1447,6 +1541,12 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
       parsedUsdt = Number((parsedInr / parsedBRate).toFixed(2));
     }
 
+    // Real money came in but its Binance INR / USDT is not known yet ("add later"): the line is
+    // marked so it stays on the admin Wallet page until the amounts are entered.
+    const isTestStore = seller.isTestAccount === true || seller.accountType === 'test';
+    const markBinancePending =
+      type === 'credit' && binancePending === true && !(parsedUsdt > 0) && amt - parsedHelping > 0.004 && !isTestStore;
+
     // One database step (see utils/wallet.js): nothing else happening to this wallet at the same
     // moment can be overwritten, and a debit only goes through while the balance covers it.
     let moved;
@@ -1484,6 +1584,7 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
       binanceRate: parsedBRate,
       inrAmount: parsedInr,
       usdtAmount: parsedUsdt,
+      binancePending: markBinancePending,
       balanceAfter: seller.wallet.balance,
       isManualAdjustment: true,
       status: 'approved',
@@ -1582,7 +1683,7 @@ router.post('/:id/wallet/adjust', authAdmin('finance'), async (req, res) => {
     {
       const bits = [];
       if (type === 'credit' && parsedHelping > 0) bits.push(`helping $${parsedHelping}`);
-      bits.push(parsedUsdt > 0 ? `real USDT ₮${parsedUsdt}` : 'no USDT entered');
+      bits.push(parsedUsdt > 0 ? `real USDT ₮${parsedUsdt}` : markBinancePending ? 'Binance INR / USDT to be entered later' : 'no USDT entered');
       if (parsedInr > 0) bits.push(`INR ₹${parsedInr}`);
       if (reference) bits.push(`ref ${reference}`);
       if (reason) bits.push(`reason: ${reason}`);

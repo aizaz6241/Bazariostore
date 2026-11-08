@@ -1,0 +1,37 @@
+/* Wallet page: direct "Add funds" lines whose Binance INR / USDT is still to be entered
+   (markup in admin/BinancePendingPanel.jsx) + the "add later" tick in AddFundsModal.jsx */
+.afm-later-toggle { display: flex; gap: 10px; align-items: flex-start; margin: 4px 0 12px; padding: 10px 12px; border-radius: 10px; border: 1.5px dashed #f59e0b; background: #fff; cursor: pointer; }
+.afm-later-toggle input { width: 18px; height: 18px; margin-top: 2px; accent-color: #d97706; flex: none; }
+.afm-later-toggle b { display: block; font-size: 13.5px; color: #92400e; }
+.afm-later-toggle small { display: block; font-size: 12px; color: #78716c; margin-top: 2px; line-height: 1.4; }
+.afm-later-toggle.on { border-style: solid; background: #fffbeb; }
+
+.bp-panel { margin: 0 0 16px; border: 1.5px solid #fbbf24; border-radius: 14px; background: #fffbeb; overflow: hidden; }
+.bp-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; border: 0; background: transparent; cursor: pointer; text-align: left; font: inherit; color: #78350f; }
+.bp-head-ic { flex: none; width: 34px; height: 34px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; background: #fde68a; font-size: 17px; }
+.bp-head b { display: block; font-size: 15px; color: #78350f; }
+.bp-head small { font-size: 12.5px; color: #92400e; }
+.bp-count { margin-left: auto; min-width: 28px; height: 28px; padding: 0 8px; border-radius: 999px; background: #d97706; color: #fff; font-weight: 800; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; }
+.bp-chev { flex: none; color: #92400e; transition: transform 0.15s; }
+.bp-panel.open .bp-chev { transform: rotate(180deg); }
+.bp-list { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; }
+.bp-row { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 2fr); gap: 12px; align-items: center; padding: 12px; border-radius: 12px; background: #fff; border: 1px solid #fde68a; }
+.bp-row > *, .bp-form > * { min-width: 0; }
+.bp-info b { display: block; font-size: 14px; color: #0f172a; }
+.bp-info small { display: block; font-size: 12px; color: #64748b; margin-top: 2px; }
+.bp-info .bp-amt { color: #047857; font-weight: 800; }
+.bp-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; }
+.bp-form label { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; font-weight: 700; color: #475569; }
+.bp-form input { width: 100%; box-sizing: border-box; height: 38px; padding: 0 10px; border-radius: 9px; border: 1px solid #cbd5e1; font: 600 14px 'Inter', system-ui, sans-serif; background: #fff; min-width: 0; }
+.bp-form input:focus { outline: none; border-color: #d97706; box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.15); }
+.bp-save { height: 38px; padding: 0 14px; border-radius: 9px; border: 0; background: #16a34a; color: #fff; font: 700 13.5px 'Inter', system-ui, sans-serif; cursor: pointer; white-space: nowrap; }
+.bp-save:disabled { opacity: 0.6; cursor: wait; }
+.bp-rate { grid-column: 1 / -1; font-size: 12px; color: #64748b; }
+.bp-msg { grid-column: 1 / -1; margin: 0; font-size: 12.5px; padding: 6px 9px; border-radius: 8px; }
+.bp-msg.ok { background: #f0fdf4; color: #047857; }
+.bp-msg.err { background: #fef2f2; color: #b91c1c; }
+@media (max-width: 760px) {
+  .bp-row { grid-template-columns: 1fr; }
+  .bp-form { grid-template-columns: 1fr 1fr; }
+  .bp-save { grid-column: 1 / -1; }
+}

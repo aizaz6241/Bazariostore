@@ -67,6 +67,13 @@ const withdrawalSchema = new mongoose.Schema(
     pkrRate: { type: Number, default: 0 },          // PKR per 1 USDT on that day (1:1 PKR members)
     finConfirmed: { type: Boolean, default: false }, // USDT amount was confirmed by an admin
     finSkip: { type: Boolean, default: false },      // no real money moved on Binance (e.g. helping-only credit)
+    // Direct "Add funds" with real money whose Binance INR / USDT was not known yet: shown at the top of
+    // the admin Wallet page until an admin enters them (then the finance ledger divides the USDT)
+    binancePending: { type: Boolean, default: false },
+    finEditedBy: { type: String },   // written by the team portal Finance screen too
+    finEditedAt: { type: Date },
+    binanceFilledAt: { type: Date, default: null },
+    binanceFilledBy: { type: String, default: '' },
     // What a line is for when its type alone does not say it: 'diamond_fee' (the one-time Diamond
     // upgrade fee, written by the team portal; it never enters the store wallet) or 'frozen_release'
     // (held payouts released when a store is active again). It was missing from the schema, so
