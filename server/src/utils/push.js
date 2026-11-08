@@ -74,3 +74,18 @@ export async function sendPush({ to, sellerId = null, title, body = '', url = '/
     console.error('sendPush error:', e.message);
   }
 }
+
+/** Test notification to one device of one seller ("Send test notification" in Seller Central). */
+export async function sendSellerTestPush(sellerId, endpoint) {
+  if (!init()) return 'off';
+  const sub = await PushSub.findOne({ kind: 'seller', seller: sellerId, endpoint: String(endpoint || '') }).lean();
+  if (!sub) return 'not-found';
+  await sendTo([sub], {
+    title: 'Bazario Seller Central',
+    body: 'Notifications are working ✓ You will get alerts for new orders, deposits, withdrawals and support messages.',
+    url: '/seller',
+    tag: 'bz-test',
+    icon: '/icon-192.svg',
+  });
+  return 'sent';
+}

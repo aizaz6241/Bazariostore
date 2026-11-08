@@ -15,6 +15,7 @@ import CurrencySelector from '../components/CurrencySelector.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 import { playNotificationSound } from '../utils/audio.js';
 import { enablePush, pushState } from '../utils/push.js';
+import { NotifBell, NotifPrompt } from './SellerNotifications.jsx';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
 import { TourProvider, HelpButton } from './onboarding/TourProvider.jsx';
 
@@ -59,10 +60,10 @@ export default function SellerLayout() {
   };
   const [unreadChat, setUnreadChat] = useState(0);
   const [toasts, setToasts] = useState([]);
-  // Phone push: silently re-register when already allowed; otherwise show an "Enable alerts" button
-  const [pushPerm, setPushPerm] = useState(() => pushState());
+  // Phone push: silently re-register when already allowed (unless the seller switched it off on this
+  // device). Turning on / off is done from the "Alerts" button in the top bar (SellerNotifications.jsx).
   useEffect(() => {
-    if (pushState() === 'granted' && localStorage.getItem('ng_seller_token')) enablePush('seller').then(setPushPerm);
+    if (pushState() === 'granted' && localStorage.getItem('ng_seller_token')) enablePush('seller').catch(() => {});
   }, []);
 
   const addToast = (toast) => {
@@ -504,17 +505,7 @@ export default function SellerLayout() {
               </span>
             </Link>
 
-            {pushPerm !== 'granted' && pushPerm !== 'unsupported' && (
-              <button
-                type="button"
-                className={`stb-icon-btn ${pushPerm === 'denied' ? 'is-blocked' : 'is-attn'}`}
-                onClick={async () => setPushPerm(await enablePush('seller', { ask: true }))}
-                title={pushPerm === 'denied' ? 'Notifications are blocked in this browser / phone settings' : 'Turn on order alerts'}
-                aria-label="Order alerts"
-              >
-                <Ic name="bell" size={17} />
-              </button>
-            )}
+            <NotifBell onInstallApp={() => setAppModalOpen(true)} />
 
             <button
               type="button"
@@ -644,6 +635,7 @@ export default function SellerLayout() {
 
       {/* Seller App Setup & APK Installer Modal */}
       <SellerAppModal isOpen={appModalOpen} onClose={() => setAppModalOpen(false)} />
+      <NotifPrompt onInstallApp={() => setAppModalOpen(true)} />
     </div>
     </TourProvider>
   );
