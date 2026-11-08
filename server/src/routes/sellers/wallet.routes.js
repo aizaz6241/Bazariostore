@@ -1371,17 +1371,32 @@ const binancePendingQuery = () => ({
   status: { $in: ['approved', 'completed'] },
   usdtAmount: { $not: { $gt: 0 } },
   finSkip: { $ne: true },
+  // still has real money in it (the helping amount may have been raised to the whole amount since)
+  $expr: {
+    $gt: [{ $subtract: [{ $ifNull: ['$approvedAmount', '$amount'] }, { $ifNull: ['$helpingAmount', 0] }] }, 0.004],
+  },
 });
+const isTestSeller = (s) => !!s && (s.isTestAccount === true || s.accountType === 'test');
 
 // GET /api/sellers/wallet/binance-pending
 router.get('/wallet/binance-pending', authAdmin('finance'), async (req, res) => {
   try {
     const rows = await Withdrawal.find(binancePendingQuery())
-      .select('seller storeName amount helpingAmount inrAmount adminNote transactionRef processedBy processedAt createdAt')
+      .select('seller storeName amount approvedAmount helpingAmount inrAmount adminNote transactionRef processedBy processedAt createdAt')
       .sort({ createdAt: 1 })
-      .limit(200)
+      .limit(500)
       .lean();
-    res.json({ items: rows });
+    // a store made a test account since: its money is not in finance, so nothing to enter
+    const ids = [...new Set(rows.map((r) => String(r.seller || '')).filter((id) => mongoose.Types.ObjectId.isValid(id)))];
+    const tests = new Set(
+      (await Seller.find({ _id: { $in: ids } }).select('isTestAccount accountType').lean())
+        .filter(isTestSeller)
+        .map((x) => String(x._id))
+    );
+    const items = rows
+      .filter((r) => !tests.has(String(r.seller || '')))
+      .map((r) => ({ ...r, amount: r.approvedAmount !== null && r.approvedAmount !== undefined ? r.approvedAmount : r.amount }));
+    res.json({ items: items.slice(0, 200), total: items.length });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -1398,10 +1413,15 @@ router.post('/wallet/binance-pending/:wid', authAdmin('finance'), async (req, re
     if (hasInr && (!Number.isFinite(inr) || inr < 0)) return res.status(400).json({ message: 'INR amount is not valid.' });
 
     const doc = await Withdrawal.findOne({ _id: req.params.wid, ...binancePendingQuery() }).lean();
-    if (!doc) {
-      return res.status(409).json({ message: 'This line is not waiting any more (the USDT was already entered, or it was marked "no real money" in the team portal). Refresh the page.' });
+    if (doc) {
+      const store = await Seller.findById(doc.seller).select('isTestAccount accountType').lean();
+      if (isTestSeller(store)) return res.status(400).json({ message: 'This store is a test account now: its money is not part of finance.' });
     }
-    const real = Math.max(0, Number(doc.amount || 0) - Number(doc.helpingAmount || 0));
+    if (!doc) {
+      return res.status(409).json({ message: 'This line is not waiting any more (the USDT was already entered, it was marked "no real money" or reversed in the team portal, or it is now all helping amount). Refresh the page.' });
+    }
+    const gross = doc.approvedAmount !== null && doc.approvedAmount !== undefined ? Number(doc.approvedAmount) : Number(doc.amount || 0);
+    const real = Math.max(0, gross - Number(doc.helpingAmount || 0));
     // a typo guard: USDT is close to the dollars that went into the wallet, never many times more
     if (real > 0 && usdt > real * 3 + 5) {
       return res.status(400).json({ message: `₮${usdt} USDT looks too high for a $${real.toFixed(2)} credit. Please check the number.` });
@@ -1445,7 +1465,7 @@ router.post('/wallet/binance-pending/:wid', authAdmin('finance'), async (req, re
       audit(req, 'update', 'wallet_adjustment', doc._id, `Binance amounts entered later for ${doc.storeName}: ₮${usdtVal}${inrVal > 0 ? `, ₹${inrVal}` : ''}`);
       await finLog(req, {
         action: 'wallet.binance_entered_later',
-        summary: `Binance amounts entered later for the direct add funds of $${doc.amount} to ${doc.storeName}: real USDT ₮${usdtVal}${inrVal > 0 ? `, INR ₹${inrVal}` : ''}`,
+        summary: `Binance amounts entered later for the direct add funds of $${gross} to ${doc.storeName}: real USDT ₮${usdtVal}${inrVal > 0 ? `, INR ₹${inrVal}` : ''}`,
         entity: 'wallet_request',
         entityId: doc._id,
         sellerId: doc.seller,

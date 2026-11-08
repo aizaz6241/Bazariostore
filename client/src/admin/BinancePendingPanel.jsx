@@ -77,11 +77,16 @@ function PendingRow({ item, onSaved }) {
 
 export default function BinancePendingPanel({ refreshKey = 0 }) {
   const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
   const [open, setOpen] = useState(true);
 
   const load = useCallback(() => {
     api('/sellers/wallet/binance-pending')
-      .then((d) => setItems(Array.isArray(d?.items) ? d.items : []))
+      .then((d) => {
+        const list = Array.isArray(d?.items) ? d.items : [];
+        setItems(list);
+        setTotal(Number(d?.total) > list.length ? Number(d.total) : list.length);
+      })
       .catch(() => {}); // an older server without this route: nothing is shown
   }, []);
 
@@ -98,7 +103,7 @@ export default function BinancePendingPanel({ refreshKey = 0 }) {
   }, [load]);
 
   if (!items.length) return null;
-  const total = items.reduce((t, x) => t + Math.max(0, Number(x.amount || 0) - Number(x.helpingAmount || 0)), 0);
+  const realTotal = items.reduce((t, x) => t + Math.max(0, Number(x.amount || 0) - Number(x.helpingAmount || 0)), 0);
 
   return (
     <section className={`bp-panel ${open ? 'open' : ''}`} aria-label="Binance amounts pending">
@@ -106,9 +111,9 @@ export default function BinancePendingPanel({ refreshKey = 0 }) {
         <span className="bp-head-ic" aria-hidden="true">⏳</span>
         <span>
           <b>Binance amounts pending</b>
-          <small>Funds added to seller wallets — INR / USDT still to be entered ({money(total)} real money). Finance divides each one once it is saved.</small>
+          <small>Funds added to seller wallets — INR / USDT still to be entered ({money(realTotal)} real money{total > items.length ? `, oldest ${items.length} shown` : ''}). Finance divides each one once it is saved.</small>
         </span>
-        <span className="bp-count">{items.length}</span>
+        <span className="bp-count">{total}</span>
         <span className="bp-chev"><Ic name="chevDown" size={18} /></span>
       </button>
       {open && (
