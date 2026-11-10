@@ -26,6 +26,7 @@ export async function PATCH(req, { params }) {
     // a device gift that was approved: mark it handed over
     if (body.giftDelivered === true) {
       if (claim.rewardType !== 'device_gift' || claim.status !== 'approved') return NextResponse.json({ message: 'Only an approved device gift can be marked as handed over' }, { status: 400 });
+      if (claim.gift?.payAs === 'cash') return NextResponse.json({ message: 'This gift was given as cash (it is in the wallet) — there is no device to hand over' }, { status: 400 });
       if (claim.gift?.status === 'delivered') return NextResponse.json({ message: 'Already marked as handed over' }, { status: 400 });
       claim.gift = { ...(claim.gift?.toObject ? claim.gift.toObject() : claim.gift || {}), status: 'delivered', deliveredAt: new Date() };
       claim.history = [...(claim.history || []), { at: new Date(), by: session.name || '', action: 'gift delivered', note }];
@@ -42,9 +43,21 @@ export async function PATCH(req, { params }) {
       );
     }
 
-    const before = { memberId: String(claim.memberId), amountPKR: claim.amountPKR };
+    const isGift = claim.rewardType === 'device_gift';
+    const before = { memberId: String(claim.memberId), amountPKR: claim.amountPKR, ...(isGift ? { payAs: claim.gift?.payAs || 'device' } : {}) };
     const after = { ...before };
     const words = [];
+
+    // Device gift: give the device itself, or its cost as cash into the wallet
+    if (isGift && body.payAs !== undefined && body.payAs !== null && body.payAs !== '') {
+      const payAs = String(body.payAs);
+      if (!['device', 'cash'].includes(payAs)) return NextResponse.json({ message: 'Choose how to give it: the device, or cash' }, { status: 400 });
+      if (payAs !== (claim.gift?.payAs || 'device')) {
+        claim.gift = { ...(claim.gift?.toObject ? claim.gift.toObject() : claim.gift || {}), payAs };
+        after.payAs = payAs;
+        words.push(payAs === 'cash' ? 'given as cash (to the wallet)' : 'given as the device');
+      }
+    }
 
     if (body.memberId && String(body.memberId) !== String(claim.memberId)) {
       if (!mongoose.Types.ObjectId.isValid(String(body.memberId))) return NextResponse.json({ message: 'Person not found' }, { status: 404 });
@@ -57,16 +70,23 @@ export async function PATCH(req, { params }) {
     if (body.amountPKR !== undefined && body.amountPKR !== null && body.amountPKR !== '') {
       const amt = Math.round(Number(body.amountPKR));
       if (!Number.isFinite(amt) || amt < 1) return NextResponse.json({ message: 'Enter a valid amount (PKR)' }, { status: 400 });
-      const isGift = claim.rewardType === 'device_gift';
       if (amt !== claim.amountPKR || (isGift && claim.gift?.costEntered !== true)) {
-        words.push(isGift ? `purchase cost Rs ${amt.toLocaleString()}` : `amount Rs ${claim.amountPKR.toLocaleString()} → Rs ${amt.toLocaleString()}`);
+        words.push(isGift ? `${(after.payAs || claim.gift?.payAs) === 'cash' ? 'cash amount' : 'purchase cost'} Rs ${amt.toLocaleString()}` : `amount Rs ${claim.amountPKR.toLocaleString()} → Rs ${amt.toLocaleString()}`);
         claim.amountPKR = amt;
         after.amountPKR = amt;
         if (isGift) {
-          // the real price of the device that was bought (approval needs it)
-          claim.gift = { ...(claim.gift?.toObject ? claim.gift.toObject() : claim.gift || {}), costEntered: true, status: 'purchased', purchasedAt: new Date() };
+          // the real price of the device that was bought — or the cash amount given instead (approval needs it)
+          const g = claim.gift?.toObject ? claim.gift.toObject() : claim.gift || {};
+          claim.gift = g.payAs === 'cash'
+            ? { ...g, costEntered: true, status: 'cash', purchasedAt: null }
+            : { ...g, costEntered: true, status: 'purchased', purchasedAt: g.purchasedAt || new Date() };
         }
       }
+    }
+    if (isGift && after.payAs !== before.payAs && claim.gift?.costEntered === true) {
+      // the way of giving changed after the amount was already entered — keep the gift's status in step
+      const g = claim.gift?.toObject ? claim.gift.toObject() : claim.gift || {};
+      claim.gift = g.payAs === 'cash' ? { ...g, status: 'cash', purchasedAt: null } : { ...g, status: 'purchased', purchasedAt: g.purchasedAt || new Date() };
     }
     if (!words.length) return NextResponse.json({ message: 'Nothing changed' }, { status: 400 });
 

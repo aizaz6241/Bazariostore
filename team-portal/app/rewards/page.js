@@ -158,7 +158,7 @@ export default function RewardsPage() {
           ? await fetch(`/api/rewards/${fix.claim._id}`, {
               method: 'PATCH',
               headers,
-              body: JSON.stringify({ memberId: fix.memberId, amountPKR: fix.amountPKR, note: fix.reason }),
+              body: JSON.stringify({ memberId: fix.memberId, amountPKR: fix.amountPKR, note: fix.reason, ...(fix.payAs ? { payAs: fix.payAs } : {}) }),
             })
           : await fetch(`/api/rewards/${fix.claim._id}/correct`, {
               method: 'POST',
@@ -233,6 +233,14 @@ export default function RewardsPage() {
   const TYPE_ORDER = ['wallet_300', 'daily_target', 'weekly_target', 'device_gift', 'custom_bonus', 'first_seller_5orders'];
   const isGift = (c) => c?.rewardType === 'device_gift';
   const giftCostMissing = (c) => isGift(c) && c.gift?.costEntered !== true;
+  const giftAsCash = (c) => isGift(c) && c.gift?.payAs === 'cash';
+  // How a gift is / will be given: the device itself, or its cost as cash into the wallet
+  const GiftWayPill = ({ claim }) =>
+    isGift(claim) ? (
+      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${giftAsCash(claim) ? 'bg-sky-50 text-sky-700' : 'bg-violet-50 text-violet-700'}`}>
+        {giftAsCash(claim) ? '💵 Cash → wallet' : '📱 Device'}
+      </span>
+    ) : null;
   const handleGiftDelivered = async (claim) => {
     if (!window.confirm(`Mark “${claim.title}” as handed over to ${claim.memberId?.name || 'the person'}?`)) return;
     try {
@@ -442,32 +450,33 @@ export default function RewardsPage() {
                   <div className="text-right mr-auto md:mr-0">
                     {giftCostMissing(claim) ? (
                       <>
-                        <div className="text-sm font-black text-amber-600 leading-tight">🎁 Cost not entered</div>
-                        <div className="text-[10px] text-slate-400">buy it, then enter the price</div>
+                        <div className="text-sm font-black text-amber-600 leading-tight">🎁 Not decided yet</div>
+                        <div className="text-[10px] text-slate-400">choose Phone or Cash, enter the amount</div>
                       </>
                     ) : (
                       <>
                         <div className="text-lg font-black text-emerald-600 leading-tight">{pk(claim.amountPKR)}</div>
-                        <div className="text-[10px] text-slate-400">{isGift(claim) ? 'PKR · purchase cost' : 'PKR'}</div>
+                        <div className="text-[10px] text-slate-400">{giftAsCash(claim) ? 'PKR · cash to wallet' : isGift(claim) ? 'PKR · purchase cost' : 'PKR'}</div>
                       </>
                     )}
+                    {isGift(claim) && !giftCostMissing(claim) && <div className="mt-1 flex justify-end"><GiftWayPill claim={claim} /></div>}
                   </div>
                   {isAdmin ? (
                     <div className="flex items-center gap-1.5">
                       <button
                         onClick={() => handleApprove(claim._id)}
                         disabled={approvingId === claim._id || giftCostMissing(claim)}
-                        title={giftCostMissing(claim) ? 'Enter the real purchase cost first' : undefined}
+                        title={giftCostMissing(claim) ? 'Choose Phone or Cash and enter the amount first' : undefined}
                         className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-1 disabled:opacity-50"
                       >
                         <Check className="w-3.5 h-3.5" /> {approvingId === claim._id ? 'Saving…' : 'Approve'}
                       </button>
                       <button
-                        onClick={() => { setFixMsg(''); setFix({ claim, mode: 'edit', memberId: claim.memberId?._id || '', amountPKR: giftCostMissing(claim) ? '' : claim.amountPKR, reason: '' }); }}
+                        onClick={() => { setFixMsg(''); setFix({ claim, mode: 'edit', memberId: claim.memberId?._id || '', amountPKR: giftCostMissing(claim) ? '' : claim.amountPKR, reason: '', ...(isGift(claim) ? { payAs: claim.gift?.payAs || 'device' } : {}) }); }}
                         className={`px-3 py-2 rounded-lg font-semibold text-xs ${giftCostMissing(claim) ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}
-                        title={isGift(claim) ? 'Enter the real purchase cost of the gift (PKR)' : 'Wrong person or amount? Change it before approving'}
+                        title={isGift(claim) ? 'Phone or cash? Enter the amount (PKR)' : 'Wrong person or amount? Change it before approving'}
                       >
-                        {giftCostMissing(claim) ? 'Enter cost' : 'Change'}
+                        {giftCostMissing(claim) ? 'Phone / Cash' : 'Change'}
                       </button>
                       <button onClick={() => handleReject(claim._id)} className="px-3 py-2 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-semibold text-xs">
                         Decline
@@ -539,8 +548,11 @@ export default function RewardsPage() {
                   </div>
                   <div className="flex sm:flex-col items-center sm:items-end gap-2 shrink-0">
                     <span className={`text-sm font-black ${claim.status === 'approved' ? 'text-emerald-600' : 'text-slate-400 line-through'}`}>{giftCostMissing(claim) ? '🎁' : pk(claim.amountPKR)}</span>
+                    {isGift(claim) && !giftCostMissing(claim) && <GiftWayPill claim={claim} />}
                     {isGift(claim) && claim.status === 'approved' && (
-                      claim.gift?.status === 'delivered' ? (
+                      giftAsCash(claim) ? (
+                        <span className="text-[11px] font-bold text-sky-700">✓ In the wallet</span>
+                      ) : claim.gift?.status === 'delivered' ? (
                         <span className="text-[11px] font-bold text-emerald-700">✓ Handed over{claim.gift?.deliveredAt ? ` ${new Date(claim.gift.deliveredAt).toLocaleDateString()}` : ''}</span>
                       ) : isAdmin ? (
                         <button onClick={() => handleGiftDelivered(claim)} className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[11px] font-semibold">
@@ -690,7 +702,7 @@ export default function RewardsPage() {
                           ? g.giftStatus === 'delivered'
                             ? { t: '✓ Handed over', c: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
                             : g.claimStatus === 'approved'
-                            ? { t: 'Approved · to hand over', c: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
+                            ? { t: g.giftStatus === 'cash' ? '✓ Given as cash (in wallet)' : 'Approved · to hand over', c: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
                             : g.claimStatus === 'reversed' || g.claimStatus === 'rejected'
                             ? { t: g.claimStatus === 'reversed' ? 'Taken back' : 'Declined', c: 'bg-slate-50 text-slate-500 border-slate-200' }
                             : { t: 'Earned · waiting for approval', c: 'bg-amber-50 text-amber-800 border-amber-200' }
@@ -767,10 +779,40 @@ export default function RewardsPage() {
               </div>
             )}
 
+            {fix.mode === 'edit' && isGift(fix.claim) && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">How do we give this gift? *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { v: 'device', icon: '📱', t: 'The phone / device', d: 'Buy it, hand it over. Wallet unchanged.' },
+                    { v: 'cash', icon: '💵', t: 'Cash to wallet', d: 'Its cost is added to the wallet instead.' },
+                  ].map((o) => (
+                    <button
+                      key={o.v}
+                      type="button"
+                      onClick={() => setFix({ ...fix, payAs: o.v })}
+                      className={`text-left p-2.5 rounded-xl border-2 transition ${(fix.payAs || 'device') === o.v ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                    >
+                      <div className="text-sm font-bold text-slate-900">{o.icon} {o.t}</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5 leading-snug">{o.d}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {fix.mode === 'edit' && (
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">{isGift(fix.claim) ? 'Real purchase cost of the gift (PKR)' : 'Amount (PKR)'}</label>
-                {isGift(fix.claim) && <p className="text-[11px] text-slate-500 mb-1">Paid 50 / 50 by the two partners. The person's wallet does not change (he gets the device, not money).</p>}
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  {isGift(fix.claim) ? ((fix.payAs || 'device') === 'cash' ? 'Cash amount to give (PKR)' : 'Real purchase cost of the device (PKR)') : 'Amount (PKR)'}
+                </label>
+                {isGift(fix.claim) && (
+                  <p className="text-[11px] text-slate-500 mb-1">
+                    {(fix.payAs || 'device') === 'cash'
+                      ? 'Paid 50 / 50 by the two partners. This amount goes into the person’s wallet (he takes it out as a payout later).'
+                      : 'Paid 50 / 50 by the two partners. The person’s wallet does not change (he gets the device, not money).'}
+                  </p>
+                )}
                 <input
                   type="number"
                   min="1"

@@ -331,6 +331,8 @@ async function computeLedger() {
   // A DEVICE GIFT (iPhone / laptop) is counted the same way at its real purchase cost, plus a payout
   // of the same amount to the person: he received the device, not money, so his wallet does not
   // change, the two partners pay 50 / 50 and the money has left Binance.
+  // A gift given AS CASH (gift.payAs = 'cash') gets no such payout: the cost stays in the person's
+  // wallet as money, exactly like a normal bonus, and he takes it out through a payout later.
   const giftPayouts = [];
   for (const claim of claimDocs) {
     if (claim.rewardType === 'device_gift' && claim.gift?.costEntered !== true) continue;
@@ -413,7 +415,7 @@ async function computeLedger() {
     }
 
     entries.push({ ...base, shares });
-    if (claim.rewardType === 'device_gift') {
+    if (claim.rewardType === 'device_gift' && claim.gift?.payAs !== 'cash') {
       giftPayouts.push({
         id: `gift_${id}`,
         userId: base.owner.id,

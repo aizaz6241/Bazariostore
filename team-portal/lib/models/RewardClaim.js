@@ -96,9 +96,12 @@ const rewardClaimSchema = new mongoose.Schema(
     // Device gift (rewardType 'device_gift'): amountPKR is the real purchase cost, entered by an
     // admin after buying (approve is blocked until then). Counted like a bonus (partners 50 / 50)
     // AND as a payout to the person (he got the device, not money), so his wallet does not change.
+    // payAs 'cash' (10 Nov 2026): the admins give the device's cost as money instead — the bonus is
+    // counted the same way but there is NO gift payout, so the cost lands in the person's wallet.
     gift: {
       item: { type: String, default: '' }, // iphone | laptop
       label: { type: String, default: '' },
+      payAs: { type: String, default: 'device' }, // device | cash
       thresholdUSDT: { type: Number, default: 0 },
       netAtCross: { type: Number, default: 0 },
       crossedAt: { type: Date, default: null },
