@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import StoreLink from './hub/StoreLink.jsx';
 import { api, money, fmtDate, getCurrencyRate } from '../api.js';
 import { STATUS_LABELS, ALL_STATUSES, PAYMENT_LABELS, STATUS_WARNINGS } from '../data.js';
@@ -12,6 +12,7 @@ import SellerSelectDropdown from './SellerSelectDropdown.jsx';
 import PlaceOrderProductPicker from './PlaceOrderProductPicker.jsx';
 import OrdersStoreBoard from './OrdersStoreBoard.jsx';
 import OrdersStorePicker from './OrdersStorePicker.jsx';
+import OrderManageModal from './OrderManageModal.jsx';
 import { StatusMenu, ConfirmBox, BulkBar, changeText, needsConfirm, runStatusChanges, choicesFor } from './OrdersStatusTools.jsx';
 import { Hero, MetaChip, Badge, Avatar, Empty } from './insights.jsx';
 
@@ -377,6 +378,20 @@ export default function Orders() {
 
   // Quick Order View Modal
   const [inspectOrder, setInspectOrder] = useState(null);
+  // "Manage" popup: the order is managed here, on top of the list, so filters/page/scroll stay
+  const [manageOrder, setManageOrder] = useState(null);
+  const openManage = (o) => {
+    setInspectOrder(null);
+    setLastOpened(o._id);
+    setManageOrder(o);
+  };
+  // a change made in the popup: the row updates at once, the numbers re-sync in the background
+  const onManagedChange = (fresh) => {
+    if (!fresh?._id) return;
+    setOrders((prev) => prev.map((x) => (x._id === fresh._id ? { ...x, ...fresh, seller: fresh.seller && typeof fresh.seller === 'object' ? fresh.seller : x.seller } : x)));
+    reloadOrdersSoon();
+    refreshInsightsSoon();
+  };
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
   const loadSellers = () => {
@@ -467,17 +482,6 @@ export default function Orders() {
       /* storage blocked */
     }
   }, [loading]);
-  const paramsRef = useRef('');
-  paramsRef.current = params.toString();
-  const rememberSpot = (orderId) => {
-    try {
-      sessionStorage.setItem(SCROLL_KEY, JSON.stringify({ qs: paramsRef.current, y: scroller()?.scrollTop || 0, orderId }));
-    } catch {
-      /* storage blocked */
-    }
-    setLastOpened(orderId);
-  };
-
   useEffect(() => {
     loadStatusCounts();
   }, [sellerFilter, analyticsKey]);
@@ -531,7 +535,9 @@ export default function Orders() {
             return prev.filter((o) => o._id !== updatedOrder._id);
           }
           const next = [...prev];
-          next[idx] = { ...next[idx], ...updatedOrder };
+          // some events carry the seller as a bare id: keep the store name we already have
+          const keepSeller = updatedOrder.seller && typeof updatedOrder.seller === 'object' ? updatedOrder.seller : next[idx].seller;
+          next[idx] = { ...next[idx], ...updatedOrder, seller: keepSeller };
           return next;
         } else {
           // If order wasn't in the list, but matches current filters, add it
@@ -703,11 +709,11 @@ export default function Orders() {
     if (warn && !window.confirm(warn)) return;
     setUpdatingStatus(true);
     try {
-      await api(`/orders/${orderId}/status`, {
-        method: 'POST',
-        body: { status: newStatus, note: `Status updated to ${newStatus} by Platform Admin` },
-      });
-      loadOrders();
+      // no note: the note is shown to the customer on the tracking page (the history still records who did it)
+      const fresh = await api(`/orders/${orderId}/status`, { method: 'POST', body: { status: newStatus, note: '' } });
+      // the row updates at once; the list re-syncs silently (no skeleton flash behind the popup)
+      if (fresh?._id) setOrders((prev) => prev.map((x) => (x._id === fresh._id ? { ...x, ...fresh, seller: fresh.seller && typeof fresh.seller === 'object' ? fresh.seller : x.seller } : x)));
+      loadOrders(true);
       setAnalyticsKey((k) => k + 1);
       if (inspectOrder && inspectOrder._id === orderId) {
         setInspectOrder((prev) => ({ ...prev, status: newStatus }));
@@ -809,7 +815,7 @@ export default function Orders() {
     setParams({}, { replace: true });
     // with only a search active no filter effect fires, so reload here
     if (onlySearch) {
-      filtersRef.current = { status: '', sellerFilter: '', q: '', late: false, stuck: false, clientsOnly: false };
+      filtersRef.current = { status: '', sellerFilter: '', q: '', late: false, stuck: false, clientsOnly: false, page: 1, accounts: 'real' };
       loadOrders();
     }
   };
@@ -1106,9 +1112,9 @@ export default function Orders() {
                             <button type="button" className="oco-btn oco-btn-sm oco-btn-square" onClick={() => setInspectOrder(o)} title="Quick view" aria-label={`Quick view of order ${o.orderNumber}`}>
                               <Ic name="eye" size={15} />
                             </button>
-                            <Link to={`/admin/orders/${o._id}`} className="oco-btn oco-btn-sm" title="Open the full order page" onClick={() => rememberSpot(o._id)}>
-                              Manage <span aria-hidden="true">↗</span>
-                            </Link>
+                            <button type="button" className="oco-btn oco-btn-sm" title="Manage this order" onClick={() => openManage(o)}>
+                              Manage
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -1180,9 +1186,9 @@ export default function Orders() {
                       <button type="button" className="oco-btn oco-btn-sm" onClick={() => setInspectOrder(o)}>
                         <Ic name="eye" size={14} /> Quick view
                       </button>
-                      <Link to={`/admin/orders/${o._id}`} className="oco-btn oco-btn-sm oco-btn-dark" onClick={() => rememberSpot(o._id)}>
-                        Manage <span aria-hidden="true">↗</span>
-                      </Link>
+                      <button type="button" className="oco-btn oco-btn-sm oco-btn-dark" onClick={() => openManage(o)}>
+                        Manage
+                      </button>
                     </footer>
                   </article>
                 );
@@ -1671,14 +1677,24 @@ export default function Orders() {
               </div>
 
               <div className="modal-bottom-actions" style={{ marginTop: 18 }}>
-                <Link to={`/admin/orders/${inspectOrder._id}`} className="btn-primary" style={{ textDecoration: 'none' }}>
-                  Open Full Order Management Page ↗
-                </Link>
+                <button type="button" className="btn-primary" onClick={() => openManage(inspectOrder)}>
+                  Manage this order
+                </button>
                 <button type="button" onClick={() => setInspectOrder(null)} className="btn-cancel">Close</button>
               </div>
             </div>
           </div>
         </div>
+      )}
+
+      {/* ─── Manage popup: full order management without leaving the list ─── */}
+      {manageOrder && (
+        <OrderManageModal
+          orderId={manageOrder._id}
+          initial={manageOrder}
+          onClose={() => setManageOrder(null)}
+          onChanged={onManagedChange}
+        />
       )}
 
       {/* ─── Modal 3: Add Funds to Seller Wallet (INR & USD with Binance USDT Rate) ─── */}

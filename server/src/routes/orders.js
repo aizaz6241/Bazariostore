@@ -902,7 +902,8 @@ router.get('/analytics/overview', authAdmin('orders'), async (req, res) => {
 router.get('/:id', authAdmin('orders'), async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(String(req.params.id))) return res.status(404).json({ message: 'Order not found' });
-    const order = await Order.findById(req.params.id);
+    // the seller's store is shown in the admin "Manage" popup
+    const order = await Order.findById(req.params.id).populate('seller', 'storeName ownerName email phone tier');
     if (!order) return res.status(404).json({ message: 'Order not found' });
     res.json(order);
   } catch (err) {
