@@ -54,8 +54,24 @@ const scroller = () => {
   }
   return document.scrollingElement;
 };
-const shortTime = (d) =>
-  new Date(d).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+/** "Thu 12 Nov · 8:07 AM" — a full day + time, so a date is never mistaken for another one */
+const whenText = (d) => {
+  const x = new Date(d);
+  if (Number.isNaN(x.getTime())) return '';
+  return `${x.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} · ${x.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+};
+/** when the order's status last changed (e.g. when it was delivered) */
+const statusTimeOf = (o) => {
+  if (o.statusChangedAt) return o.statusChangedAt;
+  const h = o.statusHistory;
+  if (Array.isArray(h) && h.length && h[h.length - 1]?.at) return h[h.length - 1].at;
+  return o.updatedAt || null;
+};
+const SORT_OPTIONS = [
+  { value: '', label: 'Order date — newest first' },
+  { value: 'oldest', label: 'Order date — oldest first' },
+  { value: 'changed', label: 'Latest status change first' },
+];
 const ageLabel = (d) => {
   const h = (Date.now() - new Date(d).getTime()) / 3600000;
   if (h < 1) return 'just now';
@@ -73,7 +89,8 @@ function rangeLabel(page, info, count) {
   const from = (page - 1) * (info.limit || PAGE_SIZE) + 1;
   const to = from + count - 1;
   const of = info.total != null ? ` of ${fmtNum(info.total)}` : info.hasMore ? ' of many' : '';
-  return `Showing ${fmtNum(from)}–${fmtNum(to)}${of} orders${info.sort === 'oldest' ? ' · oldest first' : ' · newest first'}`;
+  const by = info.sort === 'changed' ? ' · latest status change first' : info.sort === 'oldest' ? ' · oldest first' : ' · newest first';
+  return `Showing ${fmtNum(from)}–${fmtNum(to)}${of} orders${by}`;
 }
 
 /** 2d 4h · 5h 10m · 12m */
@@ -267,6 +284,8 @@ export default function Orders() {
   const page = Math.max(1, parseInt(params.get('page'), 10) || 1);
   // which accounts: real client stores (default) · test stores · all
   const accounts = ['test', 'all'].includes(params.get('acc')) ? params.get('acc') : 'real';
+  // sort: '' = as before (newest; late / stuck / pending oldest first) · oldest · changed (latest status change)
+  const sortMode = ['oldest', 'changed'].includes(params.get('sort')) ? params.get('sort') : '';
   // any filter change starts again at page 1 (only a page change keeps the other filters + page)
   const setParam = (patch) =>
     setParams(
@@ -297,8 +316,8 @@ export default function Orders() {
   const [counts, setCounts] = useState(null); // { real: {status: n}, test: {…}, all: {…}, totals }
   const [analyticsKey, setAnalyticsKey] = useState(0);
   // live filters for the socket handlers (their effect is not re-created on every keystroke)
-  const filtersRef = useRef({ status, sellerFilter, q, late, stuck, clientsOnly, page, accounts });
-  filtersRef.current = { status, sellerFilter, q, late, stuck, clientsOnly, page, accounts };
+  const filtersRef = useRef({ status, sellerFilter, q, late, stuck, clientsOnly, page, accounts, sortMode });
+  filtersRef.current = { status, sellerFilter, q, late, stuck, clientsOnly, page, accounts, sortMode };
 
   // "Orders by store" numbers (also the counts in the store picker)
   const [boardDays, setBoardDays] = useState(30);
@@ -418,6 +437,7 @@ export default function Orders() {
     if (f.stuck) query.set('stuck', '1');
     if (f.clientsOnly) query.set('clients', '1');
     query.set('accounts', f.accounts || 'real');
+    if (f.sortMode) query.set('sort', f.sortMode);
     // one page at a time (the store will have millions of orders)
     query.set('paged', '1');
     query.set('page', String(f.page || 1));
@@ -450,7 +470,7 @@ export default function Orders() {
   useEffect(() => {
     loadOrders();
     setPicked(new Set());
-  }, [status, sellerFilter, late, stuck, clientsOnly, page, accounts]);
+  }, [status, sellerFilter, late, stuck, clientsOnly, page, accounts, sortMode]);
 
   useEffect(() => {
     let alive = true;
@@ -761,13 +781,20 @@ export default function Orders() {
 
   // what is special about this order right now: late, stopped, or the next automatic step
   const orderNote = (o) => {
-    if (CLOSED.includes(o.status)) return null;
     const out = [];
+    const since = statusTimeOf(o);
+    const label = STATUS_LABELS[o.status] || o.status;
+    if (CLOSED.includes(o.status)) {
+      // closed: the exact day + time it got there (e.g. "Delivered · Wed 11 Nov · 3:07 PM")
+      if (since) out.push(<span key="s" className="ost-since" title={`${label} on ${fmtDate(since)}`}>{label} · {whenText(since)}</span>);
+      return out.length ? <div className="ost-notes">{out}</div> : null;
+    }
+    if (since) out.push(<span key="s" className="ost-since" title={`${label} since ${fmtDate(since)}`}>{label} since {whenText(since)}</span>);
     const age = Date.now() - new Date(o.createdAt).getTime();
     if (age > LATE_MS) out.push(<span key="l" className="ost-late">Late · {Math.floor(age / 86400000)}d</span>);
     if (o.autoIssue?.reason) out.push(<span key="i" className="ost-issue" title={o.autoIssue.reason}>⚠ Can’t move: {o.autoIssue.reason.length > 60 ? `${o.autoIssue.reason.slice(0, 60)}…` : o.autoIssue.reason}</span>);
     else if (o.nextStatusAt && Date.now() - new Date(o.nextStatusAt).getTime() > 3600000) out.push(<span key="o" className="ost-issue">⚠ Next step overdue {Math.round((Date.now() - new Date(o.nextStatusAt).getTime()) / 3600000)}h</span>);
-    else if (o.nextStatus && o.nextStatusAt) out.push(<span key="n" className="ost-next">Next: {STATUS_LABELS[o.nextStatus] || o.nextStatus} · {shortTime(o.nextStatusAt)}</span>);
+    else if (o.nextStatus && o.nextStatusAt) out.push(<span key="n" className="ost-next" title={`Moves to “${STATUS_LABELS[o.nextStatus] || o.nextStatus}” by itself on ${fmtDate(o.nextStatusAt)} — nothing to do`}>⏱ Auto → {STATUS_LABELS[o.nextStatus] || o.nextStatus} on {whenText(o.nextStatusAt)}</span>);
     else if (o.status === 'pending' && !o.confirmWindow?.length) out.push(<span key="p" className="ost-next">Waiting for the store to confirm</span>);
     (o.confirmWindow || []).forEach((w) => out.push(<ConfirmClock key={`cw-${w.seller}`} w={w} now={now} showStore={o.confirmWindow.length > 1} />));
     return out.length ? <div className="ost-notes">{out}</div> : null;
@@ -815,7 +842,7 @@ export default function Orders() {
     setParams({}, { replace: true });
     // with only a search active no filter effect fires, so reload here
     if (onlySearch) {
-      filtersRef.current = { status: '', sellerFilter: '', q: '', late: false, stuck: false, clientsOnly: false, page: 1, accounts: 'real' };
+      filtersRef.current = { status: '', sellerFilter: '', q: '', late: false, stuck: false, clientsOnly: false, page: 1, accounts: 'real', sortMode: '' };
       loadOrders();
     }
   };
@@ -841,10 +868,8 @@ export default function Orders() {
   const showTable = viewMode === 'auto' || viewMode === 'table';
   const showCards = viewMode === 'auto' || viewMode === 'cards';
 
+  // the list shows the customer's name only (phone / address / payment are in Quick view and Manage)
   const customerOf = (o) => o.shippingAddress?.fullName || o.contact?.fullName || 'Guest customer';
-  const phoneOf = (o) => o.contact?.phone || o.shippingAddress?.phone || '';
-
-  const payText = (o) => `${o.paymentMethod === 'cod' || !o.paymentMethod ? 'COD' : PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod} · ${o.paymentStatus === 'paid' ? 'Paid' : 'Unpaid'}`;
 
   const orderBadge = (o) => (
     <Badge tone={STATUS_TONE[o.status] || 'neutral'}>{STATUS_LABELS[o.status] || o.status}</Badge>
@@ -965,6 +990,21 @@ export default function Orders() {
 
           <StatusChips value={status} counts={statusCounts} loaded={Boolean(counts)} allCount={allCount} onChange={setStatus} />
 
+          <div className="ost-sortbar">
+            <label className="ost-sort">
+              <Ic name="list" size={14} />
+              <span>Sort by</span>
+              <select value={sortMode} onChange={(e) => setParam({ sort: e.target.value })} aria-label="Sort orders">
+                {SORT_OPTIONS.map((opt) => (
+                  <option key={opt.value || 'newest'} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </label>
+            <span className="ost-sort-hint">
+              {sortMode === 'changed' ? 'The order whose status moved most recently (e.g. just delivered) is at the top.' : sortMode === 'oldest' ? 'The oldest order (by the day it was placed) is at the top.' : 'The newest order (by the day it was placed) is at the top.'}
+            </span>
+          </div>
+
           {viewLabel && (
             <div className="ost-view">
               <span>Showing: <b>{viewLabel}</b>{chosenSeller ? ` · ${chosenSeller.storeName}` : clientsOnly ? ' · active client stores' : ` · ${scopeText}`}{late || stuck ? ' · oldest first' : ''}</span>
@@ -1045,8 +1085,8 @@ export default function Orders() {
                             {copiedId === o.orderNumber ? '✓ Copied' : `#${o.orderNumber}`}
                             {copiedId !== o.orderNumber && <Ic name="copy" size={12} />}
                           </button>
-                          <span className="oco-meta" title={fmtDate(o.createdAt)}>
-                            {fmtDate(o.createdAt)} · {ageLabel(o.createdAt)}
+                          <span className="oco-meta" title={`Order placed on ${fmtDate(o.createdAt)}`}>
+                            Placed {fmtDate(o.createdAt)} · {ageLabel(o.createdAt)}
                           </span>
                           {o.placedBy && o.placedBy !== 'customer' && <span className="oco-tag">Placed by admin</span>}
                           {/* shown instead of the Items column on narrower screens */}
@@ -1070,13 +1110,7 @@ export default function Orders() {
                           )}
                         </td>
                         <td>
-                          <b className="oco-clip oco-strong">{customerOf(o)}</b>
-                          {phoneOf(o) && (
-                            <a href={`tel:${phoneOf(o)}`} className="oco-meta oco-link">
-                              {phoneOf(o)}
-                            </a>
-                          )}
-                          {o.shippingAddress?.city && <span className="oco-meta">{o.shippingAddress.city}{o.shippingAddress.state ? `, ${o.shippingAddress.state}` : ''}</span>}
+                          <b className="oco-clip oco-strong" title={customerOf(o)}>{customerOf(o)}</b>
                         </td>
                         <td className="ost-col-items">
                           <div className="oco-item">
@@ -1095,10 +1129,6 @@ export default function Orders() {
                         </td>
                         <td className="num">
                           <b className="oco-total">{money(o.total)}</b>
-                          <span className="oco-meta">{o.shipping?.cost > 0 ? `incl. ${money(o.shipping.cost)} delivery` : 'Free delivery'}</span>
-                          <span className={`ost-pay ${o.paymentStatus === 'paid' ? 'paid' : ''}`} title={PAYMENT_LABELS[o.paymentMethod] || o.paymentMethod || 'Cash on Delivery'}>
-                            {payText(o)}
-                          </span>
                         </td>
                         <td className="oco-c-status">
                           <button type="button" className="ost-badge-btn" onClick={(e) => setMenu({ order: o, anchor: e.currentTarget })} aria-haspopup="menu" aria-expanded={menu?.order?._id === o._id} disabled={Boolean(busy)} title="Change the status" aria-label={`Status: ${STATUS_LABELS[o.status] || o.status}. Change status of order ${o.orderNumber}`}>
@@ -1147,7 +1177,7 @@ export default function Orders() {
                         <button type="button" className="oco-num" onClick={(e) => handleCopyOrder(e, o.orderNumber)} aria-label={`Copy order number ${o.orderNumber}`}>
                           {copiedId === o.orderNumber ? '✓ Copied' : `#${o.orderNumber}`}
                         </button>
-                        <span className="oco-meta" title={fmtDate(o.createdAt)}>{ageLabel(o.createdAt)}{o.placedBy && o.placedBy !== 'customer' ? ' · by admin' : ''}</span>
+                        <span className="oco-meta" title={`Order placed on ${fmtDate(o.createdAt)}`}>Placed {ageLabel(o.createdAt)}{o.placedBy && o.placedBy !== 'customer' ? ' · by admin' : ''}</span>
                       </span>
                       <button type="button" className="ost-badge-btn oco-card-status" onClick={(e) => setMenu({ order: o, anchor: e.currentTarget })} aria-haspopup="menu" aria-expanded={menu?.order?._id === o._id} disabled={Boolean(busy)} aria-label={`Status: ${STATUS_LABELS[o.status] || o.status}. Change status`}>
                         {orderBadge(o)}
@@ -1164,14 +1194,12 @@ export default function Orders() {
                         <dt>Total</dt>
                         <dd>
                           <b className="oco-total">{money(o.total)}</b>
-                          <span className={`ost-pay ${o.paymentStatus === 'paid' ? 'paid' : ''}`}>{payText(o)}</span>
                         </dd>
                       </div>
                       <div>
                         <dt>Customer</dt>
                         <dd>
-                          <b className="oco-clip oco-strong">{customerOf(o)}</b>
-                          {phoneOf(o) && <a href={`tel:${phoneOf(o)}`} className="oco-meta oco-link">{phoneOf(o)}</a>}
+                          <b className="oco-clip oco-strong" title={customerOf(o)}>{customerOf(o)}</b>
                         </dd>
                       </div>
                       <div className="oco-card-right">

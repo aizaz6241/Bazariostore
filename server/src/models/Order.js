@@ -87,6 +87,8 @@ const orderSchema = new mongoose.Schema(
     nextStatus: { type: String, enum: STATUSES, default: null },
     nextStatusAt: { type: Date, default: null, index: true },
     statusHistory: [{ status: String, note: String, at: { type: Date, default: Date.now }, by: String }],
+    // when the status last changed (= the last statusHistory entry); the admin list sorts by it
+    statusChangedAt: { type: Date, default: null, index: true },
     refundId: { type: mongoose.Schema.Types.ObjectId, ref: 'Refund', default: null },
     stockRestored: { type: Boolean, default: false },
     // delivered: reservation released and sale counted (done once, see utils/orderStock.js)
@@ -147,4 +149,33 @@ orderSchema.pre('save', async function (next) {
   next();
 });
 
-export default mongoose.model('Order', orderSchema);
+// statusChangedAt follows every status change (all status changes go through .save())
+orderSchema.pre('save', function (next) {
+  const last = this.statusHistory?.length ? this.statusHistory[this.statusHistory.length - 1] : null;
+  if (this.isNew || this.isModified('status')) {
+    this.statusChangedAt = last && last.status === this.status && last.at ? new Date(last.at) : new Date();
+  } else if (!this.statusChangedAt) {
+    // an older order saved for another reason: its last history entry is when the status last changed
+    this.statusChangedAt = last?.at ? new Date(last.at) : this.updatedAt || this.createdAt || new Date();
+  }
+  next();
+});
+
+const Order = mongoose.model('Order', orderSchema);
+
+// one-time fill for orders made before statusChangedAt existed: the time of their last history entry
+const fillStatusChangedAt = async () => {
+  try {
+    if (!(await Order.exists({ statusChangedAt: null }))) return;
+    const r = await Order.updateMany({ statusChangedAt: null }, [
+      { $set: { statusChangedAt: { $ifNull: [{ $max: '$statusHistory.at' }, '$updatedAt', '$createdAt'] } } },
+    ]);
+    console.log(`orders: statusChangedAt filled for ${r.modifiedCount} older orders`);
+  } catch (err) {
+    console.error('orders statusChangedAt fill error:', err.message);
+  }
+};
+if (mongoose.connection.readyState === 1) fillStatusChangedAt();
+else mongoose.connection.once('connected', fillStatusChangedAt);
+
+export default Order;

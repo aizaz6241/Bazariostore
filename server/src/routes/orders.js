@@ -474,7 +474,9 @@ router.get('/', authAdmin('orders'), async (req, res) => {
     const filter = and.length ? { $and: and } : {};
     // late / stuck / waiting for confirmation: the oldest first (closest to / past their deadline)
     const pendingOnly = statuses.length === 1 && statuses[0] === 'pending';
-    const sort = { createdAt: late || stuck || pendingOnly ? 1 : -1 };
+    // sort=newest | oldest (order date) | changed (latest status change first); default as before
+    const sortKey = ['newest', 'oldest', 'changed'].includes(req.query.sort) ? req.query.sort : late || stuck || pendingOnly ? 'oldest' : 'newest';
+    const sort = sortKey === 'changed' ? { statusChangedAt: -1, createdAt: -1 } : { createdAt: sortKey === 'oldest' ? 1 : -1 };
 
     if (!paged) {
       const orders = await Order.find(filter)
@@ -520,7 +522,7 @@ router.get('/', authAdmin('orders'), async (req, res) => {
     }
 
     const pages = total != null ? Math.max(1, Math.ceil(total / pageSize)) : null;
-    res.json({ orders, page, limit: pageSize, total, pages, hasMore, sort: sort.createdAt === 1 ? 'oldest' : 'newest' });
+    res.json({ orders, page, limit: pageSize, total, pages, hasMore, sort: sortKey });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

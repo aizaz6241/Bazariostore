@@ -212,6 +212,21 @@ tr.ost-row-last td { box-shadow: inset 0 0 0 9999px rgba(250, 204, 21, 0.1); }
 .ost-late { align-self: flex-start; padding: 1px 7px; border-radius: 999px; background: #dc2626; color: #fff; font-size: 11px; font-weight: 700; }
 .ost-issue { font-size: 11.5px; line-height: 1.35; font-weight: 600; color: #b91c1c; }
 .ost-next { font-size: 11.5px; line-height: 1.35; color: #64748b; }
+.ost-since { font-size: 11.5px; line-height: 1.35; font-weight: 600; color: #334155; }
+.oco-table tr[data-tone='good'] .ost-since { color: #15803d; }
+.oco-table tr[data-tone='critical'] .ost-since, .oco-card[data-tone='critical'] .ost-since { color: #b91c1c; }
+.oco-card[data-tone='good'] .ost-since { color: #15803d; }
+
+/* ── Sort by (order date newest / oldest · latest status change) ── */
+.ost-sortbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
+.ost-sort { display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 6px 0 11px; border: 1px solid #dbe2ea; border-radius: 9px; background: #fff; font-size: 13px; font-weight: 600; color: #334155; }
+.ost-sort select { height: 32px; border: 0; background: transparent; font: inherit; font-weight: 600; color: #0f172a; cursor: pointer; outline: none; }
+.ost-sort:focus-within { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15); }
+.ost-sort-hint { font-size: 12px; color: #64748b; }
+@media (max-width: 640px) {
+  .ost-sort { width: 100%; }
+  .ost-sort select { flex: 1; min-width: 0; }
+}
 .ost-status-btn { font-weight: 700 !important; }
 .ost-badge-btn { display: inline-flex; align-items: center; gap: 3px; padding: 2px 4px 2px 0; border: 0; border-radius: 999px; background: none; cursor: pointer; font: inherit; }
 .ost-badge-btn:hover .ins-badge, .ost-badge-btn[aria-expanded='true'] .ins-badge { box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.35); }
