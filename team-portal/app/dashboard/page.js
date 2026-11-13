@@ -114,7 +114,7 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Link
               href="/chat"
               className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-semibold text-xs sm:text-sm flex items-center space-x-1.5 transition shadow-lg shadow-emerald-500/25"
@@ -123,6 +123,15 @@ export default function DashboardPage() {
               <span>Team Chat</span>
             </Link>
 
+            {isAdmin && (
+              <Link
+                href="/create-print"
+                className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white font-semibold text-xs sm:text-sm flex items-center space-x-1.5 transition"
+              >
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                <span>Create / Print</span>
+              </Link>
+            )}
             {isAdmin ? (
               <Link
                 href="/rewards"
