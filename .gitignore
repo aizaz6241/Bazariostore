@@ -33,3 +33,6 @@ db-backups/
 
 # Temporary folders
 .claude-tmp/
+*.timestamp-*.mjs
+vite.config.js.timestamp*
+
