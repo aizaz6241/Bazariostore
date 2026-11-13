@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import { permsFor } from '../utils/permissions.js';
 import { jwtSecret } from '../utils/secrets.js';
+import { SCOPABLE_PERMISSIONS, MAX_SCOPE_SELLERS, scopedRequestCheck } from '../utils/staffScope.js';
 
 /**
  * LOGIN CHECKS
@@ -57,23 +58,51 @@ export function isFinancePartner(admin) {
   return ['super_admin', 'admin'].includes(admin.role);
 }
 
+/**
+ * TEAM STAFF: the team portal account behind an admin login. Switched off / deleted there = no
+ * admin login either. A password changed there becomes this login's password, and older logins
+ * end (pwdAt), exactly like a password change here.
+ */
+async function teamMemberState(a) {
+  const m = await mongoose.connection
+    .collection('portalmembers')
+    .findOne({ _id: a.teamMemberId }, { projection: { active: 1, deletedAt: 1, role: 1, passwordHash: 1 } });
+  if (!m || m.active === false || m.deletedAt || m.role === 'admin') return { ok: false };
+  let pwdAt = a.pwdAt || null;
+  if (m.passwordHash && m.passwordHash !== a.passwordHash) {
+    pwdAt = new Date();
+    await mongoose.connection.collection('admins').updateOne({ _id: a._id }, { $set: { passwordHash: m.passwordHash, pwdAt, updatedAt: pwdAt } });
+  }
+  return { ok: true, pwdAt };
+}
+
 /** Current state of an admin account (null when it does not exist). */
 export async function loadAdminAccount(id) {
   if (!isId(id)) return null;
   return cached('admin', id, async () => {
     const a = await mongoose.connection
       .collection('admins')
-      .findOne({ _id: oid(id) }, { projection: { name: 1, email: 1, role: 1, permissions: 1, active: 1, pwdAt: 1, financePartner: 1 } });
+      .findOne(
+        { _id: oid(id) },
+        { projection: { name: 1, email: 1, role: 1, permissions: 1, active: 1, pwdAt: 1, financePartner: 1, teamMemberId: 1, sellerScope: 1, passwordHash: 1 } }
+      );
     if (!a) return null;
+    const team = a.teamMemberId ? await teamMemberState(a) : null;
+    // "assigned stores only" (always for a team member): a list of store ids, never everything
+    const scoped = Boolean(a.teamMemberId) || Array.isArray(a.sellerScope);
+    const perms = permsFor({ role: a.role, permissions: a.permissions || [] });
     return {
       id: String(a._id),
       name: a.name || 'Admin',
       email: a.email || '',
       role: a.role || 'admin',
-      permissions: permsFor({ role: a.role, permissions: a.permissions || [] }),
-      active: a.active !== false,
-      pwdAt: a.pwdAt || null,
-      financePartner: isFinancePartner(a),
+      permissions: scoped ? perms.filter((p) => SCOPABLE_PERMISSIONS.includes(p)) : perms,
+      active: a.active !== false && (!team || team.ok),
+      pwdAt: team ? team.pwdAt : a.pwdAt || null,
+      // a team member's login never shares the money or approves finance requests
+      financePartner: scoped ? false : isFinancePartner(a),
+      scope: scoped ? (a.sellerScope || []).slice(0, MAX_SCOPE_SELLERS).map(String) : null,
+      teamMemberId: a.teamMemberId ? String(a.teamMemberId) : '',
     };
   });
 }
@@ -109,7 +138,10 @@ export async function resolveAdmin(payload) {
   if (!account || !account.active) return { status: 401, message: 'This admin account is disabled or no longer exists. Please login again.' };
   if (olderThanPassword(payload, account.pwdAt)) return { status: 401, message: 'Session expired, please login again' };
   // `t` kept so code that passes req.admin on as a "seller" identity still sees an admin
-  return { admin: { t: 'admin', id: account.id, name: account.name, email: account.email, role: account.role, permissions: account.permissions, financePartner: account.financePartner } };
+  const admin = { t: 'admin', id: account.id, name: account.name, email: account.email, role: account.role, permissions: account.permissions, financePartner: account.financePartner };
+  // assigned-stores-only account: the store ids it may see (see utils/staffScope.js)
+  if (account.scope) admin.scope = account.scope;
+  return { admin };
 }
 
 /** Token -> live seller account. Returns { seller } or { status, message }. */
@@ -144,6 +176,23 @@ function suspendedMayUse(req) {
   return SUSPENDED_ALLOWED.some((ok) => ok(req.method, url));
 }
 
+/**
+ * An assigned-stores-only admin (utils/staffScope.js): deny by default. Answers the request itself
+ * (refusal, or an empty answer for the bell / badges) and returns false; true = go on.
+ */
+async function passScope(req, res) {
+  const r = await scopedRequestCheck(req);
+  if (!r.ok) {
+    res.status(r.status).json({ message: r.message, scoped: true });
+    return false;
+  }
+  if (r.reply !== undefined) {
+    res.json(r.reply);
+    return false;
+  }
+  return true;
+}
+
 const hasPerm = (admin, permission) => !permission || admin.role === 'super_admin' || (admin.permissions || []).includes(permission);
 
 const unavailable = (res, err) => {
@@ -175,6 +224,7 @@ async function verifyAdminToken(permission, req, res, next) {
     if (!hasPerm(out.admin, permission)) {
       return res.status(403).json({ message: 'You do not have permission for this action' });
     }
+    if (out.admin.scope && !(await passScope(req, res))) return;
     next();
   } catch (err) {
     return unavailable(res, err);
@@ -222,6 +272,7 @@ async function sellerOrAdmin(req, res, next, messages) {
       }
       req.admin = out.admin;
       req.seller = out.admin;
+      if (out.admin.scope && !(await passScope(req, res))) return;
       return next();
     }
     return res.status(401).json({ message: messages.wrongType });

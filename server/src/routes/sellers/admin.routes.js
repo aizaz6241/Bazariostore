@@ -26,6 +26,7 @@ import { setScoreAsAdjustment, bandOf, recomputeHealth, MONITOR_NAME } from '../
 import { emailSellerApproved, emailAccountStatus } from '../../utils/sellerEmails.js';
 import { pushTargets, progressOf, deliveredTotals, orderStatsBySellers, indiaDate } from '../../utils/sellerTargets.js';
 import { deleteUnusedKeys, deleteAttachmentFiles, keysOfUrls, attachmentLocation } from '../../services/uploads.js';
+import { scopeIds } from '../../utils/staffScope.js';
 
 /** Setting a seller's password or login email: the same rank as viewing the saved password. */
 const canTouchSellerLogin = (admin) => ['super_admin', 'admin'].includes(admin?.role);
@@ -462,8 +463,10 @@ router.get('/', authAdmin('sellers'), async (req, res) => {
         .select('_id')
         .lean();
 
+    // assigned-stores-only staff (team member): his stores only
+    const scope = scopeIds(req);
     const [sellers, withAadhaarFront, withAadhaarBack, withPanFront, withPanBack, withId, withPassport, withBank, productCounts, allOrders] = await Promise.all([
-      Seller.find().select(SELLER_LIST_SELECT).sort({ createdAt: -1 }),
+      Seller.find(scope ? { _id: { $in: scope } } : {}).select(SELLER_LIST_SELECT).sort({ createdAt: -1 }),
       hasSingleDoc('aadhaarFront'),
       hasSingleDoc('aadhaarBack'),
       hasSingleDoc('panFront'),
@@ -1343,8 +1346,9 @@ router.get('/:id', authAdmin('sellers'), async (req, res, next) => {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return next();
     }
-    // perf: callers that do not show KYC documents pass ?kyc=0 to skip the base64 images
-    const sellerSelect = req.query.kyc === '0' ? SELLER_LIST_SELECT : '-passwordHash';
+    // perf: callers that do not show KYC documents pass ?kyc=0 to skip the base64 images.
+    // Assigned-stores-only staff never get the KYC pictures.
+    const sellerSelect = req.query.kyc === '0' || req.admin?.scope ? SELLER_LIST_SELECT : '-passwordHash';
     // Only what the profile shows. Whole orders and products (and the KYC pictures) made this
     // answer several MB; building it kept the small server busy for seconds, and every other
     // request (chat messages, the shop) waited behind it.

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import StoreLink from './hub/StoreLink.jsx';
 import { Nick } from './nicknames.jsx';
+import { isScopedAdmin } from './hub/hubBus.js';
 import { api, money, fmtDate, getCurrencyRate } from '../api.js';
 import { STATUS_LABELS, ALL_STATUSES, PAYMENT_LABELS, STATUS_WARNINGS } from '../data.js';
 import { ErrorBox } from './ui.jsx';
@@ -284,7 +285,9 @@ export default function Orders() {
   const clientsOnly = params.get('clients') === '1';
   const page = Math.max(1, parseInt(params.get('page'), 10) || 1);
   // which accounts: real client stores (default) · test stores · all
-  const accounts = ['test', 'all'].includes(params.get('acc')) ? params.get('acc') : 'real';
+  // a team member's login (assigned stores only): every one of his stores, test ones too
+  const teamLogin = isScopedAdmin();
+  const accounts = teamLogin ? 'all' : ['test', 'all'].includes(params.get('acc')) ? params.get('acc') : 'real';
   // sort: '' = as before (newest; late / stuck / pending oldest first) · oldest · changed (latest status change)
   const sortMode = ['oldest', 'changed'].includes(params.get('sort')) ? params.get('sort') : '';
   // any filter change starts again at page 1 (only a page change keeps the other filters + page)
@@ -865,7 +868,7 @@ export default function Orders() {
   const setAccounts = (v) => setParam({ acc: v === 'real' ? '' : v, store: '', clients: '' });
   const isTestStore = (s) => Boolean(s?.isTestAccount || s?.isPreviousStoreSeller || storeCounts.get(String(s?._id))?.isTest);
   const pickerSellers = accounts === 'all' ? sellers : sellers.filter((s) => (accounts === 'test' ? isTestStore(s) : !isTestStore(s)));
-  const scopeText = accounts === 'test' ? 'test accounts' : accounts === 'all' ? 'all stores' : 'real client stores';
+  const scopeText = teamLogin ? 'your stores' : accounts === 'test' ? 'test accounts' : accounts === 'all' ? 'all stores' : 'real client stores';
   const showTable = viewMode === 'auto' || viewMode === 'table';
   const showCards = viewMode === 'auto' || viewMode === 'cards';
 
@@ -882,8 +885,9 @@ export default function Orders() {
         icon="box"
         tone="blue"
         title="Orders"
-        subtitle="Every customer order across all stores — live. Track value and fulfilment per seller, find stuck orders, update statuses and place orders for a store."
+        subtitle={teamLogin ? 'The orders of the stores assigned to you — live. Find waiting and stuck orders and update their status.' : 'Every customer order across all stores — live. Track value and fulfilment per seller, find stuck orders, update statuses and place orders for a store.'}
         actions={
+          teamLogin ? null : (
           <>
             <button type="button" className="ins-btn" onClick={() => handleOpenAddFunds()} title="Add or credit funds to a seller wallet in INR / USD">
               <Ic name="card" size={15} /> Add funds
@@ -892,6 +896,7 @@ export default function Orders() {
               <Ic name="plus" size={15} /> Place order
             </button>
           </>
+          )
         }
       >
         <MetaChip live>Live sync</MetaChip>
@@ -937,6 +942,7 @@ export default function Orders() {
         </header>
 
         <div className="oco-filters">
+          {!teamLogin && (
           <AccountsSwitch
             value={accounts}
             totals={counts?.totals}
@@ -944,6 +950,7 @@ export default function Orders() {
             storeName={chosenSeller?.storeName}
             onClearStore={() => setParam({ store: '' })}
           />
+          )}
 
           <form
             className="oco-search-row"

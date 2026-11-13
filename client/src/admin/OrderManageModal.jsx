@@ -6,6 +6,7 @@ import { ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
 import { getSocket } from '../socket.js';
 import StoreLink from './hub/StoreLink.jsx';
+import { adminCan } from './hub/hubBus.js';
 import { Avatar } from './insights.jsx';
 
 /**
@@ -308,6 +309,7 @@ export default function OrderManageModal({ orderId, initial, onClose, onChanged 
                 </p>
               </section>
 
+              {adminCan('refunds') && (
               <section className="omm-card">
                 <h4><Ic name="banknote" size={14} /> Refund</h4>
                 {order.refundId ? (
@@ -316,6 +318,7 @@ export default function OrderManageModal({ orderId, initial, onClose, onChanged 
                   <button type="button" className="omm-btn omm-btn-outline" onClick={() => setRefundOpen(true)}><Ic name="refresh" size={14} /> Create refund</button>
                 )}
               </section>
+              )}
             </div>
           </div>
         )}

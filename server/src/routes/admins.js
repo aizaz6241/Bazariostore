@@ -9,6 +9,8 @@ import { audit } from '../utils/audit.js';
 import { finLog, requestApproval } from '../utils/financeLog.js';
 import { asText } from '../middleware/sanitize.js';
 import { signAdmin } from './auth.js';
+import Seller from '../models/Seller.js';
+import { SCOPABLE_PERMISSIONS, MAX_SCOPE_SELLERS } from '../utils/staffScope.js';
 
 /**
  * ADMIN ACCOUNTS (Staff screen)
@@ -230,6 +232,183 @@ router.get(
   })
 );
 
+
+// ───────────────────────── TEAM STAFF (team portal member → admin login) ─────────────────────────
+// A team portal member gets an admin login that sees ONLY the stores assigned to him
+// (utils/staffScope.js: deny by default). He logs in with his team portal username / email and
+// password. Switching him on needs the other finance partner's approval (like every new admin);
+// changing his stores is applied at once (it is written to the audit and finance logs).
+const TEAM_ROLES = ['order_manager', 'support', 'manager'];
+const membersCol = () => mongoose.connection.db.collection('portalmembers');
+const assignmentsCol = () => mongoose.connection.db.collection('sellerassignments');
+const oidOf = (v) => new mongoose.Types.ObjectId(String(v));
+const teamEmailOf = (memberId) => `team.${String(memberId)}@staff.bazario.invalid`;
+const goodMember = (m) => m && m.role !== 'admin' && m.active !== false && !m.deletedAt;
+
+/** Clean list of store ids that really exist (at most MAX_SCOPE_SELLERS). */
+async function cleanSellerIds(raw) {
+  const ids = [...new Set((Array.isArray(raw) ? raw : []).map(String).filter(isId))].slice(0, MAX_SCOPE_SELLERS);
+  if (!ids.length) return [];
+  const found = await Seller.find({ _id: { $in: ids } }).select('_id').lean();
+  const ok = new Set(found.map((x) => String(x._id)));
+  return ids.filter((id) => ok.has(id)).map(oidOf);
+}
+
+// GET /api/admins/team/members — team portal members that can be given an admin login
+router.get(
+  '/team/members',
+  authAdmin('staff'),
+  wrap(async (req, res) => {
+    const [members, linked, counts] = await Promise.all([
+      membersCol()
+        .find({ role: { $ne: 'admin' }, deletedAt: null })
+        .project({ name: 1, username: 1, email: 1, active: 1, lastLoginAt: 1 })
+        .sort({ name: 1 })
+        .limit(2000)
+        .toArray(),
+      Admin.find({ teamMemberId: { $exists: true, $ne: null } }).select('teamMemberId name active').lean(),
+      assignmentsCol()
+        .aggregate([{ $match: { status: 'active' } }, { $group: { _id: '$memberId', n: { $sum: 1 } } }])
+        .toArray()
+        .catch(() => []),
+    ]);
+    const adminOf = new Map(linked.map((a) => [String(a.teamMemberId), a]));
+    const countOf = new Map(counts.map((c) => [String(c._id), c.n]));
+    res.json(
+      members.map((m) => ({
+        id: String(m._id),
+        name: m.name || m.username,
+        username: m.username || '',
+        email: m.email || '',
+        active: m.active !== false,
+        lastLoginAt: m.lastLoginAt || null,
+        teamSellers: countOf.get(String(m._id)) || 0,
+        adminId: adminOf.has(String(m._id)) ? String(adminOf.get(String(m._id))._id) : '',
+      }))
+    );
+  })
+);
+
+// GET /api/admins/team/members/:memberId/sellers — the stores this member brought (team portal)
+router.get(
+  '/team/members/:memberId/sellers',
+  authAdmin('staff'),
+  wrap(async (req, res) => {
+    if (!isId(req.params.memberId)) return res.status(404).json({ message: 'Member not found' });
+    const rows = await assignmentsCol()
+      .find({ memberId: oidOf(req.params.memberId), status: 'active' })
+      .project({ sellerId: 1 })
+      .limit(MAX_SCOPE_SELLERS)
+      .toArray()
+      .catch(() => []);
+    res.json({ sellerIds: [...new Set(rows.map((r) => String(r.sellerId)).filter(isId))] });
+  })
+);
+
+// POST /api/admins/team — give a team member an admin login { memberId, role, permissions, sellerIds }
+router.post(
+  '/team',
+  authAdmin('staff'),
+  wrap(async (req, res) => {
+    const memberId = String(req.body?.memberId || '');
+    if (!isId(memberId)) return res.status(400).json({ message: 'Choose a team member.' });
+    const member = await membersCol().findOne({ _id: oidOf(memberId) }, { projection: { name: 1, username: 1, email: 1, role: 1, active: 1, deletedAt: 1, passwordHash: 1 } });
+    if (!goodMember(member) || !member.passwordHash) return res.status(400).json({ message: 'This team member is switched off or no longer exists on the team portal.' });
+    if (await Admin.exists({ teamMemberId: member._id })) return res.status(400).json({ message: 'This team member already has an admin login. Change it in the list below.' });
+
+    const role = TEAM_ROLES.includes(req.body?.role) ? req.body.role : 'order_manager';
+    const permissions = (Array.isArray(req.body?.permissions) ? req.body.permissions : ROLE_DEFAULTS[role] || []).filter((p) => SCOPABLE_PERMISSIONS.includes(p));
+    if (!permissions.length) return res.status(400).json({ message: 'Choose at least one: Orders, Support chat or Sellers.' });
+    const grantIssue = grantProblem(req, { role, permissions, financePartner: false });
+    if (grantIssue) return res.status(403).json({ message: grantIssue });
+    const sellerScope = await cleanSellerIds(req.body?.sellerIds);
+
+    // what he types in the login box: his team username and his team email (not taken by another admin)
+    const logins = [...new Set([member.username, member.email].map((x) => String(x || '').toLowerCase().trim()).filter(Boolean))];
+    const taken = await Admin.find({ $or: [{ email: { $in: logins } }, { teamLogins: { $in: logins } }] }).select('_id').lean();
+    if (taken.length) return res.status(400).json({ message: 'Another admin account already uses this username / email. Ask the Super Admin.' });
+
+    const askPartner = await anotherPartnerExists(req.admin.id);
+    const now = new Date();
+    const admin = await Admin.create({
+      name: `${String(member.name || member.username).trim().slice(0, 60)} · Team`,
+      email: teamEmailOf(member._id),
+      passwordHash: member.passwordHash,
+      role,
+      title: 'Team member',
+      permissions,
+      financePartner: false,
+      // switched on now, or after the other finance partner approves it
+      active: !askPartner,
+      pwdAt: now,
+      teamMemberId: member._id,
+      teamLogins: logins,
+      sellerScope,
+    });
+    forgetAuthCache('admin', admin._id);
+    await audit(req, 'admin_created', 'admin', admin._id, { name: admin.name, teamMember: member.username, role, stores: sellerScope.length });
+
+    let message = '';
+    let pendingApproval = false;
+    if (askPartner) {
+      const asked = await requestApproval(req, {
+        action: 'admin_update',
+        targetId: `admin:${admin._id}`,
+        summary: `Give team member “${member.name || member.username}” (${member.username}) an admin login — ${ROLE_LABELS[role] || role}, only his ${sellerScope.length} assigned store${sellerScope.length === 1 ? '' : 's'}`,
+        details: [`Permissions: ${permissions.join(', ')}`, 'He sees ONLY the assigned stores. No finance, no settings, no staff.', 'Logs in with his team portal username and password.'],
+        payload: { id: String(admin._id), set: { active: true } },
+        logPayload: { id: String(admin._id), set: { active: true }, teamMember: member.username },
+      });
+      pendingApproval = true;
+      message = `Login made, switched OFF until approved. ${asked.message}`;
+    } else {
+      await finLog(req, {
+        action: 'admin.created',
+        summary: `Gave team member “${member.name || member.username}” (${member.username}) an admin login — ${role}, ${sellerScope.length} assigned stores. There was no other finance partner to approve it.`,
+        entity: 'admin',
+        entityId: admin._id,
+        after: { role, permissions, stores: sellerScope.length },
+      });
+    }
+    res.status(201).json({ ...publicAdmin(admin), pendingApproval, message });
+  })
+);
+
+// PUT /api/admins/team/:id/sellers — the stores this team login may see { sellerIds }
+router.put(
+  '/team/:id/sellers',
+  authAdmin('staff'),
+  wrap(async (req, res) => {
+    if (!isId(req.params.id)) return res.status(404).json({ message: 'Admin not found' });
+    const admin = await Admin.findById(req.params.id);
+    if (!admin || !admin.teamMemberId) return res.status(404).json({ message: 'Team login not found' });
+    const issue = manageProblem(req, admin);
+    if (issue) return res.status(403).json({ message: issue });
+    const before = (admin.sellerScope || []).map(String);
+    const next = await cleanSellerIds(req.body?.sellerIds);
+    const after = next.map(String);
+    const added = after.filter((x) => !before.includes(x));
+    const removed = before.filter((x) => !after.includes(x));
+    if (!added.length && !removed.length) return res.json({ ...publicAdmin(admin), message: 'No change.' });
+
+    admin.sellerScope = next;
+    await admin.save();
+    forgetAuthCache('admin', admin._id);
+    // his open panel follows at once (joins / leaves the live rooms of those stores)
+    await req.app.get('resyncAdminSockets')?.(admin._id);
+    await audit(req, 'admin_updated', 'admin', admin._id, { name: admin.name, storesAdded: added.length, storesRemoved: removed.length, stores: after.length });
+    await finLog(req, {
+      action: 'admin.updated',
+      summary: `Team login “${admin.name}”: stores ${before.length} → ${after.length} (+${added.length} / −${removed.length})`,
+      entity: 'admin',
+      entityId: admin._id,
+      before: { stores: before },
+      after: { stores: after },
+    });
+    res.json({ ...publicAdmin(admin), message: `Saved. He now sees ${after.length} store${after.length === 1 ? '' : 's'}.` });
+  })
+);
+
 // ───────────────────────── Create ─────────────────────────
 router.post(
   '/',
@@ -303,6 +482,15 @@ router.put(
     const password = asText(req.body?.password, 200);
     const { role, permissions, active } = req.body || {};
     const isSelf = String(admin._id) === String(req.admin.id);
+
+    // TEAM STAFF (a team member's login): a staff role only, store-work permissions only, never a
+    // finance partner, and the password is always the one of his team portal account
+    if (admin.teamMemberId) {
+      if (role !== undefined && role !== admin.role && !TEAM_ROLES.includes(role)) return res.status(400).json({ message: `A team member's login can only have these roles: ${TEAM_ROLES.map((r) => ROLE_LABELS[r] || r).join(', ')}.` });
+      if (Array.isArray(permissions) && permissions.some((p) => !SCOPABLE_PERMISSIONS.includes(p))) return res.status(400).json({ message: `A team member's login can only have: ${SCOPABLE_PERMISSIONS.join(', ')}.` });
+      if (req.body?.financePartner === true) return res.status(400).json({ message: 'A team member cannot be a finance partner.' });
+      if (password) return res.status(400).json({ message: 'This login uses the password of his team portal account. He changes it on the team portal.' });
+    }
     const isCallerSuperAdmin = req.admin.role === 'super_admin';
 
     // Protection: only super_admin can modify another super_admin or promote someone to super_admin

@@ -19,6 +19,7 @@ import { chatNamesOf } from '../utils/sellerNameSync.js';
 import { autoReplyConfig, autoReplyNow, autoReplyText, autoReplyFields, AUTO_REPLY_DEFAULTS } from '../utils/autoReply.js';
 import Order from '../models/Order.js';
 import Withdrawal from '../models/Withdrawal.js';
+import { scopeIds } from '../utils/staffScope.js';
 
 // A guest chat is opened with the random id the storefront keeps in the browser (36 characters).
 // Knowing that id is what gives access to that one chat, so it must be real text of a sensible
@@ -413,7 +414,9 @@ router.post('/seller/read', authSeller, async (req, res) => {
 router.get('/admin/conversations', authAdmin('chat'), async (req, res) => {
   try {
     // chats an admin deleted stay out until the store / guest writes again (ADMIN_VISIBLE_CHAT)
-    const allConvos = await Conversation.find({ type: { $ne: 'internal' }, ...ADMIN_VISIBLE_CHAT })
+    // assigned-stores-only staff (team member): the chats of his stores only (no guest chats)
+    const scope = scopeIds(req);
+    const allConvos = await Conversation.find({ type: { $ne: 'internal' }, ...ADMIN_VISIBLE_CHAT, ...(scope ? { seller: { $in: scope } } : {}) })
       .populate('seller', 'storeName ownerName email phone rating')
       .populate('assignedStaff', 'name email title')
       .sort({ lastAt: -1 });

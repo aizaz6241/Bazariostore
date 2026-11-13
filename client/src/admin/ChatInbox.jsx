@@ -16,7 +16,7 @@ import ChatSellerInfo from './ChatSellerInfo.jsx';
 import ChatBroadcast from './ChatBroadcast.jsx';
 import ChatAutoReply, { AutoReplyPill } from './ChatAutoReply.jsx';
 import { Nick, useNicknames } from './nicknames.jsx';
-import { idOf } from './hub/hubBus.js';
+import { idOf, isScopedAdmin } from './hub/hubBus.js';
 
 /** How long a chat has waited for support: "4m", "2h 10m", "3d". */
 const waitLabel = (ms) => {
@@ -80,6 +80,9 @@ const ROLE_LABELS = {
 
 export default function ChatInbox() {
   const nickMap = useNicknames();
+  // a team member's login (assigned stores only): his stores' chats; no new chat, broadcast,
+  // delete or team chat (those are for the full admins)
+  const teamLogin = isScopedAdmin();
   // Current Logged-in Admin
   const [me, setMe] = useState(null);
 
@@ -883,17 +886,17 @@ export default function ChatInbox() {
               </span>
             </div>
             <div className="sci-head-actions">
-              {activeTab === 'sellers' && (
+              {activeTab === 'sellers' && !teamLogin && (
                 <button type="button" className="sci-new-btn" onClick={() => setNewChatOpen(true)} title="Start a chat with any store (also after its chat was deleted)">
                   <span aria-hidden="true">＋</span> New chat
                 </button>
               )}
-              {activeTab === 'sellers' && (
+              {activeTab === 'sellers' && !teamLogin && (
                 <button type="button" className="sci-icon-btn" onClick={() => setBroadcastOpen(true)} title="Broadcast: one message (+ button) to a group of stores" aria-label="Broadcast">
                   📣
                 </button>
               )}
-              {autoReply && <AutoReplyPill config={autoReply.config} onClick={() => setAutoReplyModal(true)} />}
+              {autoReply && !teamLogin && <AutoReplyPill config={autoReply.config} onClick={() => setAutoReplyModal(true)} />}
             </div>
           </div>
 
@@ -910,6 +913,7 @@ export default function ChatInbox() {
               <span>Inquiries</span>
               {totalSellerUnread > 0 && <span className="tab-badge">{totalSellerUnread}</span>}
             </button>
+            {!teamLogin && (
             <button
               type="button"
               className={`admin-chat-tab-btn ${activeTab === 'team' ? 'active' : ''}`}
@@ -921,6 +925,7 @@ export default function ChatInbox() {
               <span>Team</span>
               {totalTeamUnread > 0 && <span className="tab-badge">{totalTeamUnread}</span>}
             </button>
+            )}
           </div>
 
           {/* Search Box */}
@@ -963,6 +968,7 @@ export default function ChatInbox() {
                 </button>
               ))}
             </div>
+              {!teamLogin && (
               <button
                 type="button"
                 className={`sci-select-toggle ${selectMode ? 'on' : ''}`}
@@ -974,6 +980,7 @@ export default function ChatInbox() {
               >
                 {selectMode ? 'Cancel' : '☑ Select'}
               </button>
+              )}
             </div>
           )}
           {activeTab === 'sellers' && selectMode && (
@@ -1177,17 +1184,21 @@ export default function ChatInbox() {
                     📋<span className="sci-btn-txt">Store info</span>
                   </button>
                 )}
-                <button type="button" className="sci-btn danger" onClick={() => setClearChat('seller')} title="Delete messages and their pictures / files for good">
-                  🧹<span className="sci-btn-txt">Clear</span>
-                </button>
-                <button
-                  type="button"
-                  className="sci-btn danger"
-                  onClick={() => setDeleteChats([{ _id: selectedSellerConv._id, name: title }])}
-                  title="Delete the whole chat and remove it from the list"
-                >
-                  🗑️<span className="sci-btn-txt">Delete</span>
-                </button>
+                {!teamLogin && (
+                  <>
+                    <button type="button" className="sci-btn danger" onClick={() => setClearChat('seller')} title="Delete messages and their pictures / files for good">
+                      🧹<span className="sci-btn-txt">Clear</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="sci-btn danger"
+                      onClick={() => setDeleteChats([{ _id: selectedSellerConv._id, name: title }])}
+                      title="Delete the whole chat and remove it from the list"
+                    >
+                      🗑️<span className="sci-btn-txt">Delete</span>
+                    </button>
+                  </>
+                )}
                 <button
                   type="button"
                   className={`sci-btn ${resolved ? 'ok' : 'primary'} btn-status-toggle ${resolved ? 'status-resolved' : 'status-open'}`}

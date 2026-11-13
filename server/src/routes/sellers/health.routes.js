@@ -89,7 +89,8 @@ router.put('/health/rules', authAdmin('sellers'), async (req, res) => {
 router.get('/:id/health/ledger', authAdmin('sellers'), async (req, res) => {
   try {
     if (!isId(req.params.id)) return res.status(404).json({ message: 'Store not found' });
-    const data = await healthOverview(req.params.id, { admin: true });
+    // assigned-stores-only staff see the store's own view (no internal admin names / reasons)
+    const data = await healthOverview(req.params.id, { admin: !req.admin?.scope });
     if (!data) return res.status(404).json({ message: 'Store not found' });
     res.json(data);
   } catch (e) {

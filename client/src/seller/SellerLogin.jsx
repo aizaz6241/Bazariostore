@@ -600,7 +600,8 @@ export default function SellerLogin() {
             </div>
             <label className="sl-field sx-field">
               <span><Ic name="mail" size={15} /> Email</span>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Your email" required autoFocus autoComplete="email" inputMode="email" autoCapitalize="none" spellCheck={false} />
+              {/* text, not "email": a team member logs in here with his team portal username too */}
+              <input type="text" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Your email" required autoFocus autoComplete="username" inputMode="email" autoCapitalize="none" spellCheck={false} />
             </label>
             <label className="sl-field sx-field">
               <span><Ic name="lock" size={15} /> Password</span>

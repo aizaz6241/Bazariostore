@@ -28,6 +28,7 @@ import { announceToAdmins, toSellers } from '../utils/realtime.js';
 import { sellerOrderPing, maskName } from '../utils/orderPrivacy.js';
 import { confirmHoursFor, warnHoursFor, tierOf } from '../utils/sellerTier.js';
 import { closedStoreIds } from '../utils/storeClosure.js';
+import { scopeIds, orderScopeMatch } from '../utils/staffScope.js';
 
 const router = Router();
 
@@ -448,6 +449,9 @@ router.get('/', authAdmin('orders'), async (req, res) => {
       and.push({ $or: [{ seller: sellerId }, { 'items.seller': sellerId }] });
     }
     if (late || stuck) and.push({ status: { $nin: CLOSED_STATUSES } });
+    // assigned-stores-only staff (team member): his stores' orders only, whatever else is asked
+    const scope = scopeIds(req);
+    if (scope) and.push(orderScopeMatch(scope));
     // Real clients / Test accounts / All (a chosen store is shown whatever this says)
     if (!sellerId) {
       const acc = await accountsFilter(req.query.accounts);
@@ -536,11 +540,14 @@ const countsCache = new Map();
 router.get('/counts', authAdmin('orders'), async (req, res) => {
   try {
     const sellerId = req.query.sellerId && mongoose.Types.ObjectId.isValid(String(req.query.sellerId)) ? String(req.query.sellerId) : '';
-    const key = sellerId || '-';
+    // assigned-stores-only staff: counted over his stores only (own cache line per account)
+    const scope = scopeIds(req);
+    const key = `${scope ? `scope:${req.admin.id}:` : ''}${sellerId || '-'}`;
     const hit = countsCache.get(key);
     if (hit && Date.now() - hit.at < 10000) return res.json(hit.data);
     const testIds = await testSellerIds();
-    const match = sellerId ? { $or: [{ seller: new mongoose.Types.ObjectId(sellerId) }, { 'items.seller': new mongoose.Types.ObjectId(sellerId) }] } : {};
+    let match = sellerId ? { $or: [{ seller: new mongoose.Types.ObjectId(sellerId) }, { 'items.seller': new mongoose.Types.ObjectId(sellerId) }] } : {};
+    if (scope) match = sellerId ? { $and: [match, orderScopeMatch(scope)] } : orderScopeMatch(scope);
     const rows = await Order.aggregate([
       { $match: match },
       {
@@ -586,7 +593,12 @@ router.get('/analytics/stores', authAdmin('orders'), async (req, res) => {
     const lateBefore = new Date(now - LATE_AFTER_MS);
     const stuckBefore = new Date(now - STUCK_AFTER_MS);
     const notDelivered = { $ne: ['$status', 'delivered'] };
-    const sellers = await Seller.find({ status: { $ne: 'pending_approval' } }).select('storeName ownerName tier status isTestAccount isPreviousStoreSeller isInactive').lean();
+    // assigned-stores-only staff: the board shows his stores only
+    const scope = scopeIds(req);
+    const scopeSet = scope ? new Set(scope.map(String)) : null;
+    const sellers = await Seller.find({ status: { $ne: 'pending_approval' }, ...(scope ? { _id: { $in: scope } } : {}) })
+      .select('storeName ownerName tier status isTestAccount isPreviousStoreSeller isInactive')
+      .lean();
     // inactive client stores (Sellers page → Active / Inactive) are left out like test accounts
     const clientIds = sellers.filter((x) => !x.isTestAccount && !x.isPreviousStoreSeller && !x.isInactive).map((x) => x._id);
     const late = { $sum: { $cond: [{ $and: [notDelivered, { $lt: ['$createdAt', lateBefore] }] }, 1, 0] } };
@@ -600,7 +612,7 @@ router.get('/analytics/stores', authAdmin('orders'), async (req, res) => {
       },
     };
     const [facet] = await Order.aggregate([
-        { $match: { $or: [{ status: { $in: open } }, { status: 'delivered', createdAt: { $gte: new Date(now - days * 86400000) } }] } },
+        { $match: { $and: [{ $or: [{ status: { $in: open } }, { status: 'delivered', createdAt: { $gte: new Date(now - days * 86400000) } }] }, ...(scope ? [orderScopeMatch(scope)] : [])] } },
         {
           $project: {
             status: 1,
@@ -634,6 +646,7 @@ router.get('/analytics/stores', authAdmin('orders'), async (req, res) => {
     const stores = new Map();
     for (const r of rows) {
       const sid = String(r._id.s);
+      if (scopeSet && !scopeSet.has(sid)) continue; // the other store of a multi-store order
       const s = info.get(sid);
       let row = stores.get(sid);
       if (!row) {

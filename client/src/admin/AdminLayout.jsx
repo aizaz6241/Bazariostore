@@ -24,19 +24,19 @@ const NAV_GROUPS = [
   {
     title: 'Commerce',
     items: [
-      { to: '/admin/orders', icon: 'box', label: 'Orders', perm: 'orders', badge: 'orders' },
+      { to: '/admin/orders', icon: 'box', label: 'Orders', perm: 'orders', badge: 'orders', scopedOk: true },
       { to: '/admin/treasury', icon: 'package', label: 'Product Treasury', perm: 'products' },
     ],
   },
   {
     title: 'Sellers',
     items: [
-      { to: '/admin/sellers', icon: 'users', label: 'Sellers & Vendors', perm: 'sellers', badge: 'diamond' },
+      { to: '/admin/sellers', icon: 'users', label: 'Sellers & Vendors', perm: 'sellers', badge: 'diamond', scopedOk: true },
       { to: '/admin/applications', icon: 'badgeCheck', label: 'Applications', perm: 'sellers', badge: 'applications' },
       { to: '/admin/affiliates', icon: 'tag', label: 'Security Codes', perm: 'sellers' },
       { to: '/admin/targets', icon: 'trend', label: 'Targets & Bonuses', perm: 'sellers' },
       { to: '/admin/diamond-offers', icon: 'sparkle', label: 'Diamond Offers', perm: 'sellers' },
-      { to: '/admin/chat', icon: 'chat', label: 'Seller Support Desk', perm: 'chat', badge: 'chats' },
+      { to: '/admin/chat', icon: 'chat', label: 'Seller Support Desk', perm: 'chat', badge: 'chats', scopedOk: true },
     ],
   },
   {
@@ -88,8 +88,8 @@ export default function AdminLayout() {
           const prev = storedAdmin();
           const next = { ...prev, ...res.admin };
           localStorage.setItem('ng_admin', JSON.stringify(next));
-          // access changed: re-join so live updates follow the new permissions
-          if (prev.role !== next.role || JSON.stringify(prev.permissions || []) !== JSON.stringify(next.permissions || [])) {
+          // access changed: re-join so live updates follow the new permissions / assigned stores
+          if (prev.role !== next.role || JSON.stringify(prev.permissions || []) !== JSON.stringify(next.permissions || []) || Boolean(prev.scoped) !== Boolean(next.scoped) || prev.storeCount !== next.storeCount) {
             const t = localStorage.getItem('ng_admin_token');
             if (t) getSocket()?.emit('admin:join', { token: t });
           }
@@ -100,9 +100,12 @@ export default function AdminLayout() {
     window.addEventListener('focus', refresh);
     return () => window.removeEventListener('focus', refresh);
   }, [token]);
+  // a team member's login (assigned stores only): Orders, Support chat and "My stores" only
+  const scoped = Boolean(admin.scoped);
   const can = (n) => {
     if (typeof n === 'string') return !n || admin.role === 'super_admin' || (admin.permissions || []).includes(n);
     if (n?.superAdminOnly) return admin.role === 'super_admin';
+    if (scoped && !n?.scopedOk) return false;
     return !n?.perm || admin.role === 'super_admin' || (admin.permissions || []).includes(n.perm);
   };
 
@@ -142,7 +145,7 @@ export default function AdminLayout() {
   // Phone push: silently re-register when already allowed; otherwise show an "Enable alerts" button
   const [pushPerm, setPushPerm] = useState(() => pushState());
   useEffect(() => {
-    if (pushState() === 'granted') enablePush('admin').then(setPushPerm);
+    if (pushState() === 'granted' && !storedAdmin().scoped) enablePush('admin').then(setPushPerm);
   }, []);
   const bellRef = useRef(null);
 
@@ -230,6 +233,8 @@ export default function AdminLayout() {
     };
 
     const onNotify = (n) => {
+      // a team login hears its stores' rooms: notices meant for the STORE are not for him
+      if (storedAdmin().scoped) return;
       // a chat message already showed its own toast and sound (onMessage): the bell only
       // (every seller message used to ring twice and show two toasts)
       if (n.type === 'chat') {
@@ -281,6 +286,8 @@ export default function AdminLayout() {
   const path = location.pathname.replace(/\/+$/, '') || '/admin';
   const currentPage = NAV.filter((n) => (n.end ? path === n.to : path === n.to || path.startsWith(n.to + '/'))).sort((a, b) => b.to.length - a.to.length)[0];
 
+  const pageLabel = scoped && currentPage?.to === '/admin/sellers' ? 'My stores' : currentPage?.label;
+
   const logout = () => {
     logoutAdmin();
     navigate('/seller/login');
@@ -307,7 +314,7 @@ export default function AdminLayout() {
             </div>
             <button className="mobile-close-drawer" onClick={() => setMobileSidebarOpen(false)}>✕</button>
           </div>
-          <small>{ROLE_TITLES[admin.role] || 'Admin Control Center'}</small>
+          <small>{scoped ? `Team · ${admin.storeCount || 0} assigned store${admin.storeCount === 1 ? '' : 's'}` : ROLE_TITLES[admin.role] || 'Admin Control Center'}</small>
         </div>
         <nav>
           {NAV_GROUPS.map((g) => {
@@ -323,7 +330,7 @@ export default function AdminLayout() {
                     end={n.end}
                     onClick={() => setMobileSidebarOpen(false)}
                   >
-                    <Ic name={n.icon} size={17} /> {n.label}
+                    <Ic name={n.icon} size={17} /> {scoped && n.to === '/admin/sellers' ? 'My stores' : n.label}
                     {n.badge && hubCounts[n.badge] > 0 && (
                       <span className={`nav-hub-badge ${n.badge === 'total' ? 'is-total' : ''}`}>{hubCounts[n.badge] > 99 ? '99+' : hubCounts[n.badge]}</span>
                     )}
@@ -347,17 +354,19 @@ export default function AdminLayout() {
             </button>
             <span className="admin-top-crumb hide-on-mobile">
               <small>Bazario Admin</small>
-              <b>{currentPage?.label || 'Control Center'}</b>
+              <b>{pageLabel || 'Control Center'}</b>
             </span>
-            <b className="show-on-mobile" style={{ fontSize: 14 }}>{currentPage?.label || 'Bazario Admin'}</b>
+            <b className="show-on-mobile" style={{ fontSize: 14 }}>{pageLabel || 'Bazario Admin'}</b>
           </div>
           <span className="admin-top-right">
+            {!scoped && (
             <button type="button" className="hub-search-btn" onClick={openSearch} title="Search stores, orders, chats, UTR, pages (Ctrl + K)" aria-label="Search">
               <Ic name="search" size={17} />
               <span className="hide-on-mobile">Search…</span>
               <kbd className="hide-on-mobile">Ctrl K</kbd>
             </button>
-            {pushPerm !== 'granted' && pushPerm !== 'unsupported' && (
+            )}
+            {!scoped && pushPerm !== 'granted' && pushPerm !== 'unsupported' && (
               <button
                 type="button"
                 onClick={async () => setPushPerm(await enablePush('admin', { ask: true }))}
@@ -367,6 +376,7 @@ export default function AdminLayout() {
                 🔔 {pushPerm === 'denied' ? 'Alerts blocked' : 'Enable alerts'}
               </button>
             )}
+            {!scoped && (
             <span className="bell-wrap" ref={bellRef}>
               <button className="bell" onClick={() => { setBellOpen(!bellOpen); }} aria-label="Notifications">
                 <Ic name="bell" size={20} />
@@ -404,6 +414,7 @@ export default function AdminLayout() {
                 </div>
               )}
             </span>
+            )}
             <span className="admin-user"><span className="admin-av">{(admin.name || 'A')[0]}</span> <span className="hide-on-mobile">{admin.name}</span></span>
           </span>
         </header>
@@ -419,7 +430,7 @@ export default function AdminLayout() {
       />
 
       {/* Ctrl + K search and the store quick-view panel (open from anywhere) */}
-      <CommandPalette pages={NAV.filter(can)} />
+      {!scoped && <CommandPalette pages={NAV.filter(can)} />}
       <SellerPeek can={can} />
 
       {/* Floating Chat Widget for Super Admin */}

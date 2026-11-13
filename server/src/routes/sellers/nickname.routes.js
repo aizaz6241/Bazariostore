@@ -5,6 +5,7 @@ import SellerNickname from '../../models/SellerNickname.js';
 import { authAdmin } from '../../middleware/auth.js';
 import { audit } from '../../utils/audit.js';
 import { asText } from '../../middleware/sanitize.js';
+import { scopeIds } from '../../utils/staffScope.js';
 
 /**
  * ADMIN-ONLY STORE NICKNAMES (models/SellerNickname.js) — the store never sees them.
@@ -17,7 +18,9 @@ const isId = (v) => mongoose.Types.ObjectId.isValid(String(v || ''));
 
 router.get('/nicknames', authAdmin(), async (req, res) => {
   try {
-    const list = await SellerNickname.find({}).select('seller nickname').lean();
+    // assigned-stores-only staff: the nicknames of his stores only
+    const scope = scopeIds(req);
+    const list = await SellerNickname.find(scope ? { seller: { $in: scope } } : {}).select('seller nickname').lean();
     const nicknames = {};
     for (const n of list) nicknames[String(n.seller)] = n.nickname;
     res.set('Cache-Control', 'no-store');

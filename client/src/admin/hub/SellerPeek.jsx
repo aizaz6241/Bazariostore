@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, fmtDay } from '../../api.js';
 import Ic from '../../components/Icons.jsx';
 import { NickEditor } from '../nicknames.jsx';
-import { PEEK_EVENT, chatPath, initialsOf, orderPath, profilePath, rememberStore, usd, ago, refreshHub } from './hubBus.js';
+import { PEEK_EVENT, chatPath, initialsOf, orderPath, profilePath, rememberStore, usd, ago, refreshHub, isScopedAdmin } from './hubBus.js';
 
 /**
  * Store quick view: opens from any store name (and from Ctrl + K) on the right side, without
@@ -85,7 +85,7 @@ export default function SellerPeek({ can }) {
             <span>{info ? `${info.ownerName || 'Owner'}${info.ownerMember ? ` · member: ${info.ownerMember}` : ''}` : 'Loading…'}</span>
           </div>
           <div className="hub-peek-head-btns">
-            {info && (
+            {info && !isScopedAdmin() && (
               <button type="button" className={`hub-pin ${info.pinned ? 'on' : ''}`} onClick={togglePin} disabled={pinBusy} title={info.pinned ? 'Unpin this store' : 'Pin this store for quick access'}>
                 <Ic name="star" size={16} />
               </button>
@@ -139,12 +139,23 @@ export default function SellerPeek({ can }) {
               )}
 
               <div className="hub-actions">
-                <button type="button" className="primary" onClick={() => go(profilePath(open.id))}>
-                  <Ic name="user" size={15} /> Open profile
-                </button>
-                <button type="button" onClick={() => go(profilePath(open.id, 'dashboard'))}>
-                  <Ic name="grid" size={15} /> Store dashboard
-                </button>
+                {isScopedAdmin() ? (
+                  // a team member's login: his store's orders (no profile / dashboard pages)
+                  can?.('orders') && (
+                    <button type="button" className="primary" onClick={() => go(`/admin/orders?store=${open.id}`)}>
+                      <Ic name="box" size={15} /> Store orders
+                    </button>
+                  )
+                ) : (
+                  <>
+                    <button type="button" className="primary" onClick={() => go(profilePath(open.id))}>
+                      <Ic name="user" size={15} /> Open profile
+                    </button>
+                    <button type="button" onClick={() => go(profilePath(open.id, 'dashboard'))}>
+                      <Ic name="grid" size={15} /> Store dashboard
+                    </button>
+                  </>
+                )}
                 {info.conversationId && can?.('chat') && (
                   <button type="button" onClick={() => go(chatPath(info.conversationId))}>
                     <Ic name="chat" size={15} /> Open chat

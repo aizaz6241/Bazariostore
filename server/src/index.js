@@ -402,6 +402,15 @@ async function resyncAdminSockets(onlyAdminId = null) {
       socket.emit('admin:session_ended', { message: 'This admin account is no longer active.' });
       continue;
     }
+    if (account.scope) {
+      // assigned-stores-only (team member): no admin-wide room, only the rooms of his stores
+      const mine = new Set(account.scope.map((sid) => `seller:${sid}`));
+      leave((r) => r === 'admins' || r.startsWith('admins:') || (r.startsWith('seller:') && !mine.has(r)));
+      for (const r of mine) if (!socket.rooms.has(r)) socket.join(r);
+      socket.data.adminPerms = [];
+      socket.data.adminScope = account.scope;
+      continue;
+    }
     const perms = account.permissions || [];
     const allowed = new Set(perms.map((p) => adminRoom(p)));
     leave((r) => r.startsWith('admins:') && !allowed.has(r));
@@ -454,7 +463,13 @@ io.on('connection', (socket) => {
       let id = null;
       if (payload.t === 'seller') {
         id = payload.id;
-      } else if (payload.t === 'admin' && sellerId && mongoose.Types.ObjectId.isValid(String(sellerId)) && hasPermission(payload, 'sellers')) {
+      } else if (
+        payload.t === 'admin' &&
+        sellerId &&
+        mongoose.Types.ObjectId.isValid(String(sellerId)) &&
+        hasPermission(payload, 'sellers') &&
+        (!payload.scope || payload.scope.includes(String(sellerId)))
+      ) {
         // an admin may follow a seller's live updates only with the Sellers permission
         id = String(sellerId);
       }
@@ -472,7 +487,7 @@ io.on('connection', (socket) => {
         socket.data.sellerId = id;
         socket.data.isSeller = payload.t === 'seller';
         socket.data.isAdmin = payload.t === 'admin';
-        if (payload.t === 'admin') socket.data.adminPerms = payload.permissions || [];
+        if (payload.t === 'admin') socket.data.adminPerms = payload.scope ? [] : payload.permissions || [];
       }
     } catch (e) {
       console.error('seller:join auth error:', e.message);
@@ -507,6 +522,17 @@ io.on('connection', (socket) => {
         socket.data.isAdmin = true;
         socket.data.adminId = payload.id;
         socket.data.adminName = typeof payload.name === 'string' ? payload.name.slice(0, 40) : '';
+        if (payload.scope) {
+          // assigned-stores-only (team member, utils/staffScope.js): never the admin-wide rooms
+          // (they carry every store's orders and chats), only his own room and his stores' rooms
+          leaveRooms((r) => r === 'admins' || r.startsWith('admins:') || r.startsWith('seller:'));
+          socket.data.adminPerms = [];
+          socket.data.adminScope = payload.scope;
+          socket.join(`admin:${payload.id}`);
+          for (const sid of payload.scope) socket.join(`seller:${sid}`);
+          return;
+        }
+        delete socket.data.adminScope;
         socket.data.adminPerms = payload.role === 'super_admin' ? [...PERMISSIONS] : payload.permissions || [];
         // Live events are sent per module: this socket only joins the rooms its role allows
         // (re-joined on every connect, so a changed role takes effect on the next reconnect).

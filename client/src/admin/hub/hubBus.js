@@ -38,6 +38,9 @@ export function storedAdmin() {
     return {};
   }
 }
+/** A team member's login that only sees the stores assigned to him (server: utils/staffScope.js). */
+export const isScopedAdmin = () => Boolean(storedAdmin().scoped);
+
 export const adminCan = (perm) => {
   const a = storedAdmin();
   return a.role === 'super_admin' || (a.permissions || []).includes(perm);

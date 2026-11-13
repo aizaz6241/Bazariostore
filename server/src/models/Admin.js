@@ -23,6 +23,16 @@ const adminSchema = new mongoose.Schema(
     lastLoginAt: Date,
     // stores this admin pinned for quick access (Ctrl + K, store panel); max 30
     pinnedSellers: { type: [mongoose.Schema.Types.ObjectId], default: undefined },
+
+    // ── TEAM STAFF (utils/staffScope.js) ──
+    // A team portal member with an admin login. He logs in with his team portal username / email
+    // and password (checked against the team portal account every time, so a password changed
+    // there works here at once). Always "assigned stores only".
+    teamMemberId: { type: mongoose.Schema.Types.ObjectId, default: undefined, index: { unique: true, sparse: true } },
+    // what he may type in the login box (his team username and team email), lower case
+    teamLogins: { type: [String], default: undefined, index: true },
+    // "assigned stores only": present (even empty) = he sees ONLY these stores
+    sellerScope: { type: [mongoose.Schema.Types.ObjectId], default: undefined },
   },
   { timestamps: true }
 );

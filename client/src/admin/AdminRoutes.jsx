@@ -29,12 +29,25 @@ import Audit from './Audit.jsx';
 import Content from './Content.jsx';
 import Settings from './Settings.jsx';
 import CreatePrint from './CreatePrint.jsx';
+import MyStores from './MyStores.jsx';
 
 // A page opened by its address (bookmark, old link) is checked as well, not only hidden in the menu.
 // The server refuses the data anyway; this shows a clear message instead of a half-broken page.
-function Need({ perm, children }) {
-  const { can } = useOutletContext() || {};
-  if (!can || can(perm)) return children;
+function Need({ perm, scopedOk = false, children }) {
+  const { can, admin } = useOutletContext() || {};
+  // a team member's login (assigned stores only) opens only the pages made for it
+  const scopedBlocked = Boolean(admin?.scoped) && !scopedOk;
+  if (!scopedBlocked && (!can || can(perm))) return children;
+  if (scopedBlocked) {
+    return (
+      <div className="card" style={{ padding: 28, maxWidth: 560, margin: '24px auto', textAlign: 'center' }}>
+        <div style={{ fontSize: 34, marginBottom: 6 }}>🔒</div>
+        <h2 style={{ margin: '0 0 6px' }}>Not part of your team access</h2>
+        <p className="muted" style={{ margin: '0 0 14px' }}>Your login works only with the stores assigned to you: their orders, their support chat and their store details.</p>
+        <Link className="btn-primary" to="/admin/orders">Go to orders</Link>
+      </div>
+    );
+  }
   return (
     <div className="card" style={{ padding: 28, maxWidth: 560, margin: '24px auto', textAlign: 'center' }}>
       <div style={{ fontSize: 34, marginBottom: 6 }}>🔒</div>
@@ -48,22 +61,37 @@ function Need({ perm, children }) {
 }
 
 const guard = (perm, el) => <Need perm={perm}>{el}</Need>;
+// pages a team member's login (assigned stores only) may open too
+const teamGuard = (perm, el) => <Need perm={perm} scopedOk>{el}</Need>;
+
+/** The first page: the dashboard, or for a team member's login his orders / chats. */
+function Home() {
+  const { admin, can } = useOutletContext() || {};
+  if (admin?.scoped) return <Navigate to={can?.('orders') ? '/admin/orders' : can?.('chat') ? '/admin/chat' : '/admin/sellers'} replace />;
+  return <Dashboard />;
+}
+
+/** Sellers page; a team member's login gets its own "My stores" list instead. */
+function SellersHome() {
+  const { admin } = useOutletContext() || {};
+  return admin?.scoped ? <MyStores /> : <Sellers />;
+}
 
 export default function AdminRoutes() {
   return (
     <Routes>
       <Route element={<AdminLayout />}>
-        <Route index element={<Dashboard />} />
+        <Route index element={<Home />} />
         {/* the Today page was removed from the panel; old links go to the dashboard */}
         <Route path="today" element={<Navigate to="/admin" replace />} />
         <Route path="treasury" element={guard('products', <AdminTreasury />)} />
         <Route path="treasury/new" element={guard('products', <AdminTreasuryEdit />)} />
         <Route path="treasury/:id" element={guard('products', <AdminTreasuryEdit />)} />
-        <Route path="sellers" element={guard('sellers', <Sellers />)} />
+        <Route path="sellers" element={teamGuard('sellers', <SellersHome />)} />
         {/* the Complaints page was removed (its tools live in the seller profile); old links go to Sellers */}
         <Route path="complaints" element={<Navigate to="/admin/sellers" replace />} />
-        <Route path="orders" element={guard('orders', <Orders />)} />
-        <Route path="orders/:id" element={guard('orders', <OrderDetail />)} />
+        <Route path="orders" element={teamGuard('orders', <Orders />)} />
+        <Route path="orders/:id" element={teamGuard('orders', <OrderDetail />)} />
         <Route path="applications" element={guard('sellers', <Applications />)} />
         <Route path="targets" element={guard('sellers', <Targets />)} />
         <Route path="diamond-offers" element={guard('sellers', <DiamondOffers />)} />
@@ -73,7 +101,7 @@ export default function AdminRoutes() {
         <Route path="referral-codes" element={<Navigate to="/admin/affiliates" replace />} />
         <Route path="withdrawals" element={guard('finance', <AdminWithdrawals />)} />
         <Route path="payouts" element={<Navigate to="/admin/withdrawals" replace />} />
-        <Route path="chat" element={guard('chat', <ChatInbox />)} />
+        <Route path="chat" element={teamGuard('chat', <ChatInbox />)} />
         <Route path="staff" element={guard('staff', <Staff />)} />
         <Route path="backup" element={guard('backup', <Backup />)} />
         {/* Legacy routes — accessible via URL */}
@@ -90,7 +118,7 @@ export default function AdminRoutes() {
         <Route path="audit" element={guard('audit', <Audit />)} />
         <Route path="content" element={guard('content', <Content />)} />
         <Route path="settings" element={guard('settings', <Settings />)} />
-        <Route path="create-print" element={<CreatePrint />} />
+        <Route path="create-print" element={<Need perm="">{<CreatePrint />}</Need>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

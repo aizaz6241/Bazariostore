@@ -50,6 +50,9 @@ export function makeAnyLogin({ adminRouter, sellerRouter, userRouter }) {
       if (admin) return forward(adminRouter, req, res, next);
       if (seller || email === 'kavya.patel@gmail.com') return forward(sellerRouter, req, res, next); // (the demo store's 2nd address)
       if (user) return forward(userRouter, req, res, next);
+      // a team member's admin login (Staff → Team member) by his team portal username / email.
+      // Checked last, so it never takes the place of a store or customer with the same email.
+      if (await Admin.exists({ teamLogins: email.toLowerCase(), teamMemberId: { $exists: true, $ne: null } })) return forward(adminRouter, req, res, next);
 
       // nobody has this email: same work and same answer as a wrong password
       await comparePassword(password, dummyHash());

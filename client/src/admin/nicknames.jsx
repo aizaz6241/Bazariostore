@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { api } from '../api.js';
 import { getSocket } from '../socket.js';
-import { adminCan, idOf } from './hub/hubBus.js';
+import { adminCan, idOf, isScopedAdmin } from './hub/hubBus.js';
 
 /**
  * ADMIN-ONLY STORE NICKNAMES (server: routes/sellers/nickname.routes.js).
@@ -113,7 +113,8 @@ export function NickEditor({ id, storeName = '', className = '' }) {
     if (editing) inputRef.current?.focus();
   }, [editing]);
   if (!sid) return null;
-  const canEdit = adminCan('sellers');
+  // a team member's login only sees the nickname (only full admins name the stores)
+  const canEdit = adminCan('sellers') && !isScopedAdmin();
 
   const save = async (value) => {
     setBusy(true);

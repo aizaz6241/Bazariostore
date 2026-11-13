@@ -7,6 +7,7 @@ import {
 import { api, fmtDate } from '../api.js';
 import { Modal, Toggle, ErrorBox, F } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
+import TeamStaff from './TeamStaff.jsx';
 
 // New accounts are staff by default: no share of the money, no team portal
 const EMPTY = { name: '', email: '', password: '', role: 'support', permissions: [], financePartner: false };
@@ -26,6 +27,7 @@ const GROUP_ORDER = ['Marketplace', 'Catalog', 'Operations', 'Money', 'System'];
 
 const TABS = [
   { key: 'members', label: 'Members', icon: 'user' },
+  { key: 'team', label: 'Team members', icon: 'users' },
   { key: 'insights', label: 'Insights', icon: 'sparkle' },
   { key: 'matrix', label: 'Access Matrix', icon: 'shield' },
 ];
@@ -293,11 +295,12 @@ export default function Staff() {
                               <b className="stf-name">
                                 {a.name} {isMe && <span className="stf-tag stf-tag-me">You</span>}
                               </b>
-                              <small className="stf-email">{a.email}</small>
+                              <small className="stf-email">{a.teamMemberId ? `Team login: ${(a.teamLogins || []).join(' / ')}` : a.email}</small>
                               <div className="stf-tags">
                                 {a.role === 'super_admin' && <span className="stf-tag stf-tag-super">👑 Full access</span>}
                                 {a.financePartner && <span className="stf-tag stf-tag-partner">💰 Finance partner</span>}
                                 {custom && <span className="stf-tag">Custom access</span>}
+                                {a.teamMemberId && <span className="stf-tag stf-tag-team">🤝 Team · {(a.sellerScope || []).length} stores</span>}
                               </div>
                             </div>
                           </div>
@@ -351,7 +354,7 @@ export default function Staff() {
                         </td>
                         <td>
                           <div className="row-actions" style={{ justifyContent: 'flex-end' }}>
-                            <button className="row-link" disabled={!!block} title={block} onClick={() => setEdit({ ...a, password: '' })}>
+                            <button className="row-link" disabled={!!block} title={block} onClick={() => (a.teamMemberId ? setTab('team') : setEdit({ ...a, password: '' }))}>
                               Edit
                             </button>
                             {!isMe && (
@@ -370,6 +373,9 @@ export default function Staff() {
           </div>
         </>
       )}
+
+      {/* ───────────── TEAM MEMBERS (assigned stores only) ───────────── */}
+      {tab === 'team' && meta && <TeamStaff admins={admins} meta={meta} onChanged={reloadAll} setNotice={setNotice} setError={setError} />}
 
       {/* ───────────── INSIGHTS ───────────── */}
       {tab === 'insights' && (
