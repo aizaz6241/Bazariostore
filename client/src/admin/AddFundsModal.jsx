@@ -3,6 +3,7 @@ import { api, money } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
 import SellerSelectDropdown from './SellerSelectDropdown.jsx';
+import { Nick } from './nicknames.jsx';
 
 const FALLBACK_INR_RATE = 83.5; // used only if the live rate has not loaded
 const REASON_PRESETS = [
@@ -289,7 +290,7 @@ export default function AddFundsModal({
             {selectedSeller ? (
               <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 10, border: '2px solid #2563eb', background: '#eff6ff' }}>
                 <div style={{ fontSize: 12, color: '#1e40af', fontWeight: 700 }}>SELECTED SELLER</div>
-                <div style={{ fontSize: 17, fontWeight: 800, color: '#0f172a' }}>{selectedSeller.storeName || selectedSeller.name}</div>
+                <div style={{ fontSize: 17, fontWeight: 800, color: '#0f172a' }}>{selectedSeller.storeName || selectedSeller.name}<Nick id={selectedSeller._id} compact /></div>
                 <div style={{ fontSize: 13, color: '#334155' }}>
                   {[selectedSeller.name, selectedSeller.email, selectedSeller.phone].filter(Boolean).join(' · ')}
                 </div>
@@ -574,7 +575,7 @@ export default function AddFundsModal({
               <div style={{ fontWeight: 800, fontSize: 15, color: '#0f172a' }}>
                 Please check: {isDebit ? 'DEBIT' : 'CREDIT'} ${parsedUsd ? parsedUsd.toFixed(2) : '0.00'} {isDebit ? 'from' : 'to'}
               </div>
-              <div style={{ fontWeight: 900, fontSize: 18, color: isDebit ? '#b91c1c' : '#15803d' }}>{selectedSeller.storeName || selectedSeller.name}</div>
+              <div style={{ fontWeight: 900, fontSize: 18, color: isDebit ? '#b91c1c' : '#15803d' }}>{selectedSeller.storeName || selectedSeller.name}<Nick id={selectedSeller._id} compact /></div>
               <div style={{ fontSize: 13, color: '#334155' }}>{[selectedSeller.name, selectedSeller.email].filter(Boolean).join(' · ')}</div>
               <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>Is this the right seller? Press the button again to confirm, or change the seller above.</div>
               {!isDebit && binanceLater && realSellerInflow > 0.004 && (

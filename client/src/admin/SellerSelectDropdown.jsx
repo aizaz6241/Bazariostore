@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { money } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { useCurrency } from '../context/CurrencyContext.jsx';
+import { Nick, useNicknames } from './nicknames.jsx';
 
 // Vibrant avatar gradients based on store initial
 const AVATAR_GRADIENTS = [
@@ -45,6 +46,9 @@ export default function SellerSelectDropdown({
     return sellers.find((s) => String(s._id) === String(value)) || null;
   }, [sellers, value]);
 
+  // admin-only nicknames: shown next to the name and searchable
+  const nickMap = useNicknames();
+
   // Filter sellers based on search input
   const filteredSellers = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -55,9 +59,10 @@ export default function SellerSelectDropdown({
       const email = (s.email || '').toLowerCase();
       const phone = (s.phone || s.contact?.phone || '').toLowerCase();
       const id = String(s._id || '').toLowerCase();
-      return name.includes(q) || owner.includes(q) || email.includes(q) || phone.includes(q) || id.includes(q);
+      const nick = (nickMap[String(s._id)] || '').toLowerCase();
+      return name.includes(q) || nick.includes(q) || owner.includes(q) || email.includes(q) || phone.includes(q) || id.includes(q);
     });
-  }, [sellers, search]);
+  }, [sellers, search, nickMap]);
 
   // Click outside to close
   useEffect(() => {
@@ -133,6 +138,7 @@ export default function SellerSelectDropdown({
                   <span className="seller-picker-store-name" title={selectedSeller.storeName}>
                     {selectedSeller.storeName}
                   </span>
+                  <Nick id={selectedSeller._id} compact />
                   {isTest(selectedSeller) && (
                     <span className="seller-picker-badge-test">Test Store</span>
                   )}
@@ -280,6 +286,7 @@ export default function SellerSelectDropdown({
                           <b className="seller-picker-item-name" title={s.storeName}>
                             {s.storeName}
                           </b>
+                          <Nick id={s._id} compact />
                           {isTest(s) && (
                             <span className="seller-picker-badge-test">Test</span>
                           )}

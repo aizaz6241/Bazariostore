@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api.js';
 import Ic from '../../components/Icons.jsx';
+import { Nick, useNicknames } from '../nicknames.jsx';
 import { SEARCH_EVENT, HUB_REFRESH_EVENT, STATUS_LABELS, adminCan, ago, chatPath, initialsOf, orderPath, peekSeller, recentStores, usd } from './hubBus.js';
 
 /**
@@ -10,6 +11,7 @@ import { SEARCH_EVENT, HUB_REFRESH_EVENT, STATUS_LABELS, adminCan, ago, chatPath
  * Empty box: pinned stores, recently opened stores and the main pages.
  */
 export default function CommandPalette({ pages = [] }) {
+  const nickMap = useNicknames();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
@@ -97,14 +99,23 @@ export default function CommandPalette({ pages = [] }) {
       .map((p) => ({ key: `p:${p.to}`, icon: p.icon, title: p.label, sub: 'Page', run: () => go(p.to) }));
     if (t.length < 2) {
       const out = [];
-      if (pins.length) out.push({ title: '⭐ Pinned stores', items: pins.map((s) => ({ key: `pin:${s.id}`, av: s.storeName, title: s.storeName, sub: `${s.ownerName || ''}${s.tier === 'Diamond' ? ' · 💎 Diamond' : ''}`, run: () => peek(s.id, s.storeName) })) });
+      if (pins.length) out.push({ title: '⭐ Pinned stores', items: pins.map((s) => ({ key: `pin:${s.id}`, av: s.storeName, title: s.storeName, nickId: s.id, sub: `${s.ownerName || ''}${s.tier === 'Diamond' ? ' · 💎 Diamond' : ''}`, run: () => peek(s.id, s.storeName) })) });
       const recent = recentStores().filter((r) => !pins.some((p) => p.id === r.id));
-      if (recent.length && adminCan('sellers')) out.push({ title: 'Recently opened', items: recent.map((s) => ({ key: `rec:${s.id}`, av: s.storeName, title: s.storeName, sub: s.ownerName || '', run: () => peek(s.id, s.storeName) })) });
+      if (recent.length && adminCan('sellers')) out.push({ title: 'Recently opened', items: recent.map((s) => ({ key: `rec:${s.id}`, av: s.storeName, title: s.storeName, nickId: s.id, sub: s.ownerName || '', run: () => peek(s.id, s.storeName) })) });
       if (pageItems.length) out.push({ title: 'Go to', items: pageItems });
       return out;
     }
     const r = res || {};
     const out = [];
+    // stores found by their admin-only nickname (not already in the search results)
+    if (adminCan('sellers')) {
+      const found = new Set((r.sellers || []).map((s) => String(s.id)));
+      const byNick = Object.entries(nickMap)
+        .filter(([id, n]) => !found.has(id) && String(n).toLowerCase().includes(t))
+        .slice(0, 6)
+        .map(([id, n]) => ({ key: `n:${id}`, av: n, title: n, sub: 'Nickname · open the store', nickId: '', run: () => peek(id, '') }));
+      if (byNick.length) out.push({ title: 'Stores by nickname', items: byNick });
+    }
     if (r.sellers?.length)
       out.push({
         title: 'Stores',
@@ -112,6 +123,7 @@ export default function CommandPalette({ pages = [] }) {
           key: `s:${s.id}`,
           av: s.storeName,
           title: s.storeName,
+          nickId: s.id,
           sub: [s.ownerName, s.email, s.tier === 'Diamond' ? '💎 Diamond' : '', s.status !== 'active' ? s.status : '', s.test ? 'test' : ''].filter(Boolean).join(' · '),
           right: usd(s.balance),
           run: () => peek(s.id, s.storeName),
@@ -148,7 +160,7 @@ export default function CommandPalette({ pages = [] }) {
       });
     if (pageItems.length) out.push({ title: 'Pages', items: pageItems });
     return out;
-  }, [q, res, pins, pages]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [q, res, pins, pages, nickMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const flat = useMemo(() => groups.flatMap((g) => g.items), [groups]);
   useEffect(() => setActive(0), [q, res]);
@@ -212,7 +224,10 @@ export default function CommandPalette({ pages = [] }) {
                   >
                     {it.av ? <span className="hub-cmd-av">{initialsOf(it.av)}</span> : <span className="hub-cmd-ico"><Ic name={it.icon || 'chevRight'} size={16} /></span>}
                     <span className="hub-cmd-txt">
-                      <b>{it.title}</b>
+                      <b>
+                        {it.title}
+                        {it.nickId && <Nick id={it.nickId} compact />}
+                      </b>
                       {it.sub && <small>{it.sub}</small>}
                     </span>
                     {it.right && <em>{it.right}</em>}

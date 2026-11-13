@@ -98,10 +98,11 @@ router.get('/:id/health/ledger', authAdmin('sellers'), async (req, res) => {
 });
 
 // categories an admin can add (points limited per category)
+// manual = the admin's own "increase / decrease health" (up or down, any reason)
 const CATEGORIES = {
-  policy: { min: -40, max: -10 },
-  order_issue: { min: -20, max: -5 },
-  manual: { min: -30, max: 20 },
+  policy: { min: -40, max: -5 },
+  order_issue: { min: -20, max: -2 },
+  manual: { min: -50, max: 50 },
 };
 
 router.post('/:id/health/entries', authAdmin('sellers'), async (req, res) => {

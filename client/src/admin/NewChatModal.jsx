@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
+import { Nick } from './nicknames.jsx';
 
 /**
  * Support Desk → "New chat": pick a store and write to it (like WhatsApp "new chat").
@@ -86,6 +87,7 @@ export default function NewChatModal({ onClose, onStarted }) {
                   <span className="ncm-txt">
                     <b>
                       <span className="ncm-name">{s.storeName}</span>
+                      <Nick id={s._id} compact />
                       {s.tier === 'diamond' && <span title="Diamond store">💎</span>}
                       {s.isTest && <em className="ncm-tag test">Test</em>}
                       {STATUS_TAG[s.status] && <em className={`ncm-tag ${s.status}`}>{STATUS_TAG[s.status]}</em>}

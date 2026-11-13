@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import StoreLink from './hub/StoreLink.jsx';
+import { Nick } from './nicknames.jsx';
 import { api, money, fmtDate, getCurrencyRate } from '../api.js';
 import { STATUS_LABELS, ALL_STATUSES, PAYMENT_LABELS, STATUS_WARNINGS } from '../data.js';
 import { ErrorBox } from './ui.jsx';
@@ -1100,9 +1101,10 @@ export default function Orders() {
                               <Avatar name={seller.storeName} size={30} />
                               <div>
                                 <b className="oco-clip" title={seller.storeName}>
-                                  <StoreLink id={seller._id} name={seller.storeName} />
+                                  <StoreLink id={seller._id} name={seller.storeName} nick={false} />
                                 </b>
                                 <span className="oco-meta">{storeCount > 1 ? `+${storeCount - 1} more store${storeCount > 2 ? 's' : ''}` : seller.ownerName || ''}</span>
+                                <Nick id={seller._id} compact className="is-block" />
                               </div>
                             </div>
                           ) : (
@@ -1188,7 +1190,8 @@ export default function Orders() {
                     <dl className="oco-card-grid">
                       <div>
                         <dt>Store</dt>
-                        <dd className="oco-clip">{seller ? <StoreLink id={seller._id} name={seller.storeName} /> : 'Bazario Direct'}</dd>
+                        <dd className="oco-clip">{seller ? <StoreLink id={seller._id} name={seller.storeName} nick={false} /> : 'Bazario Direct'}</dd>
+                        {seller && <Nick id={seller._id} compact className="is-block" />}
                       </div>
                       <div className="oco-card-right">
                         <dt>Total</dt>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar } from './insights.jsx';
+import { Nick, useNicknames } from './nicknames.jsx';
 
 /**
  * Store filter of the admin Orders page: search by name / owner / email, each store with its
@@ -42,6 +43,7 @@ export default function OrdersStorePicker({ sellers, counts, value, onChange }) 
   const box = useRef(null);
   const input = useRef(null);
   const listRef = useRef(null);
+  const nickMap = useNicknames();
   const byId = useMemo(() => new Map(sellers.map((s) => [String(s._id), s])), [sellers]);
   const chosen = value ? byId.get(String(value)) : null;
 
@@ -50,7 +52,7 @@ export default function OrdersStorePicker({ sellers, counts, value, onChange }) 
     const recent = t ? [] : readRecent().filter((id) => byId.has(id));
     const rest = sellers
       .filter((s) => !recent.includes(String(s._id)))
-      .filter((s) => !t || `${s.storeName} ${s.ownerName} ${s.email || ''}`.toLowerCase().includes(t))
+      .filter((s) => !t || `${s.storeName} ${nickMap[String(s._id)] || ''} ${s.ownerName} ${s.email || ''}`.toLowerCase().includes(t))
       // stores with late / pending orders first, then by name
       .sort((a, b) => {
         const ca = counts?.get(String(a._id));
@@ -62,7 +64,7 @@ export default function OrdersStorePicker({ sellers, counts, value, onChange }) 
     recent.forEach((id) => list.push({ s: byId.get(id), recent: true }));
     rest.forEach((s) => list.push({ s }));
     return list;
-  }, [q, sellers, counts, byId, open]);
+  }, [q, sellers, counts, byId, open, nickMap]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -99,6 +101,7 @@ export default function OrdersStorePicker({ sellers, counts, value, onChange }) 
           <>
             <Avatar name={chosen.storeName} size={24} />
             <span className="opk-btn-name">{chosen.storeName}</span>
+            <Nick id={chosen._id} compact />
             {chosen.tier === 'diamond' && <span className="opk-tier dia">💎</span>}
           </>
         ) : (
@@ -148,6 +151,7 @@ export default function OrdersStorePicker({ sellers, counts, value, onChange }) 
                         <span className="opk-main">
                           <b>
                             <span className="opk-name">{s.storeName}</span>
+                            <Nick id={s._id} compact />
                             <span className={`opk-tier ${s.tier === 'diamond' ? 'dia' : ''}`}>{s.tier === 'diamond' ? '💎 Diamond' : 'Basic'}</span>
                           </b>
                           <small>{s.ownerName || s.email || '—'}{s.status && s.status !== 'active' ? ` · ${s.status}` : ''}</small>

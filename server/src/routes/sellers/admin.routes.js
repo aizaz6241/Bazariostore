@@ -978,7 +978,7 @@ router.post('/:id/health', authAdmin('sellers'), announceToAdmins('sellers', 'se
     if (!before) return res.status(404).json({ message: 'Seller not found' });
     const previousScore = before.accountHealth?.score ?? 100;
 
-    const out = await setScoreAsAdjustment(req.params.id, numScore, req.admin, reason, days);
+    const out = await setScoreAsAdjustment(req.params.id, numScore, req.admin, reason, days, notifySeller !== false);
     if (out && !out.unchanged && notifySeller === false) {
       // (the entry already told the store; nothing else to send)
     }

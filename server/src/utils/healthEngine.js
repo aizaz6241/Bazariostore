@@ -31,30 +31,34 @@ export const MONITOR_NAME = 'Bazario Account Monitoring';
 
 /** Default rules; a super admin can change points and days (collection `healthrules`). */
 export const DEFAULT_RULES = {
-  late_confirm: { points: -5, days: 14, title: 'Order confirmed late', help: 'Confirmed after the warning time (but before the deadline).' },
-  wallet_short: { points: -8, days: 14, title: 'Order waiting — wallet balance too low', help: 'An order reached its warning time and the wallet could not cover it (once a day).' },
-  deadline_miss: { points: -20, days: 21, title: 'Confirmation deadline missed', help: 'An order was not confirmed by its deadline. The store is frozen too.' },
-  deadline_repeat: { points: -30, days: 21, title: 'Confirmation deadline missed again', help: 'A second missed deadline within the repeat window.' },
-  deadline_third: { points: -40, days: 21, title: 'Deadlines missed repeatedly', help: 'A third (or later) missed deadline within the repeat window.' },
-  extra_order: { points: -5, days: 21, title: 'Another order missed in the same incident', help: 'Each extra order missed together with the first one.' },
-  overdue_daily: { points: -10, days: 21, title: 'Order still not confirmed after the deadline', help: 'Every 24 hours an order stays unconfirmed after its deadline.' },
-  order_issue: { points: -10, days: 21, title: 'Order cancelled / refunded because of the store', help: 'Added on review when the store caused a cancellation or refund.' },
-  deposit_rejected: { points: -25, days: 21, title: 'Deposit request rejected', help: 'A deposit was rejected (wrong or invalid payment proof).' },
-  duplicate_proof: { points: -50, days: 21, title: 'Payment reference already used', help: 'A deposit used a UTR / reference that was already credited before.' },
-  policy: { points: -20, days: 21, title: 'Policy violation', help: 'Added on review for a breach of the seller policy (−10 to −40).' },
-  streak_bonus: { points: 3, days: 14, title: 'Orders confirmed on time', help: 'Every 10 orders in a row confirmed before the warning time.' },
-  clean_week: { points: 2, days: 14, title: 'Clean week', help: 'A week with order activity and no violation.' },
-  manual: { points: 0, days: 21, title: 'Account review', help: 'Adjustment after an account review.' },
+  late_confirm: { points: -2, days: 7, title: 'Order confirmed late', help: 'Confirmed after the warning time (but before the deadline).' },
+  wallet_short: { points: -3, days: 7, title: 'Order waiting — wallet balance too low', help: 'An order reached its warning time and the wallet could not cover it (once a day).' },
+  deadline_miss: { points: -8, days: 14, title: 'Confirmation deadline missed', help: 'An order was not confirmed by its deadline. The store is frozen too.' },
+  deadline_repeat: { points: -12, days: 14, title: 'Confirmation deadline missed again', help: 'A second missed deadline within the repeat window.' },
+  deadline_third: { points: -15, days: 14, title: 'Deadlines missed repeatedly', help: 'A third (or later) missed deadline within the repeat window.' },
+  extra_order: { points: -2, days: 14, title: 'Another order missed in the same incident', help: 'Each extra order missed together with the first one.' },
+  overdue_daily: { points: -3, days: 14, title: 'Order still not confirmed after the deadline', help: 'Every 24 hours an order stays unconfirmed after its deadline (at most 3 days per order).' },
+  order_issue: { points: -5, days: 14, title: 'Order cancelled / refunded because of the store', help: 'Added on review when the store caused a cancellation or refund.' },
+  deposit_rejected: { points: -10, days: 14, title: 'Deposit request rejected', help: 'A deposit was rejected (wrong or invalid payment proof).' },
+  duplicate_proof: { points: -40, days: 21, title: 'Payment reference already used', help: 'A deposit used a UTR / reference that was already credited before.' },
+  policy: { points: -15, days: 21, title: 'Policy violation', help: 'Added on review for a breach of the seller policy.' },
+  streak_bonus: { points: 3, days: 14, title: 'Orders confirmed on time', help: 'Every 5 orders in a row confirmed before the warning time.' },
+  clean_week: { points: 3, days: 14, title: 'Clean week', help: 'A week with order activity and no violation.' },
+  manual: { points: 0, days: 14, title: 'Account review', help: 'Adjustment after an account review.' },
   opening: { points: 0, days: 21, title: 'Previous health record', help: 'The score from before this monitoring system; it ends by itself.' },
 };
 // bonusCap: reward points that count at the same time (more rewards never hide penalties)
 // perfectBonus*: a store that keeps 100/100 for `perfectBonusDays` days in a row (with at least
 // `perfectBonusMinOrders` orders confirmed in that time) gets `perfectBonusAmount` $ in its wallet
+// dailyPenaltyCap: the most points the AUTOMATIC rules can take in 24 hours (one bad day never
+// sinks a store). Automatic rules also never push the score below 0 (no hidden "minus" debt, so
+// the score starts climbing back as soon as the first entry ends).
 export const DEFAULT_SETTINGS = {
-  repeatWindowDays: 21,
+  repeatWindowDays: 14,
   incidentWindowHours: 24,
-  streakSize: 10,
-  bonusCap: 10,
+  streakSize: 5,
+  bonusCap: 15,
+  dailyPenaltyCap: 15,
   perfectBonusAmount: 50,
   perfectBonusDays: 7,
   perfectBonusMinOrders: 1,
@@ -73,6 +77,20 @@ export const bandOf = (score) => BANDS.find((b) => (Number(score) || 0) >= b.min
 export const LIMIT_MIN_SCORE = 60;
 
 const DAY = 86400000;
+
+/**
+ * RULES VERSION 2 (13 Nov 2026): lighter, Amazon-like scale. Points / days / strictness settings a
+ * super admin saved under the old strict scale (version 1) are not used any more; the perfect-bonus
+ * money settings are kept. Saving the rules again stores them as version 2.
+ */
+const RULES_VERSION = 2;
+const STRICTNESS_SETTINGS = ['repeatWindowDays', 'incidentWindowHours', 'streakSize', 'bonusCap', 'dailyPenaltyCap'];
+// serious ones (fraud / admin review) are never softened by the daily limit or the 0 floor
+const UNCAPPED_CODES = ['duplicate_proof', 'deposit_rejected', 'policy', 'manual', 'order_issue', 'opening'];
+// an order left unconfirmed costs the daily points for at most this many days
+const OVERDUE_MAX_DAYS = 3;
+// smaller automatic penalties (a late confirmation) do not drop the store's level
+const LEVEL_DROP_MIN_POINTS = 5;
 
 /**
  * LEVELS — perfect weeks IN A ROW (a full bonus week at 100/100 with the needed confirmed orders).
@@ -134,13 +152,19 @@ export async function getRules() {
   const settings = { ...DEFAULT_SETTINGS };
   try {
     const doc = mongoose.connection.readyState === 1 ? await mongoose.connection.collection('healthrules').findOne({ _id: 'rules' }) : null;
-    for (const [code, v] of Object.entries(doc?.rules || {})) {
-      if (!rules[code] || !EDITABLE.includes(code)) continue;
-      if (Number.isFinite(v?.points)) rules[code].points = v.points;
-      if (Number.isFinite(v?.days)) rules[code].days = v.days;
+    const current = Number(doc?.version) === RULES_VERSION;
+    if (current) {
+      for (const [code, v] of Object.entries(doc?.rules || {})) {
+        if (!rules[code] || !EDITABLE.includes(code)) continue;
+        if (Number.isFinite(v?.points)) rules[code].points = v.points;
+        if (Number.isFinite(v?.days)) rules[code].days = v.days;
+      }
     }
-    for (const k of Object.keys(DEFAULT_SETTINGS)) if (Number.isFinite(doc?.settings?.[k])) settings[k] = doc.settings[k];
-    rulesCache = { at: Date.now(), rules, settings, updatedAt: doc?.updatedAt || null, updatedBy: doc?.updatedBy || '' };
+    for (const k of Object.keys(DEFAULT_SETTINGS)) {
+      if (!current && STRICTNESS_SETTINGS.includes(k)) continue;
+      if (Number.isFinite(doc?.settings?.[k])) settings[k] = doc.settings[k];
+    }
+    rulesCache = { at: Date.now(), rules, settings, updatedAt: current ? doc?.updatedAt || null : null, updatedBy: current ? doc?.updatedBy || '' : '' };
   } catch (e) {
     console.error('[health] rules:', e.message);
     rulesCache = { at: Date.now(), rules, settings };
@@ -173,11 +197,12 @@ export async function saveRules(input, admin) {
       : k === 'perfectBonusAmount' ? n >= 0 && n <= 1000
       : k === 'perfectBonusDays' ? n >= 1 && n <= 60
       : k === 'perfectBonusMinOrders' ? n >= 0 && n <= 100
+      : k === 'dailyPenaltyCap' ? n >= 5 && n <= 100
       : n >= 1 && n <= 90;
     if (!ok) throw Object.assign(new Error(`Setting ${k} is out of range.`), { status: 400 });
     set[`settings.${k}`] = n;
   }
-  await mongoose.connection.collection('healthrules').updateOne({ _id: 'rules' }, { $set: { ...set, updatedAt: new Date(), updatedBy: admin?.name || '' } }, { upsert: true });
+  await mongoose.connection.collection('healthrules').updateOne({ _id: 'rules' }, { $set: { ...set, version: RULES_VERSION, updatedAt: new Date(), updatedBy: admin?.name || '' } }, { upsert: true });
   rulesCache = { at: 0 };
   return getRules();
 }
@@ -308,7 +333,7 @@ export async function addHealthEvent({
   if (!isId(sellerId)) return null;
   const { rules } = await getRules();
   const rule = rules[code] || rules.manual;
-  const pts = Math.round(Number(points ?? rule.points));
+  let pts = Math.round(Number(points ?? rule.points));
   const d = Math.max(1, Math.round(Number(days ?? rule.days) || 21));
   if (!pts) return null;
   const before = await Seller.findById(sellerId).select('status isTestAccount accountType accountHealth.perfectSince accountHealth.perfectWeeks accountHealth.levelDroppedAt').lean();
@@ -316,19 +341,41 @@ export async function addHealthEvent({
   if (!force && before.status === 'suspended') return null;
   await ensureOpening(sellerId);
 
+  // fair limits for the AUTOMATIC penalties: at most `dailyPenaltyCap` points in 24 hours, and never
+  // below 0 (admins and the serious rules are not limited)
+  let capNote = '';
+  if (pts < 0 && !admin && !UNCAPPED_CODES.includes(code)) {
+    const { settings } = await getRules();
+    const cap = Math.max(0, Number(settings.dailyPenaltyCap) || DEFAULT_SETTINGS.dailyPenaltyCap);
+    const [today] = await HealthEvent.aggregate([
+      { $match: { seller: oid(sellerId), source: 'system', points: { $lt: 0 }, code: { $nin: UNCAPPED_CODES }, 'waived.at': null, createdAt: { $gt: new Date(Date.now() - DAY) } } },
+      { $group: { _id: null, total: { $sum: '$points' } } },
+    ]);
+    const leftToday = Math.max(0, cap + (Number(today?.total) || 0));
+    const activeNow = await HealthEvent.find({ seller: oid(sellerId), ...active() }).select('code points').lean();
+    const aboveZero = Math.max(0, Math.floor(rawScore(activeNow, settings)));
+    const allowed = Math.min(leftToday, aboveZero);
+    if (-pts > allowed) {
+      capNote = allowed > 0 ? ` (limited to ${allowed} point${allowed === 1 ? '' : 's'} — fair-use limit)` : ' (no points — the daily limit was already reached)';
+      pts = -allowed;
+    }
+  }
+
   const doc = {
     seller: oid(sellerId),
     code,
     points: pts,
     title: String(title || rule.title).slice(0, 160),
-    detail: String(detail || '').slice(0, 500),
+    detail: `${String(detail || '')}${capNote}`.slice(0, 500),
     orderNumbers: orderNumber ? [String(orderNumber)] : undefined,
     orderId: orderId && isId(orderId) ? oid(orderId) : null,
     source: admin ? 'admin' : 'system',
     adminId: admin ? String(admin.id || '') : '',
     adminName: admin ? String(admin.name || '') : '',
     note: String(note || '').slice(0, 500),
-    expiresAt: new Date(Date.now() + d * DAY),
+    // a line limited to 0 points is kept only as a record (it ends at once, so the same event is
+    // never counted later)
+    expiresAt: new Date(Date.now() + (pts ? d * DAY : 0)),
   };
   let line;
   if (key) {
@@ -339,6 +386,7 @@ export async function addHealthEvent({
     line = (await HealthEvent.create(doc)).toObject();
   }
 
+  if (!pts) return { line, ...(await recomputeHealth(sellerId)) };
   const res = await recomputeHealth(sellerId, { reason: `${line.title}${line.orderNumbers?.length ? ` (#${line.orderNumbers.join(', #')})` : ''}` });
   // a penalty always restarts the perfect-health bonus week (even when rewards keep the score at
   // 100) and drops the store one level (at most once in 24 hours: one bad day = one level)
@@ -356,7 +404,7 @@ export async function addHealthEvent({
       }
       const weeks = Number(ah.perfectWeeks) || 0;
       const droppedRecently = ah.levelDroppedAt && Date.now() - new Date(ah.levelDroppedAt).getTime() < DAY;
-      if (weeks > 0 && !droppedRecently) {
+      if (weeks > 0 && !droppedRecently && -pts >= LEVEL_DROP_MIN_POINTS) {
         const to = dropOneLevel(weeks);
         set['accountHealth.perfectWeeks'] = to;
         set['accountHealth.levelDroppedAt'] = new Date();
@@ -424,7 +472,7 @@ export async function waiveHealthEvent(eventId, admin, reason) {
 }
 
 /** Admin's old "set the score to X" becomes one adjustment line for the difference. */
-export async function setScoreAsAdjustment(sellerId, target, admin, reason, days) {
+export async function setScoreAsAdjustment(sellerId, target, admin, reason, days, notifySeller = true) {
   const now = await recomputeHealth(sellerId);
   const goal = clamp(target);
   if (now && now.score === goal) return { score: goal, unchanged: true };
@@ -443,6 +491,7 @@ export async function setScoreAsAdjustment(sellerId, target, admin, reason, days
     detail: String(reason || '').slice(0, 300),
     admin,
     note: reason,
+    notifySeller: notifySeller !== false,
     force: true,
   });
 }
@@ -473,7 +522,7 @@ export async function recordDeadlineMiss(sellerId, order, hours) {
   const DEADLINE_CODES = ['deadline_miss', 'deadline_repeat', 'deadline_third'];
   await Seller.updateOne({ _id: sid }, { $set: { 'accountHealth.onTimeStreak': 0 } });
 
-  // another order of the same incident (within the incident window): −5 for each extra order
+  // another order of the same incident (within the incident window): the "extra order" points each
   const same = await HealthEvent.findOne({
     seller: sid,
     code: { $in: DEADLINE_CODES },
@@ -495,7 +544,7 @@ export async function recordDeadlineMiss(sellerId, order, hours) {
     return { grouped: true, ...(r || (await recomputeHealth(sellerId))) };
   }
 
-  // the ladder: 1st incident in the repeat window −20, 2nd −30, 3rd and later −40
+  // the ladder: 1st incident in the repeat window, 2nd, 3rd and later (points from the rules)
   const earlier = await HealthEvent.countDocuments({
     seller: sid,
     code: { $in: DEADLINE_CODES },
@@ -513,9 +562,9 @@ export async function recordDeadlineMiss(sellerId, order, hours) {
   });
 }
 
-/** An order is still not confirmed 24 h, 48 h … after its deadline: −10 for every full day. */
+/** An order is still not confirmed 24 h, 48 h, 72 h after its deadline: the daily points (3 days at most). */
 export async function recordOverdue(sellerId, order, daysOver) {
-  if (!(daysOver >= 1)) return null;
+  if (!(daysOver >= 1) || daysOver > OVERDUE_MAX_DAYS) return null;
   return addHealthEvent({
     sellerId,
     code: 'overdue_daily',
@@ -912,9 +961,43 @@ export async function perfectBonusStatus(seller, settings) {
   };
 }
 
+/**
+ * ONE TIME (rules version 2): the entries still active from the old strict scale are re-scored
+ * with the lighter points and shorter days (only ever lighter, never stricter), and "still not
+ * confirmed" entries after day 3 of an order end. Claimed in one database step, so it runs once.
+ */
+async function rescaleActiveLinesToV2() {
+  const claim = await mongoose.connection.collection('healthrules').updateOne({ _id: 'rescale_v2' }, { $setOnInsert: { startedAt: new Date() } }, { upsert: true });
+  if (!claim.upsertedCount) return;
+  const { rules } = await getRules();
+  const now = new Date();
+  const lines = await HealthEvent.find({ source: 'system', points: { $lt: 0 }, code: { $in: EDITABLE.filter((c) => c !== 'duplicate_proof') }, ...active(now) })
+    .select('seller code points key createdAt expiresAt')
+    .lean();
+  const touched = new Set();
+  for (const l of lines) {
+    const rule = rules[l.code];
+    if (!rule) continue;
+    const set = {};
+    const lighter = Math.max(l.points, rule.points);
+    if (lighter !== l.points) set.points = lighter;
+    const shorter = new Date(new Date(l.createdAt).getTime() + rule.days * DAY);
+    if (shorter < new Date(l.expiresAt)) set.expiresAt = shorter < now ? now : shorter;
+    const day = l.code === 'overdue_daily' ? Number(String(l.key || '').split(':')[3]) : 0;
+    if (day > OVERDUE_MAX_DAYS) set.expiresAt = now;
+    if (!Object.keys(set).length) continue;
+    await HealthEvent.updateOne({ _id: l._id }, { $set: set });
+    touched.add(String(l.seller));
+  }
+  for (const id of touched) await recomputeHealth(id, { reason: 'Health rules updated — lighter scale' });
+  await mongoose.connection.collection('healthrules').updateOne({ _id: 'rescale_v2' }, { $set: { doneAt: new Date(), lines: lines.length, stores: touched.size } });
+  console.log(`[health] rules v2: ${touched.size} stores re-scored (${lines.length} active entries checked)`);
+}
+
 export async function healthSweep() {
   if (mongoose.connection.readyState !== 1) return;
   try {
+    await rescaleActiveLinesToV2().catch((e) => console.error('[health] rescale v2:', e.message));
     // 1. lines that ended: work those scores out again (and tell the store when its band went up)
     const due = await Seller.find({ 'accountHealth.nextChangeAt': { $ne: null, $lte: new Date() } }).select('_id accountHealth.score').limit(500).lean();
     for (const s of due) {

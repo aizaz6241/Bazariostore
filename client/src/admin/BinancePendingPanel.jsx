@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, fmtDate, money } from '../api.js';
 import Ic from '../components/Icons.jsx';
 import { getSocket } from '../socket.js';
+import { Nick } from './nicknames.jsx';
 
 /**
  * Top of the admin Wallet page: direct "Add funds" lines that were saved with
@@ -46,7 +47,7 @@ function PendingRow({ item, onSaved }) {
   return (
     <div className="bp-row">
       <div className="bp-info">
-        <b>{item.storeName || 'Store'}</b>
+        <b>{item.storeName || 'Store'}<Nick id={item.seller} compact /></b>
         <small>
           Wallet credit <span className="bp-amt">{money(item.amount || 0)}</span>
           {item.helpingAmount > 0 ? ` • helping ${money(item.helpingAmount)} • real ${money(real)}` : ''}

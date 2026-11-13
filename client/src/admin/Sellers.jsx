@@ -6,11 +6,14 @@ import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
 import useLiveReload from '../useLiveReload.js';
 import DiamondUpgradeModal from './DiamondUpgradeModal.jsx';
 import HealthPanel from './health/HealthPanel.jsx';
+import { Nick, NickEditor, useNicknames } from './nicknames.jsx';
 
 // seller cards shown at a time ("Show more" adds the next batch)
 const PAGE_STEP = 30;
 
 export default function Sellers() {
+  // admin-only store nicknames (shown next to the name, and searchable)
+  const nickMap = useNicknames();
   const [params, setParams] = useSearchParams();
   const [sellers, setSellers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -877,6 +880,7 @@ export default function Sellers() {
       if (!q) return true;
       const match =
         s.storeName?.toLowerCase().includes(q.toLowerCase()) ||
+        (nickMap[s._id] || '').toLowerCase().includes(q.toLowerCase()) ||
         s.ownerName?.toLowerCase().includes(q.toLowerCase()) ||
         s.email?.toLowerCase().includes(q.toLowerCase()) ||
         s.phone?.toLowerCase().includes(q.toLowerCase());
@@ -1076,6 +1080,7 @@ export default function Sellers() {
                         <span className="sl2-name">
                           <b title={s.storeName}>{s.storeName}</b>
                           {(s.verified || s.status === 'active') && <VerifiedStoreBadge variant="icon" size={14} title="Verified Merchant Store" />}
+                          <Nick id={s._id} compact />
                           {s.tier === 'diamond' && <span className="sl2-tag t-dia" title="Diamond store">💎 Diamond</span>}
                           {s.tier !== 'diamond' && s.tierRequest?.status === 'pending' && <span className="sl2-tag t-req">Diamond requested</span>}
                         </span>
@@ -1215,6 +1220,7 @@ export default function Sellers() {
                               {(s.verified || s.status === 'active') && (
                                 <VerifiedStoreBadge variant="icon" size={14} title="Verified Merchant Store" />
                               )}
+                              <Nick id={s._id} compact />
                             </div>
                             <small className="muted block">Owner: {s.ownerName}</small>
                           </div>
@@ -1425,6 +1431,9 @@ export default function Sellers() {
                           {(ps.verified || ps.status === 'active') && (
                             <VerifiedStoreBadge variant="icon" size={16} title="Verified Merchant Store" />
                           )}
+                        </div>
+                        <div className="spm-nick">
+                          <NickEditor id={ps._id} storeName={ps.storeName} />
                         </div>
                         <div className="spm-sub">
                           <span>👤 {ps.ownerName || 'Owner not set'}</span>
@@ -2708,7 +2717,7 @@ export default function Sellers() {
             <div className="modal-top">
               <div>
                 <h3 style={{ margin: 0, fontSize: 16 }}>📄 Document: {docPreviewModal.title}</h3>
-                <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>Merchant: {profileSeller?.storeName}</p>
+                <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>Merchant: {profileSeller?.storeName}<Nick id={profileSeller?._id} compact /></p>
               </div>
               <button onClick={() => setDocPreviewModal(null)} className="btn-close-modal">✕</button>
             </div>

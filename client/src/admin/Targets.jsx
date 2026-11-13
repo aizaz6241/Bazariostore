@@ -3,6 +3,7 @@ import { api, fmtDate } from '../api.js';
 import { ErrorBox } from './ui.jsx';
 import Ic from '../components/Icons.jsx';
 import { Hero, MetaChip, Kpi, KpiGrid, Seg, Avatar, Empty, pctOf } from './insights.jsx';
+import { Nick, useNicknames } from './nicknames.jsx';
 
 const DAY = 86400000;
 // Targets are in US dollars, so this page always shows $ (the site's currency switch is shared
@@ -114,6 +115,7 @@ function weekBuckets(n) {
 }
 
 export default function Targets() {
+  const nickMap = useNicknames();
   const [allTargets, setAllTargets] = useState([]);
   const [sellers, setSellers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -414,7 +416,7 @@ export default function Targets() {
     if (filterStatus !== 'all' && s !== filterStatus) return false;
     if (!q.trim()) return true;
     const needle = q.trim().toLowerCase();
-    return [t.storeName, t.ownerName, t.title, t.email].some((v) => String(v || '').toLowerCase().includes(needle));
+    return [t.storeName, nickMap[String(t.sellerId)], t.ownerName, t.title, t.email].some((v) => String(v || '').toLowerCase().includes(needle));
   });
 
   // typing a name searches EVERY store (test ones too); without a search, test stores show only
@@ -424,7 +426,7 @@ export default function Targets() {
   const sellerOptions = pickable.filter((s) => {
     if (!searching) return true;
     const needle = sellerQ.trim().toLowerCase();
-    return [s.storeName, s.ownerName, s.email].some((v) => String(v || '').toLowerCase().includes(needle));
+    return [s.storeName, nickMap[String(s._id)], s.ownerName, s.email].some((v) => String(v || '').toLowerCase().includes(needle));
   });
   const hiddenTest = !pickTest && !searching ? sellers.filter(isTestStore).length : 0;
   const storeFlag = (s) =>
@@ -638,7 +640,7 @@ export default function Targets() {
                     <Avatar name={t.storeName} size={32} />
                     <div className="tg2-row-main">
                       <div className="tg2-row-top">
-                        <b title={t.storeName}>{t.storeName}</b>
+                        <b title={t.storeName}>{t.storeName}<Nick id={t.sellerId} compact /></b>
                         <span className="tg2-pct">{pct}%</span>
                       </div>
                       <span className="tg2-bar" role="meter" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`${pct}% done`}>
@@ -735,7 +737,7 @@ export default function Targets() {
                 <div className="tg2-who">
                   <Avatar name={t.storeName} size={36} />
                   <div>
-                    <b title={t.storeName}>{t.storeName || 'Store'}</b>
+                    <b title={t.storeName}>{t.storeName || 'Store'}<Nick id={t.sellerId} compact /></b>
                     <small>{t.ownerName || '—'}{t.isTestAccount ? ' · test' : ''}</small>
                   </div>
                 </div>
@@ -811,7 +813,7 @@ export default function Targets() {
                         <label key={s._id} className={`tg-pick-item${chosen.has(s._id) ? ' on' : ''}`}>
                           <input type="checkbox" checked={chosen.has(s._id)} onChange={() => toggleSeller(s._id)} />
                           <span className="tg-pick-name">
-                            <b>{s.storeName}</b>
+                            <b>{s.storeName}<Nick id={s._id} compact /></b>
                             <small>{s.ownerName}{isTestStore(s) ? ' · test' : ''}</small>
                           </span>
                           {st && (

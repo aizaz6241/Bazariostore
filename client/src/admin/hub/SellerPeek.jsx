@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, fmtDay } from '../../api.js';
 import Ic from '../../components/Icons.jsx';
+import { NickEditor } from '../nicknames.jsx';
 import { PEEK_EVENT, chatPath, initialsOf, orderPath, profilePath, rememberStore, usd, ago, refreshHub } from './hubBus.js';
 
 /**
@@ -101,6 +102,9 @@ export default function SellerPeek({ can }) {
 
           {info && (
             <>
+              <div className="hub-peek-nick">
+                <NickEditor id={open.id} storeName={name} />
+              </div>
               <div className="hub-tags">
                 <span className={`hub-tag ${info.tier === 'Diamond' ? 'violet' : ''}`}>{info.tier === 'Diamond' ? '💎 Diamond' : 'Basic'}</span>
                 <span className={`hub-tag cap ${statusTone}`}>{String(info.status || 'active').replace('_', ' ')}</span>

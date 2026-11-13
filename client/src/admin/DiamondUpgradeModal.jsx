@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { Nick } from './nicknames.jsx';
 
 const REGULAR_FEE = 1500;
 
@@ -74,7 +75,7 @@ export default function DiamondUpgradeModal({ seller, onClose, onDone }) {
         <div className="modal-top">
           <h3 style={{ margin: 0 }}>💎 Upgrade to Diamond</h3>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: '#475569' }}>
-            <b>{seller.storeName}</b> · one-time fee <b>${FEE.toLocaleString('en-US')}</b>
+            <b>{seller.storeName}</b><Nick id={seller._id} compact /> · one-time fee <b>${FEE.toLocaleString('en-US')}</b>
             {offer && <> <s style={{ color: '#94a3b8' }}>${REGULAR_FEE.toLocaleString('en-US')}</s></>} · Diamond is for life
           </p>
           {offer && !isTest && (

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Seg, Avatar, Empty } from './insights.jsx';
+import { Nick, useNicknames } from './nicknames.jsx';
 
 /**
  * Orders by store (admin Orders page): what each active real client store has right now —
@@ -71,17 +72,18 @@ export default function OrdersStoreBoard({ data, loading, days, onDays, onPick, 
     }
   }, [open]);
 
+  const nickMap = useNicknames();
   const rows = useMemo(() => {
     const t = q.trim().toLowerCase();
     // test accounts and stores marked Inactive (Sellers page) are not listed here
-    const list = (data?.stores || []).filter((s) => !s.isTest && !s.isInactive && (!t || `${s.storeName} ${s.ownerName}`.toLowerCase().includes(t)));
+    const list = (data?.stores || []).filter((s) => !s.isTest && !s.isInactive && (!t || `${s.storeName} ${nickMap[String(s._id)] || ''} ${s.ownerName}`.toLowerCase().includes(t)));
     const by = {
       attention: (a, b) => b.late - a.late || b.stuck - a.stuck || (b.pending || 0) - (a.pending || 0) || openOf(b) - openOf(a),
       open: (a, b) => openOf(b) - openOf(a) || b.late - a.late,
       name: (a, b) => String(a.storeName).localeCompare(String(b.storeName)),
     }[sort];
     return [...list].sort(by);
-  }, [data, q, sort]);
+  }, [data, q, sort, nickMap]);
 
   const storeTotal = useMemo(() => (data?.stores || []).filter((s) => !s.isTest && !s.isInactive).length, [data]);
   const LIMIT = 8;
@@ -225,6 +227,7 @@ export default function OrdersStoreBoard({ data, loading, days, onDays, onPick, 
                             <span className="osb-store-txt">
                               <b>
                                 <span className="osb-name">{s.storeName}</span>
+                                <Nick id={s._id} compact />
                                 {s.tier === 'diamond' && <span className="osb-dia" title="Diamond store">💎</span>}
                                 {statusChip(s)}
                               </b>
@@ -256,6 +259,7 @@ export default function OrdersStoreBoard({ data, loading, days, onDays, onPick, 
                       <span className="osb-store-txt">
                         <b>
                           <span className="osb-name">{s.storeName}</span>
+                          <Nick id={s._id} compact />
                           {s.tier === 'diamond' && <span className="osb-dia">💎</span>}
                           {statusChip(s)}
                         </b>

@@ -8,6 +8,7 @@ import AddFundsModal from './AddFundsModal.jsx';
 import BinancePendingPanel from './BinancePendingPanel.jsx';
 import PayoutsAnalytics from './PayoutsAnalytics.jsx';
 import StoreLink from './hub/StoreLink.jsx';
+import { Nick } from './nicknames.jsx';
 
 // The upgrade fee exactly as the server charges it (offeredFee is null until an offer is sent; $0 is a real fee)
 const limitFeeOf = (l) => {
@@ -1240,7 +1241,7 @@ export default function AdminWithdrawals() {
                             <div className="pd-cell-who">
                               <span className="pd-avatar pd-avatar-sm">{(l.storeName || 'S')[0]}</span>
                               <div>
-                                <div className="pd-strong">{l.storeName}</div>
+                                <div className="pd-strong">{l.storeName}<Nick id={l.sellerId} compact /></div>
                                 <small className="pd-muted">{l.ownerName} • {l.email}</small>
                               </div>
                             </div>
@@ -1328,7 +1329,7 @@ export default function AdminWithdrawals() {
                 <div>
                   <h3 style={{ margin: 0, fontSize: 16 }}>📝 Send Limit Upgrade Offer / Quote</h3>
                   <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>
-                    Store: <b>{offerItem.storeName}</b> (Current Limit: {money(offerItem.currentMaxAmount)})
+                    Store: <b>{offerItem.storeName}</b><Nick id={offerItem.sellerId} compact /> (Current Limit: {money(offerItem.currentMaxAmount)})
                   </p>
                 </div>
               </div>
@@ -1441,7 +1442,7 @@ export default function AdminWithdrawals() {
                 <div>
                   <h3 style={{ margin: 0, fontSize: 16 }}>⚡ Finalize &amp; Activate Limit Increase</h3>
                   <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>
-                    Store: <b>{finalizeItem.storeName}</b>
+                    Store: <b>{finalizeItem.storeName}</b><Nick id={finalizeItem.sellerId} compact />
                   </p>
                 </div>
               </div>
@@ -1527,7 +1528,7 @@ export default function AdminWithdrawals() {
                 <div>
                   <h3 style={{ margin: 0, fontSize: 16 }}>❌ Decline Limit Increase Application</h3>
                   <p className="muted" style={{ margin: '2px 0 0', fontSize: 12 }}>
-                    Store: <b>{rejectItem.storeName}</b>
+                    Store: <b>{rejectItem.storeName}</b><Nick id={rejectItem.sellerId} compact />
                   </p>
                 </div>
               </div>

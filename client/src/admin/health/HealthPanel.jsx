@@ -9,10 +9,14 @@ import { bandOf, MONITOR_NAME } from '../../utils/healthBands.js';
  * The store only ever sees "Bazario Account Monitoring".
  */
 const CATS = {
-  policy: { label: 'Policy violation', min: -40, max: -10, def: -20 },
-  order_issue: { label: 'Order cancelled / refunded because of the store', min: -20, max: -5, def: -10 },
-  manual: { label: 'Account review (up or down)', min: -30, max: 20, def: -10 },
+  policy: { label: 'Policy violation', min: -40, max: -5, def: -15 },
+  order_issue: { label: 'Order cancelled / refunded because of the store', min: -20, max: -2, def: -5 },
+  manual: { label: 'Account review (up or down)', min: -50, max: 50, def: -5 },
 };
+// quick "Adjust health" (admin's own increase / decrease)
+const ADJ_STEPS = [5, 10, 15, 20];
+const ADJ_EMPTY = { mode: 'by', dir: 1, amount: 10, target: '', days: 14, note: '', notify: true };
+const clamp100 = (n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
 const pts = (n) => (n > 0 ? `+${n}` : `${n}`);
 const left = (d) => {
   const ms = new Date(d).getTime() - Date.now();
@@ -27,6 +31,7 @@ export default function HealthPanel({ sellerId, onChanged }) {
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState(null);
+  const [adj, setAdj] = useState(null);
   const [rules, setRules] = useState(null);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [filter, setFilter] = useState('active');
@@ -68,6 +73,48 @@ export default function HealthPanel({ sellerId, onChanged }) {
       });
       setMsg(`Saved. Score is now ${res.score}/100.`);
       setForm(null);
+      changed();
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitAdjust = async (e) => {
+    e.preventDefault();
+    const note = adj.note.trim();
+    if (!note) {
+      setErr('Write the reason (only admins see it).');
+      return;
+    }
+    setBusy(true);
+    setErr('');
+    setMsg('');
+    try {
+      if (adj.mode === 'to') {
+        const res = await api(`/sellers/${sellerId}/health`, {
+          method: 'POST',
+          body: { score: clamp100(adj.target), reason: note, days: Number(adj.days) || 14, notifySeller: adj.notify },
+        });
+        setMsg(res.message || 'Saved.');
+      } else {
+        const points = adj.dir * Math.max(1, Math.min(50, Math.round(Number(adj.amount) || 0)));
+        const res = await api(`/sellers/${sellerId}/health/entries`, {
+          method: 'POST',
+          body: {
+            category: 'manual',
+            points,
+            days: Number(adj.days) || 14,
+            title: points > 0 ? 'Account review — score improved' : 'Account review',
+            detail: '',
+            note,
+            notifySeller: adj.notify,
+          },
+        });
+        setMsg(`Saved. Score is now ${res.score}/100.`);
+      }
+      setAdj(null);
       changed();
     } catch (e2) {
       setErr(e2.message);
@@ -147,7 +194,24 @@ export default function HealthPanel({ sellerId, onChanged }) {
           <small className="hp-faint">The store sees every entry as “{MONITOR_NAME}”.</small>
         </div>
         <div className="hp-head-btns">
-          <button type="button" className="hp-btn primary" onClick={() => setForm(form ? null : { category: 'policy', points: CATS.policy.def, days: 21, title: '', detail: '', note: '', notify: true })}>
+          <button
+            type="button"
+            className="hp-btn primary"
+            onClick={() => {
+              setForm(null);
+              setAdj(adj ? null : { ...ADJ_EMPTY, target: String(data.score) });
+            }}
+          >
+            {adj ? 'Close' : '± Adjust health'}
+          </button>
+          <button
+            type="button"
+            className="hp-btn"
+            onClick={() => {
+              setAdj(null);
+              setForm(form ? null : { category: 'policy', points: CATS.policy.def, days: 21, title: '', detail: '', note: '', notify: true });
+            }}
+          >
             {form ? 'Close' : '+ Add entry'}
           </button>
           <button type="button" className="hp-btn" onClick={openRules}>
@@ -187,6 +251,84 @@ export default function HealthPanel({ sellerId, onChanged }) {
 
       {err && <div className="hp-err">{err}</div>}
       {msg && <div className="hp-ok">{msg}</div>}
+
+      {adj && (() => {
+        const delta = adj.mode === 'to' ? clamp100(adj.target) - data.score : adj.dir * Math.max(0, Math.min(50, Math.round(Number(adj.amount) || 0)));
+        const after = adj.mode === 'to' ? clamp100(adj.target) : clamp100(data.score + delta);
+        const afterBand = bandOf(after);
+        return (
+          <form className="hp-adj" onSubmit={submitAdjust}>
+            <div className="hp-adj-top">
+              <div className="hp-seg" role="tablist" aria-label="How to change the score">
+                <button type="button" className={adj.mode === 'by' && adj.dir > 0 ? 'on up' : ''} onClick={() => setAdj((a) => ({ ...a, mode: 'by', dir: 1 }))}>
+                  ▲ Increase
+                </button>
+                <button type="button" className={adj.mode === 'by' && adj.dir < 0 ? 'on down' : ''} onClick={() => setAdj((a) => ({ ...a, mode: 'by', dir: -1 }))}>
+                  ▼ Decrease
+                </button>
+                <button type="button" className={adj.mode === 'to' ? 'on' : ''} onClick={() => setAdj((a) => ({ ...a, mode: 'to' }))}>
+                  Set exact score
+                </button>
+              </div>
+              <div className="hp-adj-preview" aria-live="polite">
+                <span>{data.score}</span>
+                <i>→</i>
+                <b style={{ color: afterBand.color }}>{after}</b>
+                <small className={`hp-band tone-${afterBand.tone}`}>{afterBand.label}</small>
+              </div>
+            </div>
+
+            {adj.mode === 'by' ? (
+              <div className="hp-adj-row">
+                <span className="hp-adj-lbl">Points</span>
+                <div className="hp-chips">
+                  {ADJ_STEPS.map((n) => (
+                    <button key={n} type="button" className={Number(adj.amount) === n ? 'on' : ''} onClick={() => setAdj((a) => ({ ...a, amount: n }))}>
+                      {adj.dir > 0 ? '+' : '−'}{n}
+                    </button>
+                  ))}
+                  <input type="number" min="1" max="50" value={adj.amount} onChange={(e) => setAdj((a) => ({ ...a, amount: e.target.value }))} aria-label="Custom points" />
+                </div>
+              </div>
+            ) : (
+              <div className="hp-adj-row">
+                <span className="hp-adj-lbl">New score</span>
+                <div className="hp-chips">
+                  <input type="number" min="0" max="100" value={adj.target} onChange={(e) => setAdj((a) => ({ ...a, target: e.target.value }))} aria-label="New score (0–100)" />
+                  <small className="hp-faint">0 – 100</small>
+                </div>
+              </div>
+            )}
+
+            <div className="hp-adj-row">
+              <span className="hp-adj-lbl">Lasts</span>
+              <div className="hp-chips">
+                {[7, 14, 30].map((d) => (
+                  <button key={d} type="button" className={Number(adj.days) === d ? 'on' : ''} onClick={() => setAdj((a) => ({ ...a, days: d }))}>
+                    {d} days
+                  </button>
+                ))}
+                <input type="number" min="1" max="90" value={adj.days} onChange={(e) => setAdj((a) => ({ ...a, days: e.target.value }))} aria-label="Days" />
+              </div>
+            </div>
+
+            <label className="hp-adj-note">
+              Reason (only admins see it) *
+              <textarea rows={2} maxLength={500} value={adj.note} onChange={(e) => setAdj((a) => ({ ...a, note: e.target.value }))} placeholder={delta >= 0 ? 'e.g. Delay was caused by courier, not the store' : 'e.g. Repeated late replies to customers'} required />
+            </label>
+
+            <div className="hp-adj-foot">
+              <label className="hp-check">
+                <input type="checkbox" checked={adj.notify} onChange={(e) => setAdj((a) => ({ ...a, notify: e.target.checked }))} /> Notify the store
+              </label>
+              <small className="hp-faint">The change ends by itself after {Number(adj.days) || 14} days. The store sees it as “{MONITOR_NAME}”.</small>
+              <button type="submit" className={`hp-btn primary${delta < 0 ? ' danger' : ''}`} disabled={busy || !delta}>
+                {busy ? 'Saving…' : !delta ? 'No change' : `${delta > 0 ? 'Increase' : 'Decrease'} by ${Math.abs(delta)} → ${after}/100`}
+              </button>
+            </div>
+          </form>
+        );
+      })()}
 
       {form && (
         <form className="hp-form" onSubmit={submit}>
@@ -286,6 +428,12 @@ export default function HealthPanel({ sellerId, onChanged }) {
                 <td>Most reward points that count at the same time</td>
                 <td colSpan={2}>
                   <input type="number" value={rules.settings.bonusCap} disabled={!rules.canEdit} onChange={(e) => setRules((x) => ({ ...x, settings: { ...x.settings, bonusCap: Number(e.target.value) } }))} />
+                </td>
+              </tr>
+              <tr>
+                <td>Daily limit for automatic penalties (points in 24 hours) — automatic rules also never go below 0</td>
+                <td colSpan={2}>
+                  <input type="number" value={rules.settings.dailyPenaltyCap ?? 15} disabled={!rules.canEdit} onChange={(e) => setRules((x) => ({ ...x, settings: { ...x.settings, dailyPenaltyCap: Number(e.target.value) } }))} />
                 </td>
               </tr>
               <tr>

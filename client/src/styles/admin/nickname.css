@@ -1,0 +1,35 @@
+/* ==========================================================================
+   ADMIN — store nickname / label (admin-only) — client/src/admin/nicknames.jsx
+   ========================================================================== */
+.nick-tag { display: inline-flex; align-items: center; gap: 4px; max-width: 160px; height: 20px; padding: 0 7px; margin-left: 6px; border-radius: 999px; background: #f5f3ff; border: 1px solid #e4dcff; color: #6d28d9; font-size: 11px; font-weight: 700; line-height: 1; vertical-align: middle; white-space: nowrap; flex: none; }
+.nick-tag svg { flex: none; opacity: 0.8; }
+.nick-tag .nick-txt { overflow: hidden; text-overflow: ellipsis; }
+.nick-tag.is-compact { height: 18px; padding: 0 6px; font-size: 10.5px; margin-left: 5px; max-width: 120px; }
+.nick-tag.is-block { margin-left: 0; margin-top: 3px; }
+.nick-line { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.nick-line .nick-tag { margin-left: 0; }
+.nick-add { height: 22px; padding: 0 8px; border: 1px dashed #c4b5fd; border-radius: 999px; background: transparent; color: #6d28d9; font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.nick-add:hover { background: #f5f3ff; border-style: solid; }
+.nick-edit { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 100%; }
+.nick-edit input { width: 200px; max-width: 100%; height: 30px; padding: 0 10px; border: 1px solid #c4b5fd; border-radius: 8px; font: inherit; font-size: 13px; background: #fff; color: #0f172a; outline: none; }
+.nick-edit input:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15); }
+.nick-btn { height: 30px; padding: 0 11px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; font: inherit; font-size: 12px; font-weight: 700; color: #334155; cursor: pointer; }
+.nick-btn.primary { background: #6d28d9; border-color: #6d28d9; color: #fff; }
+.nick-btn.ghost { border-color: transparent; background: transparent; color: #64748b; padding: 0 8px; }
+.nick-btn:disabled { opacity: 0.6; cursor: progress; }
+.nick-err { width: 100%; color: #b91c1c; font-size: 11.5px; }
+.nick-hint { width: 100%; color: #94a3b8; font-size: 11px; }
+@media (max-width: 560px) {
+  .nick-edit { width: 100%; }
+  .nick-edit input { flex: 1; width: auto; min-width: 0; }
+  .nick-tag { max-width: 120px; }
+}
+.spm-nick { margin: 4px 0 2px; }
+/* on the dark store header (store profile) */
+.spm-hero .nick-tag { background: rgba(167, 139, 250, 0.18); border-color: rgba(196, 181, 253, 0.45); color: #ede9fe; }
+.spm-hero .nick-add { color: #ddd6fe; border-color: rgba(221, 214, 254, 0.55); }
+.spm-hero .nick-add:hover { background: rgba(255, 255, 255, 0.08); }
+.spm-hero .nick-edit input { border-color: rgba(196, 181, 253, 0.6); }
+.spm-hero .nick-btn.ghost { color: #cbd5e1; }
+.spm-hero .nick-hint { color: #94a3b8; }
+.hub-peek-nick { margin: 0 0 8px; }

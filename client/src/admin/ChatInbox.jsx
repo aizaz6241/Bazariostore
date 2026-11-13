@@ -15,6 +15,8 @@ import ChatQuickReplies from './ChatQuickReplies.jsx';
 import ChatSellerInfo from './ChatSellerInfo.jsx';
 import ChatBroadcast from './ChatBroadcast.jsx';
 import ChatAutoReply, { AutoReplyPill } from './ChatAutoReply.jsx';
+import { Nick, useNicknames } from './nicknames.jsx';
+import { idOf } from './hub/hubBus.js';
 
 /** How long a chat has waited for support: "4m", "2h 10m", "3d". */
 const waitLabel = (ms) => {
@@ -77,6 +79,7 @@ const ROLE_LABELS = {
 };
 
 export default function ChatInbox() {
+  const nickMap = useNicknames();
   // Current Logged-in Admin
   const [me, setMe] = useState(null);
 
@@ -850,8 +853,9 @@ export default function ChatInbox() {
     if (sellerFilter === 'quiet' && !(c.lastAt && Date.now() - new Date(c.lastAt).getTime() > QUIET_MS)) return false;
     if (!q) return true;
     const name = (c.seller?.storeName || c.storeName || '').toLowerCase();
+    const nick = (nickMap[idOf(c.seller)] || '').toLowerCase();
     const sub = (c.subject || '').toLowerCase();
-    return name.includes(q.toLowerCase()) || sub.includes(q.toLowerCase());
+    return name.includes(q.toLowerCase()) || nick.includes(q.toLowerCase()) || sub.includes(q.toLowerCase());
   });
 
   const filteredTeamMembers = (Array.isArray(teamMembers) ? teamMembers : []).filter((t) => {
@@ -1055,7 +1059,7 @@ export default function ChatInbox() {
                     </div>
                     <div className="convo-body">
                       <div className="convo-top">
-                        <b className="convo-name">{storeTitle}</b>
+                        <b className="convo-name">{storeTitle}{!isGuestConvo && <Nick id={c.seller} compact />}</b>
                         <small className={`convo-time ${hasUnread ? 'is-new' : ''}`}>{c.lastAt ? whenLabel(c.lastAt) : ''}</small>
                       </div>
                       <div className="convo-sub">
@@ -1155,6 +1159,7 @@ export default function ChatInbox() {
                 <div className="ath-info">
                   <div className="ath-title-row">
                     <b className="ath-name">{title}</b>
+                    {!guest && <Nick id={selectedSellerConv.seller} compact />}
                     <span className={`sci-tag ${guest ? 'guest' : 'store'}`}>{guest ? 'Guest · before login' : 'Registered store'}</span>
                     {resolved && <span className="sci-tag ok">Resolved</span>}
                   </div>

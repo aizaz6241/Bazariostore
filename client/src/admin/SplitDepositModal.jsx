@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, fmtDate } from '../api.js';
 import Ic from '../components/Icons.jsx';
+import { Nick } from './nicknames.jsx';
 
 export default function SplitDepositModal({ isOpen, onClose, deposit, onSuccess }) {
   const [helpingAmount, setHelpingAmount] = useState('');
@@ -221,6 +222,7 @@ export default function SplitDepositModal({ isOpen, onClose, deposit, onSuccess 
             <div>
               <span style={{ color: '#64748b', display: 'block', fontSize: 11 }}>Seller / Store:</span>
               <b style={{ color: '#0f172a', fontSize: 13 }}>{deposit.storeName || deposit.seller?.storeName || 'Store'}</b>
+              <Nick id={deposit.seller} compact />
               {deposit.seller?.ownerName && (
                 <div style={{ color: '#64748b', fontSize: 11 }}>{deposit.seller.ownerName}</div>
               )}
