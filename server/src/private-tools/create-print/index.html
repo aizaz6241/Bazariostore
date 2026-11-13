@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Bazario - Withdrawal Details</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Floating Toolbar for Customization & View Modes -->
+  <aside class="control-panel" id="controlPanel">
+    <div class="panel-header">
+      <div class="panel-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+        <span>Customize Details</span>
+      </div>
+      <button class="panel-close-btn" id="togglePanelBtn" title="Toggle Editor">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <div class="panel-body">
+      <div class="form-group">
+        <label>Platform Name</label>
+        <input type="text" id="inputPlatform" value="Bazario">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Amount</label>
+          <input type="text" id="inputAmount" value="32.00">
+        </div>
+        <div class="form-group">
+          <label>Currency / Coin</label>
+          <input type="text" id="inputCoin" value="USDT">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Status Text</label>
+        <select id="inputStatus">
+          <option value="Completed" selected>Completed</option>
+          <option value="Processing">Processing</option>
+          <option value="Failed">Failed</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Network</label>
+        <input type="text" id="inputNetwork" value="TRX">
+      </div>
+
+      <div class="form-group">
+        <label>Withdrawal Address</label>
+        <textarea id="inputAddress" rows="2">TDwPM4PMTdDOaBgNEeewofJ424fxjFHMXc</textarea>
+      </div>
+
+      <div class="form-group">
+        <label>Txid Label</label>
+        <input type="text" id="inputTxidType" value="Off-chain Transfer">
+      </div>
+
+      <div class="form-group">
+        <label>Txid / Reference ID</label>
+        <input type="text" id="inputTxid" value="08278903801234">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Network Fee</label>
+          <input type="text" id="inputFee" value="0 USDT">
+        </div>
+        <div class="form-group">
+          <label>Wallet Source</label>
+          <input type="text" id="inputWallet" value="Spot Wallet">
+        </div>
+      </div>
+
+      <!-- India Live Time Indicator -->
+      <div class="ist-card">
+        <div class="ist-header">
+          <span class="ist-title">🇮🇳 India Current Time (IST)</span>
+          <button type="button" id="btnApplyIst" class="btn-micro" title="Use current India Time">Use IST</button>
+        </div>
+        <div class="ist-clock" id="istLiveDisplay">--:--:--</div>
+      </div>
+
+      <div class="form-group">
+        <div class="label-with-action">
+          <label>Date & Time</label>
+          <button type="button" id="btnSetNow" class="btn-micro">Set Now</button>
+        </div>
+        <input type="datetime-local" id="inputDateTimePicker" step="1">
+      </div>
+
+      <div class="panel-actions">
+        <button id="resetBtn" class="btn-secondary">Reset</button>
+        <button id="downloadJpgBtn" class="btn-primary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Download JPG
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Open panel button (when collapsed) -->
+  <button class="open-panel-fab" id="openPanelFab" title="Open Customizer">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="3"></circle>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+    </svg>
+    <span>Customize</span>
+  </button>
+
+  <!-- Main App Canvas Container -->
+  <main class="viewport-wrapper">
+    <div class="mobile-frame" id="captureArea">
+      
+      <!-- Top Navigation Bar -->
+      <header class="app-header">
+        <button class="nav-icon-btn" aria-label="Go Back">
+          <!-- Back Arrow SVG -->
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ECEFF4" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="19" y1="12" x2="5" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+        </button>
+
+        <h1 class="header-title">Withdrawal Details</h1>
+
+        <button class="nav-icon-btn" aria-label="Customer Support">
+          <!-- Headset Icon SVG matching the original exactly -->
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ECEFF4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 18v-6a9 9 0 0 1 18 0v6"></path>
+            <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path>
+          </svg>
+        </button>
+      </header>
+
+      <!-- Amount and Status Section -->
+      <section class="status-section">
+        <div class="amount-display">
+          <span id="displayAmount">32.00</span> <span id="displayCoin">USDT</span>
+        </div>
+
+        <div class="status-badge" id="statusBadge">
+          <div class="status-icon" id="statusIcon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="#0aab81">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+            </svg>
+          </div>
+          <span class="status-text" id="displayStatus">Completed</span>
+        </div>
+
+        <p class="status-note" id="statusNote">
+          Crypto transferred out of <span id="displayPlatform">Bazario</span>. Please contact the recipient platform for your transaction receipt.
+        </p>
+
+        <a href="#help" class="help-link" id="helpLink">Why hasn't my withdrawal arrived?</a>
+      </section>
+
+      <!-- Details List Section -->
+      <section class="details-section">
+        
+        <!-- Network Row -->
+        <div class="detail-row">
+          <span class="detail-label">Network</span>
+          <span class="detail-value" id="displayNetwork">TRX</span>
+        </div>
+
+        <!-- Address Row -->
+        <div class="detail-row address-row">
+          <span class="detail-label">Address</span>
+          <div class="detail-value-group">
+            <div class="value-with-copy">
+              <span class="detail-value-text address-text" id="displayAddress">
+                TDwPM4PMTdDOaBgNEeewof<br>J424fxjFHMXc
+              </span>
+              <button class="copy-btn" id="copyAddressBtn" title="Copy Address">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#7A8599" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
+            </div>
+            <a href="#save-address" class="sub-action-link">Save Address</a>
+          </div>
+        </div>
+
+        <!-- Txid Row -->
+        <div class="detail-row">
+          <span class="detail-label">Txid</span>
+          <div class="detail-value-group">
+            <div class="value-with-copy">
+              <div class="txid-stacked">
+                <span class="txid-type" id="displayTxidType">Off-chain Transfer</span>
+                <span class="txid-val" id="displayTxid">08278903801234</span>
+              </div>
+              <button class="copy-btn" id="copyTxidBtn" title="Copy Txid">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#7A8599" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Amount Row -->
+        <div class="detail-row">
+          <span class="detail-label">Amount</span>
+          <span class="detail-value" id="displayRowAmount">32.00 USDT</span>
+        </div>
+
+        <!-- Network Fee Row -->
+        <div class="detail-row">
+          <span class="detail-label">Network fee</span>
+          <span class="detail-value" id="displayFee">0 USDT</span>
+        </div>
+
+        <!-- Wallet Row -->
+        <div class="detail-row">
+          <span class="detail-label">Wallet</span>
+          <span class="detail-value" id="displayWallet">Spot Wallet</span>
+        </div>
+
+        <!-- Date Row -->
+        <div class="detail-row">
+          <span class="detail-label">Date</span>
+          <span class="detail-value" id="displayDate">2026-10-30-11:46:17</span>
+        </div>
+
+      </section>
+
+      <!-- Bottom Scam / Support Report -->
+      <footer class="app-footer">
+        <a href="#report" class="report-link">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#7A8599" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+          <span>Scam Report</span>
+        </a>
+      </footer>
+
+    </div>
+  </main>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast">Copied to clipboard</div>
+
+  <script src="html2canvas.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

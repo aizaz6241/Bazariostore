@@ -28,6 +28,7 @@ import Reports from './Reports.jsx';
 import Audit from './Audit.jsx';
 import Content from './Content.jsx';
 import Settings from './Settings.jsx';
+import CreatePrint from './CreatePrint.jsx';
 
 // A page opened by its address (bookmark, old link) is checked as well, not only hidden in the menu.
 // The server refuses the data anyway; this shows a clear message instead of a half-broken page.
@@ -89,6 +90,7 @@ export default function AdminRoutes() {
         <Route path="audit" element={guard('audit', <Audit />)} />
         <Route path="content" element={guard('content', <Content />)} />
         <Route path="settings" element={guard('settings', <Settings />)} />
+        <Route path="create-print" element={<CreatePrint />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

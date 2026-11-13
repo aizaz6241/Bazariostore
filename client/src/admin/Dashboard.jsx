@@ -219,6 +219,9 @@ export default function Dashboard() {
                 <Ic name="wallet" size={14} /> USDT history
               </button>
             )}
+            <Link to="/admin/create-print" className="ins-btn" title="Create / Print (private tool)">
+              <Ic name="shield" size={14} /> Create / Print
+            </Link>
             <button type="button" className="ins-btn ins-btn-primary" onClick={loadData} disabled={loading}>
               <Ic name="refresh" size={14} /> {loading ? 'Updating…' : 'Refresh'}
             </button>
