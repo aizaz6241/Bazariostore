@@ -234,6 +234,8 @@ export default function RewardsPage() {
   const isGift = (c) => c?.rewardType === 'device_gift';
   const giftCostMissing = (c) => isGift(c) && c.gift?.costEntered !== true;
   const giftAsCash = (c) => isGift(c) && c.gift?.payAs === 'cash';
+  // every device gift has one fixed PKR amount (19 Nov 2026)
+  const giftFixed = (c) => (isGift(c) ? Number(deviceGifts.find((g) => g.item === c.gift?.item)?.pkr) || 0 : 0);
   // How a gift is / will be given: the device itself, or its cost as cash into the wallet
   const GiftWayPill = ({ claim }) =>
     isGift(claim) ? (
@@ -472,7 +474,7 @@ export default function RewardsPage() {
                         <Check className="w-3.5 h-3.5" /> {approvingId === claim._id ? 'Saving…' : 'Approve'}
                       </button>
                       <button
-                        onClick={() => { setFixMsg(''); setFix({ claim, mode: 'edit', memberId: claim.memberId?._id || '', amountPKR: giftCostMissing(claim) ? '' : claim.amountPKR, reason: '', ...(isGift(claim) ? { payAs: claim.gift?.payAs || 'device' } : {}) }); }}
+                        onClick={() => { setFixMsg(''); setFix({ claim, mode: 'edit', memberId: claim.memberId?._id || '', amountPKR: giftFixed(claim) || (giftCostMissing(claim) ? '' : claim.amountPKR), reason: '', ...(isGift(claim) ? { payAs: giftCostMissing(claim) ? 'cash' : claim.gift?.payAs || 'device' } : {}) }); }}
                         className={`px-3 py-2 rounded-lg font-semibold text-xs ${giftCostMissing(claim) ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}
                         title={isGift(claim) ? 'Phone or cash? Enter the amount (PKR)' : 'Wrong person or amount? Change it before approving'}
                       >
@@ -666,8 +668,8 @@ export default function RewardsPage() {
               <span className="text-xs font-normal text-slate-400">net = all sellers&apos; real USDT deposits − their withdrawals, from 1 Oct 2026</span>
             </h3>
             <p className="text-[11px] text-slate-500 mt-1">
-              {(deviceGifts.length ? deviceGifts : [{ item: 'iphone', usdt: 10000, label: 'iPhone 17 Pro Max' }, { item: 'laptop', usdt: 20000, label: 'Laptop' }])
-                .map((g) => `₮${Number(g.usdt).toLocaleString('en-US')} → ${g.label}`)
+              {(deviceGifts.length ? deviceGifts : [{ item: 'iphone', usdt: 10000, label: 'iPhone 17 Pro Max', pkr: 385000 }, { item: 'laptop', usdt: 20000, label: 'iPhone 18 Pro Max / Heavy Bike', pkr: 400000 }])
+                .map((g) => `₮${Number(g.usdt).toLocaleString('en-US')} → ${g.label}${g.pkr ? ` (Rs ${Number(g.pkr).toLocaleString('en-US')} PKR fixed)` : ''}`)
                 .join(' · ')}
               . Once reached it stays earned.
             </p>
@@ -709,7 +711,7 @@ export default function RewardsPage() {
                           : { t: `₮${Math.max(0, g.usdt - d.net).toLocaleString('en-US', { maximumFractionDigits: 2 })} to go`, c: 'bg-slate-50 text-slate-600 border-slate-200' };
                         return (
                           <span key={g.item} className={`text-[11px] font-semibold px-2 py-1 rounded-lg border ${state.c}`}>
-                            {g.item === 'iphone' ? '📱' : '💻'} {g.label} — {state.t}
+                            {g.item === 'iphone' ? '📱' : '🏍️'} {g.label} — {state.t}
                           </span>
                         );
                       })}
@@ -729,7 +731,7 @@ export default function RewardsPage() {
             { n: 1, tone: 'bg-emerald-50 text-emerald-600', title: '$300 wallet reward', body: <>When a seller&apos;s <strong>real</strong> deposits (helping not counted) reach <strong>$300</strong> → <strong>5,000 PKR</strong>. Once per seller.</> },
             { n: 2, tone: 'bg-blue-50 text-blue-600', title: 'Daily target (one seller, one day)', body: <>₹1L → <strong>1,000</strong> · ₹2L → <strong>2,000</strong> · ₹3L → <strong>3,000</strong> · ₹4L → <strong>4,000</strong> · ₹5L+ → <strong>5,000 PKR</strong>. Only the highest tier of the day, given after the day ends (India time).</> },
             { n: 3, tone: 'bg-amber-50 text-amber-600', title: 'Weekly target (one seller)', body: <><strong>₹5 Lakh</strong> real INR from Monday to Sunday → <strong>5,000 PKR</strong>, given after the week ends.</> },
-            { n: 4, tone: 'bg-cyan-50 text-cyan-700', title: 'Device gifts (all your sellers together)', body: <>Net real USDT (deposits − withdrawals, from 1 Oct 2026) reaches <strong>₮10,000</strong> → <strong>iPhone 17 Pro Max</strong> (White, 256GB, Non-PTA); <strong>₮20,000</strong> → <strong>Laptop</strong> (PKR 2–3 lakh). Each once; once reached it stays earned. Diamond fees count; previous-store sellers do not.</> },
+            { n: 4, tone: 'bg-cyan-50 text-cyan-700', title: 'Device gifts (all your sellers together)', body: <>Net real USDT (deposits − withdrawals, from 1 Oct 2026) reaches <strong>₮10,000</strong> → <strong>iPhone 17 Pro Max</strong> (fixed <strong>Rs 3,85,000 PKR</strong>); <strong>₮20,000</strong> → <strong>iPhone 18 Pro Max / Heavy Bike</strong> (fixed <strong>Rs 4,00,000 PKR</strong>). Paid in USDT at the day&apos;s rate. Each once; once reached it stays earned. Diamond fees count; previous-store sellers do not.</> },
           ].map((r) => (
             <div key={r.n} className="bg-white rounded-2xl p-4 border border-slate-200">
               <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs mb-2 ${r.tone}`}>{r.n}</div>
@@ -784,8 +786,8 @@ export default function RewardsPage() {
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">How do we give this gift? *</label>
                 <div className="grid grid-cols-2 gap-2">
                   {[
+                    { v: 'cash', icon: '💵', t: 'Cash to wallet', d: 'The fixed amount goes to the wallet (USDT at the day’s rate).' },
                     { v: 'device', icon: '📱', t: 'The phone / device', d: 'Buy it, hand it over. Wallet unchanged.' },
-                    { v: 'cash', icon: '💵', t: 'Cash to wallet', d: 'Its cost is added to the wallet instead.' },
                   ].map((o) => (
                     <button
                       key={o.v}
@@ -804,7 +806,7 @@ export default function RewardsPage() {
             {fix.mode === 'edit' && (
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  {isGift(fix.claim) ? ((fix.payAs || 'device') === 'cash' ? 'Cash amount to give (PKR)' : 'Real purchase cost of the device (PKR)') : 'Amount (PKR)'}
+                  {isGift(fix.claim) ? (giftFixed(fix.claim) ? 'Gift amount (PKR)' : (fix.payAs || 'device') === 'cash' ? 'Cash amount to give (PKR)' : 'Real purchase cost of the device (PKR)') : 'Amount (PKR)'}
                 </label>
                 {isGift(fix.claim) && (
                   <p className="text-[11px] text-slate-500 mb-1">
@@ -813,13 +815,19 @@ export default function RewardsPage() {
                       : 'Paid 50 / 50 by the two partners. The person’s wallet does not change (he gets the device, not money).'}
                   </p>
                 )}
-                <input
-                  type="number"
-                  min="1"
-                  value={fix.amountPKR}
-                  onChange={(e) => setFix({ ...fix, amountPKR: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
-                />
+                {giftFixed(fix.claim) ? (
+                  <div className="w-full p-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm font-bold text-slate-900">
+                    Rs {giftFixed(fix.claim).toLocaleString('en-US')} PKR <span className="text-[11px] font-normal text-slate-500">· fixed amount</span>
+                  </div>
+                ) : (
+                  <input
+                    type="number"
+                    min="1"
+                    value={fix.amountPKR}
+                    onChange={(e) => setFix({ ...fix, amountPKR: e.target.value })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                  />
+                )}
               </div>
             )}
 

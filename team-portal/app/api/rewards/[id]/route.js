@@ -4,6 +4,7 @@ import { getAuthSession } from '@/lib/auth';
 import RewardClaim from '@/lib/models/RewardClaim';
 import Member from '@/lib/models/Member';
 import { logFinance, flushFinanceAlertsSoon } from '@/lib/utils/financeLog';
+import { giftFixedPKR } from '@/lib/utils/milestones';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,6 +67,14 @@ export async function PATCH(req, { params }) {
       claim.memberId = to._id;
       after.memberId = String(to._id);
       words.push(`person ${from?.name || '?'} → ${to.name}`);
+    }
+    // Device gifts have ONE fixed amount (19 Nov 2026): it can't be typed differently
+    const fixedPKR = isGift ? giftFixedPKR(claim.gift?.item) : 0;
+    if (fixedPKR > 0) {
+      if (body.amountPKR !== undefined && body.amountPKR !== null && body.amountPKR !== '' && Math.round(Number(body.amountPKR)) !== fixedPKR) {
+        return NextResponse.json({ message: `This gift has a fixed amount: Rs ${fixedPKR.toLocaleString('en-US')} PKR` }, { status: 400 });
+      }
+      body.amountPKR = fixedPKR;
     }
     if (body.amountPKR !== undefined && body.amountPKR !== null && body.amountPKR !== '') {
       const amt = Math.round(Number(body.amountPKR));

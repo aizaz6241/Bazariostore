@@ -39,17 +39,23 @@ export const NEW_REWARD_TYPES = ['wallet_300', 'daily_target', 'weekly_target'];
  * DEVICE GIFTS (agreed 16 Oct 2026)
  *   net = all REAL USDT deposits of a person's sellers − all their sellers' withdrawals (real USDT),
  *         from 1 Oct 2026, every seller together (the Diamond fee counts as a deposit).
- *   net reaches 10,000 USDT -> iPhone 17 Pro Max (White, 256GB, Non-PTA)
- *   net reaches 20,000 USDT -> laptop (PKR 2–3 lakh range)
+ *   net reaches 10,000 USDT -> iPhone 17 Pro Max        (fixed Rs 3,85,000 PKR)
+ *   net reaches 20,000 USDT -> iPhone 18 Pro Max / Heavy Bike (fixed Rs 4,00,000 PKR)
  * - Members and partners alike; each gift once per person.
  * - Once reached it stays earned: a later drop of the net never closes it.
  * - Previous-store sellers and test accounts are left out completely.
  * - Deposits / withdrawals count for whoever owned the seller when the money moved.
  */
+// FIXED AMOUNTS (19 Nov 2026): every gift has one fixed PKR amount — no shop prices, PTA / non-PTA or
+// model differences. The admins approve it, enter that day's USDT rate in Finance, and the USDT is
+// paid 50 / 50 from the two partners' wallets into the person's wallet (given as cash by default).
+// The 20,000 tier keeps its old key 'laptop' so the gifts already created are never made twice.
 export const DEVICE_GIFTS = [
-  { item: 'iphone', usdt: 10000, label: 'iPhone 17 Pro Max (White, 256GB, Non-PTA)' },
-  { item: 'laptop', usdt: 20000, label: 'Laptop (PKR 2–3 lakh range)' },
+  { item: 'iphone', usdt: 10000, label: 'iPhone 17 Pro Max', pkr: 385000 },
+  { item: 'laptop', usdt: 20000, label: 'iPhone 18 Pro Max / Heavy Bike', pkr: 400000 },
 ];
+/** The fixed PKR amount of a device gift (0 when the item is unknown). */
+export const giftFixedPKR = (item) => DEVICE_GIFTS.find((g) => g.item === item)?.pkr || 0;
 // Rewards of the old system: never created again. Approved ones stay as they are.
 export const OLD_REWARD_TYPES = ['milestone_1lakh', 'milestone_2lakh', 'milestone_3lakh', 'weekly_5lakh_sprint', 'first_seller_5orders'];
 
@@ -377,7 +383,7 @@ export async function evaluateRewards({ force = false } = {}) {
         const ids = people.map((p) => p.ownerId);
         const [ppl, gifts] = await Promise.all([
           Member.find({ _id: { $in: ids } }).select('name role active').lean(),
-          RewardClaim.find({ rewardType: 'device_gift' }).select('claimKey memberId status gift').lean(),
+          RewardClaim.find({ rewardType: 'device_gift' }).select('claimKey memberId status gift amountPKR title description').lean(),
         ]);
         const pplOf = new Map(ppl.map((m) => [sid(m._id), m]));
         const giftByKey = new Map(gifts.map((c) => [c.claimKey, c]));
@@ -399,19 +405,51 @@ export async function evaluateRewards({ force = false } = {}) {
                   sellerId: null,
                   rewardType: 'device_gift',
                   title: `🎁 ${g.label}`,
-                  amountPKR: 1, // placeholder: the real purchase cost is entered before approval
-                  description: `${m.name}'s sellers reached a net of ₮${hit.net.toLocaleString('en-US')} (deposits − withdrawals) on ${dayKey(hit.at)}. Buy the gift, enter its real cost, then approve.`,
+                  amountPKR: g.pkr, // fixed amount (19 Nov 2026)
+                  description: `${m.name}'s sellers reached a net of ₮${hit.net.toLocaleString('en-US')} (deposits − withdrawals) on ${dayKey(hit.at)}. Fixed amount Rs ${g.pkr.toLocaleString('en-US')} PKR: approve, then enter the day's USDT rate in Finance.`,
                   periodKey: dayKey(hit.at),
                   status: 'pending',
                   claimKey: key,
                   autoCreated: true,
-                  gift: { item: g.item, label: g.label, thresholdUSDT: g.usdt, netAtCross: hit.net, crossedAt: hit.at, costEntered: false, status: 'due' },
+                  gift: { item: g.item, label: g.label, payAs: 'cash', thresholdUSDT: g.usdt, netAtCross: hit.net, crossedAt: hit.at, costEntered: true, status: 'cash' },
                 },
               },
               { upsert: true }
             );
             if (res.upsertedCount) newGifts.push({ ownerId: p.ownerId, ownerName: m.name, label: g.label });
           }
+        }
+        // Gifts NOT yet approved (waiting / declined) follow the fixed amount and name. Nothing of them is
+        // counted yet, so this is safe; approved or taken-back gifts are never touched.
+        for (const c of gifts) {
+          if (!['pending', 'rejected'].includes(c.status)) continue;
+          const g = DEVICE_GIFTS.find((x) => x.item === c.gift?.item);
+          if (!g) continue;
+          const title = `🎁 ${g.label}`;
+          const decided = c.gift?.costEntered === true;
+          const payAs = decided ? c.gift?.payAs || 'device' : 'cash'; // a way already chosen by an admin stays
+          const description = String(c.description || '').replace(
+            /(Buy the gift, enter its real cost, then approve\.|Fixed amount Rs [\d,]+ PKR: approve, then enter the day's USDT rate in Finance\.)$/,
+            `Fixed amount Rs ${g.pkr.toLocaleString('en-US')} PKR: approve, then enter the day's USDT rate in Finance.`
+          );
+          if (c.amountPKR === g.pkr && c.title === title && c.gift?.label === g.label && decided && description === String(c.description || '')) continue;
+          await RewardClaim.updateOne(
+            { _id: c._id, status: { $in: ['pending', 'rejected'] } },
+            {
+              $set: {
+                amountPKR: g.pkr,
+                title,
+                description,
+                'gift.label': g.label,
+                'gift.payAs': payAs,
+                'gift.costEntered': true,
+                'gift.status': payAs === 'cash' ? 'cash' : 'purchased',
+              },
+              $push: {
+                history: { at: new Date(), by: 'System', action: 'edited', note: `Fixed gift amount: Rs ${g.pkr.toLocaleString('en-US')} PKR (${g.label})`, from: { amountPKR: c.amountPKR }, to: { amountPKR: g.pkr } },
+              },
+            }
+          );
         }
         const fresh = await RewardClaim.find({ rewardType: 'device_gift' }).select('claimKey status gift amountPKR').lean();
         const freshByKey = new Map(fresh.map((c) => [c.claimKey, c]));
