@@ -92,8 +92,8 @@ export default function StoreClosures() {
         <div>
           <h1>Store closures</h1>
           <p>
-            A store asks to close → <b>7-day review</b> (it keeps getting orders and must confirm each on time) → <b>closed</b> (no new orders). A late order, a freeze
-            or health below 90 ends the review by itself.
+            A store asks to close → <b>7-day review</b> (it keeps getting orders and must confirm each on time) → <b>closed</b> (no new orders). A late / missed
+            order restarts the 7 days (the store is emailed why); health below 90 or a freeze ends the review (back to the requirements). After a rejection the store can ask again in 7 days. Approve or reject (with a reason) — the store is emailed either way.
           </p>
         </div>
         <div className="scl-kpis">
@@ -189,6 +189,11 @@ export default function StoreClosures() {
                       <span className={rv.late ? 'bad' : ''}>{rv.late} past warning time</span>
                       <span className={rv.delays ? 'bad' : 'good'}>{rv.delays ? `${rv.delays} late / missed` : 'No late order'}</span>
                     </div>
+                    {rv.restarts > 0 && (
+                      <p className="scl-hint">
+                        ⏱ Restarted {rv.restarts}× · last: {rv.lastRestartNote}
+                      </p>
+                    )}
                     {rv.waitingForOrders && <p className="scl-hint">7 days are over — it closes as soon as the waiting orders are confirmed.</p>}
                   </div>
                 )}
@@ -205,7 +210,7 @@ export default function StoreClosures() {
                   {r.status === 'review' && (
                     <>
                       <button type="button" className="scl-btn dark" onClick={() => { setAsk({ row: r, action: 'close' }); setNote(''); setErr(''); }}>
-                        <Ic name="lock" size={14} /> Close now
+                        <Ic name="lock" size={14} /> Approve &amp; close
                       </button>
                       <button type="button" className="scl-btn" onClick={() => { setAsk({ row: r, action: 'reject' }); setNote(''); setErr(''); }}>
                         Reject
@@ -241,19 +246,19 @@ export default function StoreClosures() {
         <div className="admin-modal-overlay" onClick={() => !busy && setAsk(null)}>
           <div className="admin-modal-box scl-modal" onClick={(e) => e.stopPropagation()}>
             <h3>
-              {ask.action === 'close' ? 'Close this store now?' : ask.action === 'reopen' ? 'Reopen this store?' : 'Reject the closing request?'}
+              {ask.action === 'close' ? 'Approve and close this store now?' : ask.action === 'reopen' ? 'Reopen this store?' : 'Reject the closing request?'}
             </h3>
             <p>
               <b>{ask.row.storeName}</b> —{' '}
               {ask.action === 'close'
-                ? 'the review ends now and the store takes no new orders. Orders already confirmed are still delivered and paid.'
+                ? 'the review ends now and the store takes no new orders. Orders already confirmed are still delivered and paid. The store gets an approval email.'
                 : ask.action === 'reopen'
                   ? 'the store can take new orders again.'
-                  : 'the review ends and the store stays open. The store sees your reason.'}
+                  : 'the review ends and the store stays open. The store sees your reason and gets it by email, and can ask again after 7 days.'}
               {ask.action === 'close' && ask.row.review?.waiting > 0 && <span className="scl-warn"> {ask.row.review.waiting} order(s) still wait for its confirmation.</span>}
             </p>
             <label className="scl-field">
-              <span>{ask.action === 'reject' ? 'Reason (the store sees it)' : 'Note (optional)'}</span>
+              <span>{ask.action === 'reject' ? 'Reason (shown to the store and emailed)' : 'Note (optional)'}</span>
               <textarea rows={3} maxLength={300} value={note} onChange={(e) => setNote(e.target.value)} autoFocus />
             </label>
             {err && <div className="scl-err">{err}</div>}
@@ -262,7 +267,7 @@ export default function StoreClosures() {
                 Cancel
               </button>
               <button type="button" className={`scl-btn ${ask.action === 'reopen' ? 'green' : 'dark'}`} onClick={run} disabled={busy || (ask.action === 'reject' && !note.trim())}>
-                {busy ? 'Please wait…' : ask.action === 'close' ? 'Close store' : ask.action === 'reopen' ? 'Reopen' : 'Reject request'}
+                {busy ? 'Please wait…' : ask.action === 'close' ? 'Approve & close' : ask.action === 'reopen' ? 'Reopen' : 'Reject request'}
               </button>
             </div>
           </div>

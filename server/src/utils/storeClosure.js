@@ -17,15 +17,22 @@ import { warnHoursFor } from './sellerTier.js';
  *     store's wallet
  *
  * Review (7 days): the store keeps taking orders and must confirm every one of them on time.
- *   - a late / missed order, a freeze or health below 90 during the review → the review fails
- *     (the store stays open and may ask again later)
+ *   - account health below 90 during the review → the review ENDS and the store is back at the
+ *     requirements step (health 90+ and a clean week must be met again, then it asks again; emailed)
+ *   - a late / missed order (deadline crossed) while health stays 90+ → the 7 days RESTART from
+ *     that moment; the store is notified + emailed which order(s) and the new end date
+ *   - a freeze / suspension during the review → the review ends (the store stays open and may
+ *     ask again later; emailed)
  *   - after 7 days, as soon as no order is waiting for its confirmation → the store is CLOSED:
  *     it takes no new orders (storefront, admin "Place order", test orders). Orders already
  *     confirmed are still delivered and paid as normal; login, wallet and payouts stay.
- * An admin can reject a review, close at once, or reopen a closed store. Nothing is deleted.
+ * An admin can approve (close at once) or reject a review with a reason (both emailed to the
+ * store), or reopen a closed store. After a rejection the store can ask again only after 7 days
+ * (REJECT_WAIT_DAYS); then the same process runs again. Nothing is deleted.
  */
 export const REVIEW_DAYS = 7;
 export const MIN_HEALTH = 90;
+export const REJECT_WAIT_DAYS = 7; // after a rejection the store can ask again after this many days
 const DAY = 86400000;
 const H = 3600000;
 export const DELAY_CODES = ['late_confirm', 'wallet_short', 'deadline_miss', 'deadline_repeat', 'deadline_third', 'extra_order', 'overdue_daily'];
@@ -100,11 +107,33 @@ async function facts(seller, since) {
 }
 
 const fmtDay = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+const fmtWhen = (d) => new Date(d).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }) + ' IST';
+/** Start of the current 7-day round (a late order restarts it). */
+const roundStart = (c) => new Date(c.reviewStartedAt || c.requestedAt || Date.now());
+
+/** After a rejection: the date from which the store may ask again (null = no wait). */
+export function retryAt(seller) {
+  const c = seller?.storeClosure || {};
+  if (c.status !== 'rejected' || !c.endedAt) return null;
+  const at = new Date(new Date(c.endedAt).getTime() + REJECT_WAIT_DAYS * DAY);
+  return at.getTime() > Date.now() ? at : null;
+}
 
 /** The requirements to ask for closing, each with ok + a short detail. */
 export async function eligibility(seller) {
   const f = await facts(seller, new Date(Date.now() - REVIEW_DAYS * DAY));
+  const wait = retryAt(seller);
   const checks = [
+    ...(wait
+      ? [
+          {
+            key: 'retryWait',
+            label: `${REJECT_WAIT_DAYS} days after your last request was rejected`,
+            ok: false,
+            detail: `You can try again on ${fmtDay(wait)} — we keep monitoring your store until then.`,
+          },
+        ]
+      : []),
     {
       key: 'active',
       label: 'Store is active (not frozen or suspended)',
@@ -143,11 +172,12 @@ export async function eligibility(seller) {
 async function reviewProgress(seller) {
   const c = seller.storeClosure || {};
   if (c.status !== 'review' || !c.requestedAt) return null;
-  const f = await facts(seller, new Date(c.requestedAt));
+  const start = roundStart(c);
+  const f = await facts(seller, start);
   const ordersInReview = await Order().countDocuments({ ...ownsOrder(seller._id), createdAt: { $gte: new Date(c.requestedAt) } });
-  const endsAt = new Date(c.reviewEndsAt || new Date(c.requestedAt).getTime() + REVIEW_DAYS * DAY);
+  const endsAt = new Date(c.reviewEndsAt || start.getTime() + REVIEW_DAYS * DAY);
   const total = REVIEW_DAYS * DAY;
-  const done = Math.min(total, Math.max(0, Date.now() - new Date(c.requestedAt).getTime()));
+  const done = Math.min(total, Math.max(0, Date.now() - start.getTime()));
   return {
     endsAt,
     day: Math.min(REVIEW_DAYS, Math.floor(done / DAY) + 1),
@@ -159,6 +189,10 @@ async function reviewProgress(seller) {
     delays: f.delays.length,
     score: f.score,
     frozen: seller.status !== 'active',
+    startedAt: start,
+    restarts: c.restarts || 0,
+    lastRestartAt: c.lastRestartAt || null,
+    lastRestartNote: c.lastRestartNote || '',
     // after the 7 days the store closes as soon as nothing is waiting for its confirmation
     waitingForOrders: Date.now() >= endsAt.getTime() && f.waiting.length > 0,
   };
@@ -185,6 +219,8 @@ export async function closureOverview(sellerId) {
     reviewDays: REVIEW_DAYS,
     minHealth: MIN_HEALTH,
     eligible: elig.eligible && !['review', 'closed'].includes(status),
+    retryAt: retryAt(seller),
+    rejectWaitDays: REJECT_WAIT_DAYS,
     checks: elig.checks,
     review: await reviewProgress(seller),
   };
@@ -216,6 +252,10 @@ export async function applyForClosure(sellerId, reason = '') {
         'storeClosure.reason': String(reason || '').trim().slice(0, 500),
         'storeClosure.requestedAt': now,
         'storeClosure.reviewEndsAt': ends,
+        'storeClosure.reviewStartedAt': now,
+        'storeClosure.restarts': 0,
+        'storeClosure.lastRestartAt': null,
+        'storeClosure.lastRestartNote': '',
         'storeClosure.closedAt': null,
         'storeClosure.endedAt': null,
         'storeClosure.endNote': '',
@@ -237,7 +277,7 @@ export async function applyForClosure(sellerId, reason = '') {
     sellerId: String(seller._id),
     type: 'system',
     title: '🏁 Store closing review started',
-    body: `Your 7-day closing review has started (ends ${fmtDay(ends)}). Keep confirming every order on time — a late order ends the review. After the review your store closes and takes no new orders.`,
+    body: `Your 7-day closing review has started (ends ${fmtDay(ends)}). Keep confirming every order on time — a late or missed order restarts the 7 days. After the review your store closes and takes no new orders.`,
     link: '/seller/close-store',
     push: false,
   });
@@ -275,8 +315,8 @@ async function closeNow(seller, by, note) {
     recipientType: 'seller',
     sellerId: String(seller._id),
     type: 'system',
-    title: '🏁 Your store is now closed',
-    body: 'Your closing review is complete. Your store takes no new orders from now on. Orders already confirmed are still delivered and paid, and your wallet and payouts stay available.',
+    title: by === 'system' ? '🏁 Your store is now closed' : '✅ Store closing request approved — your store is now closed',
+    body: `${by === 'system' ? 'Your 7-day closing review is complete.' : 'Your request to close the store has been approved.'} Your store takes no new orders from now on. Orders already confirmed are still delivered and paid. You can still log in to see your orders, wallet and payouts.`,
     link: '/seller/close-store',
     email: true,
   });
@@ -302,14 +342,63 @@ async function failReview(seller, why) {
     sellerId: String(seller._id),
     type: 'compliance',
     title: 'Store closing review ended',
-    body: `Your closing review ended: ${why} Your store stays open. You can ask again when every requirement is met.`,
+    body: `Your closing review ended: ${why} Your store stays open and is back at the requirements step. When every requirement is met again (account health ${MIN_HEALTH}+ and no late or missed order for ${REVIEW_DAYS} days), you can ask to close again.`,
     link: '/seller/close-store',
+    email: true,
   });
   notify(appRef(), {
     recipientType: 'admin',
     type: 'approval',
     title: `Store closure review failed: ${seller.storeName}`,
     body: why,
+    link: '/admin/applications?tab=closures',
+  });
+  changed(seller._id);
+  return true;
+}
+
+/**
+ * A late / missed order during the review → the 7 days start again from that moment.
+ * The store gets a notification + email with the order(s), the reason and the new end date.
+ */
+async function restartReview(seller, delays) {
+  const c = seller.storeClosure || {};
+  const latest = delays.reduce((m, d) => Math.max(m, new Date(d.createdAt).getTime()), 0);
+  // start just after the newest late event, so the same event never restarts it twice
+  const start = new Date(Math.max(latest + 1, roundStart(c).getTime() + 1));
+  const ends = new Date(start.getTime() + REVIEW_DAYS * DAY);
+  const nums = [...new Set(delays.flatMap((d) => (d.orderNumbers || []).map((n) => `#${n}`)))].slice(0, 6);
+  const what = [...new Set(delays.map((d) => d.title).filter(Boolean))].slice(0, 3).join(', ') || 'An order was late';
+  const why = `${what}${nums.length ? ` (order ${nums.join(', ')})` : ''} on ${fmtWhen(latest || Date.now())}.`;
+  const r = await Seller.updateOne(
+    { _id: seller._id, 'storeClosure.status': 'review', 'storeClosure.reviewStartedAt': c.reviewStartedAt || null },
+    {
+      $set: {
+        'storeClosure.reviewStartedAt': start,
+        'storeClosure.reviewEndsAt': ends,
+        'storeClosure.lastRestartAt': new Date(),
+        'storeClosure.lastRestartNote': why,
+        'storeClosure.by': 'system',
+      },
+      $inc: { 'storeClosure.restarts': 1 },
+      ...historyPush('restarted', 'system', why),
+    }
+  );
+  if (!r.modifiedCount) return false;
+  notify(appRef(), {
+    recipientType: 'seller',
+    sellerId: String(seller._id),
+    type: 'compliance',
+    title: '⏱ Your 7-day closing review has restarted',
+    body: `An order deadline was crossed during your closing review: ${why} Your 7-day review has started again from ${fmtDay(start)} and now ends on ${fmtDay(ends)}. Confirm every order before its deadline so the 7 days can finish and your store can close.`,
+    link: '/seller/close-store',
+    email: true,
+  });
+  notify(appRef(), {
+    recipientType: 'admin',
+    type: 'approval',
+    title: `⏱ Closing review restarted: ${seller.storeName}`,
+    body: `${why} The 7 days restarted (now ends ${fmtDay(ends)}).`,
     link: '/admin/applications?tab=closures',
   });
   changed(seller._id);
@@ -335,14 +424,15 @@ export async function adminClosureAction(sellerId, action, admin, note = '') {
       recipientType: 'seller',
       sellerId: String(seller._id),
       type: 'compliance',
-      title: 'Store closing request not accepted',
-      body: `Your request to close the store was not accepted: ${text} Your store stays open.`,
+      title: 'Store closing request rejected',
+      body: `Your request to close the store was rejected. Reason: ${text} Your store stays open and keeps getting orders. You can try again in ${REJECT_WAIT_DAYS} days (from ${fmtDay(Date.now() + REJECT_WAIT_DAYS * DAY)}) — until then we keep monitoring your store, and the requirements must be met again.`,
       link: '/seller/close-store',
+      email: true,
     });
     changed(seller._id);
   } else if (action === 'close') {
     if (status !== 'review') throw err(400, 'Only a store in the closing review can be closed here.');
-    await closeNow(seller, by, text || 'Closed by admin');
+    await closeNow(seller, by, text || 'Approved by admin');
   } else if (action === 'reopen') {
     if (status !== 'closed') throw err(400, 'This store is not closed.');
     await Seller.updateOne(
@@ -404,8 +494,9 @@ export async function adminClosureList({ status = 'all' } = {}) {
 }
 
 /**
- * Every 10 minutes: a review that got a late order / freeze / low health fails; a review whose
- * 7 days are over closes as soon as no order waits for the store's confirmation.
+ * Every 10 minutes: a freeze / suspension or health below 90 ends the review (back to the
+ * requirements); a late / missed order with health still 90+ restarts the 7 days; a review whose 7 days are over closes as soon as no order waits for the store's
+ * confirmation.
  */
 let running = false;
 export async function closureSweep() {
@@ -416,21 +507,24 @@ export async function closureSweep() {
     for (const s of list) {
       try {
         const c = s.storeClosure;
-        const f = await facts(s, new Date(c.requestedAt || Date.now()));
+        const f = await facts(s, roundStart(c));
         if (s.status !== 'active') {
           await failReview(s, `The store was ${s.status === 'frozen' ? 'frozen' : s.status} during the review.`);
           continue;
         }
-        if (f.delays.length) {
-          const d = f.delays[f.delays.length - 1];
-          await failReview(s, `An order was late during the review (${d.title}${d.orderNumbers?.length ? ` #${d.orderNumbers[0]}` : ''}).`);
-          continue;
-        }
+        // health below 90 → the review ends; the store goes back to the requirements step
         if (f.score < MIN_HEALTH) {
-          await failReview(s, `Account health fell to ${f.score}/100 during the review (needs ${MIN_HEALTH}).`);
+          const d = f.delays[0];
+          const what = d ? ` after a late / missed order (${d.title}${d.orderNumbers?.length ? ` #${d.orderNumbers[0]}` : ''})` : '';
+          await failReview(s, `Your account health fell to ${f.score}/100${what} — it must be ${MIN_HEALTH} or above.`);
           continue;
         }
-        const ends = new Date(c.reviewEndsAt || new Date(c.requestedAt).getTime() + REVIEW_DAYS * DAY);
+        // a late / missed order (deadline crossed) while health stays 90+ → the 7 days start again
+        if (f.delays.length) {
+          await restartReview(s, f.delays);
+          continue;
+        }
+        const ends = new Date(c.reviewEndsAt || roundStart(c).getTime() + REVIEW_DAYS * DAY);
         if (Date.now() >= ends.getTime() && f.waiting.length === 0) await closeNow(s, 'system', 'Passed the 7-day review');
       } catch (e) {
         console.error('[closure] sweep store:', e.message);

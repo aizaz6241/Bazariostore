@@ -63,6 +63,7 @@
 .cs-stats span { display: block; font-size: 11.5px; color: #64748b; }
 .cs-stats b { font-size: 18px; font-weight: 800; }
 .cs-note { display: flex; align-items: center; gap: 6px; margin-top: 12px !important; padding: 8px 10px; border-radius: 8px; background: #fef3c7; color: #92400e !important; font-weight: 600; }
+.cs-note.cs-restart { display: block; background: #fee2e2; color: #991b1b !important; font-weight: 500; line-height: 1.5; }
 .cs-rules { margin: 12px 0; padding-left: 18px; font-size: 12.5px; color: #475569; line-height: 1.55; }
 .cs-rules li.warn { color: #b91c1c; }
 
@@ -80,3 +81,4 @@
   .cs-stats { grid-template-columns: 1fr; }
   .cs-card { padding: 14px; }
 }
+.cs-wait-big { display: flex; align-items: center; gap: 8px; margin: 6px 0 8px; padding: 12px 14px; border-radius: 10px; background: #fef3c7; color: #92400e; font-size: 16px; font-weight: 700; }

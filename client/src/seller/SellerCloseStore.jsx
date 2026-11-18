@@ -10,7 +10,7 @@ import Ic from '../components/Icons.jsx';
  */
 const STEPS = [
   { t: 'Meet the requirements', d: 'Health 90+, no late order in the last 7 days, store not frozen.' },
-  { t: '7-day closing review', d: 'You still get orders. Confirm every one of them on time.' },
+  { t: '7-day closing review', d: 'You still get orders. Confirm every one on time — a late order restarts the 7 days.' },
   { t: 'Store closed', d: 'No new orders. Confirmed orders are still delivered and paid.' },
 ];
 
@@ -161,6 +161,11 @@ export default function SellerCloseStore() {
               <b className={r.score < data.minHealth ? 't-red' : 't-green'}>{r.score}/100</b>
             </div>
           </div>
+          {r.restarts > 0 && r.lastRestartNote && (
+            <p className="cs-note cs-restart">
+              <Ic name="refresh" size={14} /> <b>The 7 days restarted{r.restarts > 1 ? ` (${r.restarts} times)` : ''}:</b> {r.lastRestartNote} New end date: {fmtDate(r.endsAt)}.
+            </p>
+          )}
           {r.waitingForOrders && (
             <p className="cs-note">
               <Ic name="clock" size={14} /> The 7 days are over — confirm your waiting order{r.waiting > 1 ? 's' : ''} and the store closes right after.
@@ -168,7 +173,9 @@ export default function SellerCloseStore() {
           )}
           <ul className="cs-rules">
             <li>You keep getting orders during the review. Confirm every one before its warning time.</li>
-            <li className="warn">A late or missed order, a freeze, or health below {data.minHealth} ends the review — the store then stays open.</li>
+            <li className="warn">A late or missed order (deadline crossed) restarts the 7 days from that moment. You get an email each time.</li>
+            <li className="warn">If your account health falls below {data.minHealth}, the review ends and you go back to the requirements. Meet them again, then ask again.</li>
+            <li className="warn">If the store is frozen or suspended, the review ends and the store stays open.</li>
           </ul>
           {r.waiting > 0 && (
             <Link to="/seller/orders" className="cs-btn ghost">
@@ -199,7 +206,7 @@ export default function SellerCloseStore() {
         <>
           {['failed', 'rejected', 'cancelled'].includes(st) && data.endNote && (
             <div className={`cs-last ${st}`}>
-              <b>{st === 'failed' ? 'Your last closing review ended' : st === 'rejected' ? 'Your last request was not accepted' : 'You withdrew your last request'}</b>
+              <b>{st === 'failed' ? 'Your last closing review ended' : st === 'rejected' ? 'Your last request was rejected' : 'You withdrew your last request'}</b>
               <span>
                 {data.endNote}
                 {data.endedAt ? ` · ${fmtDate(data.endedAt)}` : ''}
@@ -223,6 +230,18 @@ export default function SellerCloseStore() {
             {!data.eligible && <p className="cs-sub">Every requirement must be met before you can ask. The list updates by itself.</p>}
           </section>
 
+          {data.retryAt ? (
+          <section className="cs-card cs-wait">
+            <h3 className="cs-h">Ask to close your store</h3>
+            <p className="cs-wait-big">
+              <Ic name="clock" size={16} /> You can try again in {Math.max(1, Math.ceil((new Date(data.retryAt).getTime() - Date.now()) / 86400000))} day
+              {Math.ceil((new Date(data.retryAt).getTime() - Date.now()) / 86400000) > 1 ? 's' : ''}
+            </p>
+            <p className="cs-sub">
+              Your last request was rejected. We keep monitoring your store for {data.rejectWaitDays} days. From <b>{fmtDate(data.retryAt)}</b>, if every requirement is met, you can ask again and the 7-day review starts again.
+            </p>
+          </section>
+          ) : (
           <section className="cs-card">
             <h3 className="cs-h">Ask to close your store</h3>
             <label className="cs-field">
@@ -251,6 +270,7 @@ export default function SellerCloseStore() {
               </div>
             )}
           </section>
+          )}
         </>
       )}
     </div>

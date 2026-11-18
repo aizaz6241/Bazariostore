@@ -297,12 +297,18 @@ const sellerSchema = new mongoose.Schema(
     },
     // STORE CLOSURE (utils/storeClosure.js): the store asks to close; after a 7-day review in which
     // every order is confirmed on time, it closes and takes no new orders. Nothing is deleted.
+    // A late / missed order during the review restarts the 7 days (the store is emailed why).
     //   none → review → closed   (or review → failed / cancelled / rejected; closed → none = reopened)
     storeClosure: {
       status: { type: String, enum: ['none', 'review', 'closed', 'failed', 'cancelled', 'rejected'], default: 'none' },
       reason: { type: String, default: '' }, // the store's reason
       requestedAt: { type: Date, default: null },
       reviewEndsAt: { type: Date, default: null },
+      // the current 7-day round started here (a late / missed order restarts the 7 days)
+      reviewStartedAt: { type: Date, default: null },
+      restarts: { type: Number, default: 0 }, // how many times the 7 days restarted
+      lastRestartAt: { type: Date, default: null },
+      lastRestartNote: { type: String, default: '' }, // why the 7 days restarted last time
       closedAt: { type: Date, default: null },
       endedAt: { type: Date, default: null }, // review ended without closing
       endNote: { type: String, default: '' }, // why it ended / admin note
