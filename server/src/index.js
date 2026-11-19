@@ -67,6 +67,7 @@ import treasuryRoutes from './routes/treasury.js';
 import backupRoutes from './routes/backup.js';
 import adminHubRoutes from './routes/adminHub.js';
 import privateToolsRoutes from './routes/privateTools.js';
+import sellerEmailRoutes from './routes/sellerEmail.js';
 import { createBackup, getBackupSettings, updateBackupSettings, localEveryHours } from './services/backup.service.js';
 import { scheduleCloudBackups } from './services/cloudBackup.js';
 import { startMirror } from './services/mirror.js';
@@ -272,6 +273,8 @@ app.use(['/api/treasury', '/treasury'], treasuryRoutes);
 app.use(['/api/backup', '/backup'], backupRoutes);
 app.use('/api/admin-hub', adminHubRoutes);
 app.use('/api/private-tools', privateToolsRoutes);
+// Support inbox → ✉️ Email: the team emails one store (templates or a custom email)
+app.use('/api/seller-email', sellerEmailRoutes);
 
 // Static uploads serving (both server/uploads and root/uploads)
 const serverUploadsDir = path.resolve(__dirname, '../uploads');

@@ -14,6 +14,7 @@ import ChatShortcutPicker from './ChatShortcutPicker.jsx';
 import ChatQuickReplies from './ChatQuickReplies.jsx';
 import ChatSellerInfo from './ChatSellerInfo.jsx';
 import ChatBroadcast from './ChatBroadcast.jsx';
+import SellerEmailModal from './SellerEmailModal.jsx';
 import ChatAutoReply, { AutoReplyPill } from './ChatAutoReply.jsx';
 import { Nick, useNicknames } from './nicknames.jsx';
 import { idOf, isScopedAdmin } from './hub/hubBus.js';
@@ -158,6 +159,8 @@ export default function ChatInbox() {
   const [quickOpen, setQuickOpen] = useState(false);
   const [shortcutPages, setShortcutPages] = useState([]);
   const [broadcastOpen, setBroadcastOpen] = useState(false);
+  // Send email: null = closed, '' = choose the store in the dialog, '<sellerId>' = that store
+  const [emailFor, setEmailFor] = useState(null);
   const [infoOpen, setInfoOpen] = useState(false);
   // a clock for the "waiting for reply" timers in the list (every 30 seconds is enough)
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -896,6 +899,11 @@ export default function ChatInbox() {
                   📣
                 </button>
               )}
+              {activeTab === 'sellers' && !teamLogin && (
+                <button type="button" className="sci-icon-btn" onClick={() => setEmailFor('')} title="Send email: a ready template or your own email to any store" aria-label="Send email">
+                  ✉️
+                </button>
+              )}
               {autoReply && !teamLogin && <AutoReplyPill config={autoReply.config} onClick={() => setAutoReplyModal(true)} />}
             </div>
           </div>
@@ -1182,6 +1190,11 @@ export default function ChatInbox() {
                 {isStoreChat && (
                   <button type="button" className={`sci-btn ${infoOpen ? 'on' : ''}`} onClick={() => setInfoOpen((v) => !v)} title="Balance, waiting orders, plan… of this store">
                     📋<span className="sci-btn-txt">Store info</span>
+                  </button>
+                )}
+                {isStoreChat && !teamLogin && (
+                  <button type="button" className="sci-btn" onClick={() => setEmailFor(String(idOf(selectedSellerConv.seller) || ''))} title="Send this store an email (template or custom)">
+                    ✉️<span className="sci-btn-txt">Email</span>
                   </button>
                 )}
                 {!teamLogin && (
@@ -1567,6 +1580,9 @@ export default function ChatInbox() {
 
       {/* BROADCAST: one message (+ button) to a group of stores */}
       {broadcastOpen && <ChatBroadcast pages={shortcutPages} onClose={() => setBroadcastOpen(false)} />}
+
+      {/* SEND EMAIL: template or custom email to one store */}
+      {emailFor !== null && !teamLogin && <SellerEmailModal key={emailFor || 'pick'} sellerId={emailFor} onClose={() => setEmailFor(null)} />}
 
       {/* SHORTCUT BUTTON PICKER (page / order / product of this store) */}
       {shortcutOpen && selectedSellerId && (

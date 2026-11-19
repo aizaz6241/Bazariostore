@@ -689,6 +689,80 @@ export async function sendDiamondOfferEmail({ to, name = 'Seller', offer, remind
   return sendSellerEmail({ to, subject, preheader: `Diamond for ${money(price)} instead of ${money(regular)} — ends ${ends}.`, bodyContent, text });
 }
 
+/**
+ * 9. Email written by the support team (Support inbox → ✉️ Email): a ready template or a fully
+ *    custom one. Everything typed is shown as plain text (escaped) — only **bold**, "- " bullets
+ *    and paragraphs are turned into formatting. Placeholders are filled in before this is called.
+ */
+const MAIL_TONE_OK = new Set(['info', 'success', 'warning', 'danger', 'diamond']);
+function formatTyped(raw = '') {
+  const bold = (s) => esc(s).replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
+  const blocks = String(raw).replace(/\r\n?/g, '\n').split(/\n\s*\n/);
+  return blocks
+    .map((block) => {
+      const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
+      if (!lines.length) return '';
+      let html = '';
+      let para = [];
+      let items = [];
+      const flushPara = () => {
+        if (para.length) html += `<p style="margin:0 0 12px;">${para.map(bold).join('<br>')}</p>`;
+        para = [];
+      };
+      const flushList = () => {
+        if (items.length) html += `<ul style="margin:0 0 12px;padding-left:20px;">${items.map((i) => `<li style="margin:4px 0;">${bold(i)}</li>`).join('')}</ul>`;
+        items = [];
+      };
+      for (const l of lines) {
+        const m = l.match(/^(?:[-•*]|\d+[.)])\s+(.+)$/);
+        if (m && !/^\*\*/.test(l)) {
+          flushPara();
+          items.push(m[1]);
+        } else {
+          flushList();
+          para.push(l);
+        }
+      }
+      flushPara();
+      flushList();
+      return html;
+    })
+    .join('');
+}
+const plainTyped = (raw = '') => String(raw).replace(/\*\*([^*\n]+)\*\*/g, '$1').trim();
+
+export function renderCustomSellerEmail({ name = 'Seller', subject, heading: head, badge: badgeText = '', body = '', note = '', tone = 'info', button: btn = null }) {
+  const t = MAIL_TONE_OK.has(tone) ? tone : 'info';
+  const cleanSubject = String(subject || 'Message from Bazario').replace(/\s+/g, ' ').trim().slice(0, 150);
+  const cleanHeading = String(head || cleanSubject).replace(/\s+/g, ' ').trim().slice(0, 150);
+  const url = btn?.path ? sellerUrl(btn.path) : '';
+  const bodyContent = `
+      ${badgeText ? badge(t, esc(String(badgeText).slice(0, 40))) : ''}
+      ${heading(t, esc(cleanHeading))}
+      <p>Hello <b>${esc(name)}</b>,</p>
+      ${formatTyped(body)}
+      ${note && String(note).trim() ? callout(t, formatTyped(note).replace(/margin:0 0 12px;/g, 'margin:4px 0;')) : ''}
+      ${url ? button(t, `${esc(String(btn.label || 'OPEN SELLER CENTRAL').slice(0, 40))} →`, url) : ''}
+      <p style="margin-top:22px;">Best regards,<br><b>Bazario Seller Support</b></p>`;
+  const text = `Hello ${name},\n\n${cleanHeading}\n\n${plainTyped(body)}${note && String(note).trim() ? `\n\n${plainTyped(note)}` : ''}${url ? `\n\n${btn.label || 'Open Seller Central'}: ${url}` : ''}\n\nBest regards,\nBazario Seller Support`;
+  const html = getEmailLayout({ title: esc(cleanSubject), preheader: esc(plainTyped(body).replace(/\s+/g, ' ').slice(0, 140) || cleanSubject), bodyContent });
+  return { subject: cleanSubject, fullSubject: `[Bazario] ${cleanSubject}`, html, text };
+}
+
+/** Sends a team-written email. Unlike the automatic ones, the result (and error) goes back to the admin. */
+export async function sendCustomSellerEmail({ to, ...rest }) {
+  if (!emailEnabled) return { success: false, skipped: true, error: 'Email sending is not set up on the server (RESEND_API_KEY missing).' };
+  const mail = renderCustomSellerEmail(rest);
+  try {
+    const info = await deliver({ to, subject: mail.fullSubject, html: mail.html, text: mail.text });
+    console.log(`[Email-Sent] (team) ${mail.subject} -> ${to} (MessageId: ${info.messageId})`);
+    return { success: true, messageId: info.messageId, subject: mail.subject };
+  } catch (error) {
+    console.error(`[Email-Error] (team) "${mail.subject}" to ${to} failed:`, error.message);
+    return { success: false, error: error.message, subject: mail.subject };
+  }
+}
+
 export default {
   transporter,
   sendVerificationOtpEmail,
@@ -704,5 +778,7 @@ export default {
   sendDiamondEmail,
   sendWalletReceiptEmail,
   sendDiamondOfferEmail,
+  renderCustomSellerEmail,
+  sendCustomSellerEmail,
   emailEnabled,
 };
