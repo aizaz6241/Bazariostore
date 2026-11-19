@@ -120,6 +120,10 @@ export default function Sellers() {
   const [resetSuccess, setResetSuccess] = useState('');
   const [resetError, setResetError] = useState('');
   const [showAdminSellerPw, setShowAdminSellerPw] = useState(true);
+  // same dialog: change the login email
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetEmailNotify, setResetEmailNotify] = useState(true);
+  const [savingResetEmail, setSavingResetEmail] = useState(false);
   const [toggleToast, setToggleToast] = useState('');
 
   // Delete Seller Modal
@@ -522,7 +526,32 @@ export default function Sellers() {
     setResetSuccess('');
     setResetError('');
     setShowAdminSellerPw(true);
+    setResetEmail(seller?.email || '');
+    setResetEmailNotify(true);
     setResetModalOpen(true);
+  };
+
+  // Change the login email (same dialog as the password): checked on the server for duplicates
+  const handleResetEmailSubmit = async () => {
+    if (!resetSeller) return;
+    const value = resetEmail.trim();
+    if (!value) return setResetError('Type the new email address.');
+    if (value.toLowerCase() === String(resetSeller.email || '').toLowerCase()) return setResetError('This is already the seller’s email.');
+    if (!window.confirm(`Change the login email of ${resetSeller.storeName}?\n\nFrom: ${resetSeller.email || '(none)'}\nTo: ${value}\n\nThe seller will log in with the new email (same password).`)) return;
+    setSavingResetEmail(true);
+    setResetError('');
+    setResetSuccess('');
+    try {
+      const res = await api(`/sellers/${resetSeller._id}/email`, { method: 'POST', body: { email: value, notify: resetEmailNotify } });
+      setResetSeller((prev) => (prev ? { ...prev, email: res.email } : prev));
+      setResetEmail(res.email);
+      setResetSuccess(`✅ ${res.message || 'Email changed'}`);
+      loadSellers();
+    } catch (err) {
+      setResetError(err.message || 'Could not change the email.');
+    } finally {
+      setSavingResetEmail(false);
+    }
   };
 
   const generateStandaloneRandomPw = () => {
@@ -1159,7 +1188,7 @@ export default function Sellers() {
                           <Ic name="shield" size={14} /> Compliance
                         </button>
                         <button type="button" className="sl2-btn" onClick={() => handleOpenResetPassword(s)}>
-                          <Ic name="lock" size={14} /> Password
+                          <Ic name="lock" size={14} /> Email &amp; Password
                         </button>
                         <button type="button" className="sl2-btn sl2-btn-danger" onClick={() => setDeleteModalSeller(s)}>
                           <Ic name="trash" size={14} /> Delete
@@ -1356,7 +1385,7 @@ export default function Sellers() {
                             type="button"
                             onClick={() => handleOpenResetPassword(s)}
                             className="btn-action-warn"
-                            title="Reset seller password"
+                            title="Change the seller's login email or password"
                             style={{
                               background: '#f8fafc',
                               color: '#0f172a',
@@ -1371,7 +1400,7 @@ export default function Sellers() {
                               gap: 4,
                             }}
                           >
-                            <Ic name="lock" size={13} /> Reset
+                            <Ic name="lock" size={13} /> Email / Password
                           </button>
                           <button
                             type="button"
@@ -3283,7 +3312,7 @@ export default function Sellers() {
             <div className="modal-top">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 20 }}>🔑</span>
-                <h3 style={{ margin: 0, fontSize: 16 }}>Reset Password: <b>{resetSeller.storeName}</b></h3>
+                <h3 style={{ margin: 0, fontSize: 16 }}>Login email &amp; password: <b>{resetSeller.storeName}</b></h3>
               </div>
               <button onClick={() => setResetModalOpen(false)} className="btn-close-modal">✕</button>
             </div>
@@ -3305,9 +3334,47 @@ export default function Sellers() {
                 </div>
               </div>
 
+              {/* LOGIN EMAIL */}
+              <div style={{ border: '1.5px solid #fde68a', background: '#fffbeb', borderRadius: 10, padding: '12px 14px', marginBottom: 18 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, display: 'block', marginBottom: 4, color: '#1e293b' }}>
+                  ✉️ Login Email
+                </label>
+                <small style={{ display: 'block', fontSize: 11.5, color: '#92400e', marginBottom: 8 }}>
+                  The seller logs in with this email. Changing it keeps the same password.
+                </small>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <input
+                    type="email"
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleResetEmailSubmit();
+                      }
+                    }}
+                    placeholder="new.email@gmail.com"
+                    maxLength={120}
+                    style={{ flex: '1 1 200px', minWidth: 0, padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, background: '#fff' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleResetEmailSubmit}
+                    disabled={savingResetEmail || !resetEmail.trim() || resetEmail.trim().toLowerCase() === String(resetSeller.email || '').toLowerCase()}
+                    style={{ background: '#d97706', border: '1px solid #d97706', color: '#fff', padding: '8px 12px', borderRadius: 6, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', opacity: savingResetEmail || !resetEmail.trim() || resetEmail.trim().toLowerCase() === String(resetSeller.email || '').toLowerCase() ? 0.5 : 1 }}
+                  >
+                    {savingResetEmail ? 'Saving…' : 'Change Email'}
+                  </button>
+                </div>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 8, fontSize: 12, color: '#475569', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={resetEmailNotify} onChange={(e) => setResetEmailNotify(e.target.checked)} style={{ marginTop: 2 }} />
+                  <span>Tell the seller on the new and the old email</span>
+                </label>
+              </div>
+
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <label style={{ fontSize: 12, fontWeight: 700, color: '#1e293b' }}>
-                  New Password *
+                  🔑 New Password *
                 </label>
                 <button
                   type="button"
