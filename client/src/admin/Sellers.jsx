@@ -1693,6 +1693,11 @@ export default function Sellers() {
                           required
                           className="spf-input"
                         />
+                        {profileSeller && accForm.email.trim().toLowerCase() !== String(profileSeller.email || '').toLowerCase() && (
+                          <small style={{ display: 'block', marginTop: 4, fontSize: 11.5, color: '#b45309' }}>
+                            The seller will log in with this new email (same password). On save, both the old and the new address get a short notice.
+                          </small>
+                        )}
                       </div>
 
                       <div>

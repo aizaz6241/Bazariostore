@@ -38,6 +38,9 @@ export default function SellerEmailModal({ sellerId = '', onClose }) {
   const [showPreview, setShowPreview] = useState(false); // phones: switch between form and preview
   const [sending, setSending] = useState(false);
 
+  // change the store's email (also its login)
+  const [emailEdit, setEmailEdit] = useState(null); // null | { value, notify, saving }
+
   // history
   const [history, setHistory] = useState(null);
   const [histAll, setHistAll] = useState(!sellerId);
@@ -168,6 +171,26 @@ export default function SellerEmailModal({ sellerId = '', onClose }) {
     }
   };
 
+  const saveEmail = async () => {
+    if (!store || !emailEdit) return;
+    const value = emailEdit.value.trim();
+    if (!value) return setErr('Type the new email address.');
+    if (!window.confirm(`Change the email of ${store.storeName}?\n\nFrom: ${store.email || '(no email)'}\nTo: ${value}\n\nThis is also the store’s LOGIN email — the seller will log in with the new email (same password).${emailEdit.notify ? '\nThe seller is told on both addresses.' : ''}`)) return;
+    setEmailEdit((x) => ({ ...x, saving: true }));
+    setErr('');
+    setOk('');
+    try {
+      const d = await api(`/sellers/${store._id}/email`, { method: 'POST', body: { email: value, notify: emailEdit.notify } });
+      setStore((s) => ({ ...s, email: d.email, hasEmail: true }));
+      setStores((list) => (Array.isArray(list) ? list.map((x) => (String(x._id) === String(store._id) ? { ...x, email: d.email, hasEmail: true } : x)) : list));
+      setEmailEdit(null);
+      setOk(d.message || 'Email changed');
+    } catch (e) {
+      setErr(e.message);
+      setEmailEdit((x) => (x ? { ...x, saving: false } : x));
+    }
+  };
+
   const saveTemplate = async () => {
     if (!mail.subject.trim() || !mail.body.trim()) return setErr('Write a subject and a message first, then save it as a template.');
     const label = window.prompt('Name for this template (only the team sees it):', mail.templateKey?.startsWith('saved:') ? '' : mail.subject.slice(0, 60));
@@ -234,11 +257,35 @@ export default function SellerEmailModal({ sellerId = '', onClose }) {
                       {store.isTest && <span className="sem-tag test">Test</span>}
                       {store.tier === 'diamond' && <span className="sem-tag dia">Diamond</span>}
                       {STATUS_TAG[store.status] && <span className="sem-tag">{STATUS_TAG[store.status]}</span>}
-                      <small>{store.ownerName ? `${store.ownerName} · ` : ''}{store.hasEmail ? store.email : 'No valid email — cannot send'}</small>
+                      <small>{store.ownerName ? `${store.ownerName} · ` : ''}{store.hasEmail ? store.email : 'No valid email — add one to send'}</small>
                     </div>
-                    <button type="button" className="cqr-btn" onClick={() => { setStore(null); setQ(''); }}>Change</button>
+                    <div className="sem-store-btns">
+                      <button type="button" className="cqr-btn" onClick={() => setEmailEdit(emailEdit ? null : { value: store.email || '', notify: true, saving: false })} title="Change this store’s email (it is also the login email)">
+                        ✏️ {store.hasEmail ? 'Change email' : 'Add email'}
+                      </button>
+                      <button type="button" className="cqr-btn" onClick={() => { setStore(null); setQ(''); setEmailEdit(null); }}>Other store</button>
+                    </div>
                   </div>
-                ) : (
+                ) : null}
+                {store && emailEdit && (
+                  <div className="sem-email-edit">
+                    <label>
+                      New email <small>(also the store’s login — the password stays the same)</small>
+                      <input type="email" value={emailEdit.value} maxLength={120} autoFocus onChange={(e) => setEmailEdit((x) => ({ ...x, value: e.target.value }))} onKeyDown={(e) => e.key === 'Enter' && saveEmail()} placeholder="new.email@gmail.com" />
+                    </label>
+                    <label className="cqr-check">
+                      <input type="checkbox" checked={emailEdit.notify} onChange={(e) => setEmailEdit((x) => ({ ...x, notify: e.target.checked }))} />
+                      <span>Tell the seller <small>(new email: “this is now your login email”; old email: “your email was changed”)</small></span>
+                    </label>
+                    <div className="sem-email-edit-btns">
+                      <button type="button" className="cqr-btn" onClick={() => setEmailEdit(null)} disabled={emailEdit.saving}>Cancel</button>
+                      <button type="button" className="cqr-btn primary" onClick={saveEmail} disabled={emailEdit.saving || !emailEdit.value.trim() || emailEdit.value.trim().toLowerCase() === String(store.email || '').toLowerCase()}>
+                        {emailEdit.saving ? 'Saving…' : 'Save new email'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {!store && (
                   <>
                     <input className="csp-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search store, owner, email or phone…" autoFocus />
                     <ul className="sem-stores">
@@ -246,14 +293,14 @@ export default function SellerEmailModal({ sellerId = '', onClose }) {
                       {stores && !stores.length && <li className="csp-muted">No store found.</li>}
                       {(stores || []).map((s) => (
                         <li key={s._id}>
-                          <button type="button" disabled={!s.hasEmail} onClick={() => setStore(s)}>
+                          <button type="button" className={s.hasEmail ? '' : 'no-email'} onClick={() => setStore(s)}>
                             <span className="csp-txt">
                               <b>
                                 {s.storeName}
                                 {s.isTest && <span className="sem-tag test">Test</span>}
                                 {STATUS_TAG[s.status] && <span className="sem-tag">{STATUS_TAG[s.status]}</span>}
                               </b>
-                              <small>{s.ownerName ? `${s.ownerName} · ` : ''}{s.hasEmail ? s.email : 'no email'}</small>
+                              <small>{s.ownerName ? `${s.ownerName} · ` : ''}{s.hasEmail ? s.email : 'no email — tap to add one'}</small>
                             </span>
                           </button>
                         </li>

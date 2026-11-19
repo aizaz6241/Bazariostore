@@ -27,6 +27,7 @@ import { emailSellerApproved, emailAccountStatus } from '../../utils/sellerEmail
 import { pushTargets, progressOf, deliveredTotals, orderStatsBySellers, indiaDate } from '../../utils/sellerTargets.js';
 import { deleteUnusedKeys, deleteAttachmentFiles, keysOfUrls, attachmentLocation } from '../../services/uploads.js';
 import { scopeIds } from '../../utils/staffScope.js';
+import { checkNewSellerEmail, tellEmailChanged } from '../../utils/sellerEmailChange.js';
 
 /** Setting a seller's password or login email: the same rank as viewing the saved password. */
 const canTouchSellerLogin = (admin) => ['super_admin', 'admin'].includes(admin?.role);
@@ -714,6 +715,36 @@ router.get('/:id/password', authAdmin('sellers'), async (req, res) => {
 });
 
 // POST /api/sellers/:id/reset-password (Admin resets seller password)
+// POST /api/sellers/:id/email { email, notify } — change a store's login email (Administrator /
+// Super Admin). Checked: format, not used by another store / customer / team account. The password
+// and sessions stay; both addresses are told (unless notify === false). Logged in the activity log.
+router.post('/:id/email', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:changed'), async (req, res) => {
+  try {
+    if (Array.isArray(req.admin?.scope) || !canTouchSellerLogin(req.admin)) {
+      return res.status(403).json({ message: 'Only an Administrator or the Super Admin can change a seller’s login email.' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(404).json({ message: 'Seller not found' });
+    const seller = await Seller.findById(req.params.id);
+    if (!seller) return res.status(404).json({ message: 'Seller not found' });
+    const chk = await checkNewSellerEmail(seller, typeof req.body?.email === 'string' ? req.body.email : '');
+    if (chk.message) return res.status(chk.status).json({ message: chk.message });
+    if (chk.same) return res.status(400).json({ message: 'This is already the store’s email.' });
+    const oldEmail = String(seller.email || '').toLowerCase().trim();
+    seller.email = chk.email;
+    await seller.save(); // also copies the email onto the store's support chat
+    await finLog(req, { action: 'seller.email_changed', summary: `Changed the login email of seller “${seller.storeName}” from ${oldEmail || '(none)'} to ${chk.email}`, entity: 'seller', entityId: seller._id, sellerId: seller._id, storeName: seller.storeName, before: { email: oldEmail }, after: { email: chk.email } });
+    audit(req, 'seller_email_changed', 'seller', seller._id, { from: oldEmail, to: chk.email });
+    const notified = req.body?.notify !== false;
+    if (notified) tellEmailChanged({ name: seller.ownerName || seller.storeName, storeName: seller.storeName, oldEmail, newEmail: chk.email });
+    const io = req.app.get('io');
+    if (io) io.to(`seller:${seller._id}`).emit('seller:status_update', { seller: lightSeller(seller) });
+    res.json({ ok: true, email: chk.email, oldEmail, notified, message: `Email changed to ${chk.email}${notified ? ' — the seller was told on both addresses' : ''}` });
+  } catch (err) {
+    if (err?.code === 11000) return res.status(409).json({ message: 'This email is already used by another account.' });
+    res.status(500).json({ message: err.message });
+  }
+});
+
 router.post('/:id/reset-password', authAdmin('sellers'), async (req, res) => {
   try {
     // Setting a seller's password opens that seller's account (wallet, payout details), so it
@@ -1500,12 +1531,21 @@ router.put('/:id', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:ch
       }
     }
 
+    // A new login email: real format, not used by another store / customer / team account
+    const oldEmail = String(seller.email || '').toLowerCase().trim();
+    let emailChange = null;
+    if (typeof email === 'string' && email.trim()) {
+      const chk = await checkNewSellerEmail(seller, email);
+      if (chk.message) return res.status(chk.status).json({ message: chk.message });
+      if (!chk.same) emailChange = chk.email;
+    }
+
     // Checked before anything is changed below (the status can be edited in this same request)
     const twoPeopleForType = await isApprovedSeller(seller);
 
     if (storeName) seller.storeName = storeName;
     if (ownerName) seller.ownerName = ownerName;
-    if (email) seller.email = email.toLowerCase().trim();
+    if (emailChange) seller.email = emailChange;
     if (phone !== undefined) seller.phone = phone;
     if (badCommission(commissionRate)) return res.status(400).json({ message: COMMISSION_MSG });
     if (commissionRate !== undefined && commissionRate !== null && commissionRate !== '') seller.commissionRate = Number(commissionRate);
@@ -1577,6 +1617,10 @@ router.put('/:id', authAdmin('sellers'), announceToAdmins('sellers', 'sellers:ch
 
     await seller.save();
     if (status) forgetAuthCache('seller', seller._id); // a new status applies to the next request
+    if (emailChange) {
+      await finLog(req, { action: 'seller.email_changed', summary: `Changed the login email of seller “${seller.storeName}” from ${oldEmail || '(none)'} to ${emailChange}`, entity: 'seller', entityId: seller._id, sellerId: seller._id, storeName: seller.storeName, before: { email: oldEmail }, after: { email: emailChange } });
+      if (req.body.notifyEmailChange !== false) tellEmailChanged({ name: seller.ownerName || seller.storeName, storeName: seller.storeName, oldEmail, newEmail: emailChange });
+    }
     if (reactivating) await restartSellerDeadlines(seller._id);
     if (unrestricting) await releaseFrozenFund(req.app, seller._id, req.admin?.name || 'Admin');
     audit(req, 'update', 'seller', seller._id, `Updated seller: ${seller.storeName}`);

@@ -2224,3 +2224,14 @@
   .sem-preview-top { display: flex; flex-direction: column; }
   .sem-send { flex: 1; }
 }
+.sem-store-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; flex: none; }
+.sem-stores li > button.no-email { background: #fffbeb; border-style: dashed; }
+.sem-email-edit { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1.5px solid #fde68a; background: #fffbeb; border-radius: 10px; }
+.sem-email-edit > label:first-child { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; color: #334155; }
+.sem-email-edit > label small { font-weight: 500; color: #92400e; }
+.sem-email-edit input[type='email'] { padding: 9px 11px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; background: #fff; }
+.sem-email-edit-btns { display: flex; gap: 6px; justify-content: flex-end; }
+@media (max-width: 560px) {
+  .sem-store { flex-direction: column; align-items: stretch; }
+  .sem-store-btns { justify-content: flex-start; }
+}

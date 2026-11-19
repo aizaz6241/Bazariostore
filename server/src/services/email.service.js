@@ -763,6 +763,28 @@ export async function sendCustomSellerEmail({ to, ...rest }) {
   }
 }
 
+/** 10. The store's login email was changed by the team: sent to the new and to the old address. */
+export async function sendLoginEmailChangedEmail({ to, name = 'Seller', storeName = '', newEmail = '', isNew = true }) {
+  const subject = isNew ? 'This is now your Bazario login email' : 'Your Bazario login email was changed';
+  const bodyContent = isNew
+    ? `
+      ${heading('success', 'Your login email is updated')}
+      <p>Hello <b>${esc(name)}</b>,</p>
+      <p>From now on, log in to Seller Central${storeName ? ` for <b>${esc(storeName)}</b>` : ''} with this email address:</p>
+      ${callout('success', `<p style="margin:0;font-size:15px;"><b>${esc(newEmail)}</b></p>`)}
+      <p>Your password is the same as before. All emails from Bazario will now come to this address.</p>
+      ${button('success', 'LOG IN TO SELLER CENTRAL →', sellerUrl('/seller/login'))}`
+    : `
+      ${heading('warning', 'Your login email was changed')}
+      <p>Hello <b>${esc(name)}</b>,</p>
+      <p>The login email of your Bazario store${storeName ? ` <b>${esc(storeName)}</b>` : ''} was changed to <b>${esc(newEmail)}</b>. This address will no longer receive store emails.</p>
+      ${callout('warning', '<p style="margin:0;">If you did not ask for this change, contact Bazario Support right away.</p>')}`;
+  const text = isNew
+    ? `Hello ${name},\n\nFrom now on, log in to Seller Central with: ${newEmail}\nYour password is the same as before.\n\n${sellerUrl('/seller/login')}`
+    : `Hello ${name},\n\nThe login email of your Bazario store was changed to ${newEmail}. If you did not ask for this change, contact Bazario Support right away.`;
+  return sendSellerEmail({ to, subject, preheader: subject, bodyContent, text });
+}
+
 export default {
   transporter,
   sendVerificationOtpEmail,
@@ -780,5 +802,6 @@ export default {
   sendDiamondOfferEmail,
   renderCustomSellerEmail,
   sendCustomSellerEmail,
+  sendLoginEmailChangedEmail,
   emailEnabled,
 };
