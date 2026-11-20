@@ -492,6 +492,7 @@ async function computeLedger() {
       note: tx.note || '',
       description: tx.description || '',
       processedBy: tx.processedBy || '',
+      forMonth: tx.forMonth || '',
     });
   }
 

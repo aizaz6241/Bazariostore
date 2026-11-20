@@ -5,8 +5,6 @@ import Member from '@/lib/models/Member';
 import SellerAssignment from '@/lib/models/SellerAssignment';
 import FinanceSplit from '@/lib/models/FinanceSplit';
 import RewardClaim from '@/lib/models/RewardClaim';
-import Lead from '@/lib/models/Lead';
-import WaNumber from '@/lib/models/WaNumber';
 import PushSubscription from '@/lib/models/PushSubscription';
 import { logFinance } from '@/lib/utils/financeLog';
 
@@ -22,8 +20,6 @@ import { logFinance } from '@/lib/utils/financeLog';
  *
  * Either way:
  *  - his stores become unassigned (assign them again on the Sellers page);
- *  - his open leads go back to "not given to anyone"; converted leads keep their history;
- *  - he is taken off the WhatsApp numbers he held;
  *  - his phone/push notifications stop.
  * Referral effects (no extra step needed, the ledger already works this way):
  *  - deleting a REFERRER: the members he brought get their full 100% from now on
@@ -71,38 +67,10 @@ export async function removeMember({ session, id }) {
     await SellerAssignment.deleteMany({ memberId: member._id });
   }
 
-  // 2. Open leads back to the pool, so nobody is told "this lead belongs to someone else"
-  const leadsRes = await Lead.updateMany(
-    { memberId: member._id, status: { $ne: 'converted' } },
-    {
-      $set: { memberId: null, memberName: '', assignedAt: null, assignedBy: null, waNumberId: null, lastActivityAt: now },
-      $push: {
-        history: {
-          $each: [{ at: now, type: 'unassigned', by: session._id, byName, text: `Taken back from ${member.name} (member deleted)` }],
-          $slice: -80,
-        },
-      },
-    }
-  );
-
-  // 3. WhatsApp numbers he held
-  const numbersRes = await WaNumber.updateMany(
-    { 'holders.memberId': member._id },
-    {
-      $pull: { holders: { memberId: member._id } },
-      $push: {
-        history: {
-          $each: [{ at: now, type: 'unlinked', by: session._id, byName, memberId: member._id, text: `Removed from ${member.name} (member deleted)` }],
-          $slice: -200,
-        },
-      },
-    }
-  );
-
-  // 4. No more notifications to his phone
+  // 2. No more notifications to his phone
   await PushSubscription.deleteMany({ memberId: member._id }).catch(() => {});
 
-  // 5. The account itself
+  // 3. The account itself
   if (keepRecord) {
     member.active = false;
     member.deletedAt = now;
@@ -118,8 +86,6 @@ export async function removeMember({ session, id }) {
   if (sellerCount) notes.push(`${sellerCount} ${sellerCount === 1 ? 'store' : 'stores'} unassigned`);
   if (referredCount) notes.push(`he had brought ${referredCount} ${referredCount === 1 ? 'member' : 'members'} — they now keep their full 100%`);
   if (referrer) notes.push(`he was brought by ${referrer.name} — ${referrer.name} stops earning from him`);
-  if (leadsRes.modifiedCount) notes.push(`${leadsRes.modifiedCount} open ${leadsRes.modifiedCount === 1 ? 'lead' : 'leads'} taken back`);
-  if (numbersRes.modifiedCount) notes.push(`removed from ${numbersRes.modifiedCount} WhatsApp ${numbersRes.modifiedCount === 1 ? 'number' : 'numbers'}`);
   if (keepRecord) notes.push('money history kept in finance');
 
   await logFinance({
@@ -147,8 +113,6 @@ export async function removeMember({ session, id }) {
     name: member.name,
     mode: keepRecord ? 'closed' : 'erased',
     sellers: sellerCount,
-    leads: leadsRes.modifiedCount || 0,
-    numbers: numbersRes.modifiedCount || 0,
     broughtMembers: referredCount,
     referrer: referrer ? referrer.name : '',
   };

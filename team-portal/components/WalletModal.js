@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLiveRefresh } from '@/components/LiveProvider';
 import { useAuth } from '@/components/AuthProvider';
+import PayoutPanel from '@/components/PayoutPanel';
 import {
   X,
   Wallet,
@@ -15,7 +16,6 @@ import {
   Clock,
   Shield,
   Award,
-  DollarSign,
   PlusCircle,
   Loader2,
   RefreshCw,
@@ -42,13 +42,8 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
   const [typeFilter, setTypeFilter] = useState('all'); // 'all', 'earnings', 'client_activity', 'payouts'
   const [currencyFilter, setCurrencyFilter] = useState('all'); // 'all', 'USDT', 'INR', 'PKR'
 
-  // Payout / Withdrawal Modal state
+  // Payout panel (month by month, or the whole balance)
   const [showPayoutForm, setShowPayoutForm] = useState(false);
-  const [payoutAmount, setPayoutAmount] = useState('');
-  const [payoutCurrency, setPayoutCurrency] = useState('USDT');
-  const [payoutNote, setPayoutNote] = useState('');
-  const [payoutLoading, setPayoutLoading] = useState(false);
-  const [payoutMsg, setPayoutMsg] = useState({ text: '', type: '' });
 
   const fetchWallet = async (selectedPeriod = period, start = customStart, end = customEnd, silent = false) => {
     try {
@@ -113,57 +108,12 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
     fetchWallet('custom', customStart, customEnd);
   };
 
-  // Submit Payout / Withdrawal
-  const handlePayoutSubmit = async (e) => {
-    e?.preventDefault();
-    if (!payoutAmount || Number(payoutAmount) <= 0) {
-      setPayoutMsg({ text: 'Please enter a valid payout amount', type: 'error' });
-      return;
-    }
-
-    try {
-      setPayoutLoading(true);
-      setPayoutMsg({ text: '', type: '' });
-      const token = localStorage.getItem('portal_token');
-
-      const res = await fetch('/api/wallet/payout', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          userId: memberId || data?.user?._id,
-          amount: Number(payoutAmount),
-          currency: payoutCurrency,
-          note: payoutNote.trim(),
-        }),
-      });
-
-      if (res.ok) {
-        const okData = await res.json().catch(() => ({}));
-        // A payout written for someone else waits for a second person: say so instead of "recorded"
-        setPayoutMsg({ text: okData.pendingApproval ? okData.message : 'Payout recorded successfully!', type: 'success' });
-        setPayoutAmount('');
-        setPayoutNote('');
-        setTimeout(() => setShowPayoutForm(false), okData.pendingApproval ? 4000 : 1500);
-        // Refresh statement data
-        fetchWallet();
-      } else {
-        const errData = await res.json();
-        setPayoutMsg({ text: errData.message || 'Failed to record payout', type: 'error' });
-      }
-    } catch (err) {
-      setPayoutMsg({ text: 'Network error recording payout', type: 'error' });
-    } finally {
-      setPayoutLoading(false);
-    }
-  };
-
   if (!isOpen) return null;
 
   const user = data?.user || {};
   const isAdmin = user.role === 'admin';
+  // A partner working on someone else's wallet (a member only ever sees and asks for his own)
+  const payeeIsOther = iAmAdmin && !!memberId && memberId !== 'undefined' && memberId !== 'null' && String(memberId) !== String(viewer?._id || '');
   const is50Inr = user.commissionLabel === 'inr_50';
   const balances = data?.balances || {
     balanceUSDT: 0,
@@ -505,81 +455,17 @@ export default function WalletModal({ isOpen, onClose, memberId = null, title = 
             )}
           </div>
 
-          {/* ── 4. Record Payout Drawer Form ── */}
+          {/* ── 4. Payout (month by month, or the whole balance) ── */}
           {showPayoutForm && (
-            <div className="bg-amber-50/70 border border-amber-200 p-4 rounded-2xl space-y-3 animate-scale-up">
-              <div className="flex items-center justify-between">
-                <h4 className="font-bold text-amber-900 text-xs sm:text-sm flex items-center space-x-1.5">
-                  <DollarSign className="w-4 h-4 text-amber-600" />
-                  <span>{iAmAdmin ? 'Record Official Payout / Withdrawal' : 'Request a Payout'}</span>
-                </h4>
-                <button onClick={() => setShowPayoutForm(false)} className="text-amber-700 hover:text-amber-900">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {!iAmAdmin && (
-                <p className="text-[11px] text-amber-900/80 font-medium">
-                  This sends a request to the admins. An admin pays you on Binance and approves it; only then is the
-                  amount taken from your wallet.
-                </p>
-              )}
-
-              {payoutMsg.text && (
-                <div className={`p-2.5 rounded-xl text-xs font-semibold ${payoutMsg.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-800'}`}>
-                  {payoutMsg.text}
-                </div>
-              )}
-
-              <form onSubmit={handlePayoutSubmit} className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 text-xs">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Amount</label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="any"
-                    required
-                    placeholder="e.g. 500"
-                    value={payoutAmount}
-                    onChange={(e) => setPayoutAmount(e.target.value)}
-                    className="w-full p-2 rounded-xl bg-white border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Currency</label>
-                  <select
-                    value={payoutCurrency}
-                    onChange={(e) => setPayoutCurrency(e.target.value)}
-                    className="w-full p-2 rounded-xl bg-white border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 font-semibold"
-                  >
-                    <option value="USDT">₮ USDT (Binance)</option>
-                  </select>
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                    {iAmAdmin ? 'Payout Note / Receipt / Method' : 'Where to send it (your Binance ID / note)'}
-                  </label>
-                  <div className="flex space-x-2">
-                    <input
-                      type="text"
-                      placeholder={iAmAdmin ? 'e.g. Binance TXID / Bank Transfer UTR: 991288' : 'e.g. Binance Pay ID 123456789'}
-                      value={payoutNote}
-                      onChange={(e) => setPayoutNote(e.target.value)}
-                      className="flex-1 p-2 rounded-xl bg-white border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    />
-                    <button
-                      type="submit"
-                      disabled={payoutLoading}
-                      className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shrink-0 transition flex items-center space-x-1"
-                    >
-                      {payoutLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span>{iAmAdmin ? 'Confirm' : 'Send Request'}</span>}
-                    </button>
-                  </div>
-                </div>
-              </form>
-            </div>
+            <PayoutPanel
+              key={memberId || 'me'}
+              memberId={payeeIsOther ? memberId : null}
+              viewerIsAdmin={iAmAdmin}
+              isSelf={!payeeIsOther}
+              payeeName={user.name || ''}
+              onClose={() => setShowPayoutForm(false)}
+              onDone={() => fetchWallet(period, customStart, customEnd, true)}
+            />
           )}
 
           {/* ── 5. Period Financial Summary Pills ── */}

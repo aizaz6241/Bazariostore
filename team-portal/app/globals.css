@@ -94,3 +94,11 @@ html [data-lk-theme='default'] {
   --lk-accent2: #15803d;
   --lk-accent-fg: #fff;
 }
+
+/* Horizontal chip rows that scroll by finger without showing a bar */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

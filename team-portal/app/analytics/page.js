@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '@/components/AuthProvider';
 import { useLiveRefresh, LiveBadge } from '@/components/LiveProvider';
 import { LineChart, LineLegend, DonutChart, colorForSlot } from '@/components/Charts';
+import MonthlyBreakdown from '@/components/MonthlyBreakdown';
 import { readCache, writeCache } from '@/lib/clientCache';
 import {
   eventsFromLedger,
@@ -606,6 +607,9 @@ export default function AnalyticsPage() {
                   </Card>
                 </div>
               )}
+
+              {/* ── Month by month / week by week (+ team payouts per month for partners) ── */}
+              <MonthlyBreakdown view={view} raw={raw} events={events} />
 
               {/* ── Day by day (the same numbers as the charts, as a table) ── */}
               <Card

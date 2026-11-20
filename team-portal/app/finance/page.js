@@ -22,10 +22,17 @@ import {
   Store,
   RotateCcw,
   Ban,
+  LayoutDashboard,
+  ListOrdered,
+  Send,
+  PiggyBank,
+  History,
+  ShieldCheck,
+  ChevronRight,
 } from 'lucide-react';
 import { computeSplit } from '@/lib/utils/financeSplit';
 import { useLiveRefresh, LiveBadge } from '@/components/LiveProvider';
-import { useApprovals, ApprovalsPanel, WaitingTag, HiddenEntries, ExcludedTestSellers, ActivityLog } from '@/components/FinanceControls';
+import { useApprovals, WaitingTag, HiddenEntries, ExcludedTestSellers, ActivityLog } from '@/components/FinanceControls';
 import { DonutChart, LineChart, LineLegend, BarList, colorForSlot } from '@/components/Charts';
 
 const fmt = (n, d = 2) =>
@@ -989,12 +996,12 @@ function ShareCard({ w, partner, reserveInUse, reserveCol, totalPlus }) {
 }
 
 const FINANCE_TABS = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'transactions', label: 'Transactions' },
-  { key: 'payouts', label: 'Payouts' },
-  { key: 'reserve', label: 'Reserve pool' },
-  { key: 'attention', label: 'Needs attention' },
-  { key: 'activity', label: 'Activity log' },
+  { key: 'overview', label: 'Overview', icon: LayoutDashboard },
+  { key: 'attention', label: 'Needs attention', short: 'Attention', icon: AlertTriangle },
+  { key: 'transactions', label: 'Transactions', icon: ListOrdered },
+  { key: 'payouts', label: 'Payouts', icon: Send },
+  { key: 'reserve', label: 'Reserve pool', short: 'Reserve', icon: PiggyBank },
+  { key: 'activity', label: 'Activity log', short: 'Activity', icon: History },
 ];
 const PAGE = 50;
 
@@ -1068,7 +1075,7 @@ export default function FinancePage() {
     if (isAdminUser) load();
   }, [isAdminUser, load]);
 
-  const { approvals, setApprovals } = useApprovals(isAdminUser, tick);
+  const { approvals } = useApprovals(isAdminUser, tick);
 
   // A deposit approved, funds added or adjusted on the seller website, or a request asked /
   // approved by the other partner: everything reloads by itself
@@ -1265,15 +1272,66 @@ export default function FinancePage() {
         </div>
       )}
 
-      {isAdminUser && (
-        <ApprovalsPanel
-          approvals={approvals}
-          onChanged={(next) => {
-            if (next) setApprovals(next);
-            load(true, true);
-            setTick((n) => n + 1);
-          }}
-        />
+      {/* ── Binance summary (first thing on the page) ── */}
+      {data && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200">
+            <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+              <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-600" /> Received from sellers
+            </span>
+            <p className="text-xl sm:text-2xl font-black text-emerald-600 mt-1">{usdt(t.inUSDT)}</p>
+            <p className="text-[11px] text-slate-500 mt-1">
+              {t.depositCount} deposits • ₹{fmt(t.inINR, 0)} INR
+            </p>
+          </div>
+          <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200">
+            <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+              <ArrowUpRight className="w-3.5 h-3.5 text-red-500" /> Used for seller withdrawals
+            </span>
+            <p className="text-xl sm:text-2xl font-black text-red-600 mt-1">{usdt(t.sellerOutUSDT)}</p>
+            <p className="text-[11px] text-slate-500 mt-1">{t.withdrawalCount} withdrawals paid</p>
+          </div>
+          <div className="bg-white p-4 sm:p-5 rounded-3xl border border-slate-200">
+            <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+              <Users className="w-3.5 h-3.5 text-amber-600" /> Paid out to team
+            </span>
+            <p className="text-xl sm:text-2xl font-black text-amber-600 mt-1">{usdt(t.payoutUSDT)}</p>
+            <p className="text-[11px] text-slate-500 mt-1">{data.payouts.length} payouts to members / partners</p>
+          </div>
+          <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-4 sm:p-5 rounded-3xl text-white">
+            <span className="text-[10px] uppercase font-bold text-emerald-400">In Binance now</span>
+            <p className="text-xl sm:text-3xl font-black mt-1">{usdt(t.balanceUSDT)}</p>
+            <p className={`text-[11px] mt-1 flex items-center gap-1 ${mismatch ? 'text-red-300' : 'text-emerald-300'}`}>
+              {mismatch ? <AlertTriangle className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
+              {mismatch
+                ? `Wallets${reserveInUse ? ' + reserve' : ''} add up to ${usdt((t.walletsUSDT || 0) + (t.reserveUSDT || 0) + (t.reserveOwedUSDT || 0))} (difference ${usdt(t.diffUSDT)})`
+                : reserveInUse
+                ? 'Matches all wallets + the reserve'
+                : 'Matches the sum of all wallets'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Approvals have their own page now: a short reminder here when something waits ── */}
+      {isAdminUser && approvals && ((approvals.waitingForMe || 0) > 0 || (approvals.pending || []).some((a) => a.canCancel)) && (
+        <a
+          href="/approvals"
+          className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-indigo-50 border border-indigo-200 hover:bg-indigo-100/70 transition"
+        >
+          <span className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-4 h-4" />
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-sm font-bold text-indigo-900">
+              {(approvals.waitingForMe || 0) > 0
+                ? `${approvals.waitingForMe} approval${approvals.waitingForMe === 1 ? '' : 's'} waiting for you`
+                : 'Your requests are waiting for the other partner'}
+            </span>
+            <span className="block text-[11px] text-indigo-800/80">Open Approvals</span>
+          </span>
+          <ChevronRight className="w-5 h-5 text-indigo-700 shrink-0" />
+        </a>
       )}
 
       {data && !data.partnersOk && (
@@ -1319,48 +1377,9 @@ export default function FinancePage() {
 
       {data && (
         <>
-          {/* ── Binance summary ── */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white p-5 rounded-3xl border border-slate-200">
-              <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
-                <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-600" /> Received from sellers
-              </span>
-              <p className="text-2xl font-black text-emerald-600 mt-1">{usdt(t.inUSDT)}</p>
-              <p className="text-[11px] text-slate-500 mt-1">
-                {t.depositCount} deposits • ₹{fmt(t.inINR, 0)} INR
-              </p>
-            </div>
-            <div className="bg-white p-5 rounded-3xl border border-slate-200">
-              <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
-                <ArrowUpRight className="w-3.5 h-3.5 text-red-500" /> Used for seller withdrawals
-              </span>
-              <p className="text-2xl font-black text-red-600 mt-1">{usdt(t.sellerOutUSDT)}</p>
-              <p className="text-[11px] text-slate-500 mt-1">{t.withdrawalCount} withdrawals paid</p>
-            </div>
-            <div className="bg-white p-5 rounded-3xl border border-slate-200">
-              <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
-                <Users className="w-3.5 h-3.5 text-amber-600" /> Paid out to team
-              </span>
-              <p className="text-2xl font-black text-amber-600 mt-1">{usdt(t.payoutUSDT)}</p>
-              <p className="text-[11px] text-slate-500 mt-1">{data.payouts.length} payouts to members / partners</p>
-            </div>
-            <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-5 rounded-3xl text-white">
-              <span className="text-[10px] uppercase font-bold text-emerald-400">In Binance now</span>
-              <p className="text-2xl sm:text-3xl font-black mt-1">{usdt(t.balanceUSDT)}</p>
-              <p className={`text-[11px] mt-1 flex items-center gap-1 ${mismatch ? 'text-red-300' : 'text-emerald-300'}`}>
-                {mismatch ? <AlertTriangle className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                {mismatch
-                  ? `Wallets${reserveInUse ? ' + reserve' : ''} add up to ${usdt((t.walletsUSDT || 0) + (t.reserveUSDT || 0) + (t.reserveOwedUSDT || 0))} (difference ${usdt(t.diffUSDT)})`
-                  : reserveInUse
-                  ? 'Matches all wallets + the reserve'
-                  : 'Matches the sum of all wallets'}
-              </p>
-            </div>
-          </div>
-
-          {/* ── Sections ── */}
-          <div className="sticky top-16 z-30 -mx-1 px-1 py-2 bg-slate-50/90 backdrop-blur">
-            <div className="flex gap-1.5 overflow-x-auto bg-white border border-slate-200 rounded-2xl p-1.5">
+          {/* ── Sections: all six visible on a phone (no sideways scrolling), one row on bigger screens ── */}
+          <div className="sm:sticky sm:top-16 z-30 sm:-mx-1 sm:px-1 sm:py-2 sm:bg-slate-50/90 sm:backdrop-blur">
+            <div className="grid grid-cols-3 sm:flex gap-1.5 bg-white border border-slate-200 rounded-2xl p-1.5">
               {FINANCE_TABS.map((x) => {
                 const n =
                   x.key === 'attention'
@@ -1370,20 +1389,32 @@ export default function FinancePage() {
                     : x.key === 'payouts'
                     ? data.payouts.length
                     : 0;
+                const on = tab === x.key;
+                const alert = x.key === 'attention' && n > 0;
+                const Icon = x.icon;
                 return (
                   <button
                     key={x.key}
                     type="button"
                     onClick={() => setTab(x.key)}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition ${
-                      tab === x.key ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+                    aria-current={on ? 'page' : undefined}
+                    className={`relative px-2 sm:px-3.5 py-2.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold whitespace-nowrap flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 transition ${
+                      on
+                        ? alert
+                          ? 'bg-amber-500 text-white shadow-sm'
+                          : 'bg-slate-900 text-white shadow-sm'
+                        : alert
+                        ? 'bg-amber-50 text-amber-800 ring-1 ring-amber-200 hover:bg-amber-100'
+                        : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
-                    {x.label}
+                    {Icon && <Icon className="w-4 h-4 sm:w-3.5 sm:h-3.5" />}
+                    <span className="sm:hidden">{x.short || x.label}</span>
+                    <span className="hidden sm:inline">{x.label}</span>
                     {n > 0 && (
                       <span
-                        className={`min-w-[18px] px-1 rounded-full text-[10px] text-center ${
-                          x.key === 'attention' ? 'bg-amber-500 text-white' : tab === x.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
+                        className={`absolute top-1 right-1 sm:static min-w-[18px] px-1 rounded-full text-[10px] leading-[18px] text-center ${
+                          alert ? (on ? 'bg-white text-amber-700' : 'bg-amber-500 text-white') : on ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'
                         }`}
                       >
                         {n}

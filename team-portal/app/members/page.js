@@ -1149,8 +1149,7 @@ export default function MembersPage() {
             </div>
 
             <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
-              Old deposits, shares, payouts and referral commissions are never erased, so the finance stays correct. Open leads go back to
-              unassigned and the person is removed from WhatsApp numbers.
+              Old deposits, shares, payouts and referral commissions are never erased, so the finance stays correct.
             </p>
 
             {deleteResult && (

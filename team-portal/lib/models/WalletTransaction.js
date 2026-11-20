@@ -84,6 +84,8 @@ const walletTransactionSchema = new mongoose.Schema(
     reversedAt: { type: Date, default: null },
     reversedBy: { type: String, default: '' },
     reverseReason: { type: String, default: '' },
+    // Payouts only: the month this payout is for ("2026-11"). A label, never part of any amount.
+    forMonth: { type: String, default: '' },
   },
   { timestamps: true }
 );

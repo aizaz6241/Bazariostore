@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAuthSession } from '@/lib/auth';
 import { submitAction, assertPayoutPossible } from '@/lib/utils/approvals';
 import { payoutNeedsApproval } from '@/lib/utils/approvalRules';
+import { cleanForMonth } from '@/lib/utils/payoutMonths';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +23,7 @@ export async function POST(req) {
     }
 
     const body = await req.json();
-    const { userId, amount, currency, note } = body;
+    const { userId, amount, currency, note, forMonth } = body;
     const isAdmin = session.role === 'admin';
 
     // Security: Only admins can record payouts for others. Members can only ask for themselves.
@@ -35,6 +36,9 @@ export async function POST(req) {
     if (!Number.isFinite(payload.amount) || payload.amount <= 0) throw new Error('Valid payout amount is required');
     if (String(payload.currency).toUpperCase() !== 'USDT') throw new Error('Payouts are recorded in USDT (Binance) only');
     if (!isAdmin) payload.selfRequest = true;
+    // The month this payout is for (monthly payouts). Only a label: amounts and checks do not change.
+    const month = cleanForMonth(forMonth);
+    if (month) payload.forMonth = month;
 
     const gated = payoutNeedsApproval({ recorderId: session._id, payeeId: targetUserId, recorderRole: session.role });
     if (gated) await assertPayoutPossible(payload); // refuse an impossible amount before asking anyone

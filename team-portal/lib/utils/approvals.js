@@ -9,6 +9,7 @@ import RewardClaim from '@/lib/models/RewardClaim';
 import { Seller } from '@/lib/models/SharedModels';
 import { invalidateLedger, buildLedger, updateFinanceEntry, createManualEntry } from '@/lib/utils/finance';
 import { getWalletData, getWalletBalancesMap, recordWalletPayout, insufficientText } from '@/lib/utils/wallet';
+import { isMonthKey, monthLabel } from '@/lib/utils/payoutMonths';
 import { assignSeller, currentOwnerOf, assertSellerCanMove } from '@/lib/utils/sellerAssign';
 import { logFinance, actorFromSession, flushFinanceAlertsSoon } from '@/lib/utils/financeLog';
 import { ACTION_LABEL, canDecide } from '@/lib/utils/approvalRules';
@@ -217,6 +218,7 @@ async function describe(action, payload) {
       summary: asked ? `${payee.name} asks for a payout of ₮${money(amount)}` : `Record a payout of ₮${money(amount)} to ${payee.name}`,
       details: [
         ...(asked ? ['Pay it on Binance first, then approve. Approving records the payout and lowers the wallet.'] : []),
+        ...(isMonthKey(p.forMonth) ? [`For: ${monthLabel(p.forMonth)}`] : []),
         ...(p.note ? [`Note: ${p.note}`] : []),
       ],
       targetId: `${sid(p.userId)}:${Date.now()}`,
@@ -543,9 +545,10 @@ async function performAction(action, payload, { requester, approver = null, appr
   } else if (action === 'payout') {
     // A request a member made for themselves is paid by the partner who approves it.
     const paidBy = p.selfRequest === true && approver ? approver.name : by;
-    const tx = await recordWalletPayout({ userId: p.userId, amount: Number(p.amount), currency: 'USDT', note: p.note || '', processedBy: paidBy });
+    const forMonth = isMonthKey(p.forMonth) ? p.forMonth : '';
+    const tx = await recordWalletPayout({ userId: p.userId, amount: Number(p.amount), currency: 'USDT', note: p.note || '', processedBy: paidBy, forMonth });
     out.result = tx;
-    out.after = { payoutId: sid(tx._id), userId: sid(p.userId), amountUSDT: num(p.amount), note: p.note || '' };
+    out.after = { payoutId: sid(tx._id), userId: sid(p.userId), amountUSDT: num(p.amount), note: p.note || '', ...(forMonth ? { forMonth } : {}) };
     out.entity = 'payout';
     out.entityId = sid(tx._id);
     try {

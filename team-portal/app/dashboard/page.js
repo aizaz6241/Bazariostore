@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/components/AuthProvider';
 import {
@@ -13,7 +13,6 @@ import {
   ArrowRight,
   ShieldCheck,
   MessageSquare,
-  Sparkles,
   CheckCircle2,
   AlertTriangle,
   Gift,
@@ -21,6 +20,9 @@ import {
   Trophy,
   BarChart3,
   Calendar,
+  RefreshCw,
+  ListChecks,
+  ChevronRight,
 } from 'lucide-react';
 import WalletModal from '@/components/WalletModal';
 import { readCache, writeCache } from '@/lib/clientCache';
@@ -42,6 +44,27 @@ export default function DashboardPage() {
   // My own wallet comes from the same quick call as the Wallet page, so the big number here changes
   // as fast as it does there (the full dashboard numbers take longer to add up).
   const [myWallet, setMyWallet] = useState(() => readCache(cacheKey)?.myWallet || null);
+  // Partners: the daily jobs (approvals, rewards, finance entries) counted in one small call
+  const [attention, setAttention] = useState(() => readCache(cacheKey)?.attention || null);
+
+  const attentionAt = useRef(0);
+  const loadAttention = () => {
+    if (Date.now() - attentionAt.current < 2000) return Promise.resolve(); // two callers at the same moment: ask once
+    attentionAt.current = Date.now();
+    return fetch('/api/attention', { headers: { Authorization: `Bearer ${localStorage.getItem('portal_token')}` }, cache: 'no-store' })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const json = await res.json();
+        setAttention(json);
+        writeCache(cacheKey, { ...(readCache(cacheKey) || {}), attention: json });
+      })
+      .catch(() => {});
+  };
+
+  // The login may finish after the first load: ask for the partners' to-do as soon as we know
+  useEffect(() => {
+    if (isAdmin) loadAttention();
+  }, [isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Each answer is shown as soon as it arrives: the wallet never waits for the slower team numbers.
   const fetchDashboardData = async () => {
@@ -82,7 +105,9 @@ export default function DashboardPage() {
       })
       .catch(() => {});
 
-    await Promise.all([walletJob, statsJob, rewardsJob]);
+    const attentionJob = user?.role === 'admin' ? loadAttention() : Promise.resolve();
+
+    await Promise.all([walletJob, statsJob, rewardsJob, attentionJob]);
   };
 
   useEffect(() => {
@@ -91,6 +116,47 @@ export default function DashboardPage() {
 
   // Deposits approved / funds added on the seller website show up here by themselves
   useLiveRefresh(fetchDashboardData);
+
+  // The "reload" button on the wallet card: fetch the newest numbers now, with a spinner
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshNow = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await fetchDashboardData();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // Coming back to the app (another tab / phone unlocked): take fresh numbers, at most every 15 s
+  const lastFocusLoad = useRef(0);
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastFocusLoad.current < 15000) return;
+      lastFocusLoad.current = Date.now();
+      fetchDashboardData();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const refreshButton = (dark = false) => (
+    <button
+      type="button"
+      onClick={refreshNow}
+      disabled={refreshing}
+      title="Reload my balance"
+      aria-label="Reload my balance"
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold transition disabled:opacity-70 ${
+        dark ? 'bg-amber-950/40 hover:bg-amber-950/60 border border-amber-300/30 text-amber-100' : 'bg-white/20 hover:bg-white/30 text-white'
+      }`}
+    >
+      <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+      <span>{refreshing ? 'Updating…' : 'Reload'}</span>
+    </button>
+  );
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -157,6 +223,103 @@ export default function DashboardPage() {
         <div className="absolute left-1/2 bottom-0 -mb-12 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
       </div>
 
+      {/* ─── ADMIN: today's to-do (so approvals, rewards and finance entries are never forgotten) ─── */}
+      {isAdmin && (() => {
+        const a = attention || {};
+        const items = [
+          {
+            key: 'approvals',
+            label: 'Approvals for you',
+            hint: (a.approvalsMine || 0) > 0 ? `${a.approvalsMine} of yours waiting for the other partner` : 'Waiting for your OK',
+            n: a.approvalsForMe,
+            href: '/approvals',
+            icon: ShieldCheck,
+            tone: 'indigo',
+          },
+          {
+            key: 'rewards',
+            label: 'Rewards to approve',
+            hint: 'Reward claims from the team',
+            n: a.rewardsPending ?? stats?.pendingClaimsCount,
+            href: '/rewards',
+            icon: Gift,
+            tone: 'amber',
+          },
+          {
+            key: 'finance',
+            label: 'Finance needs attention',
+            hint: 'Entries without a USDT amount or owner',
+            n: a.financePending,
+            href: '/finance?tab=attention',
+            icon: AlertTriangle,
+            tone: 'orange',
+          },
+          ...((a.unassignedSellers || 0) > 0
+            ? [{ key: 'owners', label: 'Sellers without owner', hint: 'Assign them on the Sellers page', n: a.unassignedSellers, href: '/sellers', icon: Users, tone: 'red' }]
+            : []),
+        ];
+        const known = items.filter((x) => typeof x.n === 'number');
+        const open = known.reduce((sum, x) => sum + x.n, 0);
+        const tones = {
+          indigo: { icon: 'bg-indigo-600', ring: 'border-indigo-200 bg-indigo-50/60 hover:bg-indigo-50', num: 'text-indigo-700' },
+          amber: { icon: 'bg-amber-500', ring: 'border-amber-200 bg-amber-50/60 hover:bg-amber-50', num: 'text-amber-700' },
+          orange: { icon: 'bg-orange-500', ring: 'border-orange-200 bg-orange-50/60 hover:bg-orange-50', num: 'text-orange-700' },
+          red: { icon: 'bg-red-500', ring: 'border-red-200 bg-red-50/60 hover:bg-red-50', num: 'text-red-700' },
+        };
+        return (
+          <div className="bg-white rounded-3xl border border-slate-200/80 p-4 sm:p-5">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h2 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
+                <ListChecks className="w-4 h-4 text-slate-500" /> Needs your attention
+              </h2>
+              {attention ? (
+                open > 0 ? (
+                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-slate-900 text-white">
+                    {open} open {open === 1 ? 'item' : 'items'}
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> All clear
+                  </span>
+                )
+              ) : (
+                <span className="text-[11px] text-slate-400">Checking…</span>
+              )}
+            </div>
+            <div className={`grid grid-cols-1 sm:grid-cols-2 ${items.length > 3 ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-2.5`}>
+              {items.map((x) => {
+                const waiting = typeof x.n === 'number' && x.n > 0;
+                const t = tones[x.tone];
+                const Icon = x.icon;
+                return (
+                  <Link
+                    key={x.key}
+                    href={x.href}
+                    className={`group flex items-center gap-3 rounded-2xl border px-3.5 py-3 transition ${
+                      waiting ? t.ring : 'border-slate-200 bg-white hover:bg-slate-50'
+                    }`}
+                  >
+                    <span
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${waiting ? `${t.icon} text-white` : 'bg-slate-100 text-slate-400'}`}
+                    >
+                      <Icon className="w-5 h-5" />
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-xs font-bold text-slate-800 truncate">{x.label}</span>
+                      <span className="block text-[11px] text-slate-500 truncate">{waiting ? x.hint : 'Nothing waiting'}</span>
+                    </span>
+                    <span className={`text-2xl font-black tabular-nums ${waiting ? t.num : 'text-slate-300'}`}>
+                      {typeof x.n === 'number' ? x.n : '–'}
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 shrink-0" />
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ─── ADMIN: Operational Wallet & Profit Share Card ─── */}
       {isAdmin && (
         <div className="bg-gradient-to-br from-amber-600 via-amber-700 to-orange-800 rounded-3xl p-5 sm:p-7 text-white shadow-xl shadow-amber-700/20 relative overflow-hidden">
@@ -170,6 +333,7 @@ export default function DashboardPage() {
                 <span className="text-xs bg-amber-950/40 border border-amber-300/30 text-amber-200 px-2 py-0.5 rounded-full">
                   75% own sellers • 25% others
                 </span>
+                {refreshButton(true)}
               </div>
 
               <div className="mt-3 flex items-baseline gap-2 flex-wrap">
@@ -285,9 +449,7 @@ export default function DashboardPage() {
                     <Wallet className="w-4 h-4 text-emerald-200" />
                     <span>My Wallet Balance</span>
                   </span>
-                  <span className="text-[11px] bg-white/20 px-2 py-0.5 rounded-full text-white font-medium">
-                    Real Binance USDT
-                  </span>
+                  {refreshButton()}
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-baseline gap-2 sm:gap-3">
@@ -653,7 +815,7 @@ export default function DashboardPage() {
       )}
 
       {/* Quick Access Modules Navigation */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Chat Module */}
         <Link
           href="/chat"
@@ -668,24 +830,6 @@ export default function DashboardPage() {
             </h4>
             <p className="text-xs text-slate-500 mt-0.5">
               WhatsApp-style group discussion and secure 1-on-1 personal chat with voice notes & pictures.
-            </p>
-          </div>
-        </Link>
-
-        {/* Models Module */}
-        <Link
-          href="/models"
-          className="group bg-white p-5 rounded-3xl border border-slate-200/80 hover:border-purple-300 hover:shadow-md transition-all flex items-start space-x-4"
-        >
-          <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0 group-hover:bg-purple-600 group-hover:text-white transition-colors">
-            <Sparkles className="w-6 h-6" />
-          </div>
-          <div className="flex-1">
-            <h4 className="font-bold text-slate-900 group-hover:text-purple-700 transition">
-              Model Profiles & Photos
-            </h4>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Access full model biographies, age, location, and download unlimited high-resolution pictures.
             </p>
           </div>
         </Link>

@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { ShieldCheck, Check, X, Clock, History, ChevronDown, ChevronRight, Loader2, Undo2, FlaskConical } from 'lucide-react';
+import { ShieldCheck, History, ChevronDown, ChevronRight, Undo2, FlaskConical } from 'lucide-react';
 
 /**
  * Screens of the two-person approval system and the finance activity log:
- *   <ApprovalsPanel />      what is waiting for a second person (+ last decisions)
+ *   (the approvals list itself has its own page: app/approvals, components/ApprovalsBoard.js)
  *   <ActivityLog />         every finance action, newest first, read-only
  *   <HiddenEntries />       entries marked "no real money" (still visible, can be brought back)
  *   <ExcludedTestSellers /> money movements of test accounts (never counted, always listed)
@@ -39,202 +39,18 @@ export function useApprovals(enabled, tick) {
   return { approvals, setApprovals, reloadApprovals: load };
 }
 
-async function sendDecision(id, decision, note = '') {
+export async function sendDecision(id, decision, note = '') {
   const res = await fetch('/api/finance/approvals', { method: 'POST', headers: authHeaders(), body: JSON.stringify({ id, decision, note }) });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.message || 'Could not save the decision');
   return json;
 }
 
-const STATUS_STYLE = {
+export const STATUS_STYLE = {
   approved: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   rejected: 'bg-red-50 text-red-700 border-red-200',
   cancelled: 'bg-slate-100 text-slate-600 border-slate-200',
 };
-
-// one colour per kind of request, so a long list is easy to scan
-const ACTION_TONE = (action) => {
-  if (['payout', 'payout_reverse'].includes(action)) return { bar: 'bg-sky-500', chip: 'bg-sky-50 text-sky-800 border-sky-200' };
-  if (['reserve_add', 'reserve_take'].includes(action)) return { bar: 'bg-violet-500', chip: 'bg-violet-50 text-violet-800 border-violet-200' };
-  if (['bonus_reverse', 'bonus_move', 'count_bonus'].includes(action)) return { bar: 'bg-amber-500', chip: 'bg-amber-50 text-amber-800 border-amber-200' };
-  if (['admin_create', 'admin_update', 'admin_delete', 'member_create'].includes(action)) return { bar: 'bg-slate-700', chip: 'bg-slate-100 text-slate-800 border-slate-300' };
-  if (['skip', 'manual_delete', 'fix_deposit'].includes(action)) return { bar: 'bg-red-500', chip: 'bg-red-50 text-red-800 border-red-200' };
-  return { bar: 'bg-indigo-500', chip: 'bg-indigo-50 text-indigo-800 border-indigo-200' };
-};
-
-export function ApprovalsPanel({ approvals, onChanged }) {
-  const [busy, setBusy] = useState('');
-  const [msg, setMsg] = useState({ text: '', bad: false });
-  const [view, setView] = useState('');
-
-  if (!approvals) return null;
-  const pending = approvals.pending || [];
-  const recent = approvals.recent || [];
-  if (pending.length === 0 && recent.length === 0) return null;
-
-  const forMe = pending.filter((a) => a.canApprove);
-  const mine = pending.filter((a) => a.canCancel);
-  const others = pending.filter((a) => !a.canApprove && !a.canCancel);
-  const tabs = [
-    { key: 'forme', label: 'Needs your approval', list: forMe, accent: true },
-    { key: 'mine', label: 'Sent by you', list: mine },
-    ...(others.length ? [{ key: 'others', label: 'Other waiting', list: others }] : []),
-    { key: 'decided', label: 'Decided', list: recent },
-  ];
-  const current = view || (forMe.length ? 'forme' : mine.length ? 'mine' : others.length ? 'others' : 'decided');
-  const shown = tabs.find((t) => t.key === current) || tabs[0];
-
-  const decide = async (a, decision) => {
-    if (decision === 'approve' && !window.confirm(`Approve this?\n\n${a.summary}\n\nIt will be applied to the ledger now.`)) return;
-    if (decision === 'cancel' && !window.confirm(`Cancel your request?\n\n${a.summary}`)) return;
-    let note = '';
-    if (decision === 'reject') {
-      note = window.prompt('Reason for rejecting (optional):', '');
-      if (note === null) return;
-    }
-    try {
-      setBusy(a.id);
-      setMsg({ text: '', bad: false });
-      const json = await sendDecision(a.id, decision, note);
-      setMsg({ text: json.message, bad: false });
-      onChanged?.(json.approvals);
-    } catch (e) {
-      setMsg({ text: e.message, bad: true });
-      onChanged?.();
-    } finally {
-      setBusy('');
-    }
-  };
-
-  return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="px-4 sm:px-5 py-3 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2">
-        <div className="font-bold text-slate-900 text-sm flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-indigo-600" />
-          <span>Approvals</span>
-          {forMe.length > 0 && (
-            <span className="px-2 py-0.5 rounded-full bg-indigo-600 text-white text-[10px] font-bold">{forMe.length} waiting for you</span>
-          )}
-        </div>
-        <span className="text-[11px] text-slate-500">A request changes nothing until the other partner approves it.</span>
-      </div>
-
-      <div className="px-4 sm:px-5 pt-3 flex gap-1 overflow-x-auto">
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setView(t.key)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition ${
-              current === t.key ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            {t.label}
-            <span
-              className={`text-[10px] px-1.5 rounded-full ${
-                current === t.key ? 'bg-white/20 text-white' : t.accent && t.list.length ? 'bg-indigo-600 text-white' : 'bg-white text-slate-500'
-              }`}
-            >
-              {t.list.length}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      {msg.text && (
-        <div className={`mx-4 sm:mx-5 mt-3 px-3 py-2 rounded-xl text-xs font-semibold ${msg.bad ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-800'}`}>{msg.text}</div>
-      )}
-
-      <div className="p-4 sm:p-5 space-y-2">
-        {shown.list.length === 0 && (
-          <div className="text-xs text-slate-400 py-4 text-center">
-            {current === 'forme' ? 'Nothing is waiting for you.' : current === 'mine' ? 'You have no request waiting.' : 'Nothing here.'}
-          </div>
-        )}
-
-        {current !== 'decided' &&
-          shown.list.map((a) => {
-            const tone = ACTION_TONE(a.action);
-            return (
-              <div key={a.id} className="relative rounded-xl border border-slate-200 bg-white overflow-hidden">
-                <span className={`absolute left-0 top-0 bottom-0 w-1 ${tone.bar}`} />
-                <div className="pl-4 pr-3 py-3 flex flex-col md:flex-row md:items-center gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${tone.chip}`}>{a.label}</span>
-                      {a.source === 'admin-panel' && <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 text-[9px] font-bold uppercase">Store admin</span>}
-                    </div>
-                    <div className="font-semibold text-slate-900 text-[13px] mt-1.5 leading-snug">{a.summary}</div>
-                    {(a.details || []).map((line, i) => (
-                      <div key={i} className="text-[11px] text-slate-500 mt-0.5">
-                        {line}
-                      </div>
-                    ))}
-                    {a.action === 'payout' && typeof a.walletNow === 'number' && (
-                      <div className={`text-[11px] mt-1 font-semibold ${a.walletNow + 0.005 < a.amount ? 'text-red-700' : 'text-slate-600'}`}>
-                        Wallet now: ₮{a.walletNow.toLocaleString('en-US', { maximumFractionDigits: 2 })}
-                        {a.walletNow + 0.005 < a.amount ? ' — less than this payout. Do not send the money: it cannot be recorded.' : ''}
-                      </div>
-                    )}
-                    <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
-                      <Clock className="w-3 h-3" /> {when(a.createdAt)} · asked by <b className="text-slate-600">{a.requestedBy}</b>
-                    </div>
-                    {a.lastError && <div className="text-[11px] text-red-700 mt-1 font-semibold">Last try failed: {a.lastError}</div>}
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {a.canApprove && (
-                      <>
-                        <button
-                          disabled={busy === a.id}
-                          onClick={() => decide(a, 'approve')}
-                          className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 disabled:opacity-60"
-                        >
-                          {busy === a.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />} Approve
-                        </button>
-                        <button
-                          disabled={busy === a.id}
-                          onClick={() => decide(a, 'reject')}
-                          className="px-3 py-2 rounded-lg bg-white border border-red-200 text-red-700 text-xs font-bold flex items-center gap-1 disabled:opacity-60 hover:bg-red-50"
-                        >
-                          <X className="w-3.5 h-3.5" /> Reject
-                        </button>
-                      </>
-                    )}
-                    {a.canCancel && (
-                      <>
-                        <span className="text-[11px] text-slate-400 mr-1 hidden sm:inline">Waiting for the other partner</span>
-                        <button
-                          disabled={busy === a.id}
-                          onClick={() => decide(a, 'cancel')}
-                          className="px-3 py-2 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs font-bold disabled:opacity-60 hover:bg-slate-50"
-                        >
-                          Cancel
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-
-        {current === 'decided' && shown.list.length > 0 && (
-          <div className="divide-y divide-slate-100 rounded-xl border border-slate-200">
-            {shown.list.map((a) => (
-              <div key={a.id} className="px-3 py-2.5 text-xs flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3">
-                <span className={`self-start sm:self-auto px-2 py-0.5 rounded-full border font-bold uppercase text-[9px] shrink-0 ${STATUS_STYLE[a.status] || STATUS_STYLE.cancelled}`}>{a.status}</span>
-                <span className="text-slate-800 font-semibold flex-1 min-w-0">{a.summary}</span>
-                <span className="text-[11px] text-slate-400 shrink-0">
-                  {a.requestedBy} → {a.status} by {a.decidedBy || '—'} · {when(a.decidedAt)}
-                  {a.decisionNote ? ` · “${a.decisionNote}”` : ''}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 /** Small tag for a row that has a request waiting. */
 export function WaitingTag({ approval }) {

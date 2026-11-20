@@ -2,17 +2,15 @@ import {
   LayoutDashboard,
   MessageSquare,
   Users,
-  Image as ImageIcon,
   Award,
   UserCheck,
   Wallet,
   Landmark,
   BarChart3,
   UserPlus,
-  Target,
-  Smartphone,
   Briefcase,
   PieChart,
+  ShieldCheck,
 } from 'lucide-react';
 
 /**
@@ -31,7 +29,8 @@ export function buildNav(user) {
     { href: '/dashboard', label: 'Dashboard', short: 'Home', icon: LayoutDashboard },
     { href: '/chat', label: 'Chats', icon: MessageSquare },
     { href: '/sellers', label: 'Sellers', icon: Users },
-    { href: '/leads', label: 'Leads', icon: Target },
+    // Partners: every request waiting for the second partner (was on top of the Finance page)
+    ...(isAdmin ? [{ href: '/approvals', label: 'Approvals', icon: ShieldCheck }] : []),
   ];
 
   const groups = [
@@ -44,8 +43,6 @@ export function buildNav(user) {
         // "My Members": ONLY a member who has brought at least one member sees it (his own
         // referral commission). Partners never bring members: they see who brought whom on Members.
         ...(!isAdmin && user.hasReferrals ? [{ href: '/my-members', label: 'My Members', icon: UserPlus }] : []),
-        ...(isAdmin ? [{ href: '/numbers', label: 'WhatsApp Numbers', icon: Smartphone }] : []),
-        { href: '/models', label: 'Models', icon: ImageIcon },
       ],
     },
     {
@@ -69,7 +66,7 @@ export function buildNav(user) {
   return { primary, groups };
 }
 
-/** Is this link the page we are on (also for pages below it, e.g. /leads/123)? */
+/** Is this link the page we are on (also for pages below it, e.g. /sellers/123)? */
 export function isActivePath(pathname, href) {
   if (!pathname) return false;
   return pathname === href || pathname.startsWith(`${href}/`);

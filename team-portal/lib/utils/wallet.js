@@ -4,6 +4,7 @@ import Member from '@/lib/models/Member';
 import WalletTransaction from '@/lib/models/WalletTransaction';
 import { buildLedger, invalidateLedger, FINANCE_START } from '@/lib/utils/finance';
 import { r2 } from '@/lib/utils/financeSplit';
+import { cleanForMonth, monthLabel } from '@/lib/utils/payoutMonths';
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
@@ -280,6 +281,8 @@ export async function getWalletData({ userId, period = 'all', startDate = null, 
       description: p.description || `Payout of ₮${p.amountUSDT.toFixed(2)} USDT`,
       details: p.note || 'Payout withdrawal completed',
       date: new Date(p.date),
+      forMonth: p.forMonth || '',
+      gift: p.gift === true,
     });
   }
 
@@ -493,9 +496,11 @@ export async function recordWalletPayout({
   currency = 'USDT',
   note = '',
   processedBy = 'Admin',
+  forMonth = '',
 }) {
   await connectDB();
 
+  const month = cleanForMonth(forMonth); // only a label: the checks below are the same with or without it
   const numAmount = Number(amount);
   if (!numAmount || numAmount <= 0) {
     throw new Error('Valid payout amount is required');
@@ -528,10 +533,11 @@ export async function recordWalletPayout({
     amount: numAmount,
     amountUSDT: numAmount,
     currency: cleanCurrency,
-    description: `Payout / Withdrawal of ₮ ${numAmount.toLocaleString()} USDT`,
+    description: `Payout / Withdrawal of ₮ ${numAmount.toLocaleString()} USDT${month ? ` for ${monthLabel(month)}` : ''}`,
     note: note.trim() || 'Official wallet withdrawal payout',
     processedBy,
     date: new Date(),
+    forMonth: month,
   });
 
   // Two payouts written at the very same moment both pass the check above (each sees the balance
