@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { resetSocketSession } from './socket.js';
+import { sellerActivityLogout } from './utils/sellerActivity.js';
 
 const Ctx = createContext(null);
 
@@ -156,6 +157,7 @@ export function AuthProvider({ children }) {
   };
 
   const logoutSeller = () => {
+    sellerActivityLogout(); // admin panel's device list: this device logged out
     localStorage.removeItem('ng_seller_token');
     localStorage.removeItem('ng_seller');
     resetSocketSession();

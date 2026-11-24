@@ -18,6 +18,7 @@ import { enablePush, pushState } from '../utils/push.js';
 import { NotifBell, NotifPrompt } from './SellerNotifications.jsx';
 import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
 import { TourProvider, HelpButton } from './onboarding/TourProvider.jsx';
+import { useSellerActivity } from '../utils/sellerActivity.js';
 
 const SELLER_NAV = [
   { to: '/seller', icon: 'grid', label: 'Dashboard', end: true },
@@ -245,6 +246,9 @@ export default function SellerLayout() {
     socket.on('connect', join);
     return () => socket.off('connect', join);
   }, [token, seller?._id]);
+
+  // admin panel's Activity & Devices: which page / device this seller is on (nothing shown here)
+  useSellerActivity(token, location.pathname);
 
   if (!token) {
     return <Navigate to="/seller/login" replace />;

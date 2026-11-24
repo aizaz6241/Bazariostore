@@ -63,6 +63,8 @@ import userRoutes from './routes/user.js';
 import { makeAnyLogin } from './routes/anyLogin.js';
 import chatRoutes, { handleAutoReply } from './routes/chat.js';
 import sellerRoutes from './routes/sellers.js';
+import sellerActivityRoutes from './routes/sellerActivity.js';
+import { sellerActivityTracker } from './services/sellerActivity.js';
 import treasuryRoutes from './routes/treasury.js';
 import backupRoutes from './routes/backup.js';
 import adminHubRoutes from './routes/adminHub.js';
@@ -246,6 +248,9 @@ app.get(['/api/health', '/health'], (req, res) => {
   // `build` / `startedAt` show which version of the code is live (Render sets RENDER_GIT_COMMIT)
   res.status(dbConnectedOnce ? 200 : 503).json({ ok: dbConnectedOnce, name: 'Bazario Multi-Vendor Marketplace API', db: connected ? 'connected' : 'not connected', build: String(process.env.RENDER_GIT_COMMIT || '').slice(0, 7), startedAt: SERVER_STARTED_AT });
 });
+// seller activity log + devices (admin panel only): listens to logins / important seller actions
+app.use(sellerActivityTracker);
+app.use(['/api/seller-activity', '/seller-activity'], sellerActivityRoutes);
 app.use(['/api/products', '/products'], productRoutes);
 app.use(['/api/categories', '/categories'], categoryRoutes);
 app.use(['/api/orders', '/orders'], orderRoutes);

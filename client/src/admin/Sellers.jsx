@@ -6,6 +6,7 @@ import VerifiedStoreBadge from '../components/VerifiedStoreBadge.jsx';
 import useLiveReload from '../useLiveReload.js';
 import DiamondUpgradeModal from './DiamondUpgradeModal.jsx';
 import HealthPanel from './health/HealthPanel.jsx';
+import SellerActivityPanel from './SellerActivityPanel.jsx';
 import { Nick, NickEditor, useNicknames } from './nicknames.jsx';
 
 // seller cards shown at a time ("Show more" adds the next batch)
@@ -55,7 +56,7 @@ export default function Sellers() {
   const [kycDocs, setKycDocs] = useState({ sellerId: '', docs: {}, loading: false, done: 0, total: 0, error: '' });
   const [profileTab, setProfileTab] = useState('account'); // 'account' | 'documents' | 'dashboard' | 'upgrades'
   const [profileUpgradeSubTab, setProfileUpgradeSubTab] = useState('compliance'); // 'compliance' | 'warning' | 'health' | 'limits'
-  const [dashboardSubTab, setDashboardSubTab] = useState('products'); // 'products' | 'orders'
+  const [dashboardSubTab, setDashboardSubTab] = useState('products'); // 'products' | 'orders' | 'activity'
   const [productSearch, setProductSearch] = useState('');
   const [orderFilter, setOrderFilter] = useState('unconfirmed'); // 'unconfirmed' | 'all' | 'progress' | 'delivered' | 'cancelled'
 
@@ -2181,7 +2182,19 @@ export default function Sellers() {
                               </span>
                             )}
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => setDashboardSubTab('activity')}
+                            className={`spf-subtab ${dashboardSubTab === 'activity' ? 'active' : ''}`}
+                          >
+                            🛡️ Activity &amp; Devices
+                          </button>
                         </div>
+
+                        {/* ACTIVITY LOG + SIGNED-IN DEVICES (admin only) */}
+                        {dashboardSubTab === 'activity' && (
+                          <SellerActivityPanel sellerId={profileSeller._id} storeName={profileSeller.storeName} />
+                        )}
 
                         {/* LISTED PRODUCTS VIEW */}
                         {dashboardSubTab === 'products' && (
