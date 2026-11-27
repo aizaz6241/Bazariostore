@@ -5,6 +5,7 @@ import { getLiveVersion, hashOf } from '@/lib/utils/liveVersion';
 import { flushFinanceAlerts } from '@/lib/utils/financeLog';
 import { syncPaymentProofs } from '@/lib/utils/paymentProofs';
 import { rememberPortalUrl } from '@/lib/utils/portalTick';
+import { retryDostiKhata } from '@/lib/utils/dostiKhata';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,6 +41,9 @@ export async function GET(req) {
     // A new deposit gets its draft card in the "Payment Proofs" group here (does nothing unless
     // the ledger changed since the last look; never holds the reply long).
     await Promise.race([syncPaymentProofs(ledger), new Promise((resolve) => setTimeout(resolve, 1500))]).catch(() => 0);
+
+    // The owner's payouts that Dosti Khata did not take yet (asleep / down) are sent again here.
+    await Promise.race([retryDostiKhata(), new Promise((resolve) => setTimeout(resolve, 1500))]).catch(() => 0);
 
     return NextResponse.json(
       { v: hashOf([ledger.sig, version.stable]), at: Date.now() },

@@ -18,6 +18,7 @@ import { isFinancePartner } from '@/lib/partners';
 import { inspectDepositFix, fixDeposit, ownerWords } from '@/lib/utils/depositFix';
 import { checkReferral } from '@/lib/utils/referralRules';
 import { describeDiamondUpgrade, applyDiamondUpgrade } from '@/lib/utils/diamondFee';
+import { isDostiKhataOwner, dostiKhataPayoutRecorded, dostiKhataPayoutReversed } from '@/lib/utils/dostiKhata';
 
 /**
  * TWO-PERSON APPROVALS
@@ -551,6 +552,8 @@ async function performAction(action, payload, { requester, approver = null, appr
     out.after = { payoutId: sid(tx._id), userId: sid(p.userId), amountUSDT: num(p.amount), note: p.note || '', ...(forMonth ? { forMonth } : {}) };
     out.entity = 'payout';
     out.entityId = sid(tx._id);
+    // the owner's own payout also goes into his Dosti Khata tracker (never blocks or fails this)
+    if (isDostiKhataOwner(p.userId)) await dostiKhataPayoutRecorded(tx._id);
     try {
       const { sendPushToUser } = await import('@/lib/utils/push');
       sendPushToUser(p.userId, {
@@ -681,6 +684,8 @@ async function performAction(action, payload, { requester, approver = null, appr
     out.after = { ...out.before, counted: false, reason: String(p.reason || '').trim() };
     out.entity = 'payout';
     out.entityId = sid(tx._id);
+    // taken back in the owner's Dosti Khata tracker too (never blocks or fails this)
+    if (isDostiKhataOwner(tx.userId)) await dostiKhataPayoutReversed(tx._id);
     try {
       const { sendPushToUser } = await import('@/lib/utils/push');
       sendPushToUser(tx.userId, {

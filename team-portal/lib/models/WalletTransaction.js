@@ -86,6 +86,16 @@ const walletTransactionSchema = new mongoose.Schema(
     reverseReason: { type: String, default: '' },
     // Payouts only: the month this payout is for ("2026-11"). A label, never part of any amount.
     forMonth: { type: String, default: '' },
+    // Owner's payouts only: copy sent to his Dosti Khata tracker (lib/utils/dostiKhata.js).
+    // create / reverse: 'pending' | 'done' | 'failed'. Never part of any amount.
+    dkSync: {
+      create: { type: String },
+      reverse: { type: String },
+      attempts: { type: Number },
+      nextAt: { type: Date },
+      lastAt: { type: Date },
+      lastError: { type: String },
+    },
   },
   { timestamps: true }
 );
