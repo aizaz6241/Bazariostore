@@ -2,10 +2,14 @@ import WalletTransaction from '@/lib/models/WalletTransaction';
 import { monthLabel, isMonthKey } from '@/lib/utils/payoutMonths';
 
 /**
- * DOSTI KHATA SYNC — the owner's own payouts go into his personal expense tracker.
+ * DOSTI KHATA SYNC — a linked person's own payouts go into HIS OWN Dosti Khata tracker.
  *
- * Only ONE wallet is ever sent: the portal member whose id is DOSTI_KHATA_OWNER_ID (a fixed
- * database id, never a name). Payouts of the other partner or of any member are never sent.
+ * Every linked person has his own Dosti Khata key; the key decides whose tracker it lands in.
+ * A payout is sent only with the key of the wallet it came from. Nobody without his own key is
+ * ever sent, and no other person's key is ever used (no default / fallback key).
+ * Links (fixed database ids, never names):
+ *   DOSTI_KHATA_LINKS = <memberId>=<dk_key>;<memberId>=<dk_key>;...
+ *   (the older DOSTI_KHATA_OWNER_ID + DOSTI_KHATA_KEY pair still counts as one link)
  *
  *   payout recorded (after approval)  -> POST /api/hook/payout          { id: bz_payout_<tx id>, ... }
  *   payout reversed (after approval)  -> POST /api/hook/payout/reverse  { id: same }
@@ -15,8 +19,8 @@ import { monthLabel, isMonthKey } from '@/lib/utils/payoutMonths';
  * payout row) and the portal's live check (app/api/live) sends it again later, with growing gaps.
  * Dosti Khata is idempotent (same id twice = "duplicate"), so sending again is always safe.
  *
- * Settings (Vercel, team portal): DOSTI_KHATA_KEY, DOSTI_KHATA_OWNER_ID, optional DOSTI_KHATA_URL.
- * If the key or the owner id is missing, this does nothing at all.
+ * Settings (Vercel, team portal): DOSTI_KHATA_LINKS (or the older pair), optional DOSTI_KHATA_URL.
+ * With no valid link this does nothing at all.
  */
 
 const DEFAULT_URL = 'https://dosti-khata.onrender.com';
@@ -26,18 +30,26 @@ const RETRY_EVERY_MS = 60 * 1000; // live check: look for pending rows at most o
 const MAX_GAP_MS = 6 * 60 * 60 * 1000;
 
 function config() {
-  const key = String(process.env.DOSTI_KHATA_KEY || '').trim();
-  const ownerId = String(process.env.DOSTI_KHATA_OWNER_ID || '').trim();
   let url = String(process.env.DOSTI_KHATA_URL || DEFAULT_URL).trim().replace(/\/+$/, '');
-  if (!/^https:\/\//i.test(url)) url = ''; // never send the key over plain http
-  if (!key || !url || !/^[a-f0-9]{24}$/i.test(ownerId)) return null;
-  return { key, ownerId, url };
+  if (!/^https:\/\//i.test(url)) return null; // never send a key over plain http
+  const links = new Map(); // member id -> his own key
+  const add = (id, key) => {
+    id = String(id || '').trim().toLowerCase();
+    key = String(key || '').trim();
+    if (/^[a-f0-9]{24}$/.test(id) && /^dk_[a-f0-9]{48}$/.test(key)) links.set(id, key);
+  };
+  add(process.env.DOSTI_KHATA_OWNER_ID, process.env.DOSTI_KHATA_KEY);
+  for (const part of String(process.env.DOSTI_KHATA_LINKS || '').split(/[;,\s]+/)) {
+    const [id, key] = part.split('=');
+    add(id, key);
+  }
+  return links.size ? { url, links } : null;
 }
+const keyFor = (c, userId) => (c && userId ? c.links.get(String(userId).toLowerCase()) || '' : '');
 
-/** Is this wallet the owner's own wallet? (the only one that is ever sent) */
+/** Does this wallet have its own Dosti Khata link? (only those are ever sent) */
 export function isDostiKhataOwner(userId) {
-  const c = config();
-  return Boolean(c && userId && String(userId) === c.ownerId);
+  return Boolean(keyFor(config(), userId));
 }
 
 const hookId = (tx) => `bz_payout_${String(tx._id)}`;
@@ -71,13 +83,13 @@ function reverseBody(tx) {
   };
 }
 
-async function post(c, path, body, waitMs) {
+async function post(c, key, path, body, waitMs) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), waitMs);
   try {
     const res = await fetch(`${c.url}${path}`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${c.key}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal: ctrl.signal,
       cache: 'no-store',
@@ -99,7 +111,7 @@ const outcome = (status) => (status >= 200 && status < 300 ? 'done' : status ===
 async function alertOwner(c, tx, what, status, msg) {
   try {
     const { sendPushToUser } = await import('@/lib/utils/push');
-    await sendPushToUser(c.ownerId, {
+    await sendPushToUser(String(tx.userId), { // only the person whose payout it is
       title: '⚠️ Dosti Khata: payout not added',
       body: `${what} of ₮${(Number(tx.amountUSDT) || Number(tx.amount) || 0).toFixed(2)} was not accepted by Dosti Khata (${status}${msg ? `: ${msg}` : ''}). Add it there by hand.`,
       url: '/wallet',
@@ -112,13 +124,15 @@ async function alertOwner(c, tx, what, status, msg) {
 
 /** Send whatever is still pending for one payout row (create first, then reverse). */
 async function syncRow(c, tx, waitMs) {
+  const key = keyFor(c, tx.userId); // ALWAYS the key of this payout's own wallet
+  if (!key) return; // link removed: send nothing (never with anyone else's key)
   const s = tx.dkSync || {};
   const set = {};
   let retry = false;
   let lastError = '';
 
   if (s.create === 'pending') {
-    const r = await post(c, '/api/hook/payout', createBody(tx), waitMs);
+    const r = await post(c, key, '/api/hook/payout', createBody(tx), waitMs);
     const o = outcome(r.status);
     if (o === 'done') set['dkSync.create'] = 'done';
     else if (o === 'retry') { retry = true; lastError = `create: ${r.status || r.error}`; }
@@ -131,7 +145,7 @@ async function syncRow(c, tx, waitMs) {
 
   // a reverse is sent even if the create is still waiting: Dosti Khata remembers it (tombstone)
   if (s.reverse === 'pending') {
-    const r = await post(c, '/api/hook/payout/reverse', reverseBody(tx), waitMs);
+    const r = await post(c, key, '/api/hook/payout/reverse', reverseBody(tx), waitMs);
     const o = outcome(r.status);
     if (o === 'done') set['dkSync.reverse'] = 'done';
     else if (o === 'retry') { retry = true; lastError = lastError || `reverse: ${r.status || r.error}`; }
@@ -150,13 +164,13 @@ async function syncRow(c, tx, waitMs) {
   await WalletTransaction.updateOne({ _id: tx._id }, { $set: set });
 }
 
-/** Called right after the owner's payout is recorded. Never throws. */
+/** Called right after a linked person's payout is recorded. Never throws. */
 export async function dostiKhataPayoutRecorded(txId) {
   try {
     const c = config();
     if (!c) return;
     const tx = await WalletTransaction.findOneAndUpdate(
-      { _id: txId, userId: c.ownerId, category: 'payout_withdrawal', type: 'debit' },
+      { _id: txId, userId: { $in: [...c.links.keys()] }, category: 'payout_withdrawal', type: 'debit' },
       { $set: { 'dkSync.create': 'pending', 'dkSync.nextAt': new Date() } },
       { new: true }
     ).lean();
@@ -166,14 +180,14 @@ export async function dostiKhataPayoutRecorded(txId) {
   }
 }
 
-/** Called right after the owner's payout is reversed. Never throws. */
+/** Called right after a linked person's payout is reversed. Never throws. */
 export async function dostiKhataPayoutReversed(txId) {
   try {
     const c = config();
     if (!c) return;
     // only a payout that was ever sent (or is waiting to be sent) needs a reverse
     const tx = await WalletTransaction.findOneAndUpdate(
-      { _id: txId, userId: c.ownerId, category: 'payout_withdrawal', reversed: true, 'dkSync.create': { $in: ['pending', 'done', 'failed'] } },
+      { _id: txId, userId: { $in: [...c.links.keys()] }, category: 'payout_withdrawal', reversed: true, 'dkSync.create': { $in: ['pending', 'done', 'failed'] } },
       { $set: { 'dkSync.reverse': 'pending', 'dkSync.nextAt': new Date() } },
       { new: true }
     ).lean();
@@ -192,7 +206,7 @@ export async function retryDostiKhata() {
     if (Date.now() - st.at < RETRY_EVERY_MS) return;
     st.at = Date.now();
     const rows = await WalletTransaction.find({
-      userId: c.ownerId,
+      userId: { $in: [...c.links.keys()] },
       category: 'payout_withdrawal',
       'dkSync.nextAt': { $lte: new Date() },
       $or: [{ 'dkSync.create': 'pending' }, { 'dkSync.reverse': 'pending' }],
